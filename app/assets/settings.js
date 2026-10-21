@@ -178,7 +178,7 @@ function renderServer() {
     if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
     // A list, not a radio group: the active row says Active, every other row has Use, so arrowing down
     // the list cannot switch every AI app's server (design-system.md Section 6a).
-    return h("div", { class: "row" },
+    return h("div", { class: "row", "data-k": "server:" + p.name },
       h("div", { class: "body" },
         h("div", { class: "title" }, p.label, p.active ? h("span", { class: "pill gold", text: "Active" }) : null),
         h("div", { class: "sub mono selectable", text: host })),
@@ -228,7 +228,7 @@ function renderApps() {
       ? h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow", text: appNotes[a.id] }))
       : null;
     const detail = appDetail(a);
-    const row = h("div", { class: "row" + (a.kind === "absent" ? " muted" : "") },
+    const row = h("div", { class: "row" + (a.kind === "absent" ? " muted" : ""), "data-k": "app:" + a.id },
       h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
       h("div", { class: "body" },
         h("div", { class: "title" }, a.name, pill),
@@ -244,7 +244,7 @@ function renderApps() {
       "aria-label": "Save the why behind each commit",
       on: { change: (e) => act("capture", "capture_set", { on: e.target.checked }, { failTitle: "Capture did not change" }) },
     });
-    return [row, h("div", { class: "row sub-row" },
+    return [row, h("div", { class: "row sub-row", "data-k": "capture:" + a.id },
       h("div", { class: "body" },
         h("div", { class: "title", text: "Save the why behind each commit" }),
         h("div", { class: "sub", text: "After a commit, Claude Code is asked to record the decision behind it, if there was one." })),
@@ -270,7 +270,7 @@ function renderDaemon() {
   const drift = !remote && d.running && d.installed && d.running !== d.installed;
   const conflict = !remote && !!d.embedder_conflict;
   out.push(h("div", { class: "card" },
-    h("div", { class: "row hero" },
+    h("div", { class: "row hero", "data-k": "daemon" },
       h("span", { class: "lead " + st.kind }, icon("power")),
       h("div", { class: "body" },
         h("div", { class: "title", text: drift ? "Update ready - restart to load " + d.installed : st.title || "Unknown" }),
@@ -308,6 +308,19 @@ function renderDaemon() {
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
         h("div", { class: "end" }, remote || drift || conflict ? null :
           actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
+    // What a report needs, and where the daemon writes (design-system.md Section 29.5).
+    h("div", { class: "group-title", text: "Troubleshooting" }),
+    h("div", { class: "card" },
+      h("div", { class: "row", "data-k": "diagnostics" },
+        h("div", { class: "body" },
+          h("div", { class: "title", text: "Diagnostics" }),
+          h("div", { class: "sub", text: "setup --check, status --json, this app's state and the log's last lines, for a report. Nothing leaves this Mac." })),
+        h("div", { class: "end" }, h("button", { class: "btn", id: "copyDiagnostics", on: { click: copyDiagnostics } }, "Copy Diagnostics"))),
+      h("div", { class: "row", "data-k": "log" },
+        h("div", { class: "body" },
+          h("div", { class: "title", text: "The daemon's log" }),
+          h("div", { class: "sub mono selectable", text: d.log || "~/.supragnosis/log" })),
+        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("log") } }, "Show in Finder")))),
     h("div", { class: "group-title", text: "Search" }),
     h("div", { class: "card" }, searchRow(d, remote)),
     h("div", { class: "group-title", text: "Store" }),
@@ -399,7 +412,7 @@ function searchRow(d, remote) {
       end = h("button", { class: "btn", on: { click: downloadModel } }, icon("download"), "Download");
     }
   }
-  return h("div", { class: "row" },
+  return h("div", { class: "row", "data-k": "model" },
     h("span", { class: "lead " + kind }, icon("search")),
     h("div", { class: "body" }, h("div", { class: "title", text: title }), h("div", { class: "sub", text: sub }), bar),
     h("div", { class: "end" }, end));
@@ -437,7 +450,9 @@ function renderSync() {
         h("span", { class: "lead" }, icon("network")),
         h("div", { class: "body" },
           h("div", { class: "title", text: "Sync is not set up on this Mac" }),
-          h("div", { class: "sub", text: "This Mac keeps its knowledge to itself. To join a hub or host one, describe it in ~/.supragnosis/supragnosis.toml." }))))];
+          h("div", { class: "sub" }, "This Mac keeps its knowledge to itself. To join a hub or host one, describe it in ",
+            h("code", { text: "~/.supragnosis/supragnosis.toml" }), ".")),
+        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("config") } }, "Show in Finder"))))];
   }
   const out = [];
   const role = f.role === "hub" ? "Hub" : "Spoke";
@@ -466,7 +481,7 @@ function renderSync() {
           !hub.negotiated_at ? "What it shares: unknown - no answer yet"
             : state.federation.updated_ms ? "What it shares: agreed " + Math.max(0, Math.round((state.federation.updated_ms - hub.negotiated_at) / 1000)) + "s ago" : null,
         ].filter(Boolean);
-        return h("div", { class: "row" },
+        return h("div", { class: "row", "data-k": "hub:" + hub.url },
           h("div", { class: "body" },
             h("div", { class: "title" }, String(hub.url || "").replace(/^https?:\/\//, ""),
               hub.healthy
@@ -506,7 +521,7 @@ function renderSync() {
       } else if (f.role === "hub") {
         chips = h("div", { class: "sub", text: "not admitted" });
       }
-      return h("div", { class: "row" },
+      return h("div", { class: "row", "data-k": "peer:" + id },
         h("div", { class: "body" },
           h("div", { class: "title mono selectable", text: id }),
           h("div", { class: "sub", text: checkedIn }),
@@ -567,7 +582,9 @@ function renderSkeleton() {
   return [h("div", { class: "group-title", text: " " }), card];
 }
 
-function render() {
+// Every draw keeps the person's focus (design-system.md Section 29.5).
+function render() { keepFocus(document.body, draw); }
+function draw() {
   renderSidebar();
   const id = current();
   // The title bar names the pane on screen (design-system.md Section 6a, U26).
@@ -754,14 +771,30 @@ function openAddServer() {
 
 // ---- Loading --------------------------------------------------------------------------------
 
-async function load() {
+// Diagnostics and Show in Finder (design-system.md Section 29.5).
+async function copyDiagnostics() {
+  try {
+    await invoke("clipboard_copy", { text: await invoke("diagnostics") });
+    toast("ok", "Diagnostics copied");
+  } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
+}
+async function revealFile(what) {
+  try { await invoke("reveal", { what }); } catch (e) { toast("bad", "Could not show it in Finder", String(e)); }
+}
+
+// What the page last drew from: the reads that come on their own - the window's focus, the watch -
+// draw only when what they read changed (Section 29.5). Every other load draws.
+let drawnFrom = null;
+async function load(quiet) {
   try {
     state = await invoke("settings_state");
     loadError = null;
   } catch (e) {
     loadError = String(e);
   }
-  render();
+  const now = JSON.stringify([state, loadError]);
+  if (!quiet || now !== drawnFrom) render();
+  drawnFrom = now;
   if (daemonUnsettled()) watchDaemon();
 }
 
@@ -782,7 +815,7 @@ function watchDaemon() {
   watch = { until: Date.now() + 60000 };
   const tick = async () => {
     // A load while an act is running would read the act's middle; wait for its own load.
-    if (!pending.size) await load();
+    if (!pending.size) await load(true);
     // An index being embedded moves; the page follows it for as long as it does.
     if (indexing()) watch.until = Math.max(watch.until, Date.now() + 60000);
     if (!daemonUnsettled() || Date.now() > watch.until) { watch = null; return; }
@@ -792,7 +825,7 @@ function watchDaemon() {
 }
 
 window.addEventListener("hashchange", () => { render(); document.getElementById("pane").scrollTop = 0; });
-window.addEventListener("focus", () => { if (!pending.size && !document.getElementById("dialogHost").firstChild) load(); });
+window.addEventListener("focus", () => { if (!pending.size && !document.getElementById("dialogHost").firstChild) load(true); });
 // Esc closes a dialog if one is open, and otherwise closes Settings back to the graph.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -810,15 +843,26 @@ function forgetGraphLeft() {
 // Rebuild index from the starting page (docs/settings-page.md Section 3.3): its click opened this page
 // with act=rebuild, which starts the rebuild only while the daemon still cannot open its store. The
 // parameter is dropped either way, so a reload asks nothing again.
-function rebuildAsked() {
-  if (new URLSearchParams(location.search).get("act") !== "rebuild") return;
+function actAsked() {
+  const act = new URLSearchParams(location.search).get("act");
+  if (!act) return;
   const keep = new URLSearchParams(location.search);
   keep.delete("act");
   const q = keep.toString();
   history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
   const d = state && state.daemon;
-  if (d && !d.remote && d.embedder_conflict) rebuildIndex();
+  if (act === "rebuild") { if (d && !d.remote && d.embedder_conflict) rebuildIndex(); return; }
+  // The starting page's acts (design-system.md Section 29.5): a restart only while the daemon
+  // neither answers nor is being started; a notice says the state otherwise.
+  if (act === "restart") {
+    if (!d || d.remote) return;
+    if (!d.answering && !/starting/.test(d.line || "")) restartDaemon();
+    else toast("info", d.answering ? "Not restarted: the daemon answers" : "Not restarted: the daemon is still starting");
+    return;
+  }
+  if (act === "diagnostics") { const b = document.getElementById("copyDiagnostics"); if (b) b.focus(); return; }
+  if (act === "reveal-log") revealFile("log");
 }
 
 render();
-load().then(adoptDownload).then(rebuildAsked);
+load().then(adoptDownload).then(actAsked);

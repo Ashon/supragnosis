@@ -535,55 +535,195 @@ fn remote_html(r: &RemoteServer) -> String {
     )
 }
 
-fn starting_html(status: &str, conflict: Option<&Conflict>, settings: &tauri::Url) -> String {
+/// What the starting page says (docs/design-system.md Section 29.5): one of three things, from the
+/// shell's state and how long the start it made has run. The page holds no timer; the shell reloads
+/// it when this changes, or when the daemon answers.
+#[derive(Debug, Clone, PartialEq)]
+enum StartPage {
+    /// The first 10 seconds of a start the shell made.
+    Starting,
+    /// A start past 10 seconds, or a daemon the shell holds that has not answered yet.
+    StillStarting,
+    /// The start failed, or the daemon stopped answering: the cause, in one sentence.
+    Failed(String),
+}
+
+/// When the shell last began a start - at launch or for a restart - for "Still starting".
+static START_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+fn mark_start() {
+    *START_AT.lock().unwrap() = Some(std::time::Instant::now());
+}
+
+/// The page for the shell's state, `since` the start it made; it is drawn only while the socket is
+/// silent. A child the app spawned that is alive is still starting - the app stops waiting on it at
+/// 10 seconds, and a cold start can take longer - and one that exited is not; a daemon the app
+/// attached to that went silent stopped answering.
+fn start_page(d: &mut Daemon, since: Option<Duration>) -> StartPage {
+    match d {
+        Daemon::Failed(why) => StartPage::Failed(cause_of(why)),
+        Daemon::Starting if since.is_none_or(|t| t >= Duration::from_secs(10)) => {
+            StartPage::StillStarting
+        }
+        Daemon::Starting => StartPage::Starting,
+        Daemon::Spawned(child) => match child.try_wait() {
+            Ok(None) => StartPage::StillStarting,
+            _ => StartPage::Failed("The daemon exited.".to_string()),
+        },
+        Daemon::External => StartPage::Failed("The daemon stopped answering.".to_string()),
+    }
+}
+
+/// A failure's cause in one sentence: the shell's reason up to " - full log:", its first line,
+/// begun with a capital and ended with a stop.
+fn cause_of(why: &str) -> String {
+    let cut = why.split(" - full log:").next().unwrap_or(why);
+    let line = cut.lines().next().unwrap_or("").trim().trim_end_matches('.');
+    let mut c = line.chars();
+    match c.next() {
+        Some(f) => format!("{}{}.", f.to_uppercase(), c.as_str()),
+        None => "The daemon did not start.".to_string(),
+    }
+}
+
+/// The daemon's error log: the one written last of the app's (`app-daemon.err.log`, when the app
+/// spawns the daemon) and a login job's (`supragnosis.err.log`).
+fn daemon_log() -> PathBuf {
+    let dir = home().join(".supragnosis/log");
+    let (app, job) = (dir.join("app-daemon.err.log"), dir.join("supragnosis.err.log"));
+    let when = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match (when(&app), when(&job)) {
+        (Some(a), Some(j)) if j > a => job,
+        (None, Some(_)) => job,
+        _ => app,
+    }
+}
+
+/// The path as a person types it: under the home directory, with `~`.
+fn tilde(p: &Path) -> String {
+    match p.strip_prefix(home()) {
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => p.display().to_string(),
+    }
+}
+
+fn starting_html(
+    page: &StartPage,
+    conflict: Option<&Conflict>,
+    settings: &tauri::Url,
+    log: &Path,
+) -> String {
     let esc = |t: &str| {
         t.replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;")
             .replace('"', "&quot;")
     };
-    // A link that reads as a button: the page has no script (SHELL_CSP), and its one act is opening
-    // the app's own page, where the command is (docs/settings-page.md Section 3.3, S1).
-    const BUTTON: &str = "display:inline-block;margin-top:18px;padding:7px 16px;border-radius:8px;font-weight:600;text-decoration:none";
-    let mut to = settings.clone();
-    to.set_fragment(Some("daemon"));
-    let (head, detail, action, foot) = match conflict {
+    // A link that reads as a button: the page has no script (SHELL_CSP), and its acts open the app's
+    // own page, where the commands are (docs/settings-page.md Section 3.3, S1).
+    const BUTTON: &str = "display:inline-block;margin:18px 4px 0;padding:7px 16px;border-radius:8px;font-weight:600;text-decoration:none";
+    let link = |act: Option<&str>| {
+        let mut to = settings.clone();
+        to.set_query(act.map(|a| format!("act={a}")).as_deref());
+        to.set_fragment(Some("daemon"));
+        esc(to.as_str())
+    };
+    let primary = |href: String, label: &str| {
+        format!(
+            r#"<a href="{href}" autofocus style="{BUTTON};background:#d9a544;color:#16181e">{label}</a>"#
+        )
+    };
+    let plain = |href: String, label: &str| {
+        format!(
+            r#"<a class="b2" href="{href}" style="{BUTTON};border:1px solid #3a3f4a;color:#e9e4d6">{label}</a>"#
+        )
+    };
+    // The log's path in a read-only field: selectable and copyable inside a page that is a drag
+    // region, since a field is not dragged.
+    let log_field = format!(
+        r#"<div style="margin-top:16px"><input class="lf" readonly value="{}" aria-label="The daemon's log" style="width:min(36em,90vw);font:12px/1.4 'IBM Plex Mono',ui-monospace,monospace;background:transparent;color:inherit;border:1px solid #3a3f4a;border-radius:6px;padding:5px 8px"></div>"#,
+        esc(&tilde(log))
+    );
+    let (head, detail, action, foot) = match (conflict, page) {
         // The daemon cannot open its store for its model (semantic-retrieval.md Section 13): the
         // reason, and Rebuild index, which opens Settings to start it.
-        Some((recorded, daemon)) => {
-            to.set_query(Some("act=rebuild"));
-            (
-                "The search index needs rebuilding".to_string(),
-                format!(
-                    "Indexed by {}, and the daemon runs {} - it cannot start until the index is rebuilt.",
-                    esc(recorded),
-                    esc(daemon)
-                ),
-                format!(
-                    r#"<a href="{}" style="{BUTTON};background:#d9a544;color:#16181e">Rebuild index</a>"#,
-                    esc(to.as_str())
-                ),
-                "or in a terminal: supragnosis embed rebuild".to_string(),
-            )
-        }
-        None => (
-            "starting the supragnosis daemon...".to_string(),
-            esc(status),
-            // A daemon that failed to start: This Mac, where Restart is.
-            if status.contains("FAILED") {
-                format!(
-                    r#"<a class="b2" href="{}" style="{BUTTON};border:1px solid #3a3f4a;color:#e9e4d6">Open This Mac</a>"#,
-                    esc(to.as_str())
-                )
-            } else {
-                String::new()
-            },
-            "log: ~/.supragnosis/log/app-daemon.err.log / Settings (Cmd+,) &gt; This Mac &gt; Restart".to_string(),
+        (Some((recorded, daemon)), _) => (
+            "The search index needs rebuilding".to_string(),
+            format!(
+                "Indexed by {}, and the daemon runs {} - it cannot start until the index is rebuilt.",
+                esc(recorded),
+                esc(daemon)
+            ),
+            primary(link(Some("rebuild")), "Rebuild index"),
+            "or in a terminal: supragnosis embed rebuild".to_string(),
+        ),
+        (None, StartPage::Starting) => (
+            r#"<span class="spin" aria-hidden="true"></span>Starting supragnosis..."#.to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
+        (None, StartPage::StillStarting) => (
+            r#"<span class="spin" aria-hidden="true"></span>Starting supragnosis..."#.to_string(),
+            "Still starting.".to_string(),
+            log_field.clone() + &plain(link(None), "Open This Mac"),
+            String::new(),
+        ),
+        (None, StartPage::Failed(cause)) => (
+            "Supragnosis could not start".to_string(),
+            esc(cause),
+            [
+                primary(link(Some("restart")), "Restart"),
+                plain(link(Some("diagnostics")), "Diagnostics"),
+                plain(link(None), "Open This Mac"),
+            ]
+            .concat(),
+            log_field.clone() + &format!(
+                r#"<a class="m" href="{}" style="display:inline-block;margin-top:6px;color:#b0b8c7">Show in Finder</a>"#,
+                link(Some("reveal-log"))
+            ),
         ),
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2 {{ color:#16181e !important; border-color:#c9ccd3 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
+        r#"<!doctype html><meta charset="utf-8"><title>supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2, .lf {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
     )
+}
+
+/// The starting page the window shows, as drawn. While one is drawn the shell checks every second,
+/// and reloads the window when the daemon answers - the graph then - or when the page should say
+/// something else (docs/design-system.md Section 29.5): the page itself has no timer.
+static SPLASH: Mutex<Option<String>> = Mutex::new(None);
+
+fn splash_drawn(app: &tauri::AppHandle, sock: PathBuf, key: String) {
+    let watching = SPLASH.lock().unwrap().replace(key).is_some();
+    if !watching {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { watch_splash(app, sock).await });
+    }
+}
+
+async fn watch_splash(app: tauri::AppHandle, sock: PathBuf) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let Some(drawn) = SPLASH.lock().unwrap().clone() else {
+            return;
+        };
+        let answering = UnixStream::connect(&sock).await.is_ok();
+        heal_failed(&app).await;
+        let now = splash_key(&app, splash_conflict().await.as_ref());
+        if answering || now != drawn {
+            *SPLASH.lock().unwrap() = None;
+            reload_viewer(&app);
+            return;
+        }
+    }
+}
+
+/// What the starting page would say now, as the key `SPLASH` keeps.
+fn splash_key(app: &tauri::AppHandle, conflict: Option<&Conflict>) -> String {
+    let since = START_AT.lock().unwrap().map(|t| t.elapsed());
+    let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
+    format!("{page:?}|{conflict:?}")
 }
 
 /// The store the daemon cannot open, for the starting page (docs/settings-page.md Section 3.3): the
@@ -613,6 +753,7 @@ fn conflict_of(st: &serde_json::Value) -> Option<Conflict> {
 
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
 async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
+    mark_start();
     // A remote profile means this machine's daemon is not what the AI apps use - so the shell does
     // not start one for them (remote-server.md Section 5).
     refresh_status(&app).await;
@@ -1144,8 +1285,20 @@ async fn remove_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> Str
 /// manager the product installs). A refused restart (a conflict, an unrecognized holder) says why,
 /// instead of the shell quietly re-attaching to the process it failed to replace (L4).
 async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> Result<String, String> {
+    // A failed daemon that something manages is restarted through that manager, as an attached one
+    // is: the shell spawns none of its own beside it (docs/daemon-lifecycle.md Section 6,
+    // design-system.md Section 29.5).
+    let failed = matches!(*app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Failed(_));
+    let job = failed
+        && tokio::task::spawn_blocking(cli_status)
+            .await
+            .ok()
+            .flatten()
+            .as_ref()
+            .is_some_and(managed);
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
+    mark_start();
     refresh_status(app).await;
     let outcome = match prev {
         Daemon::Spawned(mut child) => {
@@ -1153,7 +1306,9 @@ async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> Result<String,
             let _ = child.wait();
             Ok("restarted the daemon this app runs".to_string())
         }
-        Daemon::External => {
+        prev @ (Daemon::External | Daemon::Failed(_))
+            if matches!(prev, Daemon::External) || job =>
+        {
             let before = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
             let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
             // launchd may still be starting the new process when the CLI returns, or retrying one
@@ -1184,7 +1339,9 @@ async fn restart_daemon(app: &tauri::AppHandle, sock: PathBuf) -> Result<String,
             }
             outcome
         }
-        Daemon::Starting | Daemon::Failed(_) => Ok("starting the daemon".to_string()),
+        Daemon::Starting | Daemon::Failed(_) | Daemon::External => {
+            Ok("starting the daemon".to_string())
+        }
     };
     bring_up(app.clone(), sock).await;
     outcome
@@ -1211,6 +1368,12 @@ fn restart_outcome(
             if ok || why.is_empty() { String::new() } else { format!(" ({why})") }
         )),
     }
+}
+
+/// Whether `status --json` names any manager of the daemon - a login job, a systemd unit, a
+/// `supragnosis start` pidfile.
+fn managed(st: &serde_json::Value) -> bool {
+    st["managers"].as_array().is_some_and(|ms| !ms.is_empty())
 }
 
 /// The pid of the manager `status --json` names first, when it has a process.
@@ -1322,6 +1485,7 @@ const APP_COMMANDS: &[&str] = &[
     "app_helper",
     "clipboard_copy",
     "diagnostics",
+    "reveal",
 ];
 
 /// The app's own pages: bundled with it, never served by a daemon or a hub, and the only pages its
@@ -1515,6 +1679,8 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             "embedder_conflict": status.as_ref().map(|v| v["embedder_conflict"].clone()),
             "login": login,
             "remote": remote.map(|r| r.name),
+            // The daemon's log, as a person types it (design-system.md Section 29.5).
+            "log": tilde(&daemon_log()),
         },
         "federation": federation,
         "about": {
@@ -2279,6 +2445,22 @@ async fn clipboard_copy(webview: tauri::Webview, text: String) -> Result<(), Str
 #[tauri::command]
 async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
     own_page_caller(&webview)?;
+    // The shell's own state and the daemon log's last lines: what a failed start leaves, which the
+    // CLI's reads cannot say (design-system.md Section 29.5). The log names the token by its path only.
+    let shell = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
+    let log = daemon_log();
+    let tail = std::fs::read_to_string(&log)
+        .map(|t| {
+            t.lines()
+                .rev()
+                .take(40)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_else(|e| format!("(not read: {e})"));
     let pid = spawned_pid(&app);
     tokio::task::spawn_blocking(move || {
         let args = setup_args(&["--check"], pid);
@@ -2292,15 +2474,43 @@ async fn diagnostics(webview: tauri::Webview, app: tauri::AppHandle) -> Result<S
             .unwrap_or_else(cli_missing)
         };
         format!(
-            "supragnosis app {}\n\n$ supragnosis {}\n{}\n$ supragnosis status --json\n{}",
+            "supragnosis app {}\n{}\n\n$ supragnosis {}\n{}\n$ supragnosis status --json\n{}\n\n$ tail -n 40 {}\n{}",
             env!("CARGO_PKG_VERSION"),
+            shell,
             args.join(" "),
             text(run_cli(&args)),
             text(run_cli(&["status", "--json"])),
+            tilde(&log),
+            tail,
         )
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// "Show in Finder" (design-system.md Section 29.5): one of a fixed pair - the daemon's log and the
+/// node's `supragnosis.toml` - and nothing a caller names. The caller is one of the app's own pages
+/// (S1).
+#[tauri::command]
+async fn reveal(webview: tauri::Webview, what: String) -> Result<(), String> {
+    own_page_caller(&webview)?;
+    let path = match what.as_str() {
+        "log" => daemon_log(),
+        "config" => home().join(".supragnosis/supragnosis.toml"),
+        other => return Err(format!("nothing to show called {other:?}")),
+    };
+    if !path.exists() {
+        return Err(format!("{} does not exist yet", tilde(&path)));
+    }
+    #[cfg(target_os = "macos")]
+    let shown = Command::new("open").arg("-R").arg(&path).status();
+    #[cfg(not(target_os = "macos"))]
+    let shown = Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).status();
+    match shown {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("the file manager did not open ({s})")),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Turns the main window to the Welcome page, creating the window first if needed.
@@ -2514,6 +2724,7 @@ fn main() {
         .manage(RunningSteps(Mutex::new(std::collections::HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             settings_state,
+            reveal,
             server_use,
             server_add,
             server_remove,
@@ -2574,6 +2785,10 @@ fn main() {
                         // policy is forwarded with none, so a daemon that stopped sending one shows
                         // up as that rather than as a shell-authored guess (see SHELL_CSP).
                         Ok(Ok(f)) => {
+                            // The graph's own page: the starting page is no longer on screen.
+                            if target == "/" {
+                                *SPLASH.lock().unwrap() = None;
+                            }
                             let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
                             let mut r = resp(f.status, &f.ctype, &csp, f.body);
                             // The graph's ETag goes back with it, so the poll can ask (U33).
@@ -2586,9 +2801,11 @@ fn main() {
                         // the live daemon state (a Failed reason must be readable, not an eternal
                         // "starting..."); API calls get an honest 502 (Principle 5).
                         _ if target == "/" => {
-                            let status = app.state::<DaemonGuard>().0.lock().unwrap().status_line();
+                            let since = START_AT.lock().unwrap().map(|t| t.elapsed());
+                            let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
                             let conflict = splash_conflict().await;
-                            let html = starting_html(&status, conflict.as_ref(), &settings_url());
+                            let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
+                            splash_drawn(&app, sock.clone(), splash_key(&app, conflict.as_ref()));
                             resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
                         }
                         Ok(Err(e)) => resp(
@@ -3060,9 +3277,13 @@ mod status_text_tests {
 #[cfg(test)]
 mod settings_tests {
     use super::{
-        manager_pid, own_page_ok, restart_outcome, server_add_args, settings_url, starting_html,
-        welcome_url, APP_COMMANDS,
+        cause_of, managed, manager_pid, own_page_ok, restart_outcome, server_add_args,
+        settings_url, start_page, starting_html, welcome_url, Daemon, StartPage, APP_COMMANDS,
     };
+    use std::path::Path;
+    use std::time::Duration;
+
+    const LOG: &str = "/nowhere/.supragnosis/log/app-daemon.err.log";
 
     /// docs/settings-page.md S1 and docs/onboarding.md Section 6: a setting changes only from the
     /// app's own pages, Settings and Welcome - not from the viewer the same window shows, which a
@@ -3251,7 +3472,9 @@ mod settings_tests {
         // The starting page says why and opens Settings to rebuild, holding no command itself (S1);
         // Settings starts the rebuild only while the store still cannot open, and drops the ask.
         let conflict = ("hashing-256".to_string(), "<model>".to_string());
-        let page = starting_html("daemon: FAILED - x", Some(&conflict), &settings_url());
+        let failed_with = |why: &str| StartPage::Failed(why.to_string());
+        let page =
+            starting_html(&failed_with("X."), Some(&conflict), &settings_url(), Path::new(LOG));
         for part in [
             "The search index needs rebuilding",
             "Indexed by hashing-256, and the daemon runs &lt;model&gt;",
@@ -3262,13 +3485,15 @@ mod settings_tests {
             assert!(page.contains(part), "the starting page does not offer the rebuild: {part}");
         }
         assert!(!page.contains("<script"), "the starting page holds a script");
-        let failed = starting_html("daemon: FAILED - port in use", None, &settings_url());
+        let failed =
+            starting_html(&failed_with("Port in use."), None, &settings_url(), Path::new(LOG));
         assert!(
             failed.contains("settings.html#daemon\"") && failed.contains(">Open This Mac</a>"),
             "a failed start does not open This Mac"
         );
         assert!(
-            !starting_html("daemon: starting...", None, &settings_url()).contains("</a>"),
+            !starting_html(&StartPage::Starting, None, &settings_url(), Path::new(LOG))
+                .contains("</a>"),
             "a start in progress offers a button"
         );
         assert_eq!(
@@ -3278,9 +3503,9 @@ mod settings_tests {
             Some(("a".to_string(), "b".to_string()))
         );
         assert_eq!(super::conflict_of(&serde_json::json!({"embedder_conflict": null})), None);
-        let asked = body(js, "function rebuildAsked(");
+        let asked = body(js, "function actAsked(");
         assert!(
-            asked.contains("get(\"act\") !== \"rebuild\"")
+            asked.contains("act === \"rebuild\"")
                 && asked.contains("history.replaceState(")
                 && asked.contains("d.embedder_conflict) rebuildIndex();"),
             "Settings does not start the rebuild the starting page asked for, or not only on a conflict"
@@ -3373,12 +3598,197 @@ mod settings_tests {
             !shell.contains("h1.setAttribute(\"data-tauri-drag-region\""),
             "a bare attribute on the title stops a press on its scope from dragging"
         );
-        assert!(starting_html("x", None, &settings_url())
+        assert!(starting_html(&StartPage::Starting, None, &settings_url(), Path::new(LOG))
             .contains("<body data-tauri-drag-region=\"deep\""));
         let src = include_str!("main.rs");
         let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
         assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 2);
         assert!(!pages.contains("<body data-tauri-drag-region style="));
+    }
+
+    /// docs/design-system.md Section 29.5, P24: the page the window shows while the daemon does not
+    /// answer says which of three things is true, from the shell's state, and has no timer of its
+    /// own. A failure names its cause in one sentence and offers Restart, the default, Diagnostics and
+    /// Open This Mac - each a link to Settings, no command of its own (S1) - and the log's path in a
+    /// field; a start the shell made says nothing to press for 10 seconds, and then that it is still
+    /// starting while the child it spawned lives.
+    #[test]
+    fn a_daemon_that_cannot_start_says_so() {
+        let mut starting = Daemon::Starting;
+        assert_eq!(start_page(&mut starting, Some(Duration::from_secs(3))), StartPage::Starting);
+        assert_eq!(
+            start_page(&mut starting, Some(Duration::from_secs(12))),
+            StartPage::StillStarting
+        );
+        assert_eq!(start_page(&mut starting, None), StartPage::StillStarting);
+        let mut alive =
+            Daemon::Spawned(std::process::Command::new("sleep").arg("5").spawn().unwrap());
+        assert_eq!(start_page(&mut alive, Some(Duration::from_secs(30))), StartPage::StillStarting);
+        if let Daemon::Spawned(c) = &mut alive {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        assert_eq!(
+            start_page(&mut alive, None),
+            StartPage::Failed("The daemon exited.".to_string())
+        );
+        assert_eq!(
+            start_page(&mut Daemon::External, None),
+            StartPage::Failed("The daemon stopped answering.".to_string())
+        );
+        let why = "the spawned daemon exited immediately (exit status: 1): store locked - full log: ~/.supragnosis/log/app-daemon.err.log";
+        assert_eq!(
+            start_page(&mut Daemon::Failed(why.to_string()), None),
+            StartPage::Failed(
+                "The spawned daemon exited immediately (exit status: 1): store locked.".to_string()
+            )
+        );
+        assert_eq!(cause_of("port in use.\nmore"), "Port in use.");
+        assert_eq!(cause_of(""), "The daemon did not start.");
+
+        let log = Path::new(LOG);
+        let failed = starting_html(
+            &StartPage::Failed("Port in use.".to_string()),
+            None,
+            &settings_url(),
+            log,
+        );
+        for part in [
+            "Supragnosis could not start",
+            "Port in use.",
+            "settings.html?act=restart#daemon\" autofocus",
+            ">Restart</a>",
+            "settings.html?act=diagnostics#daemon\"",
+            ">Diagnostics</a>",
+            "settings.html#daemon\"",
+            ">Open This Mac</a>",
+            "<input class=\"lf\" readonly value=\"/nowhere/.supragnosis/log/app-daemon.err.log\"",
+            "settings.html?act=reveal-log#daemon\"",
+            ">Show in Finder</a>",
+            "@media (prefers-reduced-motion: reduce) { .spin { animation:none } }",
+        ] {
+            assert!(failed.contains(part), "a failed start does not say: {part}");
+        }
+        let still = starting_html(&StartPage::StillStarting, None, &settings_url(), log);
+        assert!(
+            still.contains("Still starting.")
+                && still.contains(">Open This Mac</a>")
+                && still.contains("<input")
+        );
+        assert!(!still.contains("act=restart"), "a start in progress offers Restart");
+        let first = starting_html(&StartPage::Starting, None, &settings_url(), log);
+        assert!(first.contains("Starting supragnosis...") && !first.contains("<input"));
+        for page in [&failed, &still, &first] {
+            assert!(!page.contains("http-equiv"), "the starting page reloads itself");
+            assert!(!page.contains("<script"), "the starting page holds a script");
+            assert!(!page.contains("starting the supragnosis daemon"), "the old heading is back");
+        }
+
+        // The shell changes the page: it watches while the page is drawn and reloads when the daemon
+        // answers or the page should say something else, and forgets it once the graph is served.
+        let src = include_str!("main.rs");
+        let watch = &src[src.find("async fn watch_splash(").expect("watch_splash")..];
+        let watch = &watch[..watch.find("\n}\n").expect("it closes")];
+        assert!(watch.contains("Duration::from_secs(1)") && watch.contains("reload_viewer"));
+        assert!(
+            src.contains("*SPLASH.lock().unwrap() = None;"),
+            "the graph's page does not end the watch"
+        );
+
+        // Restart of a failed daemon goes through `supragnosis restart` when a manager owns it.
+        assert!(src.contains("prev @ (Daemon::External | Daemon::Failed(_)) if matches!(prev, Daemon::External) || job =>"));
+        assert!(managed(&serde_json::json!({"managers": [{"label": "launchd"}]})));
+        assert!(!managed(&serde_json::json!({"managers": []})));
+        assert!(!managed(&serde_json::json!({})));
+
+        // Settings acts on what the page asks, once, and only while that act still fits.
+        let js = include_str!("../assets/settings.js");
+        let asked = &js[js.find("function actAsked(").expect("actAsked")..];
+        let asked = &asked[..asked.find("\n}\n").expect("it closes")];
+        for part in [
+            "keep.delete(\"act\")",
+            "history.replaceState(",
+            "if (!d.answering && !/starting/.test(d.line || \"\")) restartDaemon();",
+            "\"Not restarted: the daemon answers\"",
+            "\"Not restarted: the daemon is still starting\"",
+            "document.getElementById(\"copyDiagnostics\")",
+            "revealFile(\"log\")",
+        ] {
+            assert!(asked.contains(part), "Settings does not act on the page's ask: {part}");
+        }
+        // Show in Finder shows one of two files, for the app's own pages only.
+        let reveal = &src[src.find("async fn reveal(").expect("reveal")..];
+        let reveal = &reveal[..reveal.find("\n}\n").expect("it closes")];
+        assert!(reveal.contains("own_page_caller(&webview)?;"));
+        assert!(reveal.contains("\"log\" => daemon_log(),") && reveal.contains("\"config\" =>"));
+        assert!(reveal.contains("other => return Err("));
+        assert!(APP_COMMANDS.contains(&"reveal"));
+        assert!(include_str!("../capabilities/settings.json").contains("\"allow-reveal\""));
+        // Diagnostics carries the shell's status and the log's last lines; This Mac shows the log.
+        let diag = &src[src.find("async fn diagnostics(").expect("diagnostics")..];
+        let diag = &diag[..diag.find("\n}\n").expect("it closes")];
+        assert!(diag.contains("status_line()") && diag.contains("tail -n 40"));
+        assert!(js.contains("id: \"copyDiagnostics\"") && js.contains("\"data-k\": \"log\""));
+    }
+
+    /// docs/design-system.md U19: a page that draws itself again keeps the control that had focus.
+    /// Setup and Settings draw through `kit.js`'s `keepFocus`, which finds the control again by the
+    /// key its row carries and its name, and keeps a field's selection; the reads that come on a
+    /// timer or on the window's focus draw only what changed, and a streamed line is added to its
+    /// open drawer in place.
+    #[test]
+    fn the_app_pages_keep_focus_across_a_draw() {
+        let kit = include_str!("../assets/kit.js");
+        let keep = &kit[kit.find("function keepFocus(").expect("keepFocus")..];
+        let keep = &keep[..keep.find("\n}\n").expect("it closes")];
+        for part in [
+            "focusKey(el, true)",
+            "focusKey(el, false)",
+            "near.length === 1",
+            "setSelectionRange(",
+            ".focus(",
+        ] {
+            assert!(keep.contains(part), "keepFocus does not: {part}");
+        }
+        assert!(
+            kit.contains("el.closest(\"[data-k], [id]\")"),
+            "a control is not found by its row"
+        );
+        let settings = include_str!("../assets/settings.js");
+        let welcome = include_str!("../assets/welcome.js");
+        for (page, js) in [("Settings", settings), ("Setup", welcome)] {
+            assert!(
+                js.contains("function render() { keepFocus(document.body, draw); }"),
+                "{page} draws without keeping focus"
+            );
+        }
+        for key in [
+            "\"server:\" + p.name",
+            "\"app:\" + a.id",
+            "\"capture:\" + a.id",
+            "\"data-k\": \"daemon\"",
+            "\"data-k\": \"model\"",
+            "\"hub:\" + hub.url",
+            "\"peer:\" + id",
+        ] {
+            assert!(settings.contains(key), "a Settings row has no key: {key}");
+        }
+        for key in ["\"step:\" + s.step", "\"app:\" + a.id"] {
+            assert!(welcome.contains(key), "a Setup row has no key: {key}");
+        }
+        assert!(settings.contains("if (!quiet || now !== drawnFrom) render();"));
+        assert!(settings.contains("load(true);"), "the window's focus draws what did not change");
+        assert!(settings.contains("await load(true);"), "the watch draws what did not change");
+        assert!(
+            welcome.contains("if (now === checkedFrom) return;"),
+            "Setup's check draws what did not change"
+        );
+        assert!(
+            welcome.contains(
+                "open.append(h(\"div\", { class: \"l-\" + entry.kind, text: entry.text }));"
+            ),
+            "a streamed line draws the page"
+        );
     }
 
     /// docs/design-system.md Section 6, U26: the bar keeps room for the traffic lights only while
@@ -3624,7 +4034,7 @@ mod settings_tests {
             "a second start reads as a failure"
         );
         assert!(
-            settings.contains("load().then(adoptDownload).then(rebuildAsked);"),
+            settings.contains("load().then(adoptDownload).then(actAsked);"),
             "Settings does not pick up a running download"
         );
     }
