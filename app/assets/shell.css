@@ -9,7 +9,8 @@
    copying matters - text inputs, the viewer's detail inspector and event log. */
 html { -webkit-user-select: none; user-select: none; cursor: default; }
 input, textarea { -webkit-user-select: auto; user-select: auto; cursor: text; }
-#detail, #log, .selectable { -webkit-user-select: text; user-select: text; }
+/* Commands and paths are read to be copied (design-system.md Section 29.5). */
+#detail, #log, .selectable, code, .mono { -webkit-user-select: text; user-select: text; }
 
 /* The header is the window's title bar: its left edge clears the overlaid traffic lights, except in
    full screen, where macOS hides them (shell-init.js toggles .shell-fullscreen on each transition,

@@ -24,9 +24,8 @@
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
 > (Section 29), goes one step at a time from step 41, each checked against the principles first;
-> steps 41 and 42 are built: a confirmation that says what it confirms, and a review that closes its
-> loop, and step 43, a map that keeps the person's place, is built. Step 44, app pages that hold
-> focus and a failure that says so, is specified.
+> steps 41 to 44 are built: a confirmation that says what it confirms, a review that closes its loop,
+> a map that keeps the person's place, and app pages that hold focus and a failure that says so.
 
 ## 1. Why this exists
 
@@ -1582,7 +1581,9 @@ the app's tests, which holds Setup's one name in its crumb, the tray and About.
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
 View's toggles, the legend's chips, the workspace chips, the page's language and the map's name, and
-the dialog on the app's pages, and `view_holds_two_choices_with_one_name_each` holds View's two
+the dialog on the app's pages; `the_app_pages_keep_focus_across_a_draw` in the app's tests holds the
+part a draw owes - Setup and Settings draw through `kit.js`'s `keepFocus`, their controls carry the
+keys it finds them by, and the reads on a timer or on focus draw only what changed; and `view_holds_two_choices_with_one_name_each` holds View's two
 choices and its switch for the single keys. The rest of U19 - every control on every surface, the
 targets and the reflow - is owed until the app's and the site's steps are built and browser scenarios
 press them at 1440 and 390 pixels.
@@ -1776,7 +1777,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    use and its toggle on the camera toolbar, the selection in the address, the way back to the
    address left, a selection history, Esc giving the camera back, a layout reset, and a selection
    followed when it is merged or named when it leaves.
-44. **The app's pages hold focus, and a failure says so** (Section 29.5; U19): focus kept across a
+44. **The app's pages hold focus, and a failure says so** [built] (Section 29.5; U19): focus kept across a
    draw and no draw for an unchanged read, the starting page's three states with Restart, Diagnostics
    and the log, a restart that leaves a login job its daemon, Settings acting on what that page asks,
    selectable commands and paths with Copy, and Setup's foot.
@@ -3480,7 +3481,7 @@ decided both.
 |---|---|---|
 | WCAG 2.4.3, 3.2.1 and 3.2.5 | Focus moves where the person moves it; nothing changes context unasked | repays - a draw keeps focus on the control that had it, a read that changed nothing draws nothing, and the starting page no longer reloads under the person. The shell turns that page into the graph when the daemon answers: the page stands in for the graph at the graph's own address, and the graph arriving is the content the person opened, not a change of context |
 | WCAG 2.2.1, timing adjustable | Content that changes on a timer can be stopped | repays - the starting page has no timer of its own |
-| U19 | Every control exposes its state; a dialog holds focus | revised: it gains "a page that draws itself again keeps the control that had focus", the rule R4-01 asked for, guarded by a test of the app's, named when it is built |
+| U19 | Every control exposes its state; a dialog holds focus | revised: it gains "a page that draws itself again keeps the control that had focus", the rule R4-01 asked for, guarded by the app's `the_app_pages_keep_focus_across_a_draw` |
 | design-system.md Section 6a | A control both pages offer is built once in the app's shared script; Set up is "the first control after the plan in tab order"; "Copy log and Copy diagnostics sit at the left" | agrees with the first two - the focus keeping is `kit.js`'s, and Set up stays first in tab order while it is drawn at the trailing edge; revised in the third: one Copy Diagnostics, once a step has run or failed in this visit, or the check could not be read |
 | onboarding.md Section 6 | "Copy log" copies every drawer; "Copy diagnostics" copies the two reads | revised: one Copy Diagnostics copies the drawers, the two reads, the shell's status and the daemon log's last lines |
 | onboarding.md O4 | Setup's own acts are few and listed | agrees - copying changes nothing, and nothing is added to them |
@@ -3500,11 +3501,12 @@ these findings.
     nearest `data-k` or `id` at or above it, its kind and its name - and an input's selection. After
     the draw it focuses the control with that key; one whose name changed with the draw ("Restart" to
     "Restarting...") is found by the rest of its key when only one control matches.
-  - The keys: a row of an AI app is `app:<id>`, a server `server:<name>`, a peer `peer:<id>`, a
-    granted workspace `grant:<name>`, a step's card on Setup `step:<step>`, This Mac's daemon card
-    `daemon` and its model card `model`.
-  - A line streamed into a step's log is added to its open drawer and its progress words in place,
-    with no draw, so a screen reader is not sent back to the control.
+  - The keys: a row of an AI app is `app:<id>` and its capture row `capture:<id>`, a server
+    `server:<name>`, a hub `hub:<url>`, a peer `peer:<id>`, a step's card on Setup `step:<step>`,
+    This Mac's daemon card `daemon` and its model card `model`.
+  - A line streamed into a step's log is added to its open drawer in place, with no draw, so a screen
+    reader is not sent back to the control; a line that changes what a card says - its state or its
+    sentence - draws, and the foot's progress words with it.
   - Three reads draw only when what they read changed: Setup's 15-second check, and Settings' read
     on window focus and its 2-second watch. Every other draw - after an act, on a hash change - happens
     as now.

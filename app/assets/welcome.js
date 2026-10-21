@@ -75,8 +75,13 @@ async function check() {
   }
   if (!applied && events.length && !needsPlan()) applied = true;
   for (const id of todoApps()) if (!(id in plan.apps)) plan.apps[id] = true;
+  // A check that changed nothing draws nothing (Section 29.5).
+  const now = JSON.stringify([events, loadError, applied]);
+  if (now === checkedFrom) return;
+  checkedFrom = now;
   render();
 }
+let checkedFrom = null;
 
 async function loadInfo() {
   try {
@@ -101,15 +106,29 @@ listen("setup-line", (e) => {
   let ev = null;
   try { ev = JSON.parse(line); } catch (_) { /* plain output */ }
   if (ev && ev.schema !== undefined && !ev.step) return;
+  // A line of output is added to its open drawer in place, with no draw, so focus and a screen
+  // reader stay where they are; an event that changes what a card says draws (Section 29.5).
+  let entry, changed = false;
   if (ev && ev.step) {
-    if (ev.cmd) log.push({ kind: "cmd", text: ev.cmd });
-    else if (ev.out) log.push({ kind: "out", text: ev.out });
-    else log.push({ kind: "event", text: ev.state + ": " + ev.say });
-    live[ev.step === "app" ? "app=" + ev.id : ev.step] = ev;
+    entry = ev.cmd ? { kind: "cmd", text: ev.cmd } : ev.out ? { kind: "out", text: ev.out } : { kind: "event", text: ev.state + ": " + ev.say };
+    const at = ev.step === "app" ? "app=" + ev.id : ev.step;
+    const was = live[at];
+    changed = !was || was.state !== ev.state || was.say !== ev.say;
+    live[at] = ev;
   } else {
-    log.push({ kind: err ? "err" : "out", text: line });
+    entry = { kind: err ? "err" : "out", text: line };
   }
-  renderSoon();
+  log.push(entry);
+  if (entry.kind === "event" || changed) { renderSoon(); return; }
+  const name = Object.keys(logs).find((k) => logs[k] === log);
+  const open = name && document.querySelector('.drawer[data-log="' + name + '"]');
+  if (open) {
+    const none = open.querySelector(".l-none");
+    if (none) none.remove();
+    open.append(h("div", { class: "l-" + entry.kind, text: entry.text }));
+  }
+  // The foot's Copy Diagnostics appears with the first line that ran.
+  if (log.length === 1) renderSoon();
 });
 
 // ---- Acts ------------------------------------------------------------------------------------------
@@ -265,8 +284,16 @@ function openGraph(ws) {
 
 // A sentence setup wrote, with each command it names in backticks set as code. Text nodes and a code
 // element, never markup (S5).
+// A sentence's `code` spans; a command - one that begins with "supragnosis " - gets a Copy beside it
+// (design-system.md Section 29.5).
 function sayNodes(text) {
-  return String(text || "").split("`").map((part, i) => (i % 2 ? h("code", { text: part }) : part));
+  return String(text || "").split("`").map((part, i) => {
+    if (!(i % 2)) return part;
+    const code = h("code", { text: part });
+    if (!part.startsWith("supragnosis ")) return code;
+    return h("span", { class: "cmd" }, code, h("button", { type: "button", class: "btn quiet copycmd", "aria-label": "Copy " + part,
+      on: { click: (e) => { e.preventDefault(); e.stopPropagation(); copy(part, "The command"); } } }, "Copy"));
+  });
 }
 
 function pill(map, state) {
@@ -294,7 +321,7 @@ function drawer(s) {
   const body = lines.length
     ? lines.map((l) => h("div", { class: "l-" + l.kind, text: l.text }))
     : [h("div", { class: "l-none", text: "Nothing has run for this step yet." })];
-  return [toggle, h("div", { class: "drawer" }, body)];
+  return [toggle, h("div", { class: "drawer", "data-log": s.log }, body)];
 }
 
 function stepCard(s, i) {
@@ -304,7 +331,7 @@ function stepCard(s, i) {
   const say = (l && running[runKeyOf(s.step)] ? l.say : e && e.say) || "";
   const num = h("div", { class: "num " + state }, state === "done" || state === "skipped" ? icon("check") : String(i + 1));
   const body = { server: serverBody, apps: appsBody, model: modelBody, first: firstBody }[s.step](e, state, say);
-  return h("section", { class: "step", "aria-labelledby": "t-" + s.step },
+  return h("section", { class: "step", "aria-labelledby": "t-" + s.step, "data-k": "step:" + s.step },
     num,
     h("div", { class: "shead" }, h("h3", { id: "t-" + s.step, text: s.title }),
       e ? pill(s.step === "first" ? FIRST_PILL : PILL, state) : null),
@@ -361,7 +388,7 @@ function appsBody(e, state, say) {
     }
     if (st !== "todo" && st !== "skipped") sub = h("div", { class: "sub" }, sayNodes(l && running[key] ? l.say : a.say));
     // A plan row is one checkbox whose label is the whole row (design-system.md Section 6a).
-    return h(tick ? "label" : "div", { class: "row" + (st === "skipped" ? " muted" : "") + (tick ? " pick" : "") },
+    return h(tick ? "label" : "div", { class: "row" + (st === "skipped" ? " muted" : "") + (tick ? " pick" : ""), "data-k": "app:" + a.id },
       h("span", { class: "lead" }, icon(APP_KIND[a.id] || "desktop")),
       h("div", { class: "body" }, h("div", { class: "title" }, name, pill(APP_PILL, st)), sub, option),
       h("div", { class: "end" }, end));
@@ -443,14 +470,19 @@ function renderActions() {
   }
   // While the plan runs, the foot says how far it is (Section 6a).
   if (applied && busy() && planTotal) main.push(h("span", { class: "progress-say", text: "Setting up... " + Math.min(planDone, planTotal) + " of " + planTotal }));
-  host.replaceChildren(...main,
-    h("button", { class: "btn quiet", on: { click: async () => {
-      try { copy(await invoke("diagnostics"), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
-    } } }, "Copy diagnostics"),
-    h("button", { class: "btn quiet", on: { click: () => copy(logText(), "The log") } }, "Copy log"));
+  // One Copy Diagnostics, once a step has run or failed in this visit or the check could not be read,
+  // since before that the log is empty and the reads say what the cards already do (Section 29.5).
+  const ran = Object.values(logs).some((l) => l.length > 0) || !!loadError
+    || STEPS.some((st) => stateOf(st.step) === "failed");
+  const diag = h("button", { class: "btn quiet copydiag", on: { click: async () => {
+    try { copy(await invoke("diagnostics") + "\n\n" + logText(), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
+  } } }, "Copy Diagnostics");
+  host.replaceChildren(...main, ...(ran ? [diag] : []));
 }
 
-function render() {
+// Every draw keeps the person's focus (design-system.md Section 29.5).
+function render() { keepFocus(document.body, draw); }
+function draw() {
   const page = document.getElementById("page");
   let body;
   if (loadError && !events.length) {

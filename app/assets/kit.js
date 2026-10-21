@@ -39,6 +39,36 @@ function withBack(page) {
   return from ? page + "?from=" + encodeURIComponent(from) : page;
 }
 
+// ---- Focus across a draw (docs/design-system.md Section 29.5) -------------------------------
+
+// A page that draws itself again keeps the person's focus (WCAG 2.4.3). Before the draw the focused
+// control's key is noted - the nearest data-k or id at or above it, its kind, and its name - with an
+// input's selection; after it, the control with the same key takes focus. A control whose name
+// changed with the draw ("Restart" to "Restarting...") is found by the rest of its key when only one
+// control matches it.
+function focusKey(el, withName) {
+  const at = el.closest("[data-k], [id]");
+  const field = el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT";
+  const name = field ? (el.name || el.getAttribute("aria-label") || el.placeholder || "")
+    : (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 60);
+  return [at ? (at.dataset.k || at.id) : "", el.tagName, el.getAttribute("type") || "", withName ? name : ""].join("|");
+}
+const FOCUSABLE_ANY = "button, a[href], input, select, textarea, [tabindex]";
+function keepFocus(host, draw) {
+  const el = document.activeElement;
+  const inside = !!el && el !== document.body && host.contains(el);
+  const key = inside ? focusKey(el, true) : null, loose = inside ? focusKey(el, false) : null;
+  const sel = inside && typeof el.selectionStart === "number" ? [el.selectionStart, el.selectionEnd] : null;
+  draw();
+  if (!key || (document.activeElement && document.activeElement !== document.body && host.contains(document.activeElement))) return;
+  const all = [...host.querySelectorAll(FOCUSABLE_ANY)];
+  let to = all.find((c) => focusKey(c, true) === key);
+  if (!to) { const near = all.filter((c) => focusKey(c, false) === loose); if (near.length === 1) to = near[0]; }
+  if (!to) return;
+  to.focus({ preventScroll: true });
+  if (sel && typeof to.setSelectionRange === "function") { try { to.setSelectionRange(sel[0], sel[1]); } catch (_) { /* not a text field */ } }
+}
+
 // ---- DOM helpers ---------------------------------------------------------------------------
 
 // h("div", {class: "row", on: {click}}, child, "text", ...): an element, its attributes, children.

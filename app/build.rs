@@ -23,6 +23,7 @@ const APP_COMMANDS: &[&str] = &[
     "app_helper",
     "clipboard_copy",
     "diagnostics",
+    "reveal",
 ];
 
 fn main() {

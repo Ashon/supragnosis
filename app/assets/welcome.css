@@ -42,6 +42,9 @@ body { background: var(--panel); }
 .pill .i-spin { width: 11px; height: 11px; animation: spin 0.8s linear infinite; }
 /* A command a sentence names: mono, and kept on one line. */
 .step code { font: var(--text-small)/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
+/* A command and its Copy stay on one line (design-system.md Section 29.5). */
+.step .cmd { white-space: nowrap; }
+.step .copycmd { margin-left: 4px; }
 
 /* The download's progress. */
 .bar { height: 6px; border-radius: var(--r-capsule); background: var(--panel-3); overflow: hidden; margin-top: 12px; }
@@ -82,8 +85,10 @@ body { background: var(--panel); }
 }
 .wfoot .privacy { flex: 1; max-width: 34em; margin: 0; color: var(--muted); font-size: var(--text-small); }
 /* The page's acts read right to left - Set up, the default, comes first in tab order and is drawn
-   rightmost; the copy buttons sit at the left, by the privacy line. */
-.wactions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; flex: none; }
+   rightmost, at the trailing edge (design-system.md Section 29.5); Copy Diagnostics sits at the
+   left, by the privacy line. */
+.wactions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; flex: 1; justify-content: flex-start; }
+.wactions .copydiag { margin-right: auto; }
 /* Set up is the page's act, drawn large as a capsule, and its row shares the size (design-system.md
    Section 4). */
 .wactions .btn { min-height: 28px; border-radius: var(--r-capsule); }

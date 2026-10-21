@@ -23,6 +23,7 @@
     "allow-welcome-set",
     "allow-app-helper",
     "allow-clipboard-copy",
-    "allow-diagnostics"
+    "allow-diagnostics",
+    "allow-reveal"
   ]
 }
