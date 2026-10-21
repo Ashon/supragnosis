@@ -83,6 +83,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/graph`, `/api/hypergraph`, `/api/types`, `/api/curation`, `/api/proposals`, `/api/observations` | read | The workspace as Section 3.3 resolves it. An observation, here and on the rows below, is answered without the app that wrote it (design-system.md Section 29.8). |
 | `/api/proposal` | read | The named workspace must be granted and servable. `*` is refused, because a proposal lives in one workspace. |
 | `/api/explain?entity=`, `/api/observations?entity=` | read | The entity's own workspace must be granted and servable. An id outside the grants is answered exactly as an unknown id is (Section 3.4). |
+| `/api/common-types` | read | The most used entity types, names in rank order, that the viewer gives the type band's colors (design-system.md Section 29.9). Counted one granted workspace at a time over those the hub may serve; an unservable grant is skipped, since naming its types would answer what V4 refuses. |
 | `/api/observations?id=` | read | One observation by its id (design-system.md Section 29.7). Its own workspace must be granted and servable; an id outside the grants is answered exactly as an unknown id is (Section 3.4). |
 | `/api/events` | read | Filtered as Section 3.6 says. |
 | `/api/federation`, `/api/peer/share`, `/api/health`, `/api/clients` | refused | A node's own operations and state - its peers, its sharing boundary, its store's ledger, the AI apps on its own machine (onboarding.md O7). They are not a principal's. |

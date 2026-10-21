@@ -27,7 +27,7 @@
 > steps 41 to 45 are built: a confirmation that says what it confirms, a review that closes its loop,
 > a map that keeps the person's place, app pages that hold focus and a failure that says so, and one
 > concept with one name; and step 46, evidence where a decision is made and provenance to its end,
-> is built, as is step 46b, the app that wrote it.
+> is built, as is step 46b, the app that wrote it. Step 47, a map that explains itself, is specified.
 
 ## 1. Why this exists
 
@@ -527,8 +527,11 @@ gold too. A type keeps its slot, and so its hue, in
 both appearances. The map redraws when the appearance changes: its palette, its band, the regions'
 clouds and names, and the labels' halos.
 
-A type keeps its color in every view where no earlier name takes its hue. That is fewer views than
-the 48 generated slots kept, and the legend is what names a color. The landing's stage and the
+A type keeps one color in every view a page shows: the graph read names the store's sixteen most
+used types, which take the band's slots by the rule above, and any other type takes its preferred
+hue, which it may share; a page keeps the assignment it first made (D4, step 47). *(Revised by step
+47: a type kept its color only where no earlier name in the view took its hue, so a click on a
+workspace recolored a node.)* The legend is what names a color. The landing's stage and the
 principles page copy the band with the viewer's functions (U10, U14).
 
 **Relation kinds draw no color.** At rest a relation is the neutral line. On the active node's edges
@@ -1490,7 +1493,7 @@ social image.
 | **U13** | The principles page never draws an owed clause as working: every owed beat or branch names, in the registry's words, a clause the registry does not hold and is drawn in the owed style, every tension's owed tag is derived from the clauses it names, and the build fails otherwise (P5). |
 | **U14** | The principles page draws the viewer's marks with the viewer's meanings and every other mark as its own, every color a landing token; each demo and scene plays at most once on its own, can be stopped while it plays, and rests drawing nothing; under reduced motion each beat and demo state is its resting frame; every canvas is hidden from assistive technology, a caption is announced only after the reader acts, and without a script the page draws no empty frame (P2, P6, P18). |
 | **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each related row saying which, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count, or "20+" at the limit (P5, P19). |
-| **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a view gives up to eight types eight hues; a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
+| **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a type keeps one color in every view a page shows, and the store's sixteen most used types differ in hue or tone (D4); a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; a place keeps one name wherever it is reached; a state of the daemon keeps one word on every surface that shows it, from Section 9's state words; and no retired word of Section 9 reaches a page, the tray or Setup's sentences (P2). |
 | **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
 | **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a page that draws itself again keeps the control that had focus; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
@@ -1516,7 +1519,7 @@ social image.
 | **U40** | At 10,000 entities shaped like a store, the first picture comes within 3 seconds and a frame within 16.7 ms at the 95th percentile at rest, at any zoom and while the layout moves; at 50,000, within 10 seconds and 16.7 ms on WebGL; on the reference Mac in Chrome and WebKit, as the scale bench measures it. |
 | **U41** | Every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a path written by hand or a pasted copy of one, and a file both surfaces ship is the same bytes on both (Section 28). |
 | **U42** | A notice has one anatomy on every surface - its kind's icon, a title, at most a detail and one action, and a 28-pixel dismiss showing x; a success without an action leaves 4.5 seconds after it shows, counted only while the pointer is off it and focus outside it, and so does a success on the Review page whose act is also on its Decided item, and every other notice stays until dismissed or used; four at most; it enters over 200 ms and leaves over 120 ms, and under reduced motion does neither (Section 28, WCAG 2.2.1). |
-| **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. |
+| **U25** | A tooltip holds a name and its key and nothing a person needs to act: every tooltip the viewer and the app's pages write goes through one helper and is at most five words before its key, an interpolated name counting as one, and what a control does is said on the screen or behind a control that a keyboard and a finger reach. The map's hover card is a card, not a tooltip: it says the entity's facts and nothing to act on. |
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
 `every_text_token_reads_on_every_surface_by_apca` measures APCA 0.0.98G over the three `:root` blocks,
@@ -1874,6 +1877,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 46b. **The app that wrote it** [built] (Section 29.8; D13, onboarding.md O7): the MCP client's name recorded in
    a local table beside each attestation its session writes, store format 3, one name table in the
    core crate, said in the who-line and the map's activity, and kept off the wire and the read tier.
+47. **The map explains itself** (Section 29.9; U16 and Section 5 revised by D4, U25, D3, D5): the map's
+   key, counted chips with Only and Show all, counts of what is drawn, one color per type for the
+   store, trust toggles that dim, the hover card, and one word for the region.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -4046,3 +4052,109 @@ tests (a local session records, no tool or resource answers with it, only the br
 principals sets it), `the_read_tier_answers_only_within_the_grants` and its event stream in the
 read tier's tests (never answered, never streamed), and `the_app_names_are_one_table` in
 `crates/supragnosis-viz/tests/words.rs` (the app pages' and the shell's copies of the names).
+
+### 29.9 Step 47: the map explains itself
+
+**What was found.** Measured on the Graph page:
+- **Marks no key explains.** The filters panel keys the type fill and the trust ring only. The coral
+  "!" badge, a disc's size, the soft region clouds, the named outlines, the footprint's glow and the
+  pulse are explained nowhere on the page; a first reader takes the three labelled outlines for the
+  "10 regions" the status bar counts, which are the unlabelled clouds - two-member ones and ones
+  drawn under Regions: Off included.
+- **Counts that do not match the map.** The status bar and the canvas's name count the server's
+  rows, so with Concept hidden 17 of 20 entities are drawn while both still say 20. With the panel
+  closed nothing says a filter is on.
+- **A legend that cannot answer "how many" or "only this".** The type chips carry no count, though
+  Section 6 promises one; seeing one type alone takes a click on every other; bringing all back takes
+  one per hidden chip; an off chip is drawn at 38% opacity, which Section 4 says reads as disabled.
+- **A type's color changes with the scope.** Colors are assigned from the types of the loaded view,
+  so Technology is olive under All, green in billing and pink in atlas-web: a click on a workspace
+  chip recolors a node.
+- **Trust can be read but not filtered,** and the four entries look like the type chips above them,
+  which are buttons. "Agent has none" reads as "agents have no trust".
+- **Hover dims the whole map** at every entity the pointer crosses, the card leaves out the
+  workspace under All, and the pointer is a grab hand over an entity too.
+- **One object, several names:** region (the status bar), "Overloaded context" (Health), "Make it a
+  group", "group name (optional)" and "Name this group" beside them, and View's "Group by type",
+  whose line says "between groups".
+
+**Decisions.** The author approved D3 - keep "region", define it in the map's key, count what is
+drawn; D4 - assign each type its color once for the store; D5 - a trust filter dims, it does not
+hide.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U16 and Section 5 | "a view gives up to eight types eight hues"; "A type keeps its color in every view where no earlier name takes its hue"; past sixteen a color is shared | revised by D4: a type keeps one color in every view a page shows - the store's sixteen most used types take the band's slots by the same rule, in hue then tone, and any other type its preferred hue, which it may share; a view of rarer types can repeat a hue. The band, its measurements and `stableColors` are unchanged - the landing's and the principles page's copies of it stay byte-identical |
+| design-system.md Section 6 | "Counts per type are the legend entries' to show" | repays - each chip carries its count |
+| design-system.md Section 4 and U9 | An option that is off is drawn at full strength; surfaces, not lines | repays - an off chip keeps its text and its filled swatch at full strength, with Lucide's eye-off; no hollow swatch, which would read as the Boundaries outline |
+| U2 and U3 | Trust is the ring; the badge marks a contested entity and its count is never hidden | agrees - the key names both; a dimmed tier keeps its rings, and a contested entity's badge stays at full strength, counted whatever is dimmed |
+| U19 | Every control is reachable from the keyboard and big enough to press | agrees - Only is a button of its own beside each chip, shown with the chip's focus or hover and always under a coarse pointer, 28 pixels with its spacing |
+| U17 | One place, one name | repays - region for the cloud, "workspace outline" for the boundary, "Arrange by type" for View's layout |
+| U24 | List shows the entities the map draws, in its scope, filters and search | repays - List's head says the status bar's count |
+| U25 | A tooltip names; it explains nothing | revised: the hover card is a card, not a tooltip - Section 29.6 called it the map's tooltip - and says only the entity's facts |
+| U28 and U38 | Drawing never moves the layout; what is drawn does not depend on the zoom's cut | agrees - dimming, a hover and a filter redraw without a simulation step, and the counts are taken from the filters, never from the zoom |
+| U40 | The first picture comes within its budget | agrees - the store's most used types are a read of their own, made once per page beside the first graph read; it reads the entity rows only, never the log, so it does not outlast the graph read it runs beside |
+| P17, remote-viewer.md Sections 3.2 and 3.3, V3, V4 | The read tier answers only within the grants; `*` is refused whole while a grant is unservable | agrees - the most used types are their own read, `/api/common-types`, which the viewer's HTTP layer answers and MCP never carries; on the read tier it counts one granted workspace at a time, over those the hub may serve, and skips an unservable grant, since naming its types would answer what V4 refuses to; remote-viewer.md Section 3.2 gains its row |
+| P16 | A read answers alike | agrees - counted over the entity rows, the materialized projection, merged-away rows left out, ordered by count then name, names only; a row's kind is the projected one, which the map's converges with at the next replay; a page keeps the list it first received, so a later count does not move a color |
+| onboarding.md Section 7 | The empty workspace says "Nothing here yet. Ask a connected AI app to remember something, or pick a workspace that holds knowledge, each named with its count." | agrees - kept; only an unlisted name is said differently, on the local console |
+| design-system.md Section 29.6 | The map's activity and its hover words | agrees - unchanged; the card gains the workspace and the contested line |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The map's key.** Under Trust, a short "On the map" list names each mark the current view draws,
+  its mark drawn beside it, and only those: "Two sources disagree" (while one is contested; "- select
+  to decide" on the local console), "Larger: more relations", "Soft cloud: a region - entities said
+  together" (while a region is drawn), "Outline: a workspace" (Boundaries: Workspace) or "Outline:
+  the machine that signed" (Boundaries: Origin), "Glow: what agents used" (while the footprint shows)
+  and "Ring that grows and fades: just touched" (the pulse).
+- **Type and relation chips** carry their count in tabular figures, sorted by count then name once
+  per scope - a later read does not reorder them under the pointer. Beside each chip, an Only button
+  shows that type alone - shown while the chip or the button itself has the pointer or focus, and
+  always under a coarse pointer; Option-click on the chip does the same. A section with anything hidden heads
+  "Entity types 13 - 2 hidden" with Show all. An off chip keeps its text and swatch at full strength,
+  marks itself with eye-off, `aria-pressed` false. The legend lists the loaded scope's types, not the
+  store's.
+- **Counts say what is drawn.** The status bar, the canvas's name and List's head read "billing - 6 of
+  7 entities (1 type hidden), 5 relations, 2 regions": entities whose type is shown; relations whose
+  ends are shown and whose type is shown, whatever the Relations switch says; regions with three or
+  more shown members, whatever Regions draws. A dimmed tier is said too ("Agent dimmed"). While
+  anything is hidden or dimmed the status bar offers Show all, which clears both.
+- **One color per type.** A read of its own, `/api/common-types`, names the store's sixteen most used
+  entity types in rank order, names only - every workspace on the local console; on the read tier the
+  granted, servable ones, counted one at a time. The page asks once, beside its first graph read,
+  assigns those types the band's slots by the existing rule and every other type its preferred hue,
+  and keeps that assignment while it lives.
+- **Trust filters.** The four Trust entries become toggles with counts ("Human confirmed 2"); one with
+  nothing in the scope is disabled and says "none here". Switching one off dims its entities to the
+  strength a selection leaves the rest at - named `DIM_NODE`, `DIM_EDGE` and `DIM_REGION` - and keeps
+  them in the layout and in the counts. Where the scope has one tier there is nothing to filter: no
+  toggles, and the note "All here: Agent, so no entity is ringed" stays. Otherwise the note reads "A
+  ring is the strongest source behind an entity. Agent claims, the usual case, draw no ring.", and
+  the Agent swatch is a plain disc.
+- **The hover card**: the name; "Service in atlas-web" where the scope spans more than one workspace;
+  "2 relations - 1 source - Agent"; the description's first line; "Two sources disagree" when
+  contested. The pointer is a hand over an entity, a grab hand over the ground and grabbing while
+  dragging. Hover lights the entity's relations, names its neighbours and brings its regions to full
+  strength, without dimming the rest; dimming stays with a selection.
+- **One word for the cloud.** Health's "Overloaded context" is "Overloaded region"; "Make it a group",
+  "group name (optional)" and "Name this group" are "Name this region" and "region name (optional)";
+  the notice is "Region named - it is an entity now, related to its members". View's "Group by type"
+  is "Arrange by type", "with the relations between types kept"; Boundaries' line names "a workspace
+  outline".
+- **An unlisted workspace** in the address shows its chip, selected and muted, and on the local
+  console the empty map says "No workspace is called nothing-here." above Section 7's sentence; the
+  read tier keeps its refusal.
+
+**What this step does not do.**
+- It does not record what Name this region creates as a region: `/api/reify` still types it
+  "Context" (owed, with the type vocabulary).
+- It does not filter or sort List by trust (R2-06), move labels off rings, outlines and badges or
+  shrink the badge on a small node (R2-18); both are owed beyond this pass.
+- It does not move the minimap or make Fit leave room for it (R2-14), which step 50 takes with the
+  zoom keys (D7).
+- It does not hide the type and trust sections or disable zoom, Fit and List on an empty scope, or
+  reword the Log's empty line and the "default" scope's chip (R2-17, R1-09), which step 48 takes with
+  the first entry.
