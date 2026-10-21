@@ -34,31 +34,8 @@ on:
       # design_tokens.rs and landing.rs include_str! the landing's stylesheet, page and stage, so a
       # change under site/ alone can fail them - and merging one publishes the site (pages.yml).
       - "site/**"
+  # Every pull request: whether the gate has anything to read is the `changes` job's answer below.
   pull_request:
-    paths:
-      - "crates/**"
-      - "e2e/**"
-      - "app/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/rust.yml"
-      # The supply-chain job reads deny.toml, so an edit to the gate's own configuration has to run
-      # the gate. Without this an allow list could be widened, or an advisory ignored, and nothing
-      # would check the result until the next unrelated push happened to land.
-      - "deny.toml"
-      # principle_coverage.rs include_str!s the design documents (the principle registry reads
-      # principles.md, and the doc-claim sweep reads the rest), so editing one can fail the Rust
-      # gate - the gate has to run when they change, or the coupling is one-way again.
-      - "docs/*.md"
-      # manifest_consistency.rs include_str!s the Dockerfile to hold its toolchain pin at the
-      # declared floor, for the same reason - and server.json, to hold its version to the tag's.
-      - "deploy/docker/Dockerfile"
-      - "server.json"
-      # The fmt step's answer is rustfmt.toml's; changing the config can fail the check.
-      - "rustfmt.toml"
-      # design_tokens.rs and landing.rs include_str! the landing's stylesheet, page and stage, so a
-      # change under site/ alone can fail them - and merging one publishes the site (pages.yml).
-      - "site/**"
   # The gate can go red with no change to the tree: a locked crate is yanked, an advisory is
   # published against one, or `stable` moves and a new lint fires. All three happened between
   # v0.4.1 and v0.4.2. The deny job had been red on main since the v0.4.1 release commit itself, and
@@ -83,8 +60,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Whether this pull request touches what this workflow reads. The pull_request trigger above has
+  # no path filter, so every job below reports on every pull request: a job skipped by its `if`
+  # reports success, while a required check from a workflow that never started would hold a pull
+  # request that touches none of these paths forever. The patterns are the push filter's, so the two
+  # must move together. A push, a schedule or a manual run answers yes, and so does an error: a gate
+  # that cannot tell what changed runs.
+  changes:
+    name: what changed (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
+            echo "::warning::could not list the changed files, so the gate runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          run=false
+          while IFS= read -r f; do
+            case "$f" in
+              crates/*|e2e/*|app/*|Cargo.toml|Cargo.lock|.github/workflows/rust.yml|deny.toml) run=true ;;
+              deploy/docker/Dockerfile|server.json|rustfmt.toml|site/*) run=true ;;
+              docs/*/*) ;;
+              docs/*.md) run=true ;;
+            esac
+          done <<< "$files"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   check:
     name: clippy + tests
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,6 +158,8 @@ jobs:
   # own tests and lints ran in no workflow at all (the app's release build only builds it).
   macos:
     name: macOS - workspace and desktop app
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -193,6 +212,8 @@ jobs:
   # at that floor by the macos job above (it needs the platform webview toolchain).
   msrv:
     name: declared msrv builds
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -229,6 +250,8 @@ jobs:
   # download weights, so this holds the API boundary, not the embeddings themselves.
   fastembed:
     name: fastembed feature builds
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     # 24.04, not 22.04 like the rest: this job links test binaries against the static ONNX runtime,
     # which was compiled against GCC 13's libstdc++; 22.04's GCC 12 cannot link it. The release
     # builds the Linux binaries in a manylinux container for the same reason (release.yml).
@@ -275,6 +298,8 @@ jobs:
   # arriving through it is the same problem arriving somewhere the root check cannot see.
   supply-chain:
     name: cargo-deny
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

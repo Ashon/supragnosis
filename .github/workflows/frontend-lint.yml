@@ -11,11 +11,8 @@ on:
       - "crates/supragnosis-viz/assets/**"
       - "site/*.js"
       - ".github/workflows/frontend-lint.yml"
+  # Every pull request: whether the gate has anything to read is the `changes` job's answer below.
   pull_request:
-    paths:
-      - "crates/supragnosis-viz/assets/**"
-      - "site/*.js"
-      - ".github/workflows/frontend-lint.yml"
 
 # `npm ci` runs whatever install scripts the dependency tree declares, so this job executes third
 # party code by design. A read-only token means that code cannot reach back into the repository.
@@ -23,7 +20,46 @@ permissions:
   contents: read
 
 jobs:
+  # Whether this pull request touches what this workflow reads. The pull_request trigger above has
+  # no path filter, so every job below reports on every pull request: a job skipped by its `if`
+  # reports success, while a required check from a workflow that never started would hold a pull
+  # request that touches none of these paths forever. The patterns are the push filter's, so the two
+  # must move together. A push, a schedule or a manual run answers yes, and so does an error: a gate
+  # that cannot tell what changed runs.
+  changes:
+    name: what changed (frontend-lint)
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
+            echo "::warning::could not list the changed files, so the gate runs"
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          run=false
+          while IFS= read -r f; do
+            case "$f" in
+              crates/supragnosis-viz/assets/*|.github/workflows/frontend-lint.yml) run=true ;;
+              site/*/*) ;;
+              site/*.js) run=true ;;
+            esac
+          done <<< "$files"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   eslint:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
