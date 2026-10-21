@@ -545,9 +545,22 @@
   .contested .crow > .confirm { margin-left:auto; }
   .contested .confirm { padding:0 8px; font-size:var(--text-body); letter-spacing:.04em; border-radius:var(--r-control); flex:0 0 auto; min-height:24px; }
   /* The question a Confirm asks, in place, before anything is cast. */
-  .contested .cask { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:2px 0 4px; padding:6px 8px;
-                     border-radius:var(--r-control); background:var(--panel-2); color:var(--ink); font-size:var(--text-body); }
-  .contested .cacts { display:flex; gap:6px; margin-left:auto; }
+  /* The open question (Section 29.2): the act, the source it confirms in its own words, the rings it
+     moves, what Human confirmed means, the checks, then Confirm - which waits for all of it. */
+  .contested .cask { display:grid; gap:5px; margin:2px 0 4px; padding:8px 10px; border-radius:var(--r-control);
+                     background:var(--panel-2); color:var(--ink2); font-size:var(--text-body); }
+  .contested .cask .cq { color:var(--ink); font-weight:600; }
+  .contested .cask .csrc q { color:var(--ink); }
+  .contested .cask .cby, .contested .cask .cdef { color:var(--muted); font-size:var(--text-small); }
+  .contested .cask .cchk { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:var(--text-small); }
+  .contested .cask .cchk .i { width:14px; height:14px; color:var(--ok-ink); }
+  .contested .cask .cstate { color:var(--muted); font-size:var(--text-small); }
+  .contested .cask .cfrom { display:grid; gap:2px; }
+  .contested .cask .cfl { color:var(--muted); font-size:var(--text-small); }
+  .contested .cask .cfr { display:flex; align-items:flex-start; gap:6px; min-height:24px; cursor:pointer; }
+  .contested .cask .cfr input { margin-top:3px; }
+  .contested .cacts { display:flex; gap:6px; justify-content:flex-end; }
+  .contested .cacts .confirm[disabled] { opacity:0.5; cursor:not-allowed; }
   .contested .neither { margin-top:6px; font-size:var(--text-body); color:var(--ink2); }
   .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box; }
   .contested .neither .nhelp { margin-top:4px; color:var(--ink2); }
@@ -632,6 +645,15 @@
   #defsBox summary { cursor:pointer; list-style:none; min-height:24px; padding-block:4px; line-height:16px; box-sizing:border-box;
                      display:flex; align-items:center; gap:4px; }
   #defsBox summary::-webkit-details-marker { display:none; }
+  /* What each tier means, under the Trust legend (Section 29.2). */
+  #legendTrust .tmeans { flex-basis:100%; }
+  #legendTrust .tmeans summary { display:flex; align-items:center; gap:4px; cursor:pointer; list-style:none; min-height:24px;
+                                 color:var(--muted); font-size:var(--text-small); }
+  #legendTrust .tmeans summary::-webkit-details-marker { display:none; }
+  #legendTrust .tmeans summary .i { width:14px; height:14px; transition:transform 0.12s ease-out; }
+  #legendTrust .tmeans[open] summary .i { transform:rotate(90deg); }
+  #legendTrust .tmean { margin:3px 0 0 18px; color:var(--ink2); font-size:var(--text-small); }
+  #legendTrust .tmean b { color:var(--ink); font-weight:500; }
   #defsBox summary .i { width:14px; height:14px; color:var(--muted); transition:transform 0.12s ease-out; }
   #defsBox[open] summary .i { transform:rotate(90deg); }
   #settings .bad { color:var(--bad-ink); }

@@ -12,11 +12,11 @@ use supragnosis_core::{
     verdict_grant_ceiling, AssertionStore, Assertions, BeliefCandidate, Clock, EmbeddingProvider,
     Entity, EntityAssertion, Hlc, KnowledgeStore, Observation, ProposalEventAssertion,
     ProposalEventKind, Provenance, Relation, RelationAssertion, ResolutionPolicy, SearchHit,
-    SearchHitKind, StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TrustTier,
-    TypeDefAssertion, VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
+    SearchHitKind, StoreError, SystemClock, TierWeighted, Timestamp, TraverseHit, TypeDefAssertion,
+    VERDICT_SURFACE_AGENT, VERDICT_SURFACE_CONSOLE, VERDICT_SURFACE_PREFIX,
 };
 // Re-export the UI observability port/types - so mcp/viz can use them without depending on core directly.
-pub use supragnosis_core::{Event, EventEnvelope, EventSink, TypeTarget};
+pub use supragnosis_core::{Event, EventEnvelope, EventSink, TrustTier, TypeTarget};
 
 /// Ingest input (the domain input mapped from the transport DTO).
 pub struct ObserveInput {
@@ -616,6 +616,7 @@ fn uncomputable_diff(note: &str) -> BeliefDiff {
         tier_changes: Vec::new(),
         overturned: Vec::new(),
         rewired: Vec::new(),
+        reach: Vec::new(),
     }
 }
 
@@ -770,6 +771,73 @@ pub struct BeliefDiff {
     /// (proposal-workflow.md Section 5, item 5). Empty for every other kind.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rewired: Vec<RelationRewire>,
+    /// For the gate kinds: item 1, the assertions a claim promotion moves together (an observation is
+    /// one bundle - Section 3, kind 1), or for a demotion what leaves. One row per target whose tier
+    /// changes. The console reads it before a settle so a person sees a source's whole reach before
+    /// confirming one value from it (design-system.md Section 29.2). Empty for every other kind.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reach: Vec<ReachRow>,
+}
+
+/// One source a gate event moves, and what moves with it (design-system.md Section 29.2).
+#[derive(Serialize, Debug)]
+pub struct ReachRow {
+    pub observation: String,
+    /// What the observation said: its first [`REACH_SAID_CHARS`] characters.
+    pub said: String,
+    /// True when `said` is cut short - a cut answer says so (Principle 5).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+    /// The observation's own effective tier, before and after.
+    pub from: TrustTier,
+    pub to: TrustTier,
+    /// Every entity the observation supports - asserted, or named at a relation's end - with its ring
+    /// before and after: the tier of its best support (U2), which another source may hold where it
+    /// is, so `from == to` is a fact the console reports rather than an omission.
+    pub entities: Vec<EntityReach>,
+    /// The relations the observation states, as written.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<StatedRelation>,
+    /// The type definitions it carries - a define_type observation is one bundle too.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub type_defs: Vec<String>,
+}
+
+/// An entity a moved source supports, with its ring before and after.
+#[derive(Serialize, Debug)]
+pub struct EntityReach {
+    pub entity: String,
+    pub name: String,
+    pub from: TrustTier,
+    pub to: TrustTier,
+}
+
+/// A relation as a moved source states it.
+#[derive(Serialize, Debug)]
+pub struct StatedRelation {
+    pub from: String,
+    pub kind: String,
+    pub to: String,
+}
+
+/// How much of a moved source a reach row quotes.
+pub const REACH_SAID_CHARS: usize = 280;
+
+/// One act the console would cast through `/api/resolve`: a gate kind, its targets and the tier it
+/// asks for (design-system.md Section 29.2).
+#[derive(Debug, Clone)]
+pub struct GateAct {
+    pub kind: String,
+    pub targets: Vec<String>,
+    pub tier: TrustTier,
+}
+
+/// What the console's settle would do, computed and not cast: the acts' belief diff, applied in
+/// order after every merged event, and each act's blocking checks (P23, U4).
+#[derive(Serialize)]
+pub struct GatePreview {
+    pub belief_diff: BeliefDiff,
+    pub checks: Vec<CheckResult>,
 }
 
 /// One relation whose endpoint moves when a merge commits. `becomes_self_loop` is the consequence a
@@ -1326,6 +1394,19 @@ pub struct CandidateRow {
     pub base_tier: TrustTier,
     pub hlc: Hlc,
     pub observation: String,
+    /// Every observation that asserts this value - the sources a person may choose to confirm
+    /// (design-system.md Section 29.2) - ordered by the rule that picks `observation`: highest
+    /// effective tier, then smallest id, so the representative comes first.
+    pub observations: Vec<CandidateSource>,
+}
+
+/// One observation behind a candidate value: its effective tier, and its tier before any person's
+/// verdict, which a "Confirm instead" demotes it to.
+#[derive(Serialize, Debug, Clone)]
+pub struct CandidateSource {
+    pub observation: String,
+    pub trust_tier: TrustTier,
+    pub base_tier: TrustTier,
 }
 
 /// The resolution of one single-valued belief field (canonical_name or kind): the winning value,
@@ -2729,6 +2810,60 @@ impl Engine {
         Ok(Some(view))
     }
 
+    /// What the console's settle would do, without casting it (design-system.md Section 29.2): the
+    /// belief diff of `acts` applied in order after every merged gate event, at the console's grant -
+    /// the surface `/api/resolve` casts from - and each act's blocking checks. Writes nothing. A
+    /// "Confirm instead" is two acts (a demotion and a promotion), previewed together so the ask
+    /// reads their one result (P23: no merge without a diff that says what it does).
+    pub fn preview_gate(
+        &self,
+        workspace: Option<&str>,
+        acts: &[GateAct],
+    ) -> Result<GatePreview, StoreError> {
+        let cx = &ReadCtx::default();
+        let ceiling = verdict_grant_ceiling(Some(VERDICT_SURFACE_CONSOLE));
+        let events: Vec<(&[String], TrustTier, bool)> = acts
+            .iter()
+            .filter(|a| GATE_KINDS.contains(&a.kind.as_str()))
+            .map(|a| (a.targets.as_slice(), a.tier.min(ceiling), a.kind == "claim_promotion"))
+            .collect();
+        let belief_diff = if events.len() == acts.len() && !acts.is_empty() {
+            self.gate_diff(workspace, &events, cx)?
+        } else {
+            uncomputable_diff("the console previews claim_promotion and claim_demotion only")
+        };
+        let asserted = self.asserted_entity_ids(workspace, cx)?;
+        let decided = self.decided_merges(workspace, cx)?;
+        let mut checks: Vec<CheckResult> = Vec::new();
+        for act in acts {
+            let view = ProposalView {
+                id: String::new(),
+                kind: act.kind.clone(),
+                targets: act.targets.clone(),
+                into: None,
+                tier: Some(act.tier),
+                rationale: None,
+                affected_types: Vec::new(),
+                state: "open".into(),
+                verdicts: 0,
+                opened_at: 0,
+                proposer: String::new(),
+                self_attested: false,
+                belief_diff: None,
+                checks: Vec::new(),
+            };
+            for c in self.blocking_checks(workspace, &view, &asserted, &decided)? {
+                if !checks
+                    .iter()
+                    .any(|k| k.name == c.name && k.passed == c.passed && k.detail == c.detail)
+                {
+                    checks.push(c);
+                }
+            }
+        }
+        Ok(GatePreview { belief_diff, checks })
+    }
+
     /// Materialize the canon with and without this proposal's effects and report the difference
     /// (proposal-workflow.md Section 5). Only the gate grants differ between the two folds, so the
     /// "after" side is computed by the same code path a merged verdict would take - the diff cannot
@@ -3078,6 +3213,7 @@ impl Engine {
             tier_changes: Vec::new(),
             overturned,
             rewired,
+            reach: Vec::new(),
         })
     }
 
@@ -3138,6 +3274,7 @@ impl Engine {
                 tier_changes: Vec::new(),
                 overturned: Vec::new(),
                 rewired: Vec::new(),
+                reach: Vec::new(),
             });
         }
         let Some(tier) = view.tier else {
@@ -3147,26 +3284,44 @@ impl Engine {
                 tier_changes: Vec::new(),
                 overturned: Vec::new(),
                 rewired: Vec::new(),
+                reach: Vec::new(),
             });
         };
 
-        let fwd = self.merge_forwarding(workspace, cx)?;
-        let before_gates = self.gate_grants(workspace, cx)?;
         // The one difference between the two materializations: this proposal merged now, from the
         // console - the Review panel is where the diff is read - so its grant is what that surface
         // allows, applied after every merged event as a new verdict would be (R5).
         let grant = tier.min(verdict_grant_ceiling(Some(VERDICT_SURFACE_CONSOLE)));
         let promotion = view.kind == "claim_promotion";
-        let after_gates =
-            self.gate_tiers(workspace, cx, Some((view.targets.as_slice(), grant, promotion)))?;
+        self.gate_diff(workspace, &[(view.targets.as_slice(), grant, promotion)], cx)
+    }
 
+    /// The belief diff of gate events applied in order after every merged one (proposal-workflow.md
+    /// Section 5): each target's tier change, the beliefs overturned (items 2-3) and `reach`
+    /// (item 1) - what each moved source said and the rings it moves. Shared by a proposal under
+    /// review and the console's settle preview, so the two cannot describe different acts.
+    fn gate_diff(
+        &self,
+        workspace: Option<&str>,
+        events: &[(&[String], TrustTier, bool)],
+        cx: &ReadCtx,
+    ) -> Result<BeliefDiff, StoreError> {
+        let fwd = self.merge_forwarding(workspace, cx)?;
+        let before_gates = self.gate_grants(workspace, cx)?;
+        let after_gates = self.gate_tiers(workspace, cx, events)?;
+
+        let mut targets: Vec<&String> = events.iter().flat_map(|(t, _, _)| t.iter()).collect();
+        targets.sort();
+        targets.dedup();
         let mut tier_changes = Vec::new();
-        for t in &view.targets {
+        let mut moved = Vec::new();
+        for t in targets {
             if let Some(obs) = self.store.get_observation(t)? {
                 let (from, to) =
                     (effective_tier(&obs, &before_gates), effective_tier(&obs, &after_gates));
                 if from != to {
                     tier_changes.push(TierChange { observation: t.clone(), from, to });
+                    moved.push((obs, from, to));
                 }
             }
         }
@@ -3199,15 +3354,71 @@ impl Engine {
                 contested_after: ca,
             });
         }
+
+        // Item 1: every entity a moved source supports, with its ring (the tier of its best support,
+        // the same fold the graph reads) before and after.
+        let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
+        let mut reach = Vec::new();
+        for (obs, from, to) in moved {
+            let ws = obs.workspace().to_string();
+            let named = obs
+                .assertions
+                .entities
+                .iter()
+                .map(|e| &e.name)
+                .chain(obs.assertions.relations.iter().flat_map(|r| [&r.from, &r.to]));
+            let mut seen = BTreeSet::new();
+            let mut entities = Vec::new();
+            for name in named {
+                let id = canon(Entity::make_id(&ws, name));
+                if !seen.insert(id.clone()) {
+                    continue;
+                }
+                let display = self
+                    .store
+                    .get_entity(&id)?
+                    .map(|e| e.canonical_name)
+                    .unwrap_or_else(|| name.trim().to_string());
+                entities.push(EntityReach {
+                    from: before.tiers.get(&id).copied().unwrap_or_default(),
+                    to: after.tiers.get(&id).copied().unwrap_or_default(),
+                    entity: id,
+                    name: display,
+                });
+            }
+            entities.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
+            let cut = obs.content.chars().count() > REACH_SAID_CHARS;
+            reach.push(ReachRow {
+                observation: obs.id.clone(),
+                said: obs.content.chars().take(REACH_SAID_CHARS).collect(),
+                cut,
+                from,
+                to,
+                entities,
+                relations: obs
+                    .assertions
+                    .relations
+                    .iter()
+                    .map(|r| StatedRelation {
+                        from: r.from.clone(),
+                        kind: r.kind.clone(),
+                        to: r.to.clone(),
+                    })
+                    .collect(),
+                type_defs: obs.assertions.type_defs.iter().map(|d| d.name.clone()).collect(),
+            });
+        }
         // Deterministic order (Principle 16): the diff is a read surface like any other.
         overturned.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.entity.cmp(&b.entity)));
         tier_changes.sort_by(|a, b| a.observation.cmp(&b.observation));
+        reach.sort_by(|a, b| a.observation.cmp(&b.observation));
         Ok(BeliefDiff {
             computable: true,
             note: None,
             tier_changes,
             overturned,
             rewired: Vec::new(),
+            reach,
         })
     }
 
@@ -3386,18 +3597,20 @@ impl Engine {
         workspace: Option<&str>,
         cx: &ReadCtx,
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
-        self.gate_tiers(workspace, cx, None)
+        self.gate_tiers(workspace, cx, &[])
     }
 
-    /// [`Engine::gate_grants`], with one hypothetical event applied after every merged one: the
-    /// belief diff's "what merging this proposal would do" (`extra` = its targets, its grant, and
-    /// whether it is a promotion). The diff and the fold share this, so what a reviewer is shown is
-    /// what the fold will do (P23: no merge without a diff that says so).
+    /// [`Engine::gate_grants`], with hypothetical events applied in order after every merged one:
+    /// the belief diff's "what merging this would do" (`extra` = each event's targets, its grant, and
+    /// whether it is a promotion). One event for a proposal under review; two for the console's
+    /// "Confirm instead" and its Undo, which cast a demotion and a promotion as one act
+    /// (design-system.md Section 29.2). The diff and the fold share this, so what a reviewer is shown
+    /// is what the fold will do (P23: no merge without a diff that says so).
     fn gate_tiers(
         &self,
         workspace: Option<&str>,
         cx: &ReadCtx,
-        extra: Option<(&[String], TrustTier, bool)>,
+        extra: &[(&[String], TrustTier, bool)],
     ) -> Result<HashMap<String, TrustTier>, StoreError> {
         // proposal id -> (targets, requested tier, is a promotion); from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier, bool)> = HashMap::new();
@@ -3485,8 +3698,8 @@ impl Engine {
                 ));
             }
         }
-        if let Some((targets, _, _)) = extra {
-            for target in targets {
+        for (targets, _, _) in extra {
+            for target in targets.iter() {
                 events.entry(target.clone()).or_default();
             }
         }
@@ -3514,9 +3727,9 @@ impl Engine {
                 tier = apply(tier, *grant, *promotion);
             }
             let mut touched = !list.is_empty();
-            if let Some((targets, grant, promotion)) = extra {
+            for (targets, grant, promotion) in extra {
                 if targets.contains(&obs.id) {
-                    tier = apply(tier, grant, promotion);
+                    tier = apply(tier, *grant, *promotion);
                     touched = true;
                 }
             }
@@ -5162,15 +5375,44 @@ fn candidate_rows(
             *e = (c.tier, c.observation.as_str(), &c.hlc);
         }
     }
+    // value -> every asserting observation at its effective tier (one observation can name a value
+    // twice, as an entity and at a relation's end - it is one source).
+    let mut sources: BTreeMap<&str, BTreeMap<&str, TrustTier>> = BTreeMap::new();
+    for c in cands {
+        let e = sources
+            .entry(c.value.as_str())
+            .or_default()
+            .entry(c.observation.as_str())
+            .or_insert(c.tier);
+        *e = (*e).max(c.tier);
+    }
     let mut rows: Vec<CandidateRow> = best
         .into_iter()
-        .map(|(value, (tier, obs, hlc))| CandidateRow {
-            value: value.to_string(),
-            role: if value == winner { "winner" } else { loser_role },
-            trust_tier: tier,
-            base_tier: bases.get(obs).copied().unwrap_or(tier),
-            hlc: hlc.clone(),
-            observation: obs.to_string(),
+        .map(|(value, (tier, obs, hlc))| {
+            let mut observations: Vec<CandidateSource> = sources
+                .get(value)
+                .map(|m| {
+                    m.iter()
+                        .map(|(o, t)| CandidateSource {
+                            observation: o.to_string(),
+                            trust_tier: *t,
+                            base_tier: bases.get(*o).copied().unwrap_or(*t),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            observations.sort_by(|a, b| {
+                b.trust_tier.cmp(&a.trust_tier).then_with(|| a.observation.cmp(&b.observation))
+            });
+            CandidateRow {
+                value: value.to_string(),
+                role: if value == winner { "winner" } else { loser_role },
+                trust_tier: tier,
+                base_tier: bases.get(obs).copied().unwrap_or(tier),
+                hlc: hlc.clone(),
+                observation: obs.to_string(),
+                observations,
+            }
         })
         .collect();
     // Winner first, then highest tier, then value - deterministic.

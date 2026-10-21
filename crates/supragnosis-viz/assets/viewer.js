@@ -547,6 +547,7 @@ function heardBack() {
 }
 
 function applyGraph(g) {
+  graphGen++;
   const seen = new Set();
   let added = false, restored = 0;
   if (layoutFresh) loadLayout();
@@ -1016,6 +1017,13 @@ function activeSet() {
 // value. When the loaded scope has one tier the map draws no ring and the legend says which, as the
 // inspector's scope line does; otherwise every node shows its tier and Agent, the default, is no ring.
 const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
+// What each tier means, said of a source (Section 29.2); under the Trust legend and in the ask.
+const TIER_MEANS = {
+  human_confirmed: "A person confirmed it in this app, on one of your machines. No agent's claim outranks it; a later review can lower it.",
+  host_signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an agent accepted.",
+  agent_extracted: "What an AI app writes, and what this app writes for you, until a review raises or lowers it.",
+  unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it so.",
+};
 // A tier as a person reads it: the Trust legend's name, never the identifier (Section 9, U17). A tier
 // this page does not know keeps its identifier, so a new one still says something.
 function tierName(t) { return TIER_NAME[String(t)] || String(t); }
@@ -1035,6 +1043,7 @@ function noteTrustAndContest() {
     pill.textContent = contestedCount + " contested";
   }
 }
+let trustMeansOpen = false;   // the disclosure survives the legend's redraw
 function renderTrustLegend() {
   const host = document.getElementById("legendTrust");
   if (!host) return;
@@ -1057,6 +1066,23 @@ function renderTrustLegend() {
     ? "All here: " + TIER_NAME[trustUniform] + ", so no node is ringed."
     : "A ring is the highest trust among the sources that support a node. Agent has none.";
   host.appendChild(note);
+  // What each tier means, where trust is decided (Section 29.2) - a tooltip cannot carry it (U25).
+  const means = document.createElement("details");
+  means.className = "tmeans";
+  means.open = trustMeansOpen;
+  const sum = document.createElement("summary");
+  sum.append(icon("chevron-right"), document.createTextNode("What these mean"));
+  means.appendChild(sum);
+  for (const t of ["human_confirmed", "host_signed", "agent_extracted", "unverified"]) {
+    const line = document.createElement("div");
+    line.className = "tmean";
+    const b = document.createElement("b");
+    b.textContent = TIER_NAME[t];
+    line.append(b, document.createTextNode(" " + TIER_MEANS[t]));
+    means.appendChild(line);
+  }
+  means.addEventListener("toggle", () => { trustMeansOpen = means.open; });
+  host.appendChild(means);
 }
 // With the left panel closed the Trust legend is out of sight, so the status bar says what it would
 // when the map draws no ring: the scope's one tier (U2).
@@ -1341,7 +1367,7 @@ function toast(kind, title, detail, action) {
   if (detail) { const d = document.createElement("div"); d.className = "td"; d.textContent = detail; body.appendChild(d); }
   if (action && action.note) { const n = document.createElement("div"); n.className = "td"; n.textContent = action.note; body.appendChild(n); }
   el.append(icon(NOTICE_ICON[kind] || "info"), body);
-  if (action) {
+  if (action && action.run) {
     const act = document.createElement("button");
     act.type = "button"; act.className = "tact"; act.textContent = action.label;
     act.onclick = () => { dismiss(el); action.run(); };
@@ -1389,6 +1415,8 @@ async function consoleWrite(path, query, said, action) {
     toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
     return null;
   }
+  // An action may be built once the write has landed - Undo reads its own preview (Section 29.2).
+  if (typeof action === "function") action = await action();
   toast("ok", said, null, action);
   return body || {};
 }
@@ -2606,53 +2634,193 @@ function connectEvents() {
   } catch (_) { /* EventSource unsupported - works with polling alone */ }
 }
 
-// --- Settling a contested value (docs/design-system.md Section 7, U18) ---------------------------
+// --- Settling a contested value (docs/design-system.md Sections 7 and 29.2, U18) -----------------
 // Confirming a value is the promotion /api/resolve casts (resolution.md Section 4.2): a claim_promotion
-// of the asserting observation with the Console merge verdict, both gated appended events - the
-// human console is the only surface that grants human_confirmed (Section 6). Every value offers the
-// same act at the same weight; it asks once, in place, saying what it will do; and the notice that
-// follows offers Undo, the demotion that reverses it, so the log keeps both (P3). When the shown
-// value is already Human confirmed, confirming another would only tie them again, so that act is
-// "Confirm instead": the shown value is demoted to its tier before any verdict, and the chosen one
-// confirmed. The console asserts no value of its own - "Neither is right" hands an agent a sentence.
-let settleAsk = null;       // the observation whose question is open; survives the poll's redraw
-let settleNeither = null;   // the block whose "Neither is right" is open; survives it too
+// of ONE source - an observation that asserts the value - with the Console merge verdict, the only
+// surface that grants human_confirmed (Section 6). A claim promotion moves its source's whole bundle,
+// so the ask names the source in its own words and every entity whose ring the act moves with it,
+// read from the engine's diff and checks before anything is cast (/api/resolve/preview - P23: no
+// merge without a diff that says what it does). Every value offers the same act at the same weight,
+// and when several sources assert a value the person chooses which one. When the shown value is
+// already Human confirmed the act is "Confirm instead": the shown value's source is demoted to its
+// tier before any verdict and the chosen one confirmed, previewed as one result. The notice that
+// follows offers Undo - the reverse acts, with what they move back read from their own preview -
+// and the log keeps every event (P3). The console asserts no value of its own: "Neither is right"
+// hands an agent a sentence.
+let settleAsk = null;       // the row whose question is open (its representative source); survives the poll's redraw
+let settleCtx = null;       // that row's belief and value
+let settleFrom = null;      // the source chosen for that question
+let settleView = null;      // what was read for it: { key, from, gen, state, preview, sources, supporting, curBase, why }
+let settleRedraw = null;    // draws the open question's block again
+let settleNeither = null;   // the block whose "Neither is right" is open; survives the redraw too
+let graphGen = 0;           // bumped when a graph arrives: an open question reads its diff again when the log moves
+const TIER_ORDER = ["unverified", "agent_extracted", "host_signed", "human_confirmed"];
+// The checks a settle runs (proposal-workflow.md Section 6), in words (U17).
+const CHECK_WORDS = { "referential integrity": "the source is in this log", "tier stated": "the tier is stated" };
 function settleQuery(obs, tier, kind) {
   const ws = wsInput.value.trim();
   return "?observation=" + encodeURIComponent(obs) + "&tier=" + encodeURIComponent(tier)
     + (kind ? "&kind=" + kind : "") + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
 }
-// What an observation's tier is without any person's verdict, from /api/explain's base_tier.
-async function baseTierOf(entity, obs) {
-  try {
-    const r = await fetch("/api/explain?entity=" + encodeURIComponent(entity), { cache: "no-store" });
-    if (!r.ok) return null;
-    const ex = await r.json();
-    for (const f of ex.fields || []) for (const c of f.candidates || []) if (c.observation === obs) return c.base_tier;
-  } catch (_) { /* the caller says nothing was changed */ }
-  return null;
+// One or two acts, as /api/resolve/preview takes them: the second with the suffix 2.
+function previewQuery(acts) {
+  const ws = wsInput.value.trim();
+  return "?" + acts.map((a, i) => {
+    const k = i ? "2" : "";
+    return "observation" + k + "=" + encodeURIComponent(a.obs) + "&tier" + k + "=" + encodeURIComponent(a.tier)
+      + "&kind" + k + "=" + (a.kind || "claim_promotion");
+  }).join("&") + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
 }
-// a: the chosen value - { obs, was, value }, the belief - { name, field, entity }, and for "Confirm
-// instead" the shown value it replaces - { instead, curObs, curValue }.
-async function settleValue(a) {
-  if (a.instead) {
-    const base = await baseTierOf(a.entity, a.curObs);
-    if (!base) { toast("bad", "Could not read " + a.curValue + "'s tier", "Nothing was changed."); return; }
-    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, base, "claim_demotion"),
-      a.curValue + " goes back to " + tierName(base))) return;
+async function readPreview(acts) {
+  try {
+    const r = await fetch("/api/resolve/preview" + previewQuery(acts), { cache: "no-store" });
+    const body = await r.json().catch(() => null);
+    if (!r.ok || !body) return { why: (body && body.error) || "What this act changes could not be read." };
+    if (!body.belief_diff || !body.belief_diff.computable) return { why: (body.belief_diff && body.belief_diff.note) || "What this act changes could not be computed." };
+    return { preview: body };
+  } catch (_) { return { why: "What this act changes could not be read - is the daemon running?" }; }
+}
+// The entities whose ring an act moves, the belief's own entity aside, each once - grouped by where
+// they land: "With it, Nightly export and Warehouse become Human confirmed."
+function ringMoves(diff, skip) {
+  const moved = new Map();
+  for (const r of (diff && diff.reach) || []) for (const e of r.entities || []) {
+    if (e.from !== e.to && e.entity !== skip) moved.set(e.entity, e);
   }
-  const undo = {
-    label: "Undo",
-    note: "Undo keeps " + a.value + " at " + tierName(a.was) + " until someone confirms it again.",
-    run: async () => {
-      if (!await consoleWrite("/api/resolve", settleQuery(a.obs, a.was, "claim_demotion"),
-        "Undone - " + a.value + " is " + tierName(a.was) + " again")) return;
-      if (a.instead) await consoleWrite("/api/resolve", settleQuery(a.curObs, "human_confirmed"),
-        a.curValue + " is Human confirmed again");
-      await poll();
-    },
+  const byTo = new Map();
+  for (const e of moved.values()) { if (!byTo.has(e.to)) byTo.set(e.to, []); byTo.get(e.to).push(e.name); }
+  return [...byTo.entries()].map(([to, names]) => {
+    const shown = nameList(names);
+    const many = names.length > 1;
+    const verb = TIER_ORDER.indexOf(to) === 3 ? (many ? " become " : " becomes ") : (many ? " go back to " : " goes back to ");
+    return shown + verb + tierName(to);
+  });
+}
+// "Nightly export and Warehouse", "A, B and C", "A, B, C, D and 3 more".
+function nameList(names) {
+  const shown = names.slice(0, 4), more = names.length - shown.length;
+  if (more > 0) return shown.join(", ") + " and " + more + " more";
+  return shown.length > 1 ? shown.slice(0, -1).join(", ") + " and " + shown[shown.length - 1] : shown.join("");
+}
+// The question's sources and its diff. Reads /api/explain for the value's sources (and the shown
+// value's tier before any verdict, which "Confirm instead" demotes its source to), then the preview.
+async function readSettle() {
+  const ctx = settleCtx, key = settleAsk, from = settleFrom, gen = graphGen;
+  if (!ctx) return;
+  settleView = { key, from, gen, state: "reading" };
+  if (settleRedraw) settleRedraw();
+  let sources = [{ observation: from }], supporting = new Map(), curBase = null, why = null;
+  if (ctx.entity) {
+    try {
+      const r = await fetch("/api/explain?entity=" + encodeURIComponent(ctx.entity), { cache: "no-store" });
+      if (r.ok) {
+        const ex = await r.json();
+        for (const o of ex.supporting || []) supporting.set(o.id, o);
+        const kind = (ex.fields || []).find(f => f.field === "kind");
+        const cands = (kind && kind.candidates) || [];
+        const mine = cands.find(c => c.value === ctx.value);
+        if (mine && (mine.observations || []).length) sources = mine.observations;
+        const cur = cands.find(c => c.value === ctx.curValue);
+        const cs = cur && (cur.observations || []).find(x => x.observation === ctx.curObs);
+        if (cs) curBase = cs.base_tier;
+      }
+    } catch (_) { /* the preview below still answers, and says when it cannot */ }
+  }
+  let preview = null;
+  if (ctx.instead && !curBase) why = "Could not read the tier " + ctx.curValue + " had before any verdict, so nothing would be changed.";
+  else {
+    const acts = ctx.instead
+      ? [{ obs: ctx.curObs, tier: curBase, kind: "claim_demotion" }, { obs: from, tier: "human_confirmed" }]
+      : [{ obs: from, tier: "human_confirmed" }];
+    const got = await readPreview(acts);
+    preview = got.preview || null; why = got.why || null;
+  }
+  if (settleAsk !== key || settleFrom !== from) return;   // the question moved on while this was read
+  settleView = { key, from, gen, state: preview ? "ok" : "err", preview, sources, supporting, curBase, why };
+  if (settleRedraw) settleRedraw();
+}
+// Who said a source and when, and its first words, from the explain read.
+function sourceWho(v, obs) {
+  const o = v && v.supporting && v.supporting.get(obs);
+  const a = o && (o.attestations || [])[0];
+  return a ? [writerOf(a), obsWhen(a.observed_at)].filter(Boolean).join(" - ") : "";
+}
+function firstWords(v, obs) {
+  const o = v && v.supporting && v.supporting.get(obs);
+  const t = o ? String(o.content || "").trim() : "";
+  return t.length > 48 ? t.slice(0, 48).trimEnd() + "..." : t;
+}
+// The open question: the act, the source it confirms in its own words, the rings it moves, what else
+// the source states, what Human confirmed means, the checks, and Confirm - which acts only once all
+// of that has been read (U18, U19: a waiting or refused Confirm says why beside it).
+function askHtml(ctx) {
+  const v = settleView && settleView.key === ctx.key ? settleView : null;
+  const q = ctx.instead ? "Confirm " + ctx.value + " instead?" : "Confirm " + ctx.value + " as " + ctx.name + "'s " + ctx.field + "?";
+  const sid = "cst-" + String(ctx.key).slice(0, 12);
+  const parts = [html`<div class="cq">${q}</div>`];
+  if (v && v.sources && v.sources.length > 1) {
+    parts.push(html`<div class="cfrom" role="radiogroup" aria-label="Confirm from"><span class="cfl">Confirm from</span>${v.sources.map(src => html`<label class="cfr"><input type="radio" name="${"cfrom-" + ctx.key}" value="${src.observation}" data-settle="from"${src.observation === settleFrom ? html` checked` : ""}><span>${[sourceWho(v, src.observation) || tierName(src.trust_tier), firstWords(v, src.observation) ? "\"" + firstWords(v, src.observation) + "\"" : ""].filter(Boolean).join(" - ")}</span></label>`)}</div>`);
+  }
+  let can = false, state = "Reading what this confirms...";
+  if (v && v.state === "err") state = v.why || "What this act changes could not be read.";
+  if (v && v.state === "ok") {
+    const d = v.preview.belief_diff, rows = d.reach || [];
+    const mine = rows.find(r => r.observation === v.from);
+    const theirs = ctx.instead ? rows.find(r => r.observation === ctx.curObs) : null;
+    const fails = (v.preview.checks || []).filter(c => !c.passed);
+    if (!mine) state = "This source is already " + tierName("human_confirmed") + ", so confirming it changes nothing.";
+    else {
+      parts.push(html`<div class="csrc">This confirms one source: <q>${mine.said.trimEnd()}${mine.cut ? "..." : ""}</q>${mine.cut ? html`<span class="sr-only"> (shortened)</span>` : ""} <span class="cby">${sourceWho(v, v.from)}</span></div>`);
+      if (theirs) parts.push(html`<div class="creach">${ctx.curValue}'s source goes back to ${tierName(theirs.to)}.</div>`);
+      for (const line of ringMoves(d, ctx.entity)) parts.push(html`<div class="creach">With it, ${line}.</div>`);
+      const rel = (mine.relations || []).length, defs = mine.type_defs || [];
+      if (rel) parts.push(html`<div class="creach">It also states ${rel} relation${rel === 1 ? "" : "s"}.</div>`);
+      if (defs.length) parts.push(html`<div class="creach">It also defines ${defs.length} type${defs.length === 1 ? "" : "s"}: ${nameList(defs)}.</div>`);
+      parts.push(html`<div class="cdef">${tierName("human_confirmed")}: ${TIER_MEANS.human_confirmed}</div>`);
+      const words = c => CHECK_WORDS[c.name] || c.name;
+      if (fails.length) state = "Blocked: " + fails.map(c => words(c) + " - " + c.detail).join("; ");
+      else {
+        parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>Checks pass: ${[...new Set((v.preview.checks || []).map(words))].join(", ")}</div>`);
+        can = true;
+      }
+    }
+  }
+  return html`<div class="cask" role="group" aria-label="${q}">${parts}${
+    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-settle="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>Confirm</button><button type="button" class="quiet" data-settle="no">Cancel</button></span></div>`;
+}
+// Casts what the question previewed: for "Confirm instead" the shown value's source goes back to its
+// tier before any verdict first, then the chosen source is confirmed. Undo is built from the reverse
+// acts' own preview, each source returning to the tier the diff says it had before (Section 29.2).
+async function settleValue(a) {
+  const v = a.view, d = v.preview.belief_diff;
+  const before = obs => ((d.tier_changes || []).find(t => t.observation === obs) || {}).from;
+  const fromWas = before(a.from) || "agent_extracted";
+  const curWas = a.instead ? before(a.curObs) : null;
+  if (a.instead) {
+    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, v.curBase, "claim_demotion"),
+      a.curValue + "'s source goes back to " + tierName(v.curBase))) return;
+  }
+  const reverse = a.instead && curWas
+    ? [{ obs: a.from, tier: fromWas, kind: "claim_demotion" }, { obs: a.curObs, tier: curWas, kind: "claim_promotion" }]
+    : [{ obs: a.from, tier: fromWas, kind: "claim_demotion" }];
+  const undo = async () => {
+    const got = await readPreview(reverse);
+    if (!got.preview) return { note: "Undo is not offered: what it would move back could not be read." };
+    const moves = ringMoves(got.preview.belief_diff, a.entity);
+    return {
+      label: "Undo",
+      note: "Undo returns this source to " + tierName(fromWas) + " and keeps it there until someone confirms it again."
+        + (moves.length ? " " + moves.join(". ") + "." : ""),
+      run: async () => {
+        if (!await consoleWrite("/api/resolve", settleQuery(a.from, fromWas, "claim_demotion"),
+          "Undone - the source is " + tierName(fromWas) + " again")) return;
+        if (a.instead && curWas) await consoleWrite("/api/resolve", settleQuery(a.curObs, curWas),
+          a.curValue + " is " + tierName(curWas) + " again");
+        await poll();
+      },
+    };
   };
-  await consoleWrite("/api/resolve", settleQuery(a.obs, "human_confirmed"),
+  await consoleWrite("/api/resolve", settleQuery(a.from, "human_confirmed"),
     "Confirmed " + a.value + " as " + a.name + "'s " + a.field, undo);
   await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
 }
@@ -2693,26 +2861,27 @@ function contestedRows(o) {
     : o.contested
       ? "Two sources disagree on " + o.name + "'s " + o.field + ". Both are " + tierName(tied) + " claims, so the newer one is shown until you decide."
       : committed ? "The Human confirmed value is shown." : "The value with the higher trust is shown.";
-  const values = [o.current, ...comps.map(c => c.value)];
   const row = (value, tier, obs, shown) => {
     const instead = committed && !shown;
+    const ctx = { key: obs, obs, value, name: o.name, field: o.field, entity: o.entity || "",
+      instead, curObs: o.curObs, curValue: o.current };
     const act = local && obs && !(committed && shown) && !(instead && !o.entity)
-      ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}">${instead ? "Confirm instead" : "Confirm"}</button>`
+      ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}" data-ctx="${JSON.stringify(ctx)}">${instead ? "Confirm instead" : "Confirm"}</button>`
       : "";
     const asking = local && settleAsk === obs && act;
-    const others = values.filter(v => v !== value);
-    const ctx = { obs, was: tier || "agent_extracted", value, name: o.name, field: o.field, entity: o.entity || "",
-      instead, curObs: o.curObs, curValue: o.current };
-    const question = instead
-      ? "Confirm " + value + " instead? " + o.current + " goes back to its tier before any verdict, and " + value + " becomes Human confirmed."
-      : "Confirm " + value + "? It becomes Human confirmed, and " + others.join(", ") + (others.length > 1 ? " stay" : " stays") + " listed.";
+    // An open question whose diff was read before the log last moved reads it again (I7/I12 are owed,
+    // so this narrows the gap between preview and cast; Section 29.2).
+    if (asking && settleView && settleView.key === obs && settleView.state !== "reading" && settleView.gen !== graphGen) {
+      settleView.gen = graphGen;
+      setTimeout(readSettle, 0);
+    }
     return html`${[
       html`<div class="crow${shown ? " cur" : ""}"><span class="cv">${value}</span>`,
       shown ? html`<span class="curtag">shown</span>` : "",
       tier ? html`<span class="ctier">${tierName(tier)}</span>` : "",
       html`<span class="cwho" data-who="${obs || ""}"></span>`,
       act, html`</div>`,
-      asking ? html`<div class="cask" role="group" aria-label="${"Confirm " + value}"><span>${question}</span><span class="cacts"><button type="button" class="confirm" data-settle="yes" data-ctx="${JSON.stringify(ctx)}">Confirm</button><button type="button" class="quiet" data-settle="no">Cancel</button></span></div>` : ""]}`;
+      asking ? askHtml(ctx) : ""]}`;
   };
   const say = "Record the correct " + o.field + " of " + o.name + " in supragnosis.";
   const key = o.name + "|" + o.field;
@@ -2723,12 +2892,28 @@ function contestedRows(o) {
 // The block's acts, wired after each draw; `redraw` draws the block's surface again.
 function wireSettle(host, redraw) {
   host.querySelectorAll("[data-settle]").forEach(b => {
+    const k = b.dataset.settle;
+    if (k === "from") {
+      b.onchange = () => { if (!b.checked) return; settleFrom = b.value; readSettle(); };
+      return;
+    }
     b.onclick = async ev => {
       ev.stopPropagation();
-      const k = b.dataset.settle;
-      if (k === "ask") { settleAsk = b.dataset.obs; redraw(); const yes = host.querySelector('[data-settle="yes"]'); if (yes) yes.focus(); }
-      else if (k === "no") { const obs = settleAsk; settleAsk = null; redraw(); const back = [...host.querySelectorAll('[data-settle="ask"]')].find(x => x.dataset.obs === obs); if (back) back.focus(); }
-      else if (k === "yes") { settleAsk = null; const a = JSON.parse(b.dataset.ctx); redraw(); await settleValue(a); }
+      if (k === "ask") {
+        settleCtx = JSON.parse(b.dataset.ctx); settleAsk = settleCtx.key; settleFrom = settleCtx.obs;
+        settleView = null; settleRedraw = redraw;
+        redraw();
+        const no = host.querySelector('[data-settle="no"]'); if (no) no.focus();
+        await readSettle();
+        const yes = host.querySelector('[data-settle="yes"]:not([disabled])'); if (yes) yes.focus();
+      }
+      else if (k === "no") { const obs = settleAsk; settleAsk = null; settleCtx = null; settleView = null; redraw(); const back = [...host.querySelectorAll('[data-settle="ask"]')].find(x => x.dataset.obs === obs); if (back) back.focus(); }
+      else if (k === "yes") {
+        if (!settleView || settleView.state !== "ok") return;
+        const a = { ...settleCtx, from: settleFrom, view: settleView };
+        settleAsk = null; settleCtx = null; settleView = null; redraw();
+        await settleValue(a);
+      }
       else if (k === "copy") {
         try { await window.navigator.clipboard.writeText(b.dataset.text); toast("ok", "Copied - give it to an agent"); }
         catch (_) { toast("bad", "Could not copy", b.dataset.text); }

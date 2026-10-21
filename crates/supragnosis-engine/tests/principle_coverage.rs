@@ -699,11 +699,14 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (18, &[c(
-        "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast, is undone by the reverse gated events the log keeps, and is filed in the workspace of the observation it changes",
-        // settle.rs reads the block and the acts; http.rs casts them over the socket.
+        "settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what it does before it is cast - the source it moves, every entity whose ring it moves and what else that source states, from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source, is undone by the reverse gated events the log keeps, and is filed in the workspace of the observation it changes",
+        // settle.rs reads the block, the ask and the acts; http.rs casts them over the socket and reads
+        // the preview's reach, sources and two-act diff (design-system.md Section 29.2).
         Evidence::Scenario(&[
             "settling_a_contested_value_says_why_asks_once_and_can_be_undone",
+            "a_confirmation_says_what_it_confirms",
             "viz_resolve_files_in_the_observations_workspace_and_can_be_undone",
+            "a_settle_preview_names_the_source_and_its_reach",
         ]),
     )]),
     (19, &[c(

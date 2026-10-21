@@ -415,6 +415,8 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // verdict - both are gated, appended events (propose + review), never a direct write. Solo
         // self-approval is the P23 exception; the Console surface is what permits human_confirmed.
         "/api/resolve" => resolve_response(engine, query),
+        // What a settle would do, without casting it (design-system.md Section 29.2).
+        "/api/resolve/preview" => resolve_preview_response(engine, query),
         // Hyperedge promotion path (Principle 11): reify a co-occurrence context into a group
         // entity + member_of relations, as an ordinary lineage-bearing observation (free ingest,
         // P22 - trust promotion of the reified claim goes through the gate afterwards).
@@ -856,6 +858,95 @@ fn review_response(engine: &Engine, query: &str) -> Response {
 /// The act is filed in the workspace of the observations it changes, whatever scope the console
 /// shows: from All the query says `*`, which would file it in the node default, where the fold that
 /// reads the observations' own workspace never sees it.
+/// The settle preview (design-system.md Section 29.2): the query `/api/resolve` takes - the
+/// observations, the tier and the kind - and once more with the suffix `2` for a second act, which a
+/// "Confirm instead" and its Undo need. Answers the acts' belief diff and checks, applied in order at
+/// the console's grant, and writes nothing. Observations from two workspaces are refused, as
+/// `/api/resolve` refuses them, since the fold that would read the act reads one workspace.
+fn resolve_preview_response(engine: &Engine, query: &str) -> Response {
+    let bad = |m: String| Response {
+        status: "400 Bad Request",
+        content_type: "application/json",
+        body: err_body(&m),
+    };
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+    };
+    let mut acts = Vec::new();
+    for suffix in ["", "2"] {
+        let observations: Vec<String> = query
+            .split('&')
+            .filter_map(|kv| kv.strip_prefix(&format!("observation{suffix}=")))
+            .map(percent_decode)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if observations.is_empty() {
+            if suffix.is_empty() {
+                return bad("preview needs at least one ?observation=<id>, with the tier and kind                             /api/resolve would take"
+                    .into());
+            }
+            continue;
+        }
+        let Some(tier) = param(&format!("tier{suffix}")).as_deref().and_then(parse_tier_param)
+        else {
+            return bad(format!(
+                "preview needs ?tier{suffix}=<unverified|agent_extracted|host_signed|human_confirmed>"
+            ));
+        };
+        let kind = match param(&format!("kind{suffix}")).as_deref() {
+            None | Some("claim_promotion") => "claim_promotion",
+            Some("claim_demotion") => "claim_demotion",
+            Some(other) => {
+                return bad(format!(
+                    "resolve casts claim_promotion or claim_demotion, not '{other}'"
+                ))
+            }
+        };
+        acts.push(supragnosis_engine::GateAct { kind: kind.into(), targets: observations, tier });
+    }
+    let mut homes = std::collections::BTreeSet::new();
+    for id in acts.iter().flat_map(|a| a.targets.iter()) {
+        match engine.get_observation(id) {
+            Ok(Some(o)) => homes.extend(o.provenance.first().map(|p| p.workspace.clone())),
+            Ok(None) => {}
+            Err(e) => {
+                return Response {
+                    status: "500 Internal Server Error",
+                    content_type: "application/json",
+                    body: err_body(&e.to_string()),
+                }
+            }
+        }
+    }
+    if homes.len() > 1 {
+        return bad(format!(
+            "the observations are in different workspaces ({}) - resolve them one workspace at a time",
+            homes.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let workspace = homes.into_iter().next().or_else(|| write_workspace(param("workspace")));
+    match engine.preview_gate(workspace.as_deref(), &acts) {
+        Ok(p) => Response {
+            status: "200 OK",
+            content_type: "application/json",
+            body: serde_json::to_string(&p).unwrap_or_else(|e| err_body(&e.to_string())),
+        },
+        Err(e) => Response {
+            status: "500 Internal Server Error",
+            content_type: "application/json",
+            body: err_body(&e.to_string()),
+        },
+    }
+}
+
+/// A tier as `/api/resolve`'s query spells it.
+fn parse_tier_param(t: &str) -> Option<supragnosis_engine::TrustTier> {
+    serde_json::from_value(serde_json::Value::String(t.to_string())).ok()
+}
+
 fn resolve_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query

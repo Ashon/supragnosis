@@ -1171,6 +1171,215 @@ async fn viz_resolve_files_in_the_observations_workspace_and_can_be_undone() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// design-system.md Section 29.2, U18: a settle's preview names the source a Confirm promotes, in
+/// its own words, every entity whose ring moves with it and what else the source states, with the
+/// checks - and writes nothing. Each value lists every source that asserts it, each with its tier
+/// before any verdict. After the Confirm, the reverse act's preview says what Undo moves back.
+#[tokio::test]
+async fn a_settle_preview_names_the_source_and_its_reach() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "default"));
+    let observe =
+        |content: &str, entities: Vec<(&str, &str)>, relations: Vec<(&str, &str, &str)>| {
+            ObserveInput {
+                content: content.into(),
+                workspace: Some("billing".into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: entities
+                    .into_iter()
+                    .map(|(name, kind)| EntityInput {
+                        description: None,
+                        name: name.into(),
+                        kind: Some(kind.into()),
+                    })
+                    .collect(),
+                relations: relations
+                    .into_iter()
+                    .map(|(from, kind, to)| RelationInput {
+                        from: from.into(),
+                        kind: kind.into(),
+                        to: to.into(),
+                        description: None,
+                        valid_from: None,
+                        valid_to: None,
+                    })
+                    .collect(),
+            }
+        };
+    engine
+        .observe(observe("The ledger is a table.", vec![("Ledger", "Table")], vec![]))
+        .unwrap();
+    let bundle = engine
+        .observe(observe(
+            "The nightly export sends the ledger to the finance team's warehouse.",
+            vec![("Nightly export", "Job"), ("Ledger", "Concept"), ("Warehouse", "System")],
+            vec![
+                ("Nightly export", "reads", "Ledger"),
+                ("Nightly export", "writes_to", "Warehouse"),
+            ],
+        ))
+        .unwrap()
+        .observation_id;
+    let lone = engine
+        .observe(observe(
+            "The ledger is a concept of accounting.",
+            vec![("Ledger", "Concept")],
+            vec![],
+        ))
+        .unwrap()
+        .observation_id;
+    let sock = serve_uds("settle-preview", engine, ev_channel()).await;
+
+    // Each value lists its sources: two say Concept, each with its tier before any verdict.
+    let g = json_get(&uds_get(&sock, "/api/graph?workspace=billing").await);
+    let ledger = g["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["name"] == "Ledger")
+        .expect("Ledger");
+    let id = ledger["id"].as_str().unwrap().to_string();
+    let ex = json_get(&uds_get(&sock, &format!("/api/explain?entity={id}")).await);
+    let kind = ex["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["field"] == "kind")
+        .expect("kind");
+    let concept = kind["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["value"] == "Concept")
+        .expect("Concept");
+    let sources: Vec<&str> = concept["observations"]
+        .as_array()
+        .expect("observations")
+        .iter()
+        .map(|o| o["observation"].as_str().unwrap())
+        .collect();
+    assert_eq!(sources.len(), 2, "both sources of Concept: {concept}");
+    assert!(sources.contains(&bundle.as_str()) && sources.contains(&lone.as_str()));
+    assert_eq!(
+        sources[0],
+        concept["observation"].as_str().unwrap(),
+        "the representative comes first"
+    );
+    for o in concept["observations"].as_array().unwrap() {
+        assert_eq!(o["base_tier"], "agent_extracted", "{o}");
+    }
+
+    // The preview of confirming the bundle: its words, the rings it moves, what else it states.
+    let before = json_get(&uds_get(&sock, "/api/observations?workspace=billing").await);
+    let p = json_get(
+        &uds_get(
+            &sock,
+            &format!("/api/resolve/preview?observation={bundle}&tier=human_confirmed"),
+        )
+        .await,
+    );
+    let d = &p["belief_diff"];
+    assert_eq!(d["computable"], true, "preview: {p}");
+    let row = &d["reach"][0];
+    assert_eq!(row["observation"], bundle.as_str());
+    assert!(row["said"].as_str().unwrap().starts_with("The nightly export sends"), "{row}");
+    assert_eq!(
+        (row["from"].as_str(), row["to"].as_str()),
+        (Some("agent_extracted"), Some("human_confirmed"))
+    );
+    let rings: Vec<(String, String, String)> = row["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["name"].as_str().unwrap().into(),
+                e["from"].as_str().unwrap().into(),
+                e["to"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    for name in ["Nightly export", "Warehouse", "Ledger"] {
+        assert!(
+            rings.contains(&(name.into(), "agent_extracted".into(), "human_confirmed".into())),
+            "{name} rises with the bundle: {rings:?}"
+        );
+    }
+    assert_eq!(row["relations"].as_array().map(Vec::len), Some(2), "{row}");
+    assert!(
+        p["checks"].as_array().unwrap().iter().all(|c| c["passed"] == true),
+        "checks: {p}"
+    );
+    // It writes nothing.
+    let after = json_get(&uds_get(&sock, "/api/observations?workspace=billing").await);
+    assert_eq!(before, after, "the preview wrote to the log");
+    let props = json_get(&uds_get(&sock, "/api/proposals?workspace=billing").await);
+    assert_eq!(
+        props.as_array().map(Vec::len),
+        Some(0),
+        "the preview opened a proposal: {props}"
+    );
+
+    // Confirm, then the reverse act's preview says what Undo moves back.
+    let r = json_get(
+        &uds_get(&sock, &format!("/api/resolve?observation={bundle}&tier=human_confirmed")).await,
+    );
+    assert!(r["proposal_id"].is_string(), "confirm: {r}");
+    let undo = json_get(
+        &uds_get(
+            &sock,
+            &format!("/api/resolve/preview?observation={bundle}&tier=agent_extracted&kind=claim_demotion"),
+        )
+        .await,
+    );
+    let back: Vec<(String, String)> = undo["belief_diff"]["reach"][0]["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["from"] != e["to"])
+        .map(|e| (e["name"].as_str().unwrap().into(), e["to"].as_str().unwrap().into()))
+        .collect();
+    assert!(
+        back.contains(&("Nightly export".into(), "agent_extracted".into())),
+        "undo: {undo}"
+    );
+
+    // Two acts are previewed as one: the demotion of the bundle and the confirmation of the lone
+    // source leave Ledger confirmed through the lone source while Warehouse goes back.
+    let pair = json_get(
+        &uds_get(
+            &sock,
+            &format!(
+                "/api/resolve/preview?observation={bundle}&tier=agent_extracted&kind=claim_demotion\
+                 &observation2={lone}&tier2=human_confirmed"
+            ),
+        )
+        .await,
+    );
+    let rows = pair["belief_diff"]["reach"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "both sources move: {pair}");
+    let ledger_ring = rows
+        .iter()
+        .flat_map(|r| r["entities"].as_array().unwrap().iter())
+        .find(|e| e["name"] == "Ledger")
+        .unwrap();
+    assert_eq!(
+        ledger_ring["to"], "human_confirmed",
+        "Ledger stays confirmed through the lone source: {pair}"
+    );
+
+    let bad = uds_get(
+        &sock,
+        &format!("/api/resolve/preview?observation={bundle}&tier=human_confirmed&kind=recall"),
+    )
+    .await;
+    assert!(bad.contains("400"), "an unknown kind is refused: {bad}");
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// The reify promotion path over the socket (Principle 11): a recurring co-occurrence context is
 /// asserted as a group entity + member_of relations through /api/reify - an ordinary observation
 /// carrying derived_from lineage - and the graph gains the first-class structure while the

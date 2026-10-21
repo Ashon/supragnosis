@@ -23,7 +23,8 @@
 > semantic zoom, the GPU renderer, and the measure. The sixth pass, one icon set and one notice
 > (Section 28, U41-U42), is built - steps 39-40: Lucide's files on every surface, and a notice with
 > one anatomy and a clock that waits while it is read. The seventh pass, curation, wayfinding and words
-> (Section 29), goes one step at a time from step 41, each checked against the principles first.
+> (Section 29), goes one step at a time from step 41, each checked against the principles first;
+> step 41, a confirmation that says what it confirms, is built.
 
 ## 1. Why this exists
 
@@ -1728,7 +1729,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    and the test that reads both surfaces.
 40. **Notices** [built] (Section 28.4; U42): the three kinds, the surface, the clock that stops while it is
    read, the motion, in `viewer.js` and `kit.js` both.
-41. **A confirmation says what it confirms** (Section 29.2; U18): each value's sources in `/api/explain`,
+41. **A confirmation says what it confirms** [built] (Section 29.2; U18): each value's sources in `/api/explain`,
    `/api/resolve/preview` with the diff's `reach` and the checks, the ask with the source and its reach,
    the choice of source, both halves of Confirm instead, Undo's reach, no act without its diff, and the
    tiers defined under the legend.

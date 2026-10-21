@@ -42,6 +42,10 @@ const NODE_OP: &str = "a node's own operations and state - its peers, its sharin
 /// writes from the node's own operations by the reason the read tier gives (design-system.md U1).
 pub const VERDICT: &str = "verdicts are cast from a node's own console, and the read tier changes \
      nothing (docs/remote-viewer.md V2)";
+/// The refusal of the settle preview: it writes nothing, but the read tier offers no settle to
+/// preview (docs/remote-viewer.md Section 3.2, design-system.md Section 29.2).
+pub const PREVIEW: &str = "the diff of a settle at a node's own console - the read tier offers no \
+     settle to preview (docs/remote-viewer.md Section 3.2)";
 /// The refusal of a write path.
 pub const WRITE: &str = "the read tier changes nothing - a principal with a write grant reaches \
      `observe` and `propose` through MCP at /mcp (docs/remote-viewer.md Section 2)";
@@ -73,6 +77,7 @@ pub const POLICY: &[(&str, Policy)] = &[
     // (docs/onboarding.md O7).
     ("/api/clients", Policy::Refused(NODE_OP)),
     ("/api/review", Policy::Refused(VERDICT)),
+    ("/api/resolve/preview", Policy::Refused(PREVIEW)),
     ("/api/resolve", Policy::Refused(VERDICT)),
     ("/api/reify", Policy::Refused(WRITE)),
     ("/api/propose_merge", Policy::Refused(WRITE)),
