@@ -252,8 +252,10 @@ card keeps its own act for later, which acts when pressed: the switch, a row's C
 Start at Login switch, a row per AI app with Connect and its helper, the model's progress with "Not
 now", and the sentence to try with the first entry when it comes. Under each card a **log drawer**
 holds that step's events as they arrive: the command, its output, every file changed and the copy
-where one is made, and the exit status (D8). "Copy log" copies every drawer; "Copy diagnostics" copies
-`setup --check --events` and `status --json` together, for a report.
+where one is made, and the exit status (D8). "Copy Diagnostics" copies every drawer with
+`setup --check --events`, `status --json`, the shell's status and the daemon log's last lines, for a
+report, and shows once a step has run or failed in this visit, or the check could not be read
+(design-system.md Section 29.5).
 
 **Why a log drawer and not a terminal.** A terminal shows the same output, but as text the page
 cannot read, so the cards could not follow it; it puts a shell inside the app and invites typing into
