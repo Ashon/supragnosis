@@ -34,6 +34,11 @@ ANGLES = [-90, -18, 54, 126, 198]  # 5 spokes, 72 degree steps, one arm up
 TRAY_RAY_LEN = 380.0
 TRAY_RAY_W = 140.0
 TRAY_PNG = ("tray.png", 44)  # 22pt @2x
+# The trouble shape (design-system.md Section 29.13, D14): the same mark with a dot at its lower right,
+# cut apart from the mark by a gap, so the state reads as shape and not as color.
+TRAY_TROUBLE_PNG = ("tray-trouble.png", 44)
+TROUBLE_DOT = (830.0, 830.0, 170.0)  # centre x, centre y, radius in the 1024 frame
+TROUBLE_GAP = 70.0
 
 # (iconset entry name, pixel size) - everything iconutil wants, tauri reuses a subset.
 ICONSET = [
@@ -78,8 +83,8 @@ def spokes(ray_len):
     return out
 
 
-def render_tray_1024():
-    """Bare mark, black, alpha = coverage (a macOS template image)."""
+def render_tray_1024(trouble=False):
+    """Bare mark, black, alpha = coverage (a macOS template image); with `trouble`, the dot beside it."""
     c = SIZE / 2.0
     rays = spokes(TRAY_RAY_LEN)
     reach = TRAY_RAY_LEN + TRAY_RAY_W
@@ -97,6 +102,11 @@ def render_tray_1024():
                     )
                     if a_mark >= 1.0:
                         break
+            if trouble:
+                dx, dy, r = TROUBLE_DOT
+                d = math.hypot(px - dx, py - dy)
+                cut = coverage(d - (r + TROUBLE_GAP))
+                a_mark = max(a_mark * (1.0 - cut), coverage(d - r))
             row += bytes((0, 0, 0, round(255 * a_mark)))
         rows.append(bytes(row))
     return b"".join(rows)
@@ -185,7 +195,16 @@ def main():
             check=True,
             capture_output=True,
         )
-    print("wrote", ", ".join(n for n, _ in TAURI_PNGS), "tray.png, and icon.icns")
+        print("rendering tray trouble mark...")
+        trouble_base = Path(tmp) / "tray_trouble_1024.png"
+        write_png(trouble_base, render_tray_1024(trouble=True))
+        name, px = TRAY_TROUBLE_PNG
+        subprocess.run(
+            ["sips", "-z", str(px), str(px), str(trouble_base), "--out", str(here / name)],
+            check=True,
+            capture_output=True,
+        )
+    print("wrote", ", ".join(n for n, _ in TAURI_PNGS), "tray.png, tray-trouble.png, and icon.icns")
 
 
 if __name__ == "__main__":

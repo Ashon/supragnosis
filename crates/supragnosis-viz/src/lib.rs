@@ -1593,6 +1593,17 @@ mod tests {
             ("<h1", "the title it makes part of the drag region"),
             (r#"id="settingsBtn""#, "the gear it routes to the app's Settings page"),
             (r#"id="syncPill""#, "the sync pill it routes to Settings > Sync"),
+            // The menu bar's map commands press these (design-system.md Section 29.13).
+            (r#"id="panelL""#, "the filters panel's toggle View > Filters Panel presses"),
+            (r#"id="panelR""#, "the log panel's toggle View > Log Panel presses"),
+            (r#"id="mapTab""#, "the Map tab View > as Map presses"),
+            (r#"id="listBtn""#, "the List tab View > as List presses"),
+            (r#"id="fit""#, "the Fit button View > Fit to View presses"),
+            (r#"id="keysOpen""#, "the Keys... button View > Keys... presses"),
+            (
+                r#"id="keysDlg""#,
+                "the Keys dialog that marks a viewer with the selection history",
+            ),
         ] {
             assert!(html.contains(needle), "viewer.html lost {what} ({needle})");
         }
@@ -1600,6 +1611,15 @@ mod tests {
         assert!(
             js.contains(r#"new EventSource("/api/events")"#) && js.contains("es.onmessage ="),
             "the shell's EventSource stand-in serves /api/events through onmessage only"
+        );
+        // The keys the menu bar sends: Cmd+K opens search, Cmd+[ and Cmd+] step the selection.
+        assert!(
+            js.contains(r#"e.key.toLowerCase() === "k""#)
+                && js.contains("stepSelection(e.key === \"[\" ? -1 : 1);")
+        );
+        assert!(
+            html.contains(r#"aria-pressed="true" title="Filters panel ([)""#)
+                || js.contains("name(\"panelL\", \"Filters panel\", \"[\")")
         );
     }
     use super::*;

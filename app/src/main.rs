@@ -64,53 +64,153 @@ impl Daemon {
 
 struct DaemonGuard(Mutex<Daemon>);
 
-/// The tray's status menu item - kept as managed state so the daemon tasks can rewrite its text.
-struct TrayStatus(MenuItem<tauri::Wry>);
+/// What the tray last showed, so it is built again only when that changes (design-system.md
+/// Section 29.13).
+struct TrayKept(Mutex<Option<TrayState>>);
+
+/// The app menu's Quit, whose words follow the tray's (D15).
+struct AppQuit(PredefinedMenuItem<tauri::Wry>);
+
+/// The menu bar's map commands, by id, so each page's load report can enable the ones that act there.
+struct MapItems(Vec<(&'static str, MenuItem<tauri::Wry>)>);
+
+/// Which map commands act on a page, from its address and the controls it reported (design-system.md
+/// Section 29.13): on the Graph the ones whose control it has; on Review, Settings and Setup the ones
+/// that open the Graph, Back, and Forward on the Graph only; nothing on the starting page or a viewer
+/// without the selection history.
+fn map_items_enabled(url: &str, controls: &[String]) -> Vec<(&'static str, bool)> {
+    let has = |c: &str| controls.iter().any(|x| x == c);
+    let viewer = url.starts_with("viz://") || url.starts_with("http://viz.localhost");
+    let app_page = url.contains("settings.html") || url.contains("welcome.html");
+    let review = viewer && url.contains("#review");
+    let graph = viewer && !review;
+    let current = has("keysDlg");
+    let opens = |control: &str| app_page || review || (graph && has(control));
+    vec![
+        ("view-filters", opens("panelL")),
+        ("view-log", opens("panelR")),
+        ("view-map", opens("mapTab")),
+        ("view-list", opens("listBtn")),
+        ("view-fit", opens("fit")),
+        ("view-keys", opens("keysOpen")),
+        ("edit-find", app_page || viewer),
+        ("view-back", app_page || (viewer && current)),
+        ("view-forward", graph && current),
+    ]
+}
+
+fn enable_map_items(app: &tauri::AppHandle, report: &serde_json::Value) {
+    let url = report["url"].as_str().unwrap_or("");
+    let controls: Vec<String> = report["controls"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if let Some(items) = app.try_state::<MapItems>() {
+        for (id, on) in map_items_enabled(url, &controls) {
+            if let Some((_, item)) = items.0.iter().find(|(k, _)| *k == id) {
+                let _ = item.set_enabled(on);
+            }
+        }
+    }
+}
+
+/// The script a map command runs in the viewer (design-system.md Section 29.13): it presses the page's
+/// own control, only when the press changes something and no dialog or card is open, so a command and
+/// its button do one thing.
+fn press_js(id: &str, only_if_unselected: bool) -> String {
+    let id = serde_json::to_string(id).unwrap_or_default();
+    format!(
+        r##"(function(){{if(document.querySelector("dialog[open]")||document.querySelector("#obscard.on"))return;var b=document.getElementById({id});if(!b||b.getAttribute("aria-disabled")==="true")return;{guard}b.click();}})();"##,
+        guard = if only_if_unselected {
+            r#"if(b.getAttribute("aria-selected")==="true")return;"#
+        } else {
+            ""
+        }
+    )
+}
+
+/// The script that sends the page on screen a Cmd key (Cmd+K, Cmd+[ or Cmd+]) at its focused element,
+/// which each page reads as it reads the key; a viewer without the selection history gets no Cmd+[.
+fn key_js(key: &str, needs_history: bool) -> String {
+    let k = serde_json::to_string(key).unwrap_or_default();
+    format!(
+        r#"(function(){{{gate}var t=document.activeElement||document.body;t.dispatchEvent(new KeyboardEvent("keydown",{{key:{k},metaKey:true,bubbles:true,cancelable:true}}));}})();"#,
+        gate = if needs_history {
+            r#"if(/^viz:|^http:\/\/viz\.localhost/.test(location.href)&&!document.getElementById("keysDlg"))return;"#
+        } else {
+            ""
+        }
+    )
+}
+
+/// The menu bar's map commands (design-system.md Section 29.13): on the Graph page they press the
+/// page's own control; on Review, Settings or Setup they open the Graph and do nothing else; Back and
+/// Forward send the page on screen its own Cmd+[ and Cmd+].
+fn map_command(app: &tauri::AppHandle, id: &str) -> tauri::Result<()> {
+    let control = match id {
+        "view-filters" => Some(("panelL", false)),
+        "view-log" => Some(("panelR", false)),
+        "view-map" => Some(("mapTab", true)),
+        "view-list" => Some(("listBtn", true)),
+        "view-fit" => Some(("fit", false)),
+        "view-keys" => Some(("keysOpen", false)),
+        "edit-find" | "view-back" | "view-forward" => None,
+        _ => return Ok(()),
+    };
+    let Some(w) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    if id == "view-back" || id == "view-forward" {
+        return w.eval(key_js(if id == "view-back" { "[" } else { "]" }, true));
+    }
+    let url = w.url().ok();
+    let viewer = url.as_ref().is_some_and(is_viewer);
+    if !viewer {
+        return show_graph(app);
+    }
+    if url.as_ref().is_some_and(|u| u.fragment() == Some("review")) {
+        return w.eval("location.hash = ''");
+    }
+    match control {
+        Some((c, tab)) => w.eval(press_js(c, tab)),
+        None => w.eval(key_js("k", false)),
+    }
+}
+
+/// Opens Settings' This Mac with an act the page reports itself (Section 29.5): `diagnostics` focuses
+/// Copy Diagnostics, `reveal-log` shows the log in Finder.
+fn show_settings_act(app: &tauri::AppHandle, act: &str) -> tauri::Result<()> {
+    show_viewer(app)?;
+    if let Some(w) = app.get_webview_window("main") {
+        let current = w.url().ok();
+        let mut url = with_from(settings_url(), current.as_ref());
+        url.query_pairs_mut().append_pair("act", act);
+        url.set_fragment(Some("daemon"));
+        w.navigate(url)?;
+    }
+    Ok(())
+}
+
+/// Opens an address of the project's in the browser; nothing of this Mac's goes with it.
+fn open_url(url: &str) -> tauri::Result<()> {
+    if let Err(e) = Command::new("open").arg(url).status() {
+        tracing::error!(error = %e, url, "could not open the address");
+    }
+    Ok(())
+}
 
 /// The active remote server profile, when there is one (docs/remote-server.md Section 5). This
 /// machine's daemon is then not what the AI apps use, and the shell says so instead of showing local
 /// knowledge.
 struct ActiveRemote(Mutex<Option<RemoteServer>>);
 
-/// What the status line says needs doing when nothing else does: no AI app connected yet, the state
-/// a new user is in (docs/client-connect.md Section 5).
-struct AppsHint(Mutex<Option<String>>);
+/// Whether no AI app is connected yet, the state a new user is in (docs/client-connect.md Section 5):
+/// the tray's act line asks to connect one.
+struct AppsHint(Mutex<bool>);
 
 /// The settings section the tray's Settings... opens: the one whose state the status line is
 /// pointing at, if any (docs/settings-page.md Section 3.0).
 struct Attention(Mutex<Option<&'static str>>);
-
-/// The tray's "Review - N need you..." item (docs/design-system.md Section 7): in the menu while
-/// something waits on this Mac's daemon, out of it otherwise. The menu and whether the item is in it
-/// are kept with it.
-struct TrayReview {
-    menu: Menu<tauri::Wry>,
-    item: MenuItem<tauri::Wry>,
-    shown: Mutex<bool>,
-}
-
-/// The tray's "Finish setup..." item (docs/onboarding.md Section 6): in the menu while the daemon or the
-/// AI apps are not set up, out of it otherwise.
-struct TraySetup {
-    menu: Menu<tauri::Wry>,
-    item: MenuItem<tauri::Wry>,
-    shown: Mutex<bool>,
-}
-
-/// Puts an optional tray item in the menu, below the status line, or takes it out.
-fn tray_item_shown(
-    menu: &Menu<tauri::Wry>,
-    item: &MenuItem<tauri::Wry>,
-    shown: &Mutex<bool>,
-    on: bool,
-) {
-    let mut shown = shown.lock().unwrap();
-    if on && !*shown && menu.insert(item, 2).is_ok() {
-        *shown = true;
-    } else if !on && *shown && menu.remove(item).is_ok() {
-        *shown = false;
-    }
-}
 
 /// What waits for a person on this Mac's daemon, across its workspaces (docs/design-system.md
 /// Section 7): the open and blocked proposals, and with them, from the curation report, the suspected
@@ -979,8 +1079,8 @@ fn who_runs(daemon: &Daemon, st: &serde_json::Value) -> String {
     }
 }
 
-fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&str>) -> String {
-    let base = match (daemon, st) {
+fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>) -> String {
+    match (daemon, st) {
         (Daemon::Starting | Daemon::Failed(_), _) | (_, None) => daemon.status_line(),
         // The app's child, alive and not answering yet (an exited one is settled to Failed first).
         (Daemon::Spawned(_), Some(st)) if st["answering"].as_bool() == Some(false) => {
@@ -991,16 +1091,18 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
             let running = st["version"]["running"].as_str();
             let here = st["version"]["here"].as_str().unwrap_or("?");
             if situation == "conflict" {
-                "Two managers run Supragnosis - open Settings".to_string()
+                "Two managers run Supragnosis".to_string()
+            } else if conflict_of(st).is_some() {
+                "The search index needs rebuilding".to_string()
             } else {
                 let who = who_runs(daemon, st);
                 match running {
                     // Both versions, as daemon-lifecycle.md L3 has the tray say, and where to act
                     // (settings-page.md Section 5).
+                    // The state word, then both versions (design-system.md Section 29.13); the act
+                    // is the tray's next line.
                     Some(r) if r != here => {
-                        format!(
-                            "Update ready - {r} running, {here} installed - restart in Settings"
-                        )
+                        format!("Update ready - restart: {r} running, {here} installed")
                     }
                     Some(r) => format!("Running {r} - {who}"),
                     None if st["answering"].as_bool() == Some(false) => "Stopped".to_string(),
@@ -1008,10 +1110,59 @@ fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>, note: Option<&st
                 }
             }
         }
-    };
-    match note {
-        Some(n) if !n.is_empty() => format!("{base} | {n}"),
-        _ => base,
+    }
+}
+
+/// While the memory the AI apps use cannot be used (design-system.md Section 29.13, the author's
+/// list): a daemon that could not start, stopped or is claimed by two managers, or a search index
+/// that needs rebuilding. A daemon starting, an update ready or an unknown state is not trouble.
+fn daemon_trouble(daemon: &Daemon, st: Option<&serde_json::Value>) -> bool {
+    match (daemon, st) {
+        (Daemon::Failed(_), _) => true,
+        (Daemon::Starting, _) | (_, None) => false,
+        (Daemon::Spawned(_), Some(st)) if st["answering"].as_bool() == Some(false) => false,
+        (_, Some(st)) => {
+            st["situation"].as_str() == Some("conflict")
+                || conflict_of(st).is_some()
+                || (st["version"]["running"].is_null() && st["answering"].as_bool() == Some(false))
+        }
+    }
+}
+
+/// What the tray says (design-system.md Section 29.13): the state line; the one act that does what
+/// needs doing, with the Settings section it opens; whether the memory cannot be used; Finish
+/// Setup... and the review item; and whether Quit stops the memory.
+#[derive(Debug, Clone, PartialEq, Default)]
+struct TrayState {
+    line: String,
+    act: Option<(&'static str, &'static str)>,
+    trouble: bool,
+    finish: bool,
+    review: Option<String>,
+    quit_stops: bool,
+}
+
+/// The act line for what needs doing, the first that holds: the memory cannot be used, an update is
+/// ready, then no AI app connected - which Finish Setup... covers while it shows.
+fn tray_act(
+    trouble: bool,
+    remote: bool,
+    drift: bool,
+    no_app: bool,
+    finish: bool,
+) -> Option<(&'static str, &'static str)> {
+    if trouble {
+        Some(if remote {
+            ("Check the Server...", "server")
+        } else {
+            ("Open This Mac...", "daemon")
+        })
+    } else if drift {
+        Some(("Open This Mac...", "daemon"))
+    } else if no_app && !finish {
+        Some(("Connect an AI App...", "apps"))
+    } else {
+        None
     }
 }
 
@@ -1049,10 +1200,11 @@ async fn refresh_servers(app: &tauri::AppHandle) -> Option<serde_json::Value> {
 
 /// The tray's line while a remote profile is active: which server, and whether it answers.
 fn remote_line(r: &RemoteServer) -> String {
+    // The act is the next line, "Check the Server..." (design-system.md Section 29.13).
     match (r.answering, r.credential_refused) {
-        (true, false) => format!("server {} - answering", r.name),
-        (true, true) => format!("server {} - credential refused, see Settings", r.name),
-        (false, _) => format!("server {} - not answering, see Settings", r.name),
+        (true, false) => format!("Server {} - answering", r.name),
+        (true, true) => format!("Server {} - refused the credential", r.name),
+        (false, _) => format!("Server {} - not answering", r.name),
     }
 }
 
@@ -1064,53 +1216,8 @@ async fn refresh_status(app: &tauri::AppHandle) {
     heal_failed(app).await;
     refresh_servers(app).await;
     refresh_apps(app).await;
-    let hint = app.try_state::<AppsHint>().and_then(|h| h.0.lock().unwrap().clone());
-    let (text, attention) = match active_remote(app) {
-        Some(r) => {
-            let trouble = !r.answering || r.credential_refused;
-            let attention = if trouble { Some("server") } else { hint.as_ref().map(|_| "apps") };
-            (remote_line(&r), attention)
-        }
-        None => {
-            let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-            if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
-                (CLI_NEWER_LINE.to_string(), Some("daemon"))
-            } else {
-                let drift = st.as_ref().is_some_and(|v| {
-                    let running = v["version"]["running"].as_str();
-                    running.is_some() && running != v["version"]["here"].as_str()
-                });
-                let guard = app.state::<DaemonGuard>();
-                let text = {
-                    let mut daemon = guard.0.lock().unwrap();
-                    settle_exited(&mut daemon);
-                    status_text(&daemon, st.as_ref(), hint.as_deref())
-                };
-                let attention = if drift { Some("daemon") } else { hint.as_ref().map(|_| "apps") };
-                (text, attention)
-            }
-        }
-    };
-    if let Some(status) = app.try_state::<TrayStatus>() {
-        let _ = status.0.set_text(text);
-    }
-    if let Some(a) = app.try_state::<Attention>() {
-        *a.0.lock().unwrap() = attention;
-    }
-    // The review item counts this Mac's daemon only; on a remote profile the tray stays as
-    // remote-viewer.md Section 6 has it.
-    let text = if active_remote(app).is_none() {
-        waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text)
-    } else {
-        None
-    };
-    if let Some(r) = app.try_state::<TrayReview>() {
-        if let Some(t) = &text {
-            let _ = r.item.set_text(t);
-        }
-        tray_item_shown(&r.menu, &r.item, &r.shown, text.is_some());
-    }
-    // "Finish setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
+    let no_app = app.try_state::<AppsHint>().is_some_and(|h| *h.0.lock().unwrap());
+    // "Finish Setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
     // Section 6), from setup's own checklist. A CLI that predates setup offers nothing.
     let pid = spawned_pid(app);
     let steps = tokio::task::spawn_blocking(move || setup_check_blocking(pid))
@@ -1118,8 +1225,117 @@ async fn refresh_status(app: &tauri::AppHandle) {
         .ok()
         .and_then(Result::ok)
         .map(|events| essentials(&events));
-    if let Some(t) = app.try_state::<TraySetup>() {
-        tray_item_shown(&t.menu, &t.item, &t.shown, finish_setup_offered(read_prefs(app), steps));
+    let finish = finish_setup_offered(read_prefs(app), steps);
+    let remote = active_remote(app);
+    let mut tray = TrayState { finish, ..TrayState::default() };
+    match &remote {
+        // This Mac's states do not count while a remote server is used (design-system.md Section
+        // 29.13); the server's do.
+        Some(r) => {
+            tray.line = remote_line(r);
+            tray.trouble = !r.answering || r.credential_refused;
+            tray.act = tray_act(tray.trouble, true, false, no_app, finish);
+        }
+        None => {
+            let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+            if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
+                // Said on the state line, with no act (design-system.md Section 29.13).
+                tray.line = CLI_NEWER_LINE.to_string();
+            } else {
+                let drift = st.as_ref().is_some_and(|v| {
+                    let running = v["version"]["running"].as_str();
+                    running.is_some() && running != v["version"]["here"].as_str()
+                });
+                let guard = app.state::<DaemonGuard>();
+                let mut daemon = guard.0.lock().unwrap();
+                settle_exited(&mut daemon);
+                tray.line = status_text(&daemon, st.as_ref());
+                tray.trouble = daemon_trouble(&daemon, st.as_ref());
+                tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));
+                tray.act = tray_act(tray.trouble, false, drift, no_app, finish);
+            }
+        }
+    }
+    // The review item counts this Mac's daemon only; on a remote profile the tray stays as
+    // remote-viewer.md Section 6 has it.
+    if remote.is_none() {
+        tray.review = waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text);
+    }
+    // Settings... opens the section that needs attention, the act's, or AI apps while none is
+    // connected and Finish Setup... covers it (settings-page.md Section 3.0).
+    let attention = tray.act.map(|(_, section)| section).or_else(|| {
+        (no_app && remote.as_ref().is_none_or(|r| r.answering && !r.credential_refused))
+            .then_some("apps")
+    });
+    if let Some(a) = app.try_state::<Attention>() {
+        *a.0.lock().unwrap() = attention;
+    }
+    apply_tray(app, &tray);
+}
+
+/// The tray's menu and icon, and the app menu's Quit, from what the tray says (design-system.md
+/// Section 29.13). Built again only when it changed, in one fixed order: the state line, the act,
+/// Finish Setup..., the review item, Open Graph, Settings..., Quit.
+fn apply_tray(app: &tauri::AppHandle, t: &TrayState) {
+    let Some(kept) = app.try_state::<TrayKept>() else {
+        return;
+    };
+    {
+        let mut last = kept.0.lock().unwrap();
+        if last.as_ref() == Some(t) {
+            return;
+        }
+        *last = Some(t.clone());
+    }
+    let name = app.package_info().name.clone();
+    let quit = if t.quit_stops {
+        "Quit and Stop Memory".to_string()
+    } else {
+        format!("Quit {name}")
+    };
+    let built = (|| -> tauri::Result<Menu<tauri::Wry>> {
+        let menu = Menu::new(app)?;
+        menu.append(&MenuItem::with_id(app, "tray-status", &t.line, false, None::<&str>)?)?;
+        if let Some((words, _)) = t.act {
+            menu.append(&MenuItem::with_id(app, "tray-act", words, true, None::<&str>)?)?;
+        }
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        if t.finish {
+            menu.append(&MenuItem::with_id(
+                app,
+                "tray-finish-setup",
+                "Finish Setup...",
+                true,
+                None::<&str>,
+            )?)?;
+        }
+        if let Some(r) = &t.review {
+            menu.append(&MenuItem::with_id(app, "tray-review", r, true, None::<&str>)?)?;
+        }
+        menu.append(&MenuItem::with_id(app, "tray-open", "Open Graph", true, None::<&str>)?)?;
+        menu.append(&MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&MenuItem::with_id(app, "tray-quit", &quit, true, None::<&str>)?)?;
+        Ok(menu)
+    })();
+    if let (Ok(menu), Some(tray)) = (built, app.tray_by_id("supragnosis")) {
+        let _ = tray.set_menu(Some(menu));
+        // The state as shape, not color (D14): the mark, or the mark with a dot cut beside it.
+        let icon: &[u8] = if t.trouble {
+            include_bytes!("../icons/tray-trouble.png")
+        } else {
+            include_bytes!("../icons/tray.png")
+        };
+        if let Ok(img) = Image::from_bytes(icon) {
+            let _ = tray.set_icon(Some(img));
+            let _ = tray.set_icon_as_template(true);
+        }
+        let tip = if t.trouble { format!("{name} - {}", t.line) } else { name.clone() };
+        let _ = tray.set_tooltip(Some(tip));
+    }
+    // The app menu's Quit takes the tray's words (D15, the author's decision).
+    if let Some(q) = app.try_state::<AppQuit>() {
+        let _ = q.0.set_text(&quit);
     }
 }
 
@@ -1182,8 +1398,7 @@ async fn refresh_apps(app: &tauri::AppHandle) {
         .and_then(|l| l["clients"].as_array())
         .is_some_and(|rs| rs.iter().any(|r| r["entry"].as_str().is_some_and(|e| e != "none")));
     if let Some(hint) = app.try_state::<AppsHint>() {
-        *hint.0.lock().unwrap() =
-            (list.is_some() && !any).then(|| "no AI app connected - see Settings".to_string());
+        *hint.0.lock().unwrap() = list.is_some() && !any;
     }
 }
 
@@ -1695,7 +1910,7 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             Daemon::Spawned(_) => ("spawned", None),
             Daemon::External => ("attached", None),
         };
-        (status_text(&daemon, status.as_ref(), None), who, shell, cause)
+        (status_text(&daemon, status.as_ref()), who, shell, cause)
     };
     let login = status
         .as_ref()
@@ -2558,6 +2773,14 @@ fn without_entry(text: &str) -> String {
                 for k in ["quote", "app", "entity"] {
                     e.remove(k);
                 }
+                // The done sentence named the workspace and the app; the report says only that an
+                // entry is in (design-system.md Section 29.13).
+                if e.get("step").and_then(|v| v.as_str()) == Some("first")
+                    && e.get("state").and_then(|v| v.as_str()) == Some("done")
+                {
+                    e.insert("say".into(), "An entry is in the store.".into());
+                    e.remove("id");
+                }
                 serde_json::Value::Object(e).to_string()
             }
             _ => line.to_string(),
@@ -2936,14 +3159,13 @@ fn main() {
                 let _ = login_env();
             });
             // Tray: says what state this Mac is in and opens the windows that change it
-            // (docs/settings-page.md Section 5). The settings themselves live on that page.
-            let status = MenuItem::with_id(app, "status", "Starting...", false, None::<&str>)?;
-            let open = MenuItem::with_id(app, "open", "Open Graph", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-            // The app's name is the bundle's (productName in tauri.conf.json, "Supragnosis"), as in
-            // the macOS app menu; lowercase `supragnosis` is the CLI and the daemon binary.
+            // (docs/settings-page.md Section 5, design-system.md Section 29.13). The first menu
+            // says Starting...; refresh_status builds it again in its fixed order.
             let name = app.package_info().name.clone();
-            let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
+            let status = MenuItem::with_id(app, "tray-status", "Starting...", false, None::<&str>)?;
+            let open = MenuItem::with_id(app, "tray-open", "Open Graph", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "tray-quit", format!("Quit {name}"), true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[
@@ -2955,75 +3177,109 @@ fn main() {
                     &quit,
                 ],
             )?;
-            app.manage(TrayStatus(status));
-            // Out of the menu until something waits (refresh_status inserts it).
-            let review = MenuItem::with_id(app, "review", "Review...", true, None::<&str>)?;
-            app.manage(TrayReview { menu: menu.clone(), item: review, shown: Mutex::new(false) });
-            let finish = MenuItem::with_id(app, "finish-setup", "Finish Setup...", true, None::<&str>)?;
-            app.manage(TraySetup { menu: menu.clone(), item: finish, shown: Mutex::new(false) });
+            app.manage(TrayKept(Mutex::new(None)));
             app.manage(ActiveRemote(Mutex::new(None)));
-            app.manage(AppsHint(Mutex::new(None)));
+            app.manage(AppsHint(Mutex::new(false)));
             app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
             app.manage(TextScale(Mutex::new(read_text_scale(app.handle()))));
 
-            // The app menu keeps the platform's own items - Edit above all, without which a
-            // credential cannot be pasted into the settings page - and gains the two pages:
-            // Settings... (Cmd+,) where macOS users look for it, and Graph (Cmd+1) in View.
+            // The menu bar (design-system.md Section 29.13): the platform's menus, and in them the
+            // app's pages, the map's commands and its help. Each item has its own id, apart from the
+            // tray's, so an item does only its own act.
             let app_menu = Menu::default(app.handle())?;
+            let item = |id: &str, text: &str, key: Option<&str>| MenuItem::with_id(app, id, text, true, key);
+            let mut map_items: Vec<(&'static str, MenuItem<tauri::Wry>)> = Vec::new();
             for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
                 let text = sub.text()?;
                 if text == "View" {
-                    let graph =
-                        MenuItem::with_id(app, "graph", "Graph", true, Some("CmdOrCtrl+1"))?;
-                    let review =
-                        MenuItem::with_id(app, "review", "Review", true, Some("CmdOrCtrl+2"))?;
-                    // Text that can grow (design-system.md Section 10, U21): the root's size,
-                    // not the webview's zoom, so the title bar and its traffic lights stay put.
-                    let bigger = MenuItem::with_id(
-                        app,
-                        "text-bigger",
-                        "Make Text Bigger",
-                        true,
-                        Some("CmdOrCtrl+="),
-                    )?;
-                    let smaller = MenuItem::with_id(
-                        app,
-                        "text-smaller",
-                        "Make Text Smaller",
-                        true,
-                        Some("CmdOrCtrl+-"),
-                    )?;
-                    let actual =
-                        MenuItem::with_id(app, "text-actual", "Actual Size", true, Some("CmdOrCtrl+0"))?;
-                    sub.insert(&graph, 0)?;
-                    sub.insert(&review, 1)?;
-                    sub.insert(&PredefinedMenuItem::separator(app)?, 2)?;
-                    sub.insert(&bigger, 3)?;
-                    sub.insert(&smaller, 4)?;
-                    sub.insert(&actual, 5)?;
-                    sub.insert(&PredefinedMenuItem::separator(app)?, 6)?;
+                    // The map's commands (design-system.md Section 29.13), kept so each page's load
+                    // report can say which of them act there.
+                    let mapped = [
+                        ("view-filters", "Filters Panel", Some("Ctrl+CmdOrCtrl+S")),
+                        ("view-log", "Log Panel", Some("Ctrl+CmdOrCtrl+L")),
+                        ("view-map", "as Map", None),
+                        ("view-list", "as List", None),
+                        ("view-fit", "Fit to View", None),
+                        ("view-keys", "Keys...", None),
+                        ("view-back", "Back", Some("CmdOrCtrl+[")),
+                        ("view-forward", "Forward", Some("CmdOrCtrl+]")),
+                    ];
+                    let mut kept = Vec::new();
+                    for (id, words, key) in mapped {
+                        kept.push((id, item(id, words, key)?));
+                    }
+                    let at = |id: &str| kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap();
+                    // Text that can grow (design-system.md Section 10, U21): the root's size, not the
+                    // webview's zoom, so the title bar and its traffic lights stay put.
+                    let items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
+                        Box::new(item("graph", "Graph", Some("CmdOrCtrl+1"))?),
+                        Box::new(item("review", "Review", Some("CmdOrCtrl+2"))?),
+                        Box::new(PredefinedMenuItem::separator(app)?),
+                        Box::new(at("view-filters")),
+                        Box::new(at("view-log")),
+                        Box::new(at("view-map")),
+                        Box::new(at("view-list")),
+                        Box::new(at("view-fit")),
+                        Box::new(at("view-keys")),
+                        Box::new(PredefinedMenuItem::separator(app)?),
+                        Box::new(at("view-back")),
+                        Box::new(at("view-forward")),
+                        Box::new(PredefinedMenuItem::separator(app)?),
+                        Box::new(item("text-bigger", "Make Text Bigger", Some("CmdOrCtrl+="))?),
+                        Box::new(item("text-smaller", "Make Text Smaller", Some("CmdOrCtrl+-"))?),
+                        Box::new(item("text-actual", "Actual Size", Some("CmdOrCtrl+0"))?),
+                        Box::new(PredefinedMenuItem::separator(app)?),
+                    ];
+                    for (i, it) in items.iter().enumerate() {
+                        sub.insert(it.as_ref(), i)?;
+                    }
+                    map_items.extend(kept);
+                } else if text == "Edit" {
+                    let find = item("edit-find", "Find", Some("CmdOrCtrl+F"))?;
+                    sub.append(&PredefinedMenuItem::separator(app)?)?;
+                    sub.append(&find)?;
+                    map_items.push(("edit-find", find));
+                } else if text == "Help" {
+                    sub.append(&item("help-docs", "Supragnosis Documentation", None)?)?;
+                    sub.append(&PredefinedMenuItem::separator(app)?)?;
+                    sub.append(&item("help-diagnostics", "Diagnostics...", None)?)?;
+                    sub.append(&item("help-log", "Show Log in Finder", None)?)?;
+                    sub.append(&PredefinedMenuItem::separator(app)?)?;
+                    sub.append(&item("help-issue", "Report an Issue...", None)?)?;
                 } else if text == name {
-                    let item = MenuItem::with_id(
-                        app,
-                        "settings",
-                        "Settings...",
-                        true,
-                        Some("CmdOrCtrl+,"),
-                    )?;
-                    sub.insert(&item, 1)?;
+                    // About, a separator, Settings... and Setup..., a separator, then the
+                    // platform's own items; its Quit takes the tray's words (D15).
+                    sub.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+                    sub.insert(&item("settings", "Settings...", Some("CmdOrCtrl+,"))?, 2)?;
+                    sub.insert(&item("setup", "Setup...", None)?, 3)?;
+                    for it in sub.items()? {
+                        if let Some(p) = it.as_predefined_menuitem() {
+                            if p.text().is_ok_and(|t| t.starts_with("Quit")) {
+                                app.manage(AppQuit(p.clone()));
+                            }
+                        }
+                    }
                 }
             }
             app.set_menu(app_menu)?;
+            app.manage(MapItems(map_items));
             app.on_menu_event(|app, event| {
-                let shown = match event.id().as_ref() {
+                let id = event.id().as_ref();
+                let shown = match id {
                     "settings" => show_settings(app, None),
+                    "setup" => show_welcome(app),
                     "graph" => show_graph(app),
                     "review" => show_review(app),
                     "text-bigger" => set_text_scale(app, 1),
                     "text-smaller" => set_text_scale(app, -1),
                     "text-actual" => set_text_scale(app, 0),
-                    _ => Ok(()),
+                    "help-docs" => open_url(&format!("{}#readme", env!("CARGO_PKG_REPOSITORY"))),
+                    "help-issue" => open_url(&format!("{}/issues", env!("CARGO_PKG_REPOSITORY"))),
+                    // Done where they report their outcome, on This Mac (design-system.md 29.13).
+                    "help-diagnostics" => show_settings_act(app, "diagnostics"),
+                    "help-log" => show_settings_act(app, "reveal-log"),
+                    other => map_command(app, other),
                 };
                 if let Err(e) = shown {
                     tracing::error!(error = %e, "failed to turn the main window");
@@ -3037,31 +3293,32 @@ fn main() {
                 .tooltip(&name)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
+                // Every menu event reaches this listener; it acts only on the tray's own ids.
                 .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "open" => {
+                    "tray-open" => {
                         if let Err(e) = show_graph(app) {
                             tracing::error!(error = %e, "failed to open the graph");
                         }
                     }
-                    "review" => {
+                    "tray-review" => {
                         if let Err(e) = show_review_all(app) {
                             tracing::error!(error = %e, "failed to open the review page");
                         }
                     }
-                    "finish-setup" => {
+                    "tray-finish-setup" => {
                         if let Err(e) = show_welcome(app) {
                             tracing::error!(error = %e, "failed to open the welcome page");
                         }
                     }
-                    "settings" => {
-                        // Straight to the section the status line is pointing at, if any.
+                    // The act line and Settings... open the section that needs attention.
+                    "tray-act" | "tray-settings" => {
                         let section =
                             app.try_state::<Attention>().and_then(|a| *a.0.lock().unwrap());
                         if let Err(e) = show_settings(app, section) {
                             tracing::error!(error = %e, "failed to open the settings");
                         }
                     }
-                    "quit" => app.exit(0),
+                    "tray-quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
@@ -3091,8 +3348,14 @@ fn main() {
             // Startup health signal from the init script: which page the webview actually loaded
             // (the daemon-served viewer vs the starting splash) - the shell's only observable for
             // "the proxy + webview path works", and the log line to look for when it does not.
-            app.listen("shell-page-loaded", |event| {
+            let loaded = app.handle().clone();
+            app.listen("shell-page-loaded", move |event| {
                 tracing::info!(page = %event.payload(), "webview page loaded");
+                // Which of the map's commands act on this page, from the controls it reported
+                // (design-system.md Section 29.13).
+                if let Ok(report) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                    enable_map_items(&loaded, &report);
+                }
             });
             show_viewer(app.handle())?;
             if first {
@@ -3351,7 +3614,7 @@ mod status_text_tests {
         assert_eq!(Daemon::External.status_line(), "Running - started outside this app");
         assert_eq!(Daemon::Failed("x".into()).status_line(), "Could not start: X.");
         let stopped = serde_json::json!({ "situation": "none", "answering": false, "managers": [], "version": { "here": "0.4.2" } });
-        assert_eq!(status_text(&Daemon::External, Some(&stopped), None), "Stopped");
+        assert_eq!(status_text(&Daemon::External, Some(&stopped)), "Stopped");
 
         let settings = include_str!("../assets/settings.js");
         let words = &settings[settings.find("function daemonStatus(").expect("daemonStatus")..];
@@ -3390,19 +3653,13 @@ mod status_text_tests {
         let canonical = serde_json::json!({ "type": "launchd", "source": "canonical", "label": "com.supragnosis.daemon" });
         let brew = serde_json::json!({ "type": "launchd", "source": "homebrew", "label": "sh.brew.supragnosis-server" });
         let s = st("one", Some("0.4.2"), "0.4.2", canonical);
-        assert_eq!(
-            status_text(&Daemon::External, Some(&s), None),
-            "Running 0.4.2 - starts at login"
-        );
+        assert_eq!(status_text(&Daemon::External, Some(&s)), "Running 0.4.2 - starts at login");
         let s = st("one", Some("0.4.2"), "0.4.2", brew);
-        assert_eq!(
-            status_text(&Daemon::External, Some(&s), None),
-            "Running 0.4.2 - Homebrew's service"
-        );
+        assert_eq!(status_text(&Daemon::External, Some(&s)), "Running 0.4.2 - Homebrew's service");
         let s = st("unrecognized", Some("0.4.2"), "0.4.2", serde_json::Value::Null);
         assert_eq!(
-            status_text(&Daemon::External, Some(&s), Some("no longer starts at login")),
-            "Running 0.4.2 - started outside this app | no longer starts at login"
+            status_text(&Daemon::External, Some(&s)),
+            "Running 0.4.2 - started outside this app"
         );
     }
 
@@ -3412,30 +3669,24 @@ mod status_text_tests {
         let canonical = serde_json::json!({ "type": "launchd", "source": "canonical", "label": "com.supragnosis.daemon" });
         let s = st("one", Some("0.4.0"), "0.4.2", canonical);
         assert_eq!(
-            status_text(&Daemon::External, Some(&s), None),
-            "Update ready - 0.4.0 running, 0.4.2 installed - restart in Settings"
+            status_text(&Daemon::External, Some(&s)),
+            "Update ready - restart: 0.4.0 running, 0.4.2 installed"
         );
         let conflict = serde_json::json!({
             "situation": "conflict",
             "managers": [{ "type": "launchd" }, { "type": "launchd" }],
             "version": { "here": "0.4.2", "running": "0.4.0" },
         });
-        assert_eq!(
-            status_text(&Daemon::External, Some(&conflict), None),
-            "Two managers run Supragnosis - open Settings"
-        );
+        assert_eq!(status_text(&Daemon::External, Some(&conflict)), "Two managers run Supragnosis");
     }
 
     /// Without a CLI that answers `status --json`, the shell says only what it knows itself.
     #[test]
     fn an_old_cli_falls_back_to_the_shells_own_view() {
+        assert_eq!(status_text(&Daemon::External, None), "Running - started outside this app");
+        assert_eq!(status_text(&Daemon::Starting, None), "Starting...");
         assert_eq!(
-            status_text(&Daemon::External, None, None),
-            "Running - started outside this app"
-        );
-        assert_eq!(status_text(&Daemon::Starting, None, None), "Starting...");
-        assert_eq!(
-            status_text(&Daemon::Failed("port in use - full log: x".into()), None, None),
+            status_text(&Daemon::Failed("port in use - full log: x".into()), None),
             "Could not start: Port in use."
         );
     }
@@ -3958,9 +4209,10 @@ mod settings_tests {
             !out.contains("friday") && !out.contains("Claude Code") && !out.contains("\"e1\""),
             "{out}"
         );
+        // The done sentence is copied without the workspace or the app it named (Section 29.13).
         assert!(
-            out.contains("An entry is in")
-                && out.contains("\"id\":\"billing\"")
+            out.contains("An entry is in the store.")
+                && !out.contains("billing")
                 && out.contains("not json")
         );
         assert!(out.ends_with('\n'));
@@ -4549,6 +4801,154 @@ mod welcome_tests {
 /// to one example document per command; these hold this app's readers to the same documents, so a
 /// field read here that the CLI never sends fails here, and a field the CLI renames fails there.
 #[cfg(test)]
+mod tray_tests {
+    use super::{
+        daemon_trouble, key_js, map_items_enabled, press_js, remote_line, tray_act, Daemon,
+        RemoteServer,
+    };
+
+    /// design-system.md Section 29.13 (D14, the author's list): the trouble shape shows while the
+    /// memory cannot be used - could not start, stopped, two managers, the index - and not while it
+    /// starts, an update waits or the state is unknown.
+    #[test]
+    fn trouble_is_the_memory_that_cannot_be_used() {
+        let st = |answering: bool, running: Option<&str>, situation: &str| {
+            serde_json::json!({ "answering": answering, "situation": situation,
+                "version": { "here": "0.8.2", "running": running } })
+        };
+        assert!(daemon_trouble(&Daemon::Failed("x".into()), None));
+        assert!(daemon_trouble(&Daemon::External, Some(&st(false, None, "one"))), "stopped");
+        assert!(daemon_trouble(&Daemon::External, Some(&st(true, Some("0.8.2"), "conflict"))));
+        let mut index = st(false, None, "one");
+        index["embedder_conflict"] = serde_json::json!({ "recorded": "a", "daemon": "b" });
+        assert!(daemon_trouble(&Daemon::External, Some(&index)), "the index needs rebuilding");
+        assert!(!daemon_trouble(&Daemon::Starting, None));
+        assert!(!daemon_trouble(&Daemon::External, None), "unknown is not trouble");
+        assert!(
+            !daemon_trouble(&Daemon::External, Some(&st(true, Some("0.8.1"), "one"))),
+            "an update is not trouble"
+        );
+    }
+
+    /// One act line, the first that holds: the memory cannot be used, an update, then no AI app
+    /// connected unless Finish Setup... shows; a remote server's trouble opens Server.
+    #[test]
+    fn the_tray_has_one_act_in_order() {
+        assert_eq!(tray_act(true, false, true, true, false), Some(("Open This Mac...", "daemon")));
+        assert_eq!(
+            tray_act(true, true, false, true, false),
+            Some(("Check the Server...", "server"))
+        );
+        assert_eq!(tray_act(false, false, true, true, false), Some(("Open This Mac...", "daemon")));
+        assert_eq!(
+            tray_act(false, false, false, true, false),
+            Some(("Connect an AI App...", "apps"))
+        );
+        assert_eq!(tray_act(false, false, false, true, true), None, "Finish Setup... covers it");
+        let r = |answering, refused| RemoteServer {
+            name: "home".into(),
+            url: "https://h".into(),
+            answering,
+            credential_refused: refused,
+        };
+        assert_eq!(remote_line(&r(true, false)), "Server home - answering");
+        assert_eq!(remote_line(&r(false, false)), "Server home - not answering");
+        assert_eq!(remote_line(&r(true, true)), "Server home - refused the credential");
+    }
+
+    /// The map commands act where their control is, open the Graph from another page, and Back and
+    /// Forward follow the pages that read them; the shell presses only when the press changes
+    /// something and no dialog or card is open.
+    #[test]
+    fn the_map_commands_act_where_their_control_is() {
+        let all: Vec<String> =
+            ["panelL", "panelR", "mapTab", "listBtn", "fit", "keysOpen", "keysDlg"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        let on = |url: &str, c: &[String]| -> Vec<&'static str> {
+            map_items_enabled(url, c)
+                .into_iter()
+                .filter(|(_, e)| *e)
+                .map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(on("viz://localhost/?workspace=w", &all).len(), 9, "all on the Graph");
+        let old = on(
+            "viz://localhost/",
+            &["panelL".into(), "panelR".into(), "listBtn".into(), "fit".into()],
+        );
+        assert!(
+            !old.contains(&"view-map")
+                && !old.contains(&"view-back")
+                && !old.contains(&"view-keys"),
+            "{old:?}"
+        );
+        let review = on("viz://localhost/#review", &all);
+        assert!(review.contains(&"view-fit") && !review.contains(&"view-forward"));
+        let settings = on("tauri://localhost/settings.html", &[]);
+        assert!(
+            settings.contains(&"view-back")
+                && !settings.contains(&"view-forward")
+                && settings.contains(&"view-list")
+        );
+        assert!(on("tauri://localhost/starting", &[]).is_empty(), "nothing on the starting page");
+        let tab = press_js("mapTab", true);
+        assert!(
+            tab.contains("dialog[open]")
+                && tab.contains("#obscard.on")
+                && tab.contains("aria-selected")
+        );
+        assert!(!press_js("fit", false).contains("aria-selected"));
+        assert!(key_js("[", true).contains("keysDlg") && !key_js("k", false).contains("keysDlg"));
+    }
+
+    /// One id per item per menu: the tray's ids are its own, so a press does only its own act; and
+    /// the menu bar holds Setup..., Find, the map's commands and Help.
+    #[test]
+    fn each_menu_item_has_its_own_id() {
+        let src = include_str!("main.rs");
+        let tray = &src[src.find("TrayIconBuilder::with_id(\"supragnosis\")").expect("the tray")..];
+        let tray = &tray[..tray.find(".build(app)?;").unwrap()];
+        for arm in [
+            "\"tray-open\"",
+            "\"tray-review\"",
+            "\"tray-finish-setup\"",
+            "\"tray-act\" | \"tray-settings\"",
+            "\"tray-quit\"",
+        ] {
+            assert!(tray.contains(arm), "the tray lacks {arm}");
+        }
+        assert!(
+            !tray.contains("\"review\" =>") && !tray.contains("\"settings\" =>"),
+            "the tray hears the menu bar's ids"
+        );
+        for id in [
+            "\"setup\"",
+            "\"edit-find\"",
+            "\"view-filters\"",
+            "\"view-back\"",
+            "\"help-docs\"",
+            "\"help-diagnostics\", \"Diagnostics...\"",
+            "\"help-issue\"",
+        ] {
+            assert!(src.contains(id), "the menu bar lacks {id}");
+        }
+        assert!(
+            src.contains("\"Quit and Stop Memory\".to_string()"),
+            "Quit does not say it stops the memory"
+        );
+        assert!(
+            src.contains("tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));"),
+            "Quit's words follow the wrong state"
+        );
+        assert!(include_bytes!("../icons/tray-trouble.png").len() > 100, "no trouble shape");
+        let shell = include_str!("../assets/shell-init.js");
+        assert!(shell.contains("controls: [\"panelL\", \"panelR\", \"mapTab\", \"listBtn\", \"fit\", \"keysOpen\", \"keysDlg\"]"));
+    }
+}
+
+#[cfg(test)]
 mod cli_contract_tests {
     use super::{app_row, cli_json, status_text, who_runs, Daemon, CLI_SCHEMA};
 
@@ -4646,13 +5046,13 @@ mod cli_contract_tests {
     #[test]
     fn the_examples_read_through_the_apps_own_readers() {
         let st = read(STATUS);
-        assert!(status_text(&Daemon::External, Some(&st), None).starts_with("Two managers"));
+        assert!(status_text(&Daemon::External, Some(&st)).starts_with("Two managers"));
         let mut one = st.clone();
         one["situation"] = "one".into();
         one["managers"] = serde_json::json!([st["managers"][1].clone()]);
         assert_eq!(who_runs(&Daemon::External, &one), "starts at login");
-        let line = status_text(&Daemon::External, Some(&one), None);
-        assert_eq!(line, "Update ready - 0.4.7 running, 0.4.8 installed - restart in Settings");
+        let line = status_text(&Daemon::External, Some(&one));
+        assert_eq!(line, "Update ready - restart: 0.4.7 running, 0.4.8 installed");
 
         let apps = read(CONNECT);
         let kinds: Vec<_> = apps["clients"]
