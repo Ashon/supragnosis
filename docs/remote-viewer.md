@@ -143,6 +143,9 @@ both:
 
 - **Locally** it answers `{"surface": "local", "node": "<host id>"}`, and the page behaves exactly as
   today; the node was added for the layout the local console remembers (design-system.md Section 5).
+  *(Revised by design-system.md step 48: it also gives `default_workspace`, the workspace an omitted
+  one resolves to, as the read tier's key does - the node's default here, design-system.md Section
+  29.10.)*
 - **On the read tier** it gives:
   - the principal's name, and that the surface is read-only;
   - the workspace an omitted one resolves to;

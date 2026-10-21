@@ -306,6 +306,9 @@ cross that gap:
   Settings or Setup - its script from the gear and the sync pill, the app from the window when its
   menu or tray does - and the app's pages go back to that address. The address is the viewer's own
   `?workspace=` and `?entity=`, which a page that keeps neither still answers with its first view.
+  Since design-system.md step 48 it also sets `window.supragnosisSetup`, Setup's address, which the
+  viewer reads beside `window.supragnosisHere` to offer Open Setup on an empty store; a viewer that
+  does not read it shows no button, and a shell that does not set it leaves none.
 
 The app does not compare its own version with the daemon's, and this does not add that check. Drift
 is reported between the CLI and the daemon, which is the pair that has to agree for a restart to
