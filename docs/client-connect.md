@@ -5,6 +5,7 @@
 > [architecture.md](architecture.md) Section 10 (the local surfaces).
 >
 > Status: **built** (Section 9 steps 1-5, Section 12 included). What building it changed is recorded in Section 11.
+> Section 13, OpenCode, is specified; it is built next.
 
 ## 1. Why this exists
 
@@ -30,6 +31,7 @@ The command is also not portable. What each client can reach, checked in October
 | VS Code | yes | yes (`mcp.json` `type: http` + `headers`) |
 | Codex CLI | yes | only from an environment variable (`--bearer-token-env-var`) |
 | Gemini CLI | yes | yes (`--header`) |
+| OpenCode | yes | yes (`opencode mcp add --url --header`; added October 2026, Section 13) |
 
 The client a non-developer is most likely to use, Claude Desktop, cannot reach the daemon at all
 without a third-party bridge such as `mcp-remote`, which needs Node. Every client speaks stdio, but
@@ -88,13 +90,17 @@ One command registers the bridge with a client, using whatever mechanism that cl
 - **`supragnosis connect <client>`** registers `<supragnosis> bridge` with that client. The program
   path is the stable one: the Homebrew `opt` link rather than the versioned keg, chosen the same way
   as for the login job (daemon-lifecycle.md Section 4), so an upgrade does not break it.
-  - **Through the client's own CLI** when it has one - Claude Code, Codex, Gemini, and VS Code's
-    `code --add-mcp`. The client owns its file format, and a CLI is the interface it promises to
-    keep.
-  - **By editing the client's config file** only where no CLI exists: Claude Desktop and Cursor. One
-    key is added under `mcpServers` and everything else stays as written, in its original order. The
-    file is first copied to `~/.supragnosis/connect/<client>.<timestamp>.json`. A file that does not
-    parse as JSON is refused rather than rewritten.
+  - **Through the client's own CLI** when it has one - Claude Code, Codex, Gemini, OpenCode's
+    `opencode mcp add`, and VS Code's `code --add-mcp`. The client owns its file format, and a CLI
+    is the interface it promises to keep.
+  - **By editing the client's config file** only where no CLI does the act: Claude Desktop and
+    Cursor, which have no CLI for it; the removal for VS Code and OpenCode, whose CLIs add but do
+    not remove; and Claude Code's capture hook, which its CLI has no command for (Section 12.4). One
+    key is added or removed and everything else stays as written, in its original order. The file is
+    first copied into `~/.supragnosis/connect/`, named for the client and the time and keeping its
+    extension (Section 11 has the exact names). A file that does not parse - as JSON, or as JSONC
+    for OpenCode (Section 13) - is refused rather than rewritten. VS Code reads its file as JSONC
+    too, but `connect` holds it to strict JSON: a commented one is refused, never edited.
 - **An entry that is already there.** One that already names the bridge needs nothing. Any other
   `supragnosis` entry is reported and left alone, unless `--replace` is given. `--replace` removes
   the old entry the client's own way first. For an `http` entry, the output says that the token
@@ -117,6 +123,7 @@ One command registers the bridge with a client, using whatever mechanism that cl
 | `vscode` | the `code` CLI inside the app bundle | `code --add-mcp` (file edit to remove) | the user profile's `mcp.json`, `servers` |
 | `codex` | `codex` on `PATH` | `codex mcp add` | `~/.codex/config.toml`, `mcp_servers` |
 | `gemini` | `gemini` on `PATH` | `gemini mcp add --scope user` | `~/.gemini/settings.json`, `mcpServers` |
+| `opencode` | `opencode` on `PATH` or in `~/.opencode/bin` | `opencode mcp add --global` (file edit to remove) | `opencode.json` and `opencode.jsonc` in `$XDG_CONFIG_HOME/opencode/` (`~/.config/opencode/`), `mcp.servers` (Section 13) |
 
 ## 5. The app: AI Apps in the tray
 
@@ -146,7 +153,9 @@ volta, mise) or a package manager's own directory is on the login shell's `PATH`
 per launch, by asking the login shell (`$SHELL -l -i -c`) to print its environment, and gives it to
 every CLI call it makes, ahead of its own. When the shell cannot be asked - no `SHELL`, no answer
 within five seconds, nothing to read - the app's own `PATH` stands, and the CLI's fixed list of
-directories (Homebrew, `~/.local/bin` and the like) still applies.
+directories (Homebrew, `~/.local/bin` and the like) still applies. The same read takes
+`XDG_CONFIG_HOME` when the shell sets it, so the CLI, and the OpenCode it runs, find the
+configuration a terminal's OpenCode reads (Section 13).
 
 ## 6. Decisions
 
@@ -158,7 +167,10 @@ directories (Homebrew, `~/.local/bin` and the like) still applies.
   every client with no change here. A bridge that re-declared the tools would be a second surface to
   keep in step.
 - **Client CLIs before file edits.** A client's CLI is what it commits to keep working across its
-  own upgrades. Its file format is not. Edits are kept to the two clients that offer nothing else.
+  own upgrades. Its file format is not. Edits are kept to the acts a client's CLI does not do:
+  everything for Claude Desktop and Cursor, removal for VS Code and OpenCode, and Claude Code's
+  capture hook. *(Revised when OpenCode was added: this read "the two clients that offer nothing
+  else", which VS Code's removal and the capture hook had already outgrown.)*
 - **The store-opening stdio server stays, demoted.** It is still the right shape where no daemon
   runs - a CI job, a one-off container. But documents, installers and `connect` stop recommending
   it, because beside a daemon it is the second writer.
@@ -197,7 +209,8 @@ steps.
 ## 9. Ordering
 
 1. **The bridge.**
-2. **`connect`**: listing, registration and removal for the six clients in Section 4's table.
+2. **`connect`**: listing, registration and removal for the six clients in Section 4's table, and
+   the seventh, OpenCode, in Section 13.
 3. **The app's AI Apps submenu.**
 4. **Documents.** README, the curl installer and the landing page show `supragnosis connect` and the
    app, rather than the `--header` command or the store-opening stdio line.
@@ -364,7 +377,7 @@ the text says "workspace", not "only this workspace".
 - **It takes effect in the next session.** Claude Code takes its hooks at startup and asks before
   running one a settings file gained since, so the next-step line stays "start a new Claude Code
   session".
-- **Claude Code only, for now.** Codex, Gemini CLI, Cursor and VS Code each have hooks of their own
+- **Claude Code only, for now.** Codex, Gemini CLI, OpenCode, Cursor and VS Code each have hooks of their own
   shape or none; the listing shows nothing about capture for them. Adding one is a row in the table
   of Section 4 and a reader for that client's event, not a second mechanism.
 
@@ -409,3 +422,157 @@ non-JSON input and `hook cursor` each exited 1 with the reason on stderr. `conne
 under a temporary HOME registered the bridge through the real `claude` CLI and the two groups
 beside an existing `Stop` hook, the listing read `connected (bridge), capture on`, and `--remove`
 gave the settings file back byte for byte with two backups kept.
+
+## 13. OpenCode
+
+The author asked, on 2026-10-21, for OpenCode to join the AI apps `connect` knows, and that every
+change be checked against the principles before it is made (design-system.md Section 29.1). A
+second reader checked the first draft of this section and then its revision; what that changed is
+in Section 13.5.
+
+### 13.1 What OpenCode offers
+
+Read from OpenCode 2.0.32 on the author's machine, in throwaway homes so the author's own
+configuration was not touched. The section says "2.x"; `connect` reads its entry back after adding
+it, so a release that writes elsewhere fails there rather than silently.
+- **Adding a server.** `opencode mcp add [--global] <name> -- <command...>` adds a local server, and
+  its help lists `--url` and `--header` for a remote one. `--global` writes the user's
+  configuration in `$XDG_CONFIG_HOME/opencode/`, or `~/.config/opencode/` when that is unset: into
+  `opencode.json` where one exists, into `opencode.jsonc` where only that exists, and into a new
+  `opencode.json` otherwise, keeping the file's comments. It returns within a second and starts no
+  process.
+- **Two files.** OpenCode reads both `opencode.json` and `opencode.jsonc` from that directory, in
+  that order (read from its source). Which one wins when both name the same server was not settled
+  by measurement.
+- **The entry's shape.** `mcp.servers.<name>` = `{"type": "local", "command": [program, args...]}`:
+  the program and its arguments are one array, one level below `mcp`.
+- **No removal command.** It has `mcp list`, `add`, `auth` and `logout`, and no `mcp remove`.
+- **The handshake.** It names itself `opencode` in the MCP handshake (`clientInfo.name`).
+- **Its own installer** puts the binary in `~/.opencode/bin`, which is not always on a GUI app's
+  `PATH`.
+- **Its background service.** OpenCode 2.x runs a background server on a loopback port, restarted
+  by `opencode service restart`. Its API answers 401 without the password OpenCode generates for it
+  by default (measured on a throwaway service, and as a status code from the author's own).
+
+### 13.2 The check
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| C1 | The bridge never opens the store and never starts a daemon | agrees - the entry is the same bridge |
+| C2 | No secret in a client's configuration | agrees - the entry is `<supragnosis> bridge`, with no token |
+| C3 | Never replace an entry `connect` did not write without `--replace`; copy a file aside before editing it; refuse a file it cannot parse | agrees - Section 4's wording now names JSONC for OpenCode; see 13.3 |
+| C4 | The client sees the daemon's surface unchanged | agrees |
+| C5 | `connect` without a client only reads | agrees |
+| Section 6, "Client CLIs before file edits" | Edit a file only where the CLI does not do the act | agrees, as reworded - removal is a file edit because OpenCode has no `mcp remove`, as with VS Code |
+| Section 6, "The user scope" | Everywhere, not one project | agrees - `--global` |
+| Section 5, the CLI runs with the person's environment | The app's CLI calls see what a terminal sees | agrees, extended - the login shell's `XDG_CONFIG_HOME` is passed along with its `PATH` |
+| Section 12, capture | Claude Code only, for now | agrees - OpenCode is outside capture, as Codex and Gemini are |
+| onboarding.md Section 5, "Which app it is" | An app is known by the name it sends | agrees - `opencode` maps to the row |
+| design-system.md Section 6a | A control both pages offer is built once in the app's shared script | repays - the apps' names and icons move into `kit.js`, read by both pages |
+| P5 and P24 | Unknown is not none; a precedence is allowed when it is stated | agrees - see 13.3 for the file it reads and what an unparseable file reads as |
+| P17 | The node-wide surface belongs to the one OS user who holds the token file | agrees - OpenCode runs as that user, as every app `connect` knows does, and the bridge reads the token file as that user; what OpenCode exposes of itself is OpenCode's (13.5) |
+| P21 | No new tool without a repeated intent | agrees - the MCP surface does not change |
+| compatibility.md Section 6 | A new value of an open field keeps the schema | agrees - a new client id in `connect --json`; the fixture gains the row |
+
+No contradiction.
+
+### 13.3 Behaviour
+
+- **Detected** by `opencode` on `PATH`, or in `~/.opencode/bin`, which joins the directories
+  `connect` searches.
+- **Registered** by `opencode mcp add --global supragnosis -- <supragnosis> bridge`, with the
+  person's `PATH` and `XDG_CONFIG_HOME`.
+- **The files it reads** are the two OpenCode reads, in `$XDG_CONFIG_HOME/opencode/` or
+  `~/.config/opencode/`. The listing's `config` is the one OpenCode's CLI writes (13.1).
+  - The listing reads `mcp.servers.supragnosis` from each.
+  - Where both hold one, it reports the one that needs the person's attention, in this order:
+    `unknown`, `http`, `stdio`, `other`, `bridge`. Which one OpenCode loads is not settled (13.1),
+    so the listing never calls a pair connected while either half is not.
+  - A file that does not parse reads `unknown`, never `none` (P5).
+  - An entry marked `"enabled": false` reads `other`, since it does not load - in every app's file,
+    since Codex has the same key.
+  - A `command` may be an array (program and arguments).
+  - `type: "remote"` with a `url` reads `http`, as for every other client.
+- **Removed** by a file edit, from both `opencode.json` and `opencode.jsonc` where each holds the
+  entry, each backed up first (`~/.supragnosis/connect/opencode.<timestamp>.json` or `.jsonc`).
+  This way `--replace` leaves no copy behind, and its "the copy of the token it held is gone" stays
+  true. Both files are read and edited before either is written, so a file that does not parse
+  stops the removal with neither touched.
+  - **The dialect** is JSONC: `//` and `/* */` comments and trailing commas, nothing more (not
+    JSON5).
+  - **The edit** cuts one contiguous span, case by case:
+    - a member with a comma after it (a separator, or a trailing comma): the member, that comma and
+      what lies between them;
+    - a last member with no comma after it: the comma before it, the member and what lies between
+      them - unless a comment lies there, which is most often the previous member's; then only the
+      member goes, and the comma before it stays as a trailing comma (legal, and a file holding a
+      comment is JSONC already);
+    - a member alone in its object: the member, and nothing else inside the braces.
+    When the member had its line to itself, the span takes that line's indentation and line end too,
+    so no blank line is left.
+  - **The checks.** The result must parse. It must equal the original as a value everywhere but that
+    member. As text it must equal the original with exactly that span taken out, and the span,
+    comments aside, must hold nothing but the member, at most one comma and whitespace. Every
+    comment outside the span stays.
+- **The next step:** "start a new OpenCode session; if it does not list supragnosis, restart
+  OpenCode's background service (`opencode service restart`)". A running service picked up some
+  changes to its file and missed others (13.5), so the line names both.
+- **First contact** maps the handshake name `opencode` to the row.
+- **Listed** wherever the apps are named:
+  - the CLI's help, and Setup's "no app is installed" sentence;
+  - the app's menu, and both pages' rows (through `kit.js`, with the terminal icon Codex and Gemini
+    have);
+  - the README;
+  - the curl installer's closing lines and the landing's connect section, with the release that
+    ships it, since both are published the moment they reach main;
+  - onboarding.md Section 4.2.
+
+### 13.4 Guarded by
+
+Tests named when Section 13 is built, one for each of these:
+- registration: the add command; the files (`XDG_CONFIG_HOME` honoured, the CLI's choice between
+  them); the listing across both, and `unknown` for one that does not parse; each case of the cut,
+  a comment holding brackets and quotes, and every byte outside the span kept; strict JSON staying
+  strict for the other apps;
+- removal from both files, each backed up, and none at all while one does not parse;
+- classification of a command array, a remote url and a disabled entry;
+- the first-contact name `opencode`;
+- the `connect --json` example listing every app the CLI knows, and the menu and both pages naming
+  each one from the one table in `kit.js`.
+
+### 13.5 What the second reading changed
+
+The first draft got these wrong:
+- **Two rules it would have contradicted:**
+  - Section 4's "does not parse as JSON is refused";
+  - Section 6's "the two clients that offer nothing else".
+  Both are reworded above.
+- **"Keeps every comment"** was promised without a check that could see comments; 13.3 now names
+  the dialect, the span and a text check.
+- **It read two shapes and two files with no precedence.** The 1.x shape is dropped, the file is
+  OpenCode's own choice, and removal clears both files.
+- **Smaller corrections:**
+  - the first-contact citation (Section 5, not O7);
+  - the backup's extension;
+  - the onboarding pointer (onboarding.md Section 4.2);
+  - design-system.md Section 6a, which the draft called met: it was owed, and this section repays
+    it.
+- **Three questions it left unmeasured,** now answered:
+  - `mcp add` returns at once, so nothing can hang;
+  - the service's API needs a password by default;
+  - whether a running service reloads its configuration: a throwaway service picked up some
+    changes to its file and missed others, so the next step names both acts.
+- **A second check of the revised section, and measuring again before building,** corrected the
+  file OpenCode writes when both exist (`opencode.json`, not `opencode.jsonc`). They found that
+  OpenCode reads both files, so the listing and the removal cover both. They also settled the cut
+  case by case.
+- **Limits it found outside this section,** stated rather than fixed here:
+  - Codex honours `CODEX_HOME`, and `connect` reads `~/.codex/config.toml`: a person who moves
+    Codex's home sees `connect codex` fail its read-back.
+  - VS Code reads JSONC, and `connect` holds its file to strict JSON (Section 4).
+- **No password check.** The first measurement read the web interface's 200 as the API's and
+  reported OpenCode's service as unprotected, and the author first chose that `connect` require a
+  password on it. Once the API was found to take one by default, the author dropped the check as
+  more than the act needs: `connect` registers a local server through OpenCode's own CLI, as for
+  every other app, and an OpenCode left open to others already reaches the whole account - it runs
+  commands and reads files, the token file among them - so a refusal here would close nothing.
