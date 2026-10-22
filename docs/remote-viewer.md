@@ -75,7 +75,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 
 | Path | Remote | Rule |
 |---|---|---|
-| `/`, `/viewer.css`, `/viewer.js` | served | The page. |
+| `/`, `/viewer.css`, `/viewer.js`, `/viewer-sim.js`, `/viewer-gl.js` | served | The page, the map's layout worker and its renderer (design-system.md Sections 27.5 and 27.9). *(Revised: the last two were not listed when the map gained them, so the tier answered them as not served and its map did not draw. The test that holds this list to the router's paths read only `/viewer.` names.)* |
 | `/fonts/...` | served | The faces the page ships, the local console's bytes, cached under a versioned path (design-system.md U11). |
 | `/api/about` | served | Which build answers. |
 | `/api/surface` | served | New, on both surfaces (Section 3.5). |
