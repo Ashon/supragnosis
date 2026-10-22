@@ -1841,6 +1841,131 @@ mod tests {
         assert!(good.advertise("ws").await.is_ok());
     }
 
+    /// A store whose every call fails, as a disk that went away does - the fault-injecting adapter.
+    struct FailingStore;
+
+    fn gone() -> supragnosis_core::StoreError {
+        supragnosis_core::StoreError::Backend("the disk went away".into())
+    }
+
+    impl AssertionStore for FailingStore {
+        fn add_observation(&self, _: Observation) -> Result<(), supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn get_observation(
+            &self,
+            _: &str,
+        ) -> Result<Option<Observation>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn get_entity(
+            &self,
+            _: &str,
+        ) -> Result<Option<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn relations_of(
+            &self,
+            _: &str,
+        ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn search(
+            &self,
+            _: &str,
+            _: Option<&str>,
+            _: usize,
+        ) -> Result<Vec<supragnosis_core::SearchHit>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn traverse(
+            &self,
+            _: &str,
+            _: usize,
+            _: usize,
+        ) -> Result<Vec<supragnosis_core::TraverseHit>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn all_entities(
+            &self,
+            _: Option<&str>,
+        ) -> Result<Vec<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn all_relations(
+            &self,
+            _: Option<&str>,
+        ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+        fn all_observations(
+            &self,
+            _: Option<&str>,
+        ) -> Result<Vec<Observation>, supragnosis_core::StoreError> {
+            Err(gone())
+        }
+    }
+
+    /// F12 (P5): a storage failure is reported as a failure, never as "empty" or "converged". A hub
+    /// whose store fails answers advertise, pull and push with a 500 carrying the store's error -
+    /// not an empty version vector, an empty page or an accepted batch - and a round run from a
+    /// node whose own store fails ends in that error, never in a summary that says nothing moved.
+    #[tokio::test]
+    async fn a_store_failure_is_reported_as_a_failure() {
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let client_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let allow = vec![entry(&client_node, "tok", &["ws"])];
+        let failing: Arc<dyn AssertionStore> = Arc::new(FailingStore);
+        let addr = spawn_server(Arc::new(ServerState::new(failing.clone(), hub, allow))).await;
+        let client = SyncClient::new(format!("http://{addr}"), "tok").unwrap();
+        let failed = |what: &str, r: Result<String, TransportError>| match r {
+            Err(TransportError::Remote { status: 500, body }) => {
+                assert!(body.contains("the disk went away"), "{what}: {body}")
+            }
+            other => panic!("{what}: a failing store answered {other:?}"),
+        };
+        failed("advertise", client.advertise("ws").await.map(|r| format!("{:?}", r.vv)));
+        failed(
+            "pull",
+            client
+                .pull("ws", &VersionVector::default(), 10)
+                .await
+                .map(|r| format!("{}", r.events.len())),
+        );
+
+        // A batch a healthy node would accept, refused because the hub cannot store it.
+        let mine: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let prov = Provenance {
+            host: "h".into(),
+            on_behalf_of: None,
+            workspace: "ws".into(),
+            source_ref: None,
+            observed_at: 1,
+            confidence: None,
+            trust_tier: Default::default(),
+            sync: None,
+        };
+        mine.add_observation(Observation::new("a fact".into(), prov)).unwrap();
+        client_node.backfill(mine.as_ref(), "ws").unwrap();
+        let batch =
+            export_delta(mine.as_ref(), "ws", &VersionVector::default(), &["ws".into()]).unwrap();
+        failed("push", client.push("ws", batch).await.map(|r| format!("{r:?}")));
+
+        // A round from a node whose own store fails: the error, not "nothing to sync".
+        let healthy_hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32])));
+        let allow = vec![entry(&client_node, "tok", &["ws"])];
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let addr = spawn_server(Arc::new(ServerState::new(hub_store, healthy_hub, allow))).await;
+        let client = SyncClient::new(format!("http://{addr}"), "tok").unwrap();
+        let round = client
+            .sync_workspace(&failing, &client_node, "ws", &["ws".into()], &BTreeMap::new())
+            .await;
+        match round {
+            Err(e) => assert!(e.to_string().contains("the disk went away"), "{e}"),
+            Ok(summary) => panic!("a failing store reported a round: {summary:?}"),
+        }
+    }
+
     /// Consent rides a header on every workspace request (docs/remote-server.md Section 4.5): yes
     /// for a workspace the node serves, no for any other, and nothing at all from a node that has no
     /// view - an older one - so the hub never reads silence as a withdrawal or as a grant.

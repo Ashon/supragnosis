@@ -143,6 +143,9 @@ Guarded by:
   entry is handed comes back from `build_engine` over a scratch redb store with nothing owed and
   the owed append in its graph.
 - `a_completed_write_owes_nothing` and `a_reproject_repays_only_its_own_workspace` - K2.
+- `a_projection_write_that_fails_leaves_its_entry` - K2 under a fault: a store refusing projection
+  writes keeps the append and its entry, through an observe and a reproject that both say they
+  failed, and the next open repays it.
 - `a_pull_that_stamps_rows_re_materializes_them` - the hub repays what stamping owes.
 - `health_reports_owed_projections_and_the_last_recovery` - K5.
 
