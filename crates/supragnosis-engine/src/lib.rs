@@ -1681,11 +1681,12 @@ pub struct Engine {
     events: Option<Arc<dyn EventSink>>,
     /// The session id (footprint group key). Carried on every event emitted - defaults to "local".
     session: String,
-    /// The projection write serialization lock. observe's entity upsert is read-merge-write (get -> push
-    /// provenance -> put), so it is not atomic - if concurrent observations touch the same entity, attestation
-    /// can be lost (deferred, architecture section 14). It was harmless with a single stdio client, but the HTTP
-    /// daemon allows concurrent calls, so the write section is serialized with this lock to prevent loss.
-    /// Reads (get/search/traverse/graph) stay outside the lock - kept concurrent. Full atomicity is the M3 resolution layer.
+    /// The projection write serialization lock. Every section that reads the log and then writes projected
+    /// rows from what it read - observe, define_type, the gate acts, rekey, migrate, the embedding
+    /// backfill's write, and reproject - holds it, so none can overwrite another's rows with an older
+    /// snapshot (architecture.md Section 14). Reads (get/search/traverse/graph) stay outside the lock and
+    /// concurrent. A sync apply appends to the log without it; its rows are projected by the reproject that
+    /// follows, which takes it.
     write_guard: std::sync::Mutex<()>,
     /// The belief-resolution strategy (Principle 1, resolution.md R1) - replaceable; defaults to
     /// [`TierWeighted`]. Consumed by the read-path belief folds and by reprojection.
@@ -5503,10 +5504,16 @@ impl Engine {
     /// (idempotent: a second run writes identical rows); rows with no support in the log are left in
     /// place - removal is a curation concern, not reprojection's (Principle 3).
     pub fn reproject(&self, workspace: Option<&str>) -> Result<ReprojectReport, StoreError> {
+        // A re-materialization is a write section like observe's: it reads the log and then upserts
+        // every row of the workspace, so an observe landing between the two would have its
+        // projection overwritten by a snapshot taken before it. The engine's write guard serializes
+        // the two (architecture.md Section 14); reads stay concurrent.
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
         // K2: what this reproject repays is what the ledger held BEFORE it read the log. An append
-        // landing while it runs may be missing from the snapshot it projects, so its entry stays
-        // for its own writer (or the next reproject) to clear. Read before the context below exists.
+        // landing while it runs - only a sync apply or a stamp, which append without the write
+        // guard - may be missing from the snapshot it projects, so its entry stays for the next
+        // reproject to clear. Read before the context below exists.
         let owed: Vec<String> = self
             .store
             .owed_projections()?
