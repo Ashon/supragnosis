@@ -567,6 +567,45 @@ pub fn back_up(
     Ok(Some(to))
 }
 
+/// Writes a client's config, copying the file it replaces aside first (C3): the copy exists before
+/// the file changes, and a copy that cannot be taken stops the write with the file untouched. The
+/// copy's path, or `None` when there was no file to copy.
+pub fn write_backed_up(
+    path: &Path,
+    client: &str,
+    home: &Path,
+    now: u64,
+    text: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let copy = back_up(path, client, home, now)?;
+    write_replacing(path, text)?;
+    Ok(copy)
+}
+
+/// What `connect <app>` does with the entry it finds there (Section 4, C3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plan {
+    /// No entry: write the bridge.
+    Add,
+    /// The bridge is already there; only the capture hook may change.
+    AlreadyConnected,
+    /// Take out an entry this did not write, as `--replace` asked, then write the bridge.
+    Replace(Entry),
+}
+
+/// The decision `connect <app>` makes before it writes anything. An entry it did not write is left
+/// alone without `--replace` - refused, naming it - and a config that cannot be read is never
+/// touched, `--replace` or not. A refusal is the entry that stopped it.
+pub fn plan_connect(before: Entry, replace: bool) -> Result<Plan, Entry> {
+    match before {
+        Entry::None => Ok(Plan::Add),
+        Entry::Bridge => Ok(Plan::AlreadyConnected),
+        Entry::Unknown => Err(Entry::Unknown),
+        other if replace => Ok(Plan::Replace(other)),
+        other => Err(other),
+    }
+}
+
 // --- The clients ---------------------------------------------------------------------------------
 
 /// One AI app `connect` knows (client-connect.md Section 4's table).
@@ -1238,6 +1277,61 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(std::fs::read_to_string(&first).unwrap(), "original");
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// C3 and Section 4: an entry `connect` did not write is left alone without `--replace`, and the
+    /// copy is taken before the file is written. The plan is a table over every entry; the write
+    /// leaves the copy holding the old bytes and the file the new, makes no copy of a file that was
+    /// not there, and when the copy cannot be taken it stops with the file untouched. The CLI writes
+    /// a client's config only through it.
+    #[test]
+    fn an_entry_connect_did_not_write_is_left_alone() {
+        for replace in [false, true] {
+            assert_eq!(plan_connect(Entry::None, replace), Ok(Plan::Add));
+            assert_eq!(plan_connect(Entry::Bridge, replace), Ok(Plan::AlreadyConnected));
+            assert_eq!(plan_connect(Entry::Unknown, replace), Err(Entry::Unknown), "never touched");
+            for theirs in [Entry::Http, Entry::Stdio, Entry::Other] {
+                let want = if replace { Ok(Plan::Replace(theirs)) } else { Err(theirs) };
+                assert_eq!(plan_connect(theirs, replace), want);
+            }
+        }
+
+        let home = std::env::temp_dir().join(format!("supragnosis-write-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let file = home.join("app.json");
+        std::fs::write(&file, "old").unwrap();
+        let copy = write_backed_up(&file, "app", &home, 7, "new").unwrap().expect("a copy");
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), "old");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        let fresh = home.join("fresh.json");
+        assert_eq!(write_backed_up(&fresh, "app", &home, 7, "new").unwrap(), None);
+        assert_eq!(std::fs::read_to_string(&fresh).unwrap(), "new");
+        // A copy that cannot be taken - the backup directory's place holds a file - stops the write.
+        let blocked = home.join("blocked");
+        std::fs::create_dir_all(&blocked).unwrap();
+        std::fs::write(blocked.join(".supragnosis"), "a file, not a directory").unwrap();
+        assert!(write_backed_up(&file, "app", &blocked, 8, "newer").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new", "the file is untouched");
+        let _ = std::fs::remove_dir_all(&home);
+
+        let main = include_str!("main.rs");
+        assert!(!main.contains("connect::back_up("), "no copy is taken apart from its write");
+        let writes: Vec<&str> = main
+            .match_indices("connect::write_replacing(")
+            .map(|(i, _)| main[i..].lines().next().unwrap())
+            .collect();
+        assert_eq!(
+            writes,
+            ["connect::write_replacing(&profile::client_path(&home), &profile::render(file))"],
+            "the CLI's one plain write is its own server profiles"
+        );
+        let cmd = &main[main.find("fn connect_cmd(").expect("connect_cmd")..];
+        let cmd = &cmd[..cmd.find("\n}\n").expect("it closes")];
+        assert!(
+            cmd.contains("connect::plan_connect(before, a.replace)"),
+            "connect decides by the plan"
+        );
     }
 
     /// A file that exists and cannot be read is not an absent one: read as empty, it would be

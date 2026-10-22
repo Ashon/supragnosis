@@ -1400,11 +1400,7 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "an entry connect did not write is left alone without --replace, and the copy is taken before the file is written",
-            Evidence::Deferred(
-                "both decisions live inline in `connect_cmd` beside the IO, and the only check of them was the manual \
-                 run Section 10 records. Revisit when connect_cmd's decision is lifted into a pure function like \
-                 lifecycle::plan_install, which a table test can then drive",
-            ),
+            Evidence::Scenario(&["an_entry_connect_did_not_write_is_left_alone"]),
         ),
     ]),
     (4, &[

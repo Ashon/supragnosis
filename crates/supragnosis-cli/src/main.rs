@@ -1997,8 +1997,8 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
         println!("removed the supragnosis entry from {}", client.name());
         return Ok(());
     }
-    match before {
-        Entry::Bridge => {
+    match connect::plan_connect(before, a.replace) {
+        Ok(connect::Plan::AlreadyConnected) => {
             println!("{} is already connected through the bridge", client.name());
             match capture_act(client, a.no_capture) {
                 Some(true) => capture_add(&env, &program)?,
@@ -2009,18 +2009,18 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
             }
             return Ok(());
         }
-        Entry::Unknown => anyhow::bail!(
+        Err(Entry::Unknown) => anyhow::bail!(
             "{} could not be read - not touching a file this cannot parse (client-connect.md C3)",
             files_named(client, &env)
         ),
-        Entry::None => {}
-        other if !a.replace => anyhow::bail!(
+        Err(other) => anyhow::bail!(
             "{} already has a supragnosis entry ({}){} - re-run with --replace to switch it to the bridge",
             client.name(),
             other.as_str(),
             if other == Entry::Http { ", which holds a copy of the token" } else { "" }
         ),
-        other => {
+        Ok(connect::Plan::Add) => {}
+        Ok(connect::Plan::Replace(other)) => {
             connect_remove(client, &env)?;
             println!("removed the previous supragnosis entry ({})", other.as_str());
             if other == Entry::Http {
@@ -2043,11 +2043,11 @@ fn connect_cmd(a: ConnectArgs) -> Result<()> {
             let edited =
                 connect::upsert(&text, section, connect::NAME, &connect::bridge_entry(&program))
                     .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
-            if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+            let copy = connect::write_backed_up(&path, client.id(), &env.home, unix_now(), &edited)
+                .with_context(|| format!("writing {}", path.display()))?;
+            if let Some(b) = copy {
                 println!("  backup  {}", b.display());
             }
-            connect::write_replacing(&path, &edited)
-                .with_context(|| format!("writing {}", path.display()))?;
             // Every file setup changes is named where it ran (docs/onboarding.md O2).
             println!("  wrote   {}", path.display());
         }
@@ -2114,11 +2114,12 @@ fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
         text = connect::add_hook(&text, event, &connect::hook_group(event, program))
             .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
     }
-    if let Some(b) = connect::back_up(&path, "claude-code-settings", &env.home, unix_now())? {
+    let copy =
+        connect::write_backed_up(&path, "claude-code-settings", &env.home, unix_now(), &text)
+            .with_context(|| format!("writing {}", path.display()))?;
+    if let Some(b) = copy {
         println!("  backup  {}", b.display());
     }
-    connect::write_replacing(&path, &text)
-        .with_context(|| format!("writing {}", path.display()))?;
     println!(
         "  capture on: after a commit the agent is asked for the decision behind it, and a session \
          starts knowing what the workspace holds ({})",
@@ -2155,11 +2156,12 @@ fn capture_remove(env: &connect::Env) -> Result<bool> {
     let Some(edited) = edited else {
         return Ok(false);
     };
-    if let Some(b) = connect::back_up(&path, "claude-code-settings", &env.home, unix_now())? {
+    let copy =
+        connect::write_backed_up(&path, "claude-code-settings", &env.home, unix_now(), &edited)
+            .with_context(|| format!("writing {}", path.display()))?;
+    if let Some(b) = copy {
         println!("  backup  {}", b.display());
     }
-    connect::write_replacing(&path, &edited)
-        .with_context(|| format!("writing {}", path.display()))?;
     println!("removed the capture hook from Claude Code's settings");
     Ok(true)
 }
@@ -2227,11 +2229,12 @@ fn connect_remove(client: connect::Client, env: &connect::Env) -> Result<()> {
                 }
             }
             for (path, edited) in edits {
-                if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+                let copy =
+                    connect::write_backed_up(&path, client.id(), &env.home, unix_now(), &edited)
+                        .with_context(|| format!("writing {}", path.display()))?;
+                if let Some(b) = copy {
                     println!("  backup  {}", b.display());
                 }
-                connect::write_replacing(&path, &edited)
-                    .with_context(|| format!("writing {}", path.display()))?;
                 println!("  wrote   {}", path.display());
             }
             Ok(())
@@ -2246,11 +2249,12 @@ fn connect_remove(client: connect::Client, env: &connect::Env) -> Result<()> {
             else {
                 return Ok(());
             };
-            if let Some(b) = connect::back_up(&path, client.id(), &env.home, unix_now())? {
+            let copy = connect::write_backed_up(&path, client.id(), &env.home, unix_now(), &edited)
+                .with_context(|| format!("writing {}", path.display()))?;
+            if let Some(b) = copy {
                 println!("  backup  {}", b.display());
             }
-            connect::write_replacing(&path, &edited)
-                .with_context(|| format!("writing {}", path.display()))
+            Ok(())
         }
     }
 }
