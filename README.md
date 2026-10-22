@@ -7,9 +7,15 @@
 [![End-to-end scenarios](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAshon%2Fsupragnosis%2Fbadges%2Fe2e.json)](https://github.com/Ashon/supragnosis/actions/workflows/scenarios.yml)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-An embedded, file-based knowledge server for MCP clients. Agents shed observations as a
-by-product of work; every claim they store arrives carrying who asserted it, on what basis,
-and how far this node has decided to trust it. Nothing leaves your machine unless you say so.
+Shared project memory for coding agents, with receipts. supragnosis is a local MCP server for
+Claude Code, Codex, Cursor and other MCP clients. Your agents record what they learn as they
+work, and every claim keeps who asserted it, on whose behalf, on what basis, and how far this
+node trusts it. Claims that contradict each other stay side by side for you to settle, instead
+of the later one overwriting the earlier.
+
+It is built for a small team that wants one project's memory on each of its machines and
+shared with teammates, without a vendor cloud: one binary, an embedded store, and no account.
+A workspace leaves your machine only when you list it.
 
 ```
 supragnosis = supra (above) + gnosis (knowing) - knowledge about knowledge.
