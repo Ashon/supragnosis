@@ -334,6 +334,11 @@ answers did:
 - Merge suggestions and name variants also leave out a pair under a Blocked merge, and a pair whose
   merge the person rejected at the console, until new knowledge about one of the pair arrives.
 
+**Pairing adds no key to `supragnosis.toml`** (pairing.md D15, specified). A joined machine's
+receive list, the hub's name and the vouched keys live in `~/.supragnosis/hubs/`, and a hub's
+invitations and pairing's peer records in `~/.supragnosis/hub/`, so a release before pairing still
+starts on a paired node and syncs without the receive list's cap or the vouched keys.
+
 **The band says what it held back** (design-system.md step 61). The curation report's `merge_band`
 gains `held_back`, an added field: the near pairs the band left out because a merge names them, a
 split pulled them apart or the person's reject holds them back. The `curate` prompt, whose digest

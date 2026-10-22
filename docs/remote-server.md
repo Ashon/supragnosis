@@ -77,7 +77,8 @@ On the hub's sync listener, at `/mcp`, beside the sync API. This is the listener
 terminates TLS in-process and admits only what its configuration names (federation.md 6a, F10). The
 bind rule generalizes: a non-loopback listen requires TLS, plus at least one admitted node or one
 principal. A listener with neither still refuses to start (Principle 24: no surface open that the
-configuration did not authorize).
+configuration did not authorize). *(Revised by pairing.md: an open invitation is also an admission,
+and a listener that may not start leaves the rest of the node serving, saying why.)*
 
 ### 4.2 Principals
 
@@ -225,8 +226,8 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 
 | | Invariant |
 |---|---|
-| **R1** | The local MCP daemon stays loopback-only. Only the hub's TLS listener serves MCP beyond loopback, and only with TLS and at least one admitted principal or node. |
-| **R2** | Every remote request is authenticated as exactly one principal. There is no anonymous remote read or write (F19). |
+| **R1** | The local MCP daemon stays loopback-only. Only the hub's TLS listener serves MCP beyond loopback, and only with TLS and at least one admitted principal or node, or an open invitation (pairing.md PA1). *(Revised by pairing.md.)* |
+| **R2** | Every remote request is authenticated as exactly one principal. There is no anonymous remote read or write (F19). *(Revised by pairing.md: `preview` and `join` carry an invitation's secret and `leave` a joined node's credential; none is a principal's request, and none reads or writes knowledge.)* |
 | **R3** | A principal reads and writes only granted workspaces, enumeration included. Every tool has a declared remote policy, and a tool without one is refused. |
 | **R4** | A remote write is recorded `host` = hub, `on_behalf_of` = principal, at no higher than `AgentExtracted`. A client-supplied `on_behalf_of` cannot replace the principal. |
 | **R5** | Content another node originated is served remotely only with that node's consent for that workspace. Without it the answer is a refusal, never a partial view. |

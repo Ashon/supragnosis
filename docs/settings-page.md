@@ -189,6 +189,9 @@ Peers tab showed, read from this Mac's daemon, and not shown while a remote prof
     enforces, and the shell makes the request on the daemon's socket.
   - Granting a workspace, and admitting or removing a peer, stay in the file.
 - **Without a supragnosis.toml** the section says that sync is not set up and where it would be.
+- *(Revised by pairing.md Section 5: the pane offers "Let another Mac join this one", "Join another
+  Mac", Remove this Mac, Stop syncing and Sync now; granting a joined Mac another workspace stays in
+  the file.)*
 
 ### 3.5 About
 
