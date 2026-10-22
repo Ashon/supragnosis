@@ -373,6 +373,8 @@ Guarded by:
 - `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: every CLI call in the app that can
   stop a daemon, listed with the function it sits in, each reached from one command of the app's
   pages.
+- `quitting_leaves_a_daemon_it_did_not_spawn` - L6: on exit the app reaps only the child it
+  spawned, and the exit path runs no CLI command.
 
 Checked on this machine without changing it:
 - With a scratch stdio server holding a scratch store, `status --json` reported `store_held: true`,

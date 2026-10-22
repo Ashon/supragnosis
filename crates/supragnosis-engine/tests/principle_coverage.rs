@@ -1541,11 +1541,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
     (6, &[
         c(
             "quitting the app never stops a launchd-managed daemon",
-            Evidence::Deferred(
-                "RunEvent::Exit reaps only the Child inside Daemon::Spawned and Daemon::External holds no handle, but \
-                 the shell could still run `supragnosis stop` and nothing checks that it does not. Revisit when the \
-                 exit path is a pure function from Daemon to the action taken, testable without a Tauri runtime",
-            ),
+            Evidence::Scenario(&["quitting_leaves_a_daemon_it_did_not_spawn"]),
         ),
         c(
             "the app stops a daemon it did not spawn only on a person's act that asks for it - the Start at \
