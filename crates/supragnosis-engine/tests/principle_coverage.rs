@@ -1645,12 +1645,9 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "every registered command runs the caller check before it acts",
-            Evidence::Deferred(
-                "each of the eight #[tauri::command] fns opens with `settings_caller(&webview)?` and the lists are \
-                 held together, but nothing scans the commands for the call - a ninth command could skip it and both \
-                 tests above would still pass. Revisit when settings_commands_are_closed_until_granted also reads \
-                 main.rs for the check as each command's first statement",
-            ),
+            // The app's test reads main.rs: each #[tauri::command] opens with the check, and the
+            // declared, registered and granted commands are one set.
+            Evidence::Scenario(&["every_command_checks_its_caller_first"]),
         ),
     ]),
     (2, &[

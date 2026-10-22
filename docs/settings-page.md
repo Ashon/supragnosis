@@ -313,7 +313,9 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **S1**: `only_the_apps_own_page_may_change_a_setting` holds the caller check to the settings
   page's address and refuses the viewer, a hub, another page of the app and a lookalike path.
   `settings_commands_are_closed_until_granted` holds build.rs's manifest and the capability to the
-  command list, and keeps the viewer's capability free of them.
+  command list, and keeps the viewer's capability free of them. `every_command_checks_its_caller_first` reads
+  the source: every command opens with the caller check, and the commands declared, registered and
+  granted are one set, so a command added later cannot act before the check.
 - **S2**: `a_credential_never_becomes_an_argument` - the arguments of `server add` are built without
   it.
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the

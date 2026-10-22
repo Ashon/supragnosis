@@ -3879,6 +3879,47 @@ mod settings_tests {
     /// S1, the other half: build.rs declares the commands so none is open by default, and the one
     /// capability that grants them grants every one, to the main window only. The lists are held to
     /// the one in main.rs.
+    /// docs/settings-page.md S1: every command the app registers runs the caller check as its first
+    /// statement, so a command added later cannot act before it - and the commands the source
+    /// declares, the ones `generate_handler!` registers and the list the capability is held to are
+    /// one set.
+    #[test]
+    fn every_command_checks_its_caller_first() {
+        let src = include_str!("main.rs");
+        let mut declared: Vec<String> = Vec::new();
+        let mut rest = src;
+        while let Some(at) = rest.find("#[tauri::command]\n") {
+            rest = &rest[at + "#[tauri::command]\n".len()..];
+            let sig_at = rest.find("fn ").expect("a command is a fn");
+            let name: String = rest[sig_at + 3..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let body_at = rest.find('{').expect("a command has a body");
+            let first = rest[body_at + 1..].trim_start();
+            assert!(
+                first.starts_with("own_page_caller(&webview)?;"),
+                "{name} acts before it checks its caller: {}",
+                first.lines().next().unwrap_or("")
+            );
+            declared.push(name);
+        }
+        let start = src.find("tauri::generate_handler![").expect("the handler list");
+        let end = start + src[start..].find(']').expect("its end");
+        let mut registered: Vec<String> = src[start + "tauri::generate_handler![".len()..end]
+            .split(',')
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .collect();
+        let mut listed: Vec<String> = APP_COMMANDS.iter().map(|c| c.to_string()).collect();
+        declared.sort();
+        registered.sort();
+        listed.sort();
+        assert_eq!(declared.len(), 20, "the scan read the commands");
+        assert_eq!(declared, registered, "every command is registered, and only these");
+        assert_eq!(declared, listed, "the capability's list is the same set");
+    }
+
     #[test]
     fn settings_commands_are_closed_until_granted() {
         let build = include_str!("../build.rs");
