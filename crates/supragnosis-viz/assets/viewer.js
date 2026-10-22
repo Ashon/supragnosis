@@ -4621,7 +4621,8 @@ function frameBox({ a, b, c, d }, L, R, T, B, pad, hi) {
   const hud = document.getElementById("hud");
   const hb = hud && hud.offsetParent !== null ? hud.getBoundingClientRect() : null;
   if (hb && hb.height) {
-    if (hb.top > innerHeight / 2) B = Math.min(B, hb.top - 8);
+    // Under 760 the toolbar sits at the map's foot above the open sheet, however high (Section 29.18).
+    if (innerWidth < 760 || hb.top > innerHeight / 2) B = Math.min(B, hb.top - 8);
     else T = Math.max(T, hb.bottom + 8);
   }
   const vw = Math.max(1, R - L - pad*2), vh = Math.max(1, B - T - pad*2);
@@ -6163,6 +6164,136 @@ addEventListener("mouseup", ev => {
   downPos = null;
 });
 
+// --- Touch (docs/design-system.md Section 29.18) ---------------------------------------------------
+// The map takes touches for itself: pointer events of the touch kind, whose down is cancelled so the
+// browser sends no mouse events after them; the mouse keeps its handlers above. One finger pans; held
+// still on an entity for half a second it picks the entity up; a tap is a click; a double tap on the
+// ground zooms in twice as close; two fingers pinch and pan under the fingers; a third is ignored.
+const touches = new Map();
+let touchTap = null, touchPan = null, touchDrag = null, pinch = null, lastTap = null, holdTimer = 0;
+const TOUCH_SLOP = 10, TOUCH_REACH = 22, HOLD_MS = 500, DOUBLE_MS = 300;
+// A finger reaches an entity within 22 pixels of its centre, or as far as a click does.
+function touchNodeAt(sx, sy) {
+  const hit = nodeAt(sx, sy);
+  if (hit) return hit;
+  const [wx, wy] = toWorld(sx, sy), reach = TOUCH_REACH / cam.s;
+  let best = null, bd = reach;
+  for (const k of nodesIn(wx - reach, wy - reach, wx + reach, wy + reach)) {
+    const n = nodes[k];
+    if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameKept)) continue;
+    const d = Math.hypot(n.x - wx, n.y - wy);
+    if (d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+// The camera under the fingers, 1:1: both the shown camera and its target move together.
+function pinchTo(mx, my, f) {
+  const s = Math.max(scaleFloor(), Math.min(4, cam.s * f)), wx = (mx - cam.x) / cam.s, wy = (my - cam.y) / cam.s;
+  cam.s = camT.s = s; cam.x = camT.x = mx - wx * s; cam.y = camT.y = my - wy * s;
+}
+function twoFingers() {
+  const [a, b] = [...touches.values()];
+  return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+canvas.addEventListener("pointerdown", ev => {
+  if (ev.pointerType !== "touch") return;
+  ev.preventDefault();
+  if (settling || touches.size >= 2) return;   // a third finger is ignored
+  const a = document.activeElement;
+  if (a && a !== document.body && a.blur) a.blur();   // a cancelled down moves no focus
+  try { canvas.setPointerCapture(ev.pointerId); } catch (_) { /* the pointer is already gone */ }
+  touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  clearTimeout(holdTimer);
+  showTip(null);
+  if (touches.size === 1) {
+    touchTap = { x: ev.clientX, y: ev.clientY, moved: false };
+    touchPan = { sx: ev.clientX, sy: ev.clientY, px: cam.x, py: cam.y };
+    const n = touchNodeAt(ev.clientX, ev.clientY);
+    if (n) holdTimer = setTimeout(() => {
+      if (touchTap && !touchTap.moved && touches.size === 1) { touchDrag = n; touchPan = null; canvas.classList.add("grabbing"); }
+    }, HOLD_MS);
+    return;
+  }
+  // The second finger: an entity being moved is let go where it is, and the pinch begins.
+  if (touchDrag) { layoutSync(); touchDrag = null; canvas.classList.remove("grabbing"); }
+  touchTap = null; touchPan = null;
+  pinch = twoFingers();
+});
+canvas.addEventListener("pointermove", ev => {
+  if (ev.pointerType !== "touch" || !touches.has(ev.pointerId)) return;
+  touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pinch && touches.size === 2) {
+    const now = twoFingers();
+    cam.x = camT.x = cam.x + (now.mx - pinch.mx); cam.y = camT.y = cam.y + (now.my - pinch.my);
+    pinchTo(now.mx, now.my, now.d / pinch.d);
+    pinch = now; userMoved = true; personMoved(); return;
+  }
+  if (touchTap && !touchTap.moved && Math.hypot(ev.clientX - touchTap.x, ev.clientY - touchTap.y) >= TOUCH_SLOP) {
+    touchTap.moved = true; clearTimeout(holdTimer);
+  }
+  if (touchDrag) {
+    const [wx, wy] = toWorld(ev.clientX, ev.clientY); touchDrag.x = wx; touchDrag.y = wy; positionsGen++;
+    wake(0.3); personMoved(); return;
+  }
+  if (touchPan && touchTap && touchTap.moved) {
+    cam.x = camT.x = touchPan.px + (ev.clientX - touchPan.sx);
+    cam.y = camT.y = touchPan.py + (ev.clientY - touchPan.sy);
+    userMoved = true; personMoved();
+  }
+});
+function touchEnd(ev, cancelled) {
+  if (ev.pointerType !== "touch" || !touches.has(ev.pointerId)) return;
+  touches.delete(ev.pointerId);
+  clearTimeout(holdTimer);
+  if (pinch) {
+    pinch = null;
+    // The finger left on the glass carries on panning from where it is.
+    const rest = [...touches.values()][0];
+    if (rest) touchPan = { sx: rest.x, sy: rest.y, px: cam.x, py: cam.y };
+    touchTap = null;
+    return;
+  }
+  if (touches.size) return;
+  if (touchDrag) { wake(0.3); layoutSync(); touchDrag = null; canvas.classList.remove("grabbing"); }
+  const tap = touchTap;
+  touchTap = null; touchPan = null;
+  if (cancelled || !tap || tap.moved || settling) return;
+  const n = touchNodeAt(tap.x, tap.y), now = performance.now();
+  const dbl = !!lastTap && now - lastTap.t < DOUBLE_MS && Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) < 24;
+  lastTap = dbl ? null : { x: tap.x, y: tap.y, t: now };
+  if (dbl && !n) { zoomAt(tap.x, tap.y, 2); personMoved(); return; }   // eases as the buttons do
+  if (dbl && n && focus === n) return;   // a double tap on an entity selects it once
+  if (n && focus !== n) select(n); else clearSelection(false);
+}
+canvas.addEventListener("pointerup", ev => touchEnd(ev, false));
+canvas.addEventListener("pointercancel", ev => touchEnd(ev, true));
+// While the page is zoomed in, pinches go to the browser, so the page can always be zoomed back out.
+function touchActionForZoom() {
+  canvas.classList.toggle("pagezoom", !!window.visualViewport && window.visualViewport.scale > 1.01);
+}
+if (window.visualViewport) window.visualViewport.addEventListener("resize", touchActionForZoom);
+// Under 760 the camera buttons ride above whichever sheet is open (Section 29.18): --foot is that
+// sheet's top, read from its layout (a sliding panel's transform aside, so the toolbar moves with
+// its slide), and --hud-h the toolbar's own height, which the sheet's taller height leaves room for.
+function placeFoot() {
+  const root = document.documentElement.style;
+  if (innerWidth >= 760) { root.removeProperty("--foot"); root.removeProperty("--hud-h"); return; }
+  let top = innerHeight - BOTTOM_INSET - 8;
+  for (const el of [detailEl, dockLEl, dockREl, stripEl]) {
+    if (!el || window.getComputedStyle(el).display === "none") continue;
+    const open = el === detailEl ? el.classList.contains("on") : el === stripEl ? true : el.classList.contains("on");
+    if (open && el.offsetHeight) top = Math.min(top, el.offsetTop);
+  }
+  root.setProperty("--foot", Math.max(0, innerHeight - top) + "px");
+  const hud = document.getElementById("hud");
+  if (hud) root.setProperty("--hud-h", hud.offsetHeight + "px");
+}
+if (window.ResizeObserver) {
+  const ro = new window.ResizeObserver(() => placeFoot());
+  for (const el of [detailEl, dockLEl, dockREl, stripEl, document.getElementById("hud")]) if (el) ro.observe(el);
+}
+addEventListener("resize", placeFoot);
+
 // --- Search (docs/design-system.md Section 8, U6) -------------------------------------------------
 // The field asks /api/search, which calls the engine function behind MCP's search_knowledge, and the
 // list is what it answers, in its order: entities, then observations, under the label of the surface
@@ -6597,7 +6728,9 @@ function applyDock(isLeft, on, remember = true) {
   // Closing the Log fetches the strip that takes its place at once, not at the next poll.
   if (!isLeft && !on) refreshStrip();
   else renderStrip();
-  if (remember) {
+  placeFoot();
+  // A phone's choice is not remembered, so the same browser in a wider window keeps its own (Section 29.18).
+  if (remember && !isPhone()) {
     try { localStorage.setItem(isLeft ? "supra.dockL" : "supra.dockR", on ? "1" : "0"); } catch (_) { /* private mode */ }
   }
   // Under 1200px the canvas holds one panel at a time (design-system.md Section 6): opening a dock
@@ -6608,6 +6741,10 @@ function applyDock(isLeft, on, remember = true) {
   }
 }
 function narrowWindow() { return innerWidth < 1200; }
+// A phone (Section 29.18): a window under 760 pixels wide, or a touch screen whose shorter side is
+// under 600 - a phone held sideways is one too.
+const coarsePointer = matchMedia("(pointer: coarse)");
+function isPhone() { return innerWidth < 760 || (coarsePointer.matches && Math.min(innerWidth, innerHeight) < 600); }
 function toggleDock(isLeft) { applyDock(isLeft, !(isLeft ? dockLEl : dockREl).classList.contains("on")); }
 panelLBtn.onclick = () => toggleDock(true);
 panelRBtn.onclick = () => toggleDock(false);
@@ -6686,6 +6823,8 @@ window.addEventListener("keydown", e => {
     keptL = localStorage.getItem("supra.dockL") !== "0";
     keptR = localStorage.getItem("supra.dockR") !== "0";
   } catch (_) { /* private mode - the defaults stand */ }
+  // A phone opens on the map (D16, Section 29.18).
+  if (isPhone()) keptL = keptR = false;
   applyDock(true, keptL, false);
   applyDock(false, keptR, false);
 }

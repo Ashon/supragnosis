@@ -31,7 +31,7 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead. Step 52, the map on a phone, is specified.
+> and Keep ... instead, and step 52, the map on a phone.
 
 ## 1. Why this exists
 
@@ -1977,7 +1977,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    proposal-workflow.md Section 14.3 and resolution.md Section 6 revised): a person may say two entities of one workspace are
    the same, a merge on Review offers to keep the other name, and what the console opens says it
    was opened at the console.
-52. **The map on a phone** (Section 29.18; D16; Sections 6 and 29.12, Section 18's step 2 and
+52. **The map on a phone** [built] (Section 29.18; D16; Sections 6 and 29.12, Section 18's step 2 and
    inspector.md Section 6 revised): one finger moves the map and two zoom it, the page opens on the
    map, the inspector's sheet has two heights, and the camera buttons sit at the map's foot above the
    sheet.
@@ -5200,3 +5200,10 @@ No row needs a principle changed.
 - It does not carry a pan on after the finger lifts, or rotate the map.
 - It does not change the 760 to 1200 pixel band, where under a coarse pointer the camera buttons and
   the inspector already overlap by a few pixels; that is owed to a later pass.
+
+**Guarded by** `a_finger_moves_the_map_on_a_phone` in the viewer's key tests (the touch handling and
+its thresholds, the cancelled down, a phone's panels neither opened nor remembered, framing's foot,
+the sheet's heights and the toolbar above it); browser checks in Chromium with touch at 390 by 844
+and 844 by 390 measure one finger panning 80 pixels, a pinch zooming the map and not the page, a tap
+selecting, a double tap on the ground zooming twice as close, the sheet a third of the screen with
+the toolbar 8 pixels above it, and both panels closed on opening.

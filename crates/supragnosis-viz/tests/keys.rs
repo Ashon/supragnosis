@@ -168,3 +168,64 @@ fn the_minimap_waits_and_framing_keeps_the_toolbar_box() {
             && frame.contains("T = Math.max(T, hb.bottom + 8)")
     );
 }
+
+/// Section 29.18: on a phone a finger moves the map - one pans, a long press moves an entity, two
+/// pinch, a double tap on the ground zooms - without the browser's mouse events after it; the page
+/// opens on the map and remembers no panel there; the inspector's sheet has two heights; and the
+/// camera buttons sit at the map's foot above the open sheet.
+#[test]
+fn a_finger_moves_the_map_on_a_phone() {
+    let touch = &SCRIPT[SCRIPT
+        .find("// --- Touch (docs/design-system.md Section 29.18)")
+        .expect("the touch section")..];
+    let touch = &touch[..touch.find("// --- Search").expect("it ends")];
+    for part in [
+        "if (ev.pointerType !== \"touch\") return;\n  ev.preventDefault();",
+        "TOUCH_SLOP = 10, TOUCH_REACH = 22, HOLD_MS = 500, DOUBLE_MS = 300",
+        "if (settling || touches.size >= 2) return;   // a third finger is ignored",
+        "if (dbl && !n) { zoomAt(tap.x, tap.y, 2);",
+        "if (dbl && n && focus === n) return;",
+        "if (cancelled || !tap || tap.moved || settling) return;",
+        "cam.s = camT.s = s;",
+        "canvas.addEventListener(\"pointercancel\"",
+        "canvas.classList.toggle(\"pagezoom\"",
+    ] {
+        assert!(touch.contains(part), "the touch handling does not hold {part}");
+    }
+    assert!(
+        CSS.contains("#c { touch-action:none; }")
+            && CSS.contains("#c.pagezoom { touch-action:pinch-zoom; }")
+    );
+    let phone = function("isPhone");
+    assert!(
+        phone.contains("innerWidth < 760")
+            && phone.contains("Math.min(innerWidth, innerHeight) < 600")
+    );
+    assert!(
+        function("applyDock").contains("if (remember && !isPhone())"),
+        "a phone's panel is remembered"
+    );
+    assert!(
+        SCRIPT.contains("if (isPhone()) keptL = keptR = false;"),
+        "a phone opens on the panels"
+    );
+    assert!(
+        function("frameBox").contains(
+            "if (innerWidth < 760 || hb.top > innerHeight / 2) B = Math.min(B, hb.top - 8);"
+        ),
+        "framing reads a phone's toolbar as at the top"
+    );
+    for rule in [
+        "max-height:33dvh",
+        "max-height:min(80dvh, calc(100dvh - 57px - var(--bar) - var(--hud-h, 44px) - 32px))",
+        "bottom:calc(var(--foot, calc(var(--bar) + 8px)) + 8px)",
+        "#hud { flex-wrap:wrap-reverse;",
+    ] {
+        assert!(CSS.contains(rule), "the phone layout does not hold {rule}");
+    }
+    let foot = function("placeFoot");
+    assert!(
+        foot.contains("el.offsetTop") && foot.contains("--hud-h"),
+        "the toolbar does not follow the sheet"
+    );
+}

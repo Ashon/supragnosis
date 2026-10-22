@@ -48,6 +48,9 @@
     --text-body:0.8125rem; --text-small:0.75rem; --text-caption:0.6875rem;
     /* The status bar's height: 28 pixels at the default size, growing with its text (Section 10). */
     --bar:1.75rem;
+    /* On a phone the page measures the open sheet's top (--foot) and the camera buttons' height
+       (--hud-h), which the buttons and the sheet's taller height read (Section 29.18). */
+    --foot:calc(var(--bar) + 8px); --hud-h:44px;
     /* Six corners (Section 3, U22): a window, a surface that floats or groups, a control, an inset
        tag, a mark of data, and a capsule. An inner corner is the outer less the space between. */
     --r-window:16px; --r-surface:12px; --r-control:8px; --r-inset:4px; --r-mark:2px; --r-capsule:999px;
@@ -97,6 +100,10 @@
   body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:0.045; z-index:2;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
   canvas { display:block; position:fixed; inset:0; cursor:grab; }
+  /* The map takes touches for itself; while the page is zoomed in, pinches go to the browser
+     (Section 29.18). */
+  #c { touch-action:none; }
+  #c.pagezoom { touch-action:pinch-zoom; }
   canvas.over { cursor:pointer; }
   /* An empty scope keeps no idle controls (design-system.md Section 29.10): the type and trust
      sections hide, Definitions shows only with one, and the camera's zoom, Fit and List are dimmed
@@ -1053,19 +1060,29 @@
     .searchpop { position:fixed; top:57px; left:16px; right:16px; width:auto; transform:none; }
     #dockL, #dockR { top:auto; bottom:calc(var(--bar) + 8px); left:8px; right:8px; width:auto; max-height:55vh; }
     #dockL:not(.on), #dockR:not(.on) { transform:translateY(110%); }
-    #detail { top:auto; left:8px; right:8px; bottom:calc(var(--bar) + 8px); width:auto; max-height:55vh; }
+    /* The inspector's sheet: a third of the visible screen, four fifths taller, never more than the
+       screen less the header, the status bar and the camera buttons (Section 29.18). */
+    #detail { top:auto; left:8px; right:8px; bottom:calc(var(--bar) + 8px); width:auto; max-height:33vh; max-height:33dvh;
+              padding-top:26px; }
     #strip { left:8px; right:8px; bottom:calc(var(--bar) + 8px); max-width:none; }
-    #detail .grow { display:inline-flex; }
-    #detail.tall { max-height:80vh; }
+    /* Taller and Shorter, drawn as the sheet's handle at its top centre, with the same name and state. */
+    #detail .grow { display:inline-flex; top:2px; left:50%; right:auto; transform:translateX(-50%); width:64px; height:22px;
+                    background:linear-gradient(var(--muted), var(--muted)) center / 36px 4px no-repeat; }
+    #detail .grow .i { display:none; }
+    #detail.tall { max-height:80vh; max-height:min(80dvh, calc(100dvh - 57px - var(--bar) - var(--hud-h, 44px) - 32px)); }
     #reviewPage { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
     .rv-queue { max-height:40vh; }
     .rv-detail { border-radius:var(--r-window) var(--r-window) 0 0; }
     #minimap { display:none !important; }
     #statusbar #session, #statusbar #tierNote { display:none; }
-    /* The camera buttons move to the top right, out of the sheets' way. */
-    #hud { right:16px; top:61px; bottom:auto; }
-    /* Seven controls do not fit 320 pixels under a finger: the toolbar wraps rather than scroll (Section 29.11). */
-    #hud { flex-wrap:wrap; justify-content:flex-end; max-width:calc(100vw - 32px); }
+    /* The camera buttons sit at the map's foot, above whichever sheet is open, and follow it (Section
+       29.18); --foot is the open sheet's top, measured by the page. */
+    #hud { right:16px; top:auto; bottom:calc(var(--foot, calc(var(--bar) + 8px)) + 8px); transition:bottom 0.2s ease; }
+    /* Seven controls do not fit 320 pixels under a finger: the toolbar wraps, upward, rather than scroll
+       (Section 29.11). */
+    #hud { flex-wrap:wrap-reverse; justify-content:flex-end; max-width:calc(100vw - 32px); }
+    #viewpop { bottom:calc(var(--foot, calc(var(--bar) + 8px)) + var(--hud-h, 44px) + 16px);
+               max-height:calc(100dvh - 57px - var(--foot, 0px) - var(--hud-h, 44px) - 32px); }
     .contested .confirm { min-height:28px; }
     .rv-segb, .rv-acts .btn { min-height:28px; }
     /* The status bar gives up its counts first and keeps the scope's name (Section 6). */
