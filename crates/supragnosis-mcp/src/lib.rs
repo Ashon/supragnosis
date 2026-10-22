@@ -1769,10 +1769,7 @@ pub fn vouched_bounds(
     ctx: &SyncContext,
     workspace: &str,
 ) -> std::collections::BTreeMap<String, u64> {
-    ctx.vouched
-        .iter()
-        .map(|(origin, by_ws)| (origin.clone(), by_ws.get(workspace).copied().unwrap_or(0)))
-        .collect()
+    supragnosis_sync::bounds_in(&ctx.vouched, workspace)
 }
 
 /// Guidance answer for the `sync_*` tools on a node with no sync configuration (P5).

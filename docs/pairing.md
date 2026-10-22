@@ -9,7 +9,7 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified; steps 1, 2 and 3a-3c built** (Section 10). The author decided its choices on
+> Status: **specified; steps 1, 2 and 3 built** (Section 10). The author decided its choices on
 > 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
@@ -112,6 +112,12 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
   unless lingering is on (daemon-lifecycle.md, Linux). The invitation says so when it is off.
 - **The firewall.** An unreachable hub's message names the platform's firewall - the macOS
   firewall, or the server's (ufw, firewalld) and the network's.
+- **Local Network access on a joining Mac.** macOS lets a process reach another machine on the
+  local network only with Local Network access (System Settings > Privacy & Security > Local
+  Network); without it, a connection fails as if there were no route. The Linux hub run of step 3d
+  met this - the terminal running `supragnosis join` had no such access, while a system tool from
+  the same terminal did - and an unreachable hub's message on a Mac names it. How macOS asks the
+  daemon and the app for it is step 4's to settle, with the signed app.
 
 A joining machine on Linux runs `supragnosis join`, reading the code on stdin, and shows the three
 words in the terminal while it waits for the hub's answer. It asks which invited workspaces to
@@ -254,7 +260,8 @@ two require the code's secret, the last a joined machine's credential.
     workspace as the receive list (D12), and the vouched keys with their bounds.
 
   It sets `supragnosis.toml` to `0600` wherever `SUPRAGNOSIS_CONFIG` puts it, and restarts its
-  daemon, since `[sync]` is read at start. If the restart is refused (daemon-lifecycle.md L1), it
+  daemon, since `[sync]` is read at start - the daemon that answered its admin socket, and only when
+  that is the one its service manager runs. If the restart is refused (daemon-lifecycle.md L1), it
   says "Joined. Restart Supragnosis to start syncing." and the row says so until it has.
 - **The credential is never shown.** It goes, sealed, from the hub's answer to the joining
   machine's config file; the hub keeps only its hash.
@@ -270,8 +277,12 @@ two require the code's secret, the last a joined machine's credential.
 - **Checked.** The joining machine accepts a vouched key only if its node id is the one derived
   from it, skips its own id, and refuses the answer if a vouched key conflicts with one written by
   hand.
-- **Bounded.** The joining machine verifies events from a vouched origin only up to its bound;
-  later ones are refused as from an unknown origin, as today.
+- **Bounded.** The bound is the last event the hub holds from that origin in each invited
+  workspace, read when it allows the join: after the removal it accepts nothing more from it, and
+  a push already under way at the removal has landed by then. The joining machine verifies events
+  from a vouched origin only up to its bound, in every path that applies pulled events, and none in
+  an invited workspace the hub gave no bound for; later ones are refused as from an unknown
+  origin, as today.
 
 #### 4.3.2 The wire
 
@@ -351,8 +362,8 @@ widened by these acts. Pairing writes no key a release before it does not know (
 - `supragnosis hub leave` on the joining machine first asks the hub, with its credential, to
   remove its own entry - the `leave` call, which the hub accepts only for the machine the
   credential names - then removes the `[[sync.server]]` entry, the keys and the sidecar it wrote,
-  and any `[sync]` key the join created once it is empty again, and restarts its daemon. A hub that does not answer keeps the row until it is removed there, and
-  the joining machine says so.
+  and any `[sync]` key the join created once it is empty again, and restarts its daemon. A hub that
+  does not answer keeps the row until it is removed there, and the joining machine says so.
 - Each says, before it acts, that what was synced stays.
 
 ## 5. Settings
@@ -536,7 +547,7 @@ as now (S6).
      its own skipped, an answer refused when one conflicts with a key written by hand, and each
      verifying events only up to its bound on the apply path. Guarded by those three refusals and
      a replaced machine receiving the removed one's events up to the bound and none after.
-   - **3d. A Linux hub** in a throwaway machine, invited over SSH with Allow in the terminal and
+   - **3d. A Linux hub** [run] in a throwaway machine, invited over SSH with Allow in the terminal and
      joined from this Mac, with the run recorded in the pull request.
 4. **Settings**: the invitation and join sheets with Allow, the rows' Remove, Stop syncing and Sync
    now, and the hint. `invite --json`, `invite --show --json` and `peer list --json`, which the

@@ -1159,6 +1159,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&[
             "vouched_keys_are_checked_against_their_ids",
             "a_replaced_machine_receives_the_removed_ones_events_up_to_its_bound",
+            "a_vouched_key_verifies_only_up_to_its_bound",
         ]),
     )]),
     (14, &[

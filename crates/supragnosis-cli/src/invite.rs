@@ -632,22 +632,31 @@ impl Pairing {
         let credential = crate::principal::new_credential()?;
         let workspaces = invite.workspaces.clone();
         let mut peers = self.peers()?;
-        let vouched = peers
+        // A removed machine's bound is the last event this hub holds from it in each invited
+        // workspace, read now: after the removal nothing more from it is accepted here, and a push
+        // already under way when it was removed has landed (Section 4.3.1).
+        let mut vouched = Vec::new();
+        let others = peers
             .removed
             .iter()
-            .filter(|r| r.node_id != node_id && r.node_id != self.node.node_id())
-            .map(|r| pair::Vouched {
-                node_id: r.node_id.clone(),
-                public_key: r.public_key.clone(),
-                bounds: r
-                    .bounds
-                    .iter()
-                    .filter(|(w, _)| workspaces.contains(w))
-                    .map(|(w, s)| (w.clone(), *s))
-                    .collect(),
-            })
-            .filter(|v| !v.bounds.is_empty())
-            .collect();
+            .filter(|r| r.node_id != node_id && r.node_id != self.node.node_id());
+        for r in others {
+            let mut bounds = BTreeMap::new();
+            for ws in &workspaces {
+                let vv = supragnosis_sync::version_vector(self.store.as_ref(), ws)
+                    .with_context(|| format!("reading what {ws} holds"))?;
+                if let Some(seq) = vv.0.get(&(r.node_id.clone(), ws.clone())) {
+                    bounds.insert(ws.clone(), *seq);
+                }
+            }
+            if !bounds.is_empty() {
+                vouched.push(pair::Vouched {
+                    node_id: r.node_id.clone(),
+                    public_key: r.public_key.clone(),
+                    bounds,
+                });
+            }
+        }
         let certificate = match invite.pinned {
             true => Some(self.certificate_pem()?),
             false => None,

@@ -524,6 +524,8 @@ pub fn router(
                 }
             }),
         )
+        // Which process answers, so the CLI restarts this daemon and not another it does not run.
+        .route("/who", get(|| async { Json(serde_json::json!({"pid": std::process::id()})) }))
         .route("/", get(|| async { "supragnosis admin" }))
 }
 
