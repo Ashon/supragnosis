@@ -31,7 +31,7 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead, and step 52, the map on a phone.
+> and Keep ... instead, and step 52, the map on a phone. Step 53, time on the map, is specified.
 
 ## 1. Why this exists
 
@@ -635,7 +635,9 @@ On the Graph page:
   being inspected. Its two regions, relations then evidence, stack in the sheet (inspector.md Section 6).
 - **Either panel closes from its toggle**, or with [ and ], and the choice is remembered, except on
   a phone (Section 29.18) *(revised by step 52)*; the edge handles go. With both closed the map's window takes the frame. With the left panel closed and a
-  scope of one tier, the status bar's scope line says the tier, as the Trust legend would (U2).
+  scope of one tier, the status bar's scope line says the tier, as the Trust legend would (U2). A
+  Said window dims what was not said in it, and the status line says so (Section 29.19). *(Revised
+  by step 53.)*
 - **The strip is the Log folded.** While the right side is empty - no Log, no sheet - a one-line
   strip at the window's lower left shows the scope's newest observation: its tier dot, who (the
   on-behalf-of name, else the host by id, called "this node" only as Section 9 allows), when, and its
@@ -1552,7 +1554,7 @@ social image.
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
 | **U22** | Every corner the viewer's, the app pages' (`settings.css`, `welcome.css`, `shell.css`) and the landing's stylesheets draw is one of Section 3's radius tokens, none, or a dot's circle; a part inside a rounded part takes the outer radius less the space between them; a pill and a large control are capsules, and the controls of one row share one size; a checkbox, a radio and a switch take the accent; and no line is dashed or dotted, on a page or on a canvas. |
 | **U23** | Under `prefers-contrast: more` every text token takes the next stronger one, every control, chip and field draws an edge of 3:1 on its surface, and the focus ring is 3 pixels; under `forced-colors: active` the map redraws in the system's colors, keeps every mark it draws, and widens the human-confirmed ring. |
-| **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and working set, starting by type and name and sorted by any column, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, marked when contested, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them. |
+| **U24** | The map's window offers List: a table of the entities the map draws, in its scope, filters and working set, starting by type and name and sorted by any column, each row naming the entity, its type, its trust by the legend's name, its count of relations and, when the scope holds more than one, its workspace, marked when contested, and selecting its node as the map does; and the canvas's name says how many entities, relations and regions it draws and that List holds them.  List also shows when each entity was last said (Section 29.19). *(Revised by step 53.)* |
 | **U26** | The title bar names the place on screen, never the product: on the Graph page its leading end holds the filters toggle and the scope's name and its trailing end the search and the right panel's toggle; on every other page its leading end holds the way back to the Graph, which Esc and Cmd+[ also take; it holds no other navigation; every page's bar is one bar, the star first and the way back and the title where the Review page has them; and in the app it drags the window from anywhere but its controls, and clears the traffic lights only while they are shown. |
 | **U27** | The viewer, the Settings page and Setup follow the system's appearance and offer none of their own: every color token they declare has a light value that meets U7's floors on the light surfaces; the light band keeps every type's slot and meets U16's rules on the light ground at OKLCH lightness 0.42 to 0.67 and 3:1 on `--panel`; no color those pages draw is outside their tokens but a listed few that read on both grounds; and the map redraws its palette, band, regions and halos when the appearance changes. |
 | **U28** | Drawing never moves the layout: a pan, a zoom, a hover, a highlight or a selection redraws the map without a simulation step, and a layout that has come to rest visits no pair of nodes until something warms it. |
@@ -1981,6 +1983,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    inspector.md Section 6 revised): one finger moves the map and two zoom it, the page opens on the
    map, the inspector's sheet has two heights, and the camera buttons sit at the map's foot above the
    sheet.
+53. **Time on the map** (Section 29.19; Section 6, U24, inspector.md Section 5 and compatibility.md
+   Section 7 revised): each entity carries when it was last said, the hover card, the sheet and List
+   say it, and a Said filter dims what was not said today, in the last 7 days or since the person's
+   last visit.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5207,3 +5213,66 @@ the sheet's heights and the toolbar above it); browser checks in Chromium with t
 and 844 by 390 measure one finger panning 80 pixels, a pinch zooming the map and not the page, a tap
 selecting, a double tap on the ground zooming twice as close, the sheet a third of the screen with
 the toolbar 8 pixels above it, and both panels closed on opening.
+
+### 29.19 Step 53: time on the map
+
+**What was found.** Measured on the Graph page (R2-08):
+- **The map has no time.** Nothing on it says what is new or what has not been said in months; an
+  entity said a minute ago and one said last spring are drawn alike.
+- **Coming back answers nothing.** A person who opens the map after a week cannot see what agents
+  recorded meanwhile except by reading the Log row by row.
+- **The read has no time to give.** The graph's nodes carry their sources, origins and tier, and no
+  time, so the page could not show one.
+
+**Decisions.** R2-08's recommendation holds - a time per entity and a filter of today, the last 7
+days and since the last visit - with these, by the recommended options the author approved for the
+UI: one word for the time, "said", since a merge or a confirmation says nothing about an entity; a
+visit that ends only after half an hour away, so the app's reloads do not end it; and no last visit
+on the read tier, which remembers nothing (Section 5).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P16 | Equal logs read equally | agrees - an entity's time is the latest `observed_at` among the attestations its rows hold, its merged-away rows' included. `observed_at` is signed with the attestation and kept by every stamp upgrade, backfill and rekey, so it converges at replay as the rows do; the clock is never read for it. An attestation from a peer whose clock runs ahead counts as said when it says, so it can read as said today until that time passes |
+| P4 | Two time axes: when it was true and when it was recorded | agrees - this is the recording axis, and no valid time is read or written |
+| P17 and remote-viewer.md Sections 3.3 and 12 | The read tier answers within the grants; its union is merged | agrees - the field rides each workspace's graph, which the tier serves only for a granted workspace, and the union concatenates nodes, each in one workspace since step 51a |
+| compatibility.md Section 7 | The MCP surface's changes are listed | revised - the graph and hypergraph resources gain an optional `last_said` on each node; resources have no golden file, so the row says so |
+| Section 5 | The read tier remembers nothing; the local console keeps a convenience keyed by node and workspace | agrees - the last visit is kept on the local console only, keyed by the node's id and the scope as the layout is, and the read tier offers no "since your last visit" |
+| D5, Section 29.9 and Section 6 | A trust filter dims rather than hides, and the status bar says what is dimmed | revised - the Said filter dims as a tier does, and the status line says "said before today dimmed" |
+| Section 29.9's D3 | A count is what is drawn | agrees - each Said choice counts the entities drawn, hidden types left out, and dimmed ones stay counted in the status line |
+| U17 and Section 9 | One state keeps one word; a time is said in words a person reads | agrees - "said" everywhere, and a time as the Log says its times, which gain the year when it is not this one |
+| U24 | List is the map for a screen reader | revised - List gains a Last said column, sortable, since dimming does not reach a table |
+| U19 | Every control is the kind its act is and says its state | agrees - the choices are a radio group with their counts; one with nothing to offer is disabled and says why |
+| inspector.md Section 5 | The sheet's rows | revised - it gains Last said |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **An entity's time.** Each node of the graph and of the hypergraph carries `last_said`, the latest
+  time any attestation its rows hold was observed, its merged-away rows' included, in epoch
+  milliseconds; a node no attestation supports has none.
+- **Said where the entity is.** The hover card adds "Last said 9:41 AM", the sheet says it under its
+  type, and List has a Last said column, in the Log's form: the time today, the month, day and time
+  this year, and the year too before. A re-observation counts as said again, though Evidence lists
+  the observation once, at its first time. A node with no time shows no line.
+- **Said.** The filter panel gains a Said section after Trust, a radio group: "Any time", the
+  default, "Today", "Last 7 days" and, on the local console, "Since your last visit", each with the
+  count of drawn entities it keeps. A choice dims every entity not said in that window, as a dimmed
+  tier does, and the relations it touches unless they are lit; the status line adds "said before
+  today dimmed" (or "said before the last 7 days", or "said before your last visit"). Rank fading
+  applies as everywhere (U38).
+  - Today starts at local midnight; the last 7 days are the 7 times 24 hours before now. The windows
+    move every minute while the page is open, and a chosen window that keeps nothing stays chosen
+    with its 0.
+  - A visit ends after half an hour with the page unseen. The last visit for a scope is when this
+    browser last showed that scope before this visit, kept per node and scope, so a reload in the
+    middle of a visit keeps it. With no earlier visit the choice is disabled with "No earlier visit
+    here".
+  - The choice is not stored: every visit opens on Any time.
+
+**What this step does not do.**
+- It does not show valid time, when a fact was true in the world (P4's other axis).
+- It does not time relations, or replay the map as it was at a past moment.
+- It does not know when knowledge arrived: a time is when it was said, so something synced after the
+  last visit but said before it is not "since your last visit".
