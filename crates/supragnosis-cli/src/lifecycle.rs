@@ -823,6 +823,32 @@ mod tests {
         assert_eq!(canonical, vec![&(CANONICAL_LABEL, LabelKind::Canonical)]);
     }
 
+    /// daemon-lifecycle.md L2: every manager the product has installed stays recognized, retired
+    /// ones included. Distinctness alone would let a retired label be deleted unnoticed, so each is
+    /// pinned by name - and dropping one has to change this list on purpose.
+    #[test]
+    fn every_label_ever_installed_stays_known() {
+        let labels: Vec<(&str, LabelKind)> = KNOWN_LABELS.to_vec();
+        for expected in [
+            ("com.supragnosis.daemon", LabelKind::Canonical),
+            ("sh.brew.supragnosis-server", LabelKind::Homebrew("supragnosis-server")),
+            ("homebrew.mxcl.supragnosis-server", LabelKind::Homebrew("supragnosis-server")),
+            ("sh.brew.supragnosis", LabelKind::Homebrew("supragnosis")),
+            ("homebrew.mxcl.supragnosis", LabelKind::Homebrew("supragnosis")),
+            ("com.ashon.supragnosis", LabelKind::Retired),
+        ] {
+            assert!(labels.contains(&expected), "{expected:?} left the recognized labels");
+        }
+        let units: Vec<(&str, LabelKind)> = KNOWN_UNITS.to_vec();
+        for expected in [
+            ("supragnosis.service", LabelKind::Canonical),
+            ("homebrew.supragnosis-server.service", LabelKind::Homebrew("supragnosis-server")),
+            ("homebrew.supragnosis.service", LabelKind::Homebrew("supragnosis")),
+        ] {
+            assert!(units.contains(&expected), "{expected:?} left the recognized units");
+        }
+    }
+
     #[test]
     fn launchctl_list_output_yields_pid_and_last_exit() {
         let running = "{\n\t\"Label\" = \"com.supragnosis.daemon\";\n\t\"LastExitStatus\" = 9;\n\t\"PID\" = 55439;\n\t\"Program\" = \"/opt/homebrew/opt/supragnosis-server/bin/supragnosis\";\n};";

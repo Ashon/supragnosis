@@ -1502,12 +1502,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the retired and Homebrew labels stay in the recognized set",
-            Evidence::Deferred(
-                "KNOWN_LABELS carries com.ashon.supragnosis and four Homebrew spellings, and \
-                 every_known_label_is_distinct_and_one_is_canonical checks only distinctness and the single canonical \
-                 entry; the retired entries could be deleted without a test noticing. Revisit when that test pins \
-                 them by name",
-            ),
+            Evidence::Scenario(&["every_label_ever_installed_stays_known"]),
         ),
     ]),
     (3, &[
