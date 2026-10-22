@@ -1207,6 +1207,69 @@ fn p3_a_reproject_and_an_observe_do_not_interleave() {
     assert!(inner.owed_projections().unwrap().is_empty(), "nothing owed");
 }
 
+/// An embedder whose first batch, once armed, first runs a probe and records what it answered.
+struct ProbingEmbedder {
+    inner: supragnosis_embed::HashingEmbedder,
+    probe: std::sync::Mutex<Option<Box<dyn FnOnce() -> bool + Send>>>,
+    answered: std::sync::Mutex<Option<bool>>,
+}
+
+impl supragnosis_core::EmbeddingProvider for ProbingEmbedder {
+    fn dimensions(&self) -> usize {
+        self.inner.dimensions()
+    }
+    fn id(&self) -> String {
+        self.inner.id()
+    }
+    fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, supragnosis_core::EmbedError> {
+        let probe = self.probe.lock().unwrap().take();
+        if let Some(probe) = probe {
+            *self.answered.lock().unwrap() = Some(probe());
+        }
+        self.inner.embed(texts)
+    }
+}
+
+/// guard (semantic-retrieval.md SR7, architecture.md Section 14): a reproject computes the vectors
+/// it needs before it takes the write lock, so a write waits for the projection and not for the
+/// model. Rows appended without a projection need vectors; while the reproject's first batch is
+/// being embedded, another thread observes on the same engine - and must finish, which it could
+/// not if the batch ran under the lock. The rows end up with their vectors all the same.
+#[test]
+fn sr7_a_reproject_embeds_before_it_takes_the_write_lock() {
+    let store = Arc::new(InMemoryStore::new());
+    let embedder = Arc::new(ProbingEmbedder {
+        inner: supragnosis_embed::HashingEmbedder::default(),
+        probe: Default::default(),
+        answered: Default::default(),
+    });
+    let engine = Arc::new(Engine::new(store.clone(), "host-a", WS).with_embedder(embedder.clone()));
+    for name in ["alpha", "beta"] {
+        store.add_observation(kind_obs(name, "Service", 100)).unwrap();
+    }
+
+    let writer = engine.clone();
+    *embedder.probe.lock().unwrap() = Some(Box::new(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            observe(&writer, "gamma joined while the model ran", &["gamma"], vec![]);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(2)).is_ok()
+    }));
+    engine.reproject(Some(WS)).expect("reproject");
+
+    assert_eq!(
+        *embedder.answered.lock().unwrap(),
+        Some(true),
+        "the observe finished while the reproject was embedding"
+    );
+    for name in ["alpha", "beta", "gamma"] {
+        let row = store.get_entity(&Entity::make_id(WS, name)).unwrap().expect("projected");
+        assert!(row.embedding.is_some(), "{name} carries its vector");
+    }
+}
+
 // --- P16 (4th revision): read-path reproducibility with ties -----------------------------------
 
 /// guard (principles.md P16 "query responses must be deterministic too"): keyword hits that tie
