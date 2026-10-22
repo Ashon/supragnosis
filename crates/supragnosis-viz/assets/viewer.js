@@ -1797,12 +1797,18 @@ function dismiss(el) {
 // One console write: GET path+query (the viewer's writes are GETs on the 0600 socket - see the review
 // handler below), then a notice saying what happened. Returns the parsed answer, or null when the
 // write did not land.
-async function consoleWrite(path, query, said, action, detail) {
+// `quiet`: the caller takes several acts and says what they came to once (Section 29.17), so this
+// answers { ok, body, why } and shows nothing; the outcome is still reported, by the caller.
+async function consoleWrite(path, query, said, action, detail, quiet) {
   let r;
   try { r = await fetch(path + query, { cache: "no-store" }); }
-  catch (e) { toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null; }
+  catch (e) {
+    if (quiet) return { ok: false, why: "the server is not answering" };
+    toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null;
+  }
   let body = null;
   try { body = await r.json(); } catch (_) { /* a refusal without a JSON body */ }
+  if (quiet) return r.ok ? { ok: true, body: body || {} } : { ok: false, why: (body && body.error) || "the server answered " + r.status };
   if (!r.ok) {
     toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
     return null;
@@ -2327,7 +2333,9 @@ function itemDetail(it, local) {
   if (!local) { parts.push(html`<p class="why">This view is read-only.</p>`); return parts; }
   const acts = [];
   const ready = !!v;   // the diff and checks are on screen
-  const accept = p.state === "open" || p.state === "rejected";
+  const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
+  const revAccepted = !!rev && rev.state === "merged";   // no Accept of any kind: no cycle (Section 29.17)
+  const accept = (p.state === "open" || p.state === "rejected") && !revAccepted;
   if (accept) {
     const armed = recallArmed === p.id;
     const label = p.kind === "recall" && armed ? "Confirm the recall" : p.state === "rejected" ? "Accept after all" : "Accept";
@@ -2335,6 +2343,9 @@ function itemDetail(it, local) {
     acts.push(html`<button type="button" class="btn p" data-decide="merge" aria-keyshortcuts="A"${off ? html` disabled` : ""}>${label} <kbd aria-hidden="true">A</kbd></button>`);
   }
   if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject" aria-keyshortcuts="R"${ready ? "" : html` disabled`}>Reject <kbd aria-hidden="true">R</kbd></button>`);
+  // Keep the other name (Section 29.17): an open merge of two, once its diff and checks show.
+  if (pair && p.state === "open" && !revAccepted) acts.push(html`<button type="button" class="btn" data-keep="1"${ready ? "" : html` disabled aria-describedby="keepWait"`}>Keep ${pair.name} instead</button>`,
+    ready ? "" : html`<span class="dnote" id="keepWait">Waiting for the checks</span>`);
   if (p.state === "open" || p.state === "blocked") acts.push(skipButton());
   const reversed = proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(p.id));
   if (p.kind === "entity_merge" && p.state === "merged" && !reversed) acts.push(html`<button type="button" class="btn" data-unmerge="1">Un-merge</button>`);
@@ -2342,6 +2353,8 @@ function itemDetail(it, local) {
   if (u) acts.push(u.button);
   acts.push(html`<button type="button" class="btn" data-map="1">Show on the map</button>`);
   parts.push(html`<div class="rv-acts">${acts}</div>`);
+  if (pair && p.state === "open" && !revAccepted) parts.push(html`<p class="hint">Keep ${pair.name} instead rejects this merge and makes ${pair.name} the one kept; the merge into it then waits for your verdict.</p>`);
+  if (revAccepted && (p.state === "open" || p.state === "rejected")) parts.push(html`<p class="hint">Its reverse is accepted.</p>`);
   if (u) parts.push(u.note);
   if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">If its check passes later, the accept it carries still merges it.</p>`);
   else if (p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: accepting it later still merges it.</p>`);
@@ -2517,12 +2530,51 @@ async function proposeSplit(p) {
 }
 // One decision on one item (U4). It runs only when the item's view - its diff and checks - is the
 // one on screen, never for a blocked merge, and a recall asks twice; there is no decide-all.
+// Keep ... instead (Section 29.17): an entity merge of two, the one it would fold away, and its name.
+function keepPair(p) {
+  if (!p || p.kind !== "entity_merge" || !p.into) return null;
+  const ts = [...new Set(p.targets || [])];
+  if (ts.length !== 2 || !ts.includes(p.into)) return null;
+  const id = ts.find(t => t !== p.into), i = (p.targets || []).indexOf(id);
+  return { id, name: targetSaid(p, i) || "the other one" };
+}
+// The reverse of a merge: any merge of the same workspace, the same entities and `kept` kept, whatever
+// its reason; a withdrawn one counts as none.
+function reverseOf(p, kept) {
+  const want = [...new Set(p.targets || [])].sort().join("|");
+  return proposals.find(q => q.id !== p.id && q.kind === "entity_merge" && q.state !== "withdrawn" && q.into === kept
+    && (q.workspace || "") === (p.workspace || "") && [...new Set(q.targets || [])].sort().join("|") === want) || null;
+}
+// Keep ... instead reads the reverse's state before writing anything, and rejects only once the
+// reverse is there (P24): nothing is left half done.
+async function keepInstead(item) {
+  const p = item && item.p, pair = keepPair(p);
+  if (!pair || !reviewView || reviewView.id !== p.id) return;   // the diff and checks are not on screen yet
+  const ws = p.workspace || wsInput.value.trim();
+  const wq = ws ? "&workspace=" + encodeURIComponent(ws) : "";
+  const kept = pair.name;
+  let rev = reverseOf(p, pair.id);
+  if (!rev) {
+    const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(p.into) + "&b=" + encodeURIComponent(pair.id) + "&src=reverse" + wq, null, null, null, true);
+    if (!o.ok) { toast("bad", "Not changed: the merge into " + kept + " could not be opened", o.why); return; }
+    rev = { id: o.body.proposal_id, state: "open" };
+  }
+  const r = await consoleWrite("/api/review", "?proposal=" + encodeURIComponent(p.id) + "&decision=reject" + wq, null, null, null, true);
+  await refreshProposals();
+  if (!r.ok) { toast("bad", "Opened the merge into " + kept + "; this one was not rejected", r.why); openReviewItem(rev.id); return; }
+  if (rev.state === "merged") { toast("ok", "Kept " + kept + ": it was already merged into it."); reviewFocus = true; renderReview(); return; }
+  if (rev.state === "rejected") toast("info", "Rejected. The merge into " + kept + " was rejected before; accept it after all there.");
+  else toast("ok", "Kept " + kept + ": the merge into it waits for your verdict.");
+  openReviewItem(rev.id);
+}
 async function reviewDecide(item, decision) {
   if (!item || item.kind !== "proposal") return;
   const p = item.p;
   if (!reviewView || reviewView.id !== p.id) return;   // the diff and checks are not on screen yet
   if (decision === "merge") {
     if (reviewView.checks.some(c => c.blocking && !c.passed)) return;
+    const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
+    if (rev && rev.state === "merged") return;   // its reverse is accepted: no cycle (Section 29.17)
     if (p.kind === "recall" && recallArmed !== p.id) { recallArmed = p.id; renderReview(); return; }
   }
   recallArmed = null;
@@ -2548,6 +2600,7 @@ function wireDecisions(host, item) {
   host.querySelectorAll("[data-map]").forEach(b => { b.onclick = () => previewOnMap(item); });
   host.querySelectorAll("[data-skip]").forEach(b => { b.onclick = () => stepReview(1); });
   host.querySelectorAll("[data-stray]").forEach(b => { b.onclick = () => openReviewItem(b.dataset.stray); });
+  host.querySelectorAll("[data-keep]").forEach(b => { b.onclick = () => keepInstead(item); });
 }
 function stepReview(by) {
   const items = segItems();
@@ -4039,7 +4092,7 @@ function keepSelection() {
 // the search's results, a card or the Review page open, or their own move in the last 20 seconds.
 function mapInUse() {
   return !!focus || listOn || !!workSet || viewPop.classList.contains("on") || !searchPop.hidden
-    || document.getElementById("keysDlg").open
+    || document.getElementById("keysDlg").open || document.getElementById("sameDlg").open
     || obscardEl.classList.contains("on") || reviewOpen() || performance.now() - handAt < 20000;
 }
 // Activity follow did not frame because the map was in use: one notice, the latest said in words,
@@ -4149,7 +4202,9 @@ function renderDetail(node) {
     html`<div class="rels">`,
       html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span>${
         // Keep this entity and what its drawn relations reach in view (Section 29.11).
-        relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">Show related</button>` : ""}</div>`,
+        relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">Show related</button>` : ""}${
+        // Say two entities of one workspace are one (Section 29.17), on the local console.
+        surfaceKind === "local" && node.workspace ? html`<button type="button" class="linkish sameas">Same as...</button>` : ""}</div>`,
         groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
       html`</div>`,
       html`<div class="relcol"><div class="sec">Evidence</div><div class="logcol"></div></div>`,
@@ -4163,6 +4218,7 @@ function renderDetail(node) {
   });
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
   detailEl.querySelectorAll(".nsshow").forEach(b => { b.onclick = () => showNamesake(b.dataset.id); });
+  detailEl.querySelectorAll(".sameas").forEach(b => { b.onclick = () => openSameAs(node); });
   detailEl.querySelectorAll(".shrel").forEach(b => {
     b.onclick = () => keepInView([node.id, ...relatedDrawn(node).map(n => n.id)], { kind: "related", name: node.name });
   });
@@ -6431,6 +6487,76 @@ let singleKeys = true;
 const keysBtn = document.getElementById("keysBtn");
 keysBtn.onclick = () => { singleKeys = !singleKeys; setSwitch(keysBtn, singleKeys); renderKeyNames(); };
 const keysDlg = document.getElementById("keysDlg");
+// Same as... (Section 29.17): a search of the entity's own workspace that chooses nothing until the
+// person moves; a chosen row offers the merge either way, and the merge opened waits on Review.
+const sameDlg = document.getElementById("sameDlg"), sameQ = document.getElementById("sameQ");
+const sameListEl = document.getElementById("sameList"), sameActsEl = document.getElementById("sameActs");
+let sameFor = null, sameRows = [], sameSel = -1, sameChosen = null, sameSeq = 0, sameAsked = false;
+function openSameAs(node) {
+  sameFor = node; sameRows = []; sameSel = -1; sameChosen = null; sameAsked = false;
+  document.getElementById("sameTitle").textContent = node.name + " is the same as...";
+  const ph = "Search " + node.workspace;
+  sameQ.value = ""; sameQ.placeholder = ph; sameQ.setAttribute("aria-label", ph);
+  renderSame();
+  if (!sameDlg.open) sameDlg.showModal();
+  sameQ.focus();
+}
+function sameAlone() { return !nodes.some(n => n.workspace === sameFor.workspace && n.id !== sameFor.id); }
+function renderSame() {
+  if (!sameFor) return;
+  const ws = sameFor.workspace, alone = sameAlone();
+  sameQ.disabled = alone;
+  const row = (h, i) => html`<button type="button" class="sr${i === sameSel ? " on" : ""}" role="option" id="sr${i}" data-i="${i}" aria-selected="${i === sameSel}"><span>${h.name}</span><span class="k">${h.type}</span></button>`;
+  const words = sameRows.filter(h => h.reached === "words"), near = sameRows.filter(h => h.reached !== "words");
+  const at = h => sameRows.indexOf(h);
+  sameListEl.innerHTML = html`${alone ? html`<div class="none">Nothing else is in ${ws} yet.</div>`
+    : sameAsked && !sameRows.length ? html`<div class="none">No entity in ${ws} matches.</div>`
+    : html`${words.length ? html`<div class="sg">Contains "${sameQ.value.trim()}"</div>${words.map(h => row(h, at(h)))}` : ""}${
+        near.length ? html`<div class="sg">Related</div>${near.map(h => row(h, at(h)))}` : ""}`}`;
+  sameQ.setAttribute("aria-expanded", String(sameRows.length > 0));
+  if (sameSel >= 0) sameQ.setAttribute("aria-activedescendant", "sr" + sameSel); else sameQ.removeAttribute("aria-activedescendant");
+  sameListEl.querySelectorAll(".sr").forEach(b => { b.onclick = () => chooseSame(+b.dataset.i); });
+  const c = sameChosen;
+  sameActsEl.innerHTML = html`${c ? html`<button type="button" class="btn" data-a="${sameFor.id}" data-b="${c.id}">Merge ${sameFor.name} into ${c.name}</button><button type="button" class="btn" data-a="${c.id}" data-b="${sameFor.id}">Merge ${c.name} into ${sameFor.name}</button>` : ""}`;
+  sameActsEl.querySelectorAll("[data-a]").forEach(b => { b.onclick = () => openSameMerge(b.dataset.a, b.dataset.b); });
+}
+async function searchSame() {
+  const q = sameQ.value.trim(), seq = ++sameSeq;
+  sameSel = -1; sameChosen = null;
+  if (!q) { sameRows = []; sameAsked = false; renderSame(); return; }
+  try {
+    const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&workspace=" + encodeURIComponent(sameFor.workspace), { cache: "no-store" });
+    const ans = await r.json();
+    if (seq !== sameSeq) return;
+    sameRows = (ans.hits || []).filter(h => h.kind === "entity" && h.id !== sameFor.id).map(h => {
+      const n = nodeById(h.id);
+      return { id: h.id, name: n ? n.name : h.snippet, type: n ? n.type : "", reached: h.reached };
+    });
+  } catch (e) { sameRows = []; }
+  sameAsked = true;
+  renderSame();
+}
+function chooseSame(i) { if (i < 0 || i >= sameRows.length) return; sameSel = i; sameChosen = sameRows[i]; renderSame(); }
+async function openSameMerge(a, b) {
+  const want = [a, b].sort().join("|");
+  const open = proposals.find(q => q.kind === "entity_merge" && (q.state === "open" || q.state === "blocked")
+    && [...new Set(q.targets || [])].sort().join("|") === want);
+  if (open) { sameDlg.close(); toast("info", "A merge of these two is already open."); openReviewItem(open.id); return; }
+  const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(a) + "&b=" + encodeURIComponent(b) + "&src=picked&workspace=" + encodeURIComponent(sameFor.workspace), null, null, null, true);
+  if (!o.ok) { toast("bad", "Not opened", o.why); return; }
+  sameDlg.close();
+  toast("ok", "Merge proposed - it waits under Needs you for a verdict");
+  await refreshProposals();
+  openReviewItem(o.body.proposal_id);
+}
+sameQ.addEventListener("input", () => { searchSame(); });
+sameQ.addEventListener("keydown", ev => {
+  if (ev.key === "ArrowDown" && sameRows.length) { ev.preventDefault(); sameSel = Math.min(sameRows.length - 1, sameSel + 1); renderSame(); }
+  else if (ev.key === "ArrowUp" && sameRows.length) { ev.preventDefault(); sameSel = Math.max(0, sameSel - 1); renderSame(); }
+  else if (ev.key === "Enter") { ev.preventDefault(); if (sameSel >= 0) chooseSame(sameSel); }
+});
+// Esc closes from anywhere in the dialog and changes nothing; focus goes back to Same as...
+sameDlg.addEventListener("close", () => { sameFor = null; const b = detailEl.querySelector(".sameas"); if (b) b.focus(); });
 function openKeys() { setViewPop(false); if (!keysDlg.open) keysDlg.showModal(); }
 document.getElementById("keysOpen").onclick = openKeys;
 function dialogOpen() { return !!document.querySelector("dialog[open]"); }

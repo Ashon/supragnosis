@@ -345,3 +345,57 @@ fn the_same_name_is_said_on_the_local_console() {
         "the Workspace line still says no entity is in two"
     );
 }
+
+/// Section 29.17: Same as... searches the entity's own workspace, chooses nothing unmoved and offers
+/// the merge either way; Keep ... instead reads the reverse before writing, opens it before rejecting,
+/// and the console offers no Accept on a merge whose reverse is accepted.
+#[test]
+fn same_as_and_keep_instead_hold_their_order() {
+    assert!(
+        PAGE.contains("<dialog id=\"sameDlg\" aria-labelledby=\"sameTitle\">"),
+        "no Same as... dialog"
+    );
+    let open = function("openSameAs");
+    assert!(open.contains("\"Search \" + node.workspace") && open.contains("showModal()"));
+    let search = SCRIPT
+        .find("async function searchSame()")
+        .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
+        .expect("searchSame");
+    assert!(
+        search.contains("&workspace=\" + encodeURIComponent(sameFor.workspace)")
+            && search.contains("h.id !== sameFor.id"),
+        "the picker searches beyond the entity's workspace, or offers the entity itself"
+    );
+    assert!(search.contains("sameSel = -1"), "an answer arrives with a row chosen");
+    let render = function("renderSame");
+    for part in [
+        "Nothing else is in ",
+        "No entity in ",
+        "\"Merge \"",
+        "Merge ${sameFor.name} into ${c.name}",
+    ] {
+        let part = part.trim_matches('"');
+        assert!(render.contains(part), "the picker does not say {part}");
+    }
+    let keep = SCRIPT
+        .find("async function keepInstead(item)")
+        .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
+        .expect("keepInstead");
+    let read = keep.find("reverseOf(p, pair.id)").expect("Keep reads the reverse");
+    let opened = keep.find("src=reverse").expect("Keep opens the reverse");
+    let rejected = keep.find("decision=reject").expect("Keep rejects this one");
+    assert!(read < opened && opened < rejected, "Keep rejects before the reverse is there");
+    assert!(
+        keep.contains("could not be opened\", o.why); return;"),
+        "a failed open still rejects"
+    );
+    let detail = function("itemDetail");
+    assert!(
+        detail.contains("&& !revAccepted") && detail.contains("Its reverse is accepted."),
+        "an Accept is offered while the reverse is accepted"
+    );
+    assert!(
+        function("reviewDecide").contains("rev.state === \"merged\") return;"),
+        "A accepts it anyway"
+    );
+}

@@ -1274,7 +1274,7 @@ fn propose_split_response(engine: &Engine, query: &str) -> Response {
         Ok(w) => w,
         Err(r) => return r,
     };
-    match engine.propose(supragnosis_engine::ProposeInput {
+    match engine.propose_at_console(supragnosis_engine::ProposeInput {
         workspace,
         kind: "entity_split".into(),
         targets: vec![merge],
@@ -1376,6 +1376,10 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
         Some("variant:separator") => "name-variant ladder (separator/case normalization)",
         Some("variant:plural") => "name-variant ladder (plural fold)",
         Some("variant:alias") => "name-variant ladder (alias match)",
+        // Same as... and Keep ... instead (design-system.md Section 29.17): the reason says why; the
+        // console's mark says who.
+        Some("picked") => "two entities named as one from a search",
+        Some("reverse") => "the other name kept, instead of a merge the other way",
         None => "merge-band suggestion (embedding-near names)",
         Some(other) => {
             return Response {
@@ -1398,16 +1402,29 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
             body: err_body("The console opens no merge across workspaces."),
         };
     }
-    match engine.propose(supragnosis_engine::ProposeInput {
-        workspace: match act_workspace(param("workspace"), || Ok(home_b.or(home_a))) {
-            Ok(w) => w,
-            Err(r) => return r,
-        },
+    let workspace = match act_workspace(param("workspace"), || Ok(home_b.clone().or(home_a))) {
+        Ok(w) => w,
+        Err(r) => return r,
+    };
+    // A merge the console opens again after its un-merges says how many came before, so it is a
+    // different proposal from each one a split reversed (unmerge.md S10). Counted from the log.
+    let filed_in = workspace.clone().unwrap_or_else(|| engine.default_workspace().to_string());
+    let before = match engine.unmerges_of(&filed_in, &[a.clone(), b.clone()], &b) {
+        Ok(n) => n,
+        Err(e) => return store_failure(&e),
+    };
+    let rationale = match before {
+        0 => rationale.to_string(),
+        1 => format!("{rationale}, again after 1 un-merge"),
+        n => format!("{rationale}, after {n} un-merges"),
+    };
+    match engine.propose_at_console(supragnosis_engine::ProposeInput {
+        workspace,
         kind: "entity_merge".into(),
         targets: vec![a, b.clone()],
         into: Some(b),
         tier: None,
-        rationale: Some(rationale.into()),
+        rationale: Some(rationale),
         affected_types: Vec::new(),
         source_ref: None,
         on_behalf_of: None,

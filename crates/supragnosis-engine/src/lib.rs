@@ -2582,6 +2582,51 @@ impl Engine {
 
     pub fn propose(&self, input: ProposeInput) -> Result<String, ObserveError> {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
+        self.propose_marked(input, None)
+    }
+
+    /// [`Engine::propose`] for the local console's own server: the opening observation carries the
+    /// console's mark, engine-stamped as a verdict's is (resolution.md Section 6), so who asked reads
+    /// as the person at that console (design-system.md Section 29.17). The input names no source of
+    /// its own; the mark grants nothing, since the ceiling and the I17 check read verdicts only.
+    pub fn propose_at_console(&self, input: ProposeInput) -> Result<String, ObserveError> {
+        if input.source_ref.is_some() {
+            return Err(ObserveError::Invalid(
+                "a proposal opened at the console carries the console's mark, not a source of its own"
+                    .into(),
+            ));
+        }
+        self.propose_marked(input, Some(VERDICT_SURFACE_CONSOLE))
+    }
+
+    /// How many merged un-merges of the same two-or-more entities, merged into the same one, this
+    /// workspace's log holds. The console counts them into a re-merge's reason so it is a different
+    /// proposal from the one each split reversed (unmerge.md S10, design-system.md Section 29.17).
+    pub fn unmerges_of(
+        &self,
+        workspace: &str,
+        targets: &[String],
+        into: &str,
+    ) -> Result<usize, StoreError> {
+        let views = self.fold_proposals(Some(workspace), &ReadCtx::default())?;
+        let want: BTreeSet<&str> = targets.iter().map(String::as_str).collect();
+        Ok(views
+            .values()
+            .filter(|p| p.kind == "entity_split" && p.state == "merged")
+            .filter_map(|p| p.targets.first().and_then(|t| views.get(t)))
+            .filter(|m| {
+                m.kind == "entity_merge"
+                    && m.into.as_deref() == Some(into)
+                    && m.targets.iter().map(String::as_str).collect::<BTreeSet<_>>() == want
+            })
+            .count())
+    }
+
+    fn propose_marked(
+        &self,
+        input: ProposeInput,
+        marker: Option<&str>,
+    ) -> Result<String, ObserveError> {
         if !PROPOSAL_KINDS.contains(&input.kind.as_str()) {
             return Err(ObserveError::Invalid(format!(
                 "unknown proposal kind '{}'. use one of {PROPOSAL_KINDS:?}",
@@ -2732,7 +2777,8 @@ impl Engine {
             None
         };
         let workspace = input.workspace.unwrap_or_else(|| self.default_workspace.clone());
-        let prov = self.provenance(&workspace, input.source_ref, None, input.on_behalf_of);
+        let source_ref = marker.map(String::from).or(input.source_ref);
+        let prov = self.provenance(&workspace, source_ref, None, input.on_behalf_of);
         // Relation type names are normalized so they match the graph's edge kinds exactly (the viewer
         // highlights edges by `kind`); entity type names are labels, kept verbatim.
         let affected_types: Vec<AffectedType> = input

@@ -221,6 +221,19 @@
     </div>
   </div>
 </dialog>
+<!-- Same as... (design-system.md Section 29.17): a search of the entity's own workspace; a chosen row
+     offers the merge either way. -->
+<dialog id="sameDlg" aria-labelledby="sameTitle">
+  <form method="dialog" class="fchead">
+    <span class="ftitle" id="sameTitle">Same as...</span>
+    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+  </form>
+  <div class="sbody">
+    <input id="sameQ" type="search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="sameList" aria-autocomplete="list">
+    <div id="sameList" role="listbox" aria-label="Entities"></div>
+    <div id="sameActs"></div>
+  </div>
+</dialog>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">

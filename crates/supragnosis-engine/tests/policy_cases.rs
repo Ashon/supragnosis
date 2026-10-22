@@ -2057,3 +2057,78 @@ fn p15_namesakes_are_the_same_name_standing_in_other_workspaces() {
     assert_eq!(said, vec![("web".to_string(), "Payment Service".to_string())]);
     assert!(infra.namesakes(&"ab".repeat(32), &["web"]).expect("read").is_none());
 }
+
+/// GIVEN a merge the console opens, WHEN its opening observation is read, THEN it carries the
+/// console's mark, engine-stamped, so who asked reads as the person; a source of its own is refused,
+/// and a client still cannot name the mark itself (design-system.md Section 29.17, resolution.md R8).
+#[test]
+fn p2_a_merge_opened_at_the_console_carries_its_mark() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    observe(&infra, "in infra", &["Postgres", "PostgreSQL"]);
+    let (a, b) = (Entity::make_id("infra", "Postgres"), Entity::make_id("infra", "PostgreSQL"));
+    let input = |source_ref: Option<&str>| ProposeInput {
+        workspace: Some("infra".into()),
+        kind: "entity_merge".into(),
+        targets: vec![a.clone(), b.clone()],
+        into: Some(b.clone()),
+        tier: None,
+        rationale: Some("two entities named as one from a search".into()),
+        affected_types: vec![],
+        source_ref: source_ref.map(String::from),
+        on_behalf_of: None,
+    };
+    let id = infra.propose_at_console(input(None)).expect("open at the console");
+    let opened = store.get_observation(&id).expect("get").expect("the opening");
+    assert!(
+        opened
+            .provenance
+            .iter()
+            .all(|p| p.source_ref.as_deref() == Some(VERDICT_SURFACE_CONSOLE)),
+        "the opening does not carry the console's mark"
+    );
+    assert!(
+        infra.propose_at_console(input(Some("git:abc"))).is_err(),
+        "a source of its own was taken"
+    );
+    assert!(
+        infra.propose(input(Some(VERDICT_SURFACE_CONSOLE))).is_err(),
+        "a client minted the mark"
+    );
+}
+
+/// GIVEN a merge, its un-merge, and the same merge opened again, WHEN the console counts the
+/// un-merges of that pair in that direction, THEN it counts each one, so its re-merge reason makes a
+/// different proposal from every merge a split reversed (unmerge.md S10).
+#[test]
+fn s10_the_console_counts_the_unmerges_a_re_merge_follows() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    observe(&infra, "in infra", &["Postgres", "PostgreSQL"]);
+    let (a, b) = (Entity::make_id("infra", "Postgres"), Entity::make_id("infra", "PostgreSQL"));
+    let decide = |id: &str| {
+        infra
+            .review_proposal(
+                Some("infra".into()),
+                id.into(),
+                "merge".into(),
+                None,
+                None,
+                VerdictSurface::Console,
+            )
+            .expect("merge");
+    };
+    assert_eq!(infra.unmerges_of("infra", &[a.clone(), b.clone()], &b).expect("count"), 0);
+    let merge =
+        propose_in(&infra, "infra", "entity_merge", vec![a.clone(), b.clone()], Some(b.clone()))
+            .expect("merge");
+    decide(&merge);
+    let split = propose_in(&infra, "infra", "entity_split", vec![merge], None).expect("split");
+    decide(&split);
+    assert_eq!(infra.unmerges_of("infra", &[b.clone(), a.clone()], &b).expect("count"), 1);
+    assert_eq!(
+        infra.unmerges_of("infra", &[a.clone(), b.clone()], &a).expect("count"),
+        0,
+        "the other direction counted"
+    );
+}
