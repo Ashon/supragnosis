@@ -560,6 +560,10 @@ pub struct MergeBandCoverage {
     pub embedded: usize,
     /// Live entities the band considered (merged-away rows excluded).
     pub examined: usize,
+    /// Near pairs the band reached and left out because they are already answered: a waiting merge
+    /// names them, a split pulled them apart, or the person's reject holds them back. Each counts
+    /// once (design-system.md Section 29.27). Not "withheld", which P5 keeps for an ungranted scope.
+    pub held_back: usize,
 }
 
 /// A set of entities sharing one normalized name but distinct ids (a merge candidate).
@@ -2209,13 +2213,6 @@ impl Engine {
             .collect())
     }
 
-    /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
-    /// entity pairs whose name embeddings are near (>= [`SIM_CANDIDATE`]) - candidates the substrate
-    /// proposes so identity resolution is not the operator's manual job. A node-local retrieval aid
-    /// (P16-exempt, P19): the similarity is not part of the converging graph, and a candidate commits
-    /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
-    /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
-    /// Without an embedder there are no candidates (degrade, P19). Within-node reproducible order
     /// Every pair a candidate generator must not offer: in flight under an open or Blocked merge
     /// ([`Self::open_merge_pairs`]), pulled apart by a merged split ([`Self::split_pairs`]), or held
     /// back by the person's no ([`Self::person_no_pairs`], design-system.md Section 29.23).
@@ -2372,7 +2369,15 @@ impl Engine {
         Ok(open_pairs)
     }
 
-    /// (similarity desc, then ids); it need not converge across nodes (Section 3).
+    /// The conservative merge band (resolution-identity.md Section 3, Principle 15): distinct-name
+    /// entity pairs whose name embeddings are near (>= [`SIM_CANDIDATE`]) - candidates the substrate
+    /// proposes so identity resolution is not the operator's manual job. A node-local retrieval aid
+    /// (P16-exempt, P19): the similarity is not part of the converging graph, and a candidate commits
+    /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
+    /// already-merged (either side forwarded away), and the pairs [`Self::suppressed_pairs`] holds
+    /// back, which it counts (`held_back`, design-system.md Section 29.27). Without an embedder there
+    /// are no candidates (degrade, P19). Within-node reproducible order (similarity desc, then ids); it
+    /// need not converge across nodes (Section 3).
     fn merge_band(
         &self,
         workspace: Option<&str>,
@@ -2386,7 +2391,7 @@ impl Engine {
             // otherwise tell "no near-name pairs" from "this signal does not run here" (Principle 5).
             return Ok((
                 Vec::new(),
-                MergeBandCoverage { available: false, embedded: 0, examined: 0 },
+                MergeBandCoverage { available: false, embedded: 0, examined: 0, held_back: 0 },
             ));
         }
         // Pairs already under an open entity_merge - not re-surfaced (they are in flight).
@@ -2409,6 +2414,7 @@ impl Engine {
 
         let mut seen: HashSet<(String, String)> = HashSet::new();
         let mut out: Vec<MergeSuggestion> = Vec::new();
+        let mut held_back = 0usize;
         // Coverage, counted on the same pass: an entity projected before an embedder was configured
         // carries no vector and is silently skipped, which would otherwise make an under-covered run
         // look identical to an exhaustive one that found nothing.
@@ -2432,7 +2438,11 @@ impl Engine {
                     continue;
                 }
                 let pair = unordered_pair(&e.id, &other.id);
-                if !seen.insert(pair.clone()) || open_pairs.contains(&pair) {
+                if !seen.insert(pair.clone()) {
+                    continue; // reached from its other end already
+                }
+                if open_pairs.contains(&pair) {
+                    held_back += 1; // answered already: a waiting merge, a split or the person's no
                     continue;
                 }
                 let shared = match (adj.get(&pair.0), adj.get(&pair.1)) {
@@ -2456,7 +2466,7 @@ impl Engine {
                 .then_with(|| x.a.cmp(&y.a))
                 .then_with(|| x.b.cmp(&y.b))
         });
-        Ok((out, MergeBandCoverage { available: true, embedded, examined }))
+        Ok((out, MergeBandCoverage { available: true, embedded, examined, held_back }))
     }
 
     /// Read-only curation signals over the workspace (Principle 7 "generate, do not commit"): merge
@@ -8816,6 +8826,71 @@ mod tests {
             "reproject covers the rows written before the embedder existed"
         );
         assert!(rep.merge_band.examined > 0, "there are live entities to cover");
+    }
+
+    /// design-system.md Section 29.27: the band counts the near pairs it held back, each once though it
+    /// reaches it from both ends, so an empty band says whether none are near or all are answered.
+    #[test]
+    fn the_band_counts_what_it_held_back() {
+        use supragnosis_core::{EmbedError, EmbeddingProvider};
+        struct Same;
+        impl EmbeddingProvider for Same {
+            fn dimensions(&self) -> usize {
+                3
+            }
+            fn id(&self) -> String {
+                "same-3".into()
+            }
+            fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+                Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0]).collect())
+            }
+        }
+        let engine =
+            Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1").with_embedder(Arc::new(Same));
+        for name in ["Alpha", "Beta", "Gamma"] {
+            engine
+                .observe(ObserveInput {
+                    content: format!("about {name}"),
+                    workspace: None,
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EntityInput {
+                        name: name.into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
+        }
+        let rep = engine.curation(Some("ws1")).unwrap();
+        assert_eq!(
+            (rep.merge_suggestions.len(), rep.merge_band.held_back),
+            (3, 0),
+            "three near pairs, none answered"
+        );
+        let id = |n: &str| Entity::make_id("ws1", n);
+        engine
+            .propose(ProposeInput {
+                workspace: Some("ws1".into()),
+                kind: "entity_merge".into(),
+                targets: vec![id("Alpha"), id("Beta")],
+                into: Some(id("Beta")),
+                tier: None,
+                rationale: Some("one".into()),
+                affected_types: Vec::new(),
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("propose");
+        let rep = engine.curation(Some("ws1")).unwrap();
+        assert_eq!(rep.merge_suggestions.len(), 2);
+        assert_eq!(
+            rep.merge_band.held_back, 1,
+            "the pair in flight is counted once, from either end"
+        );
     }
 
     /// A candidate already awaiting a verdict is not a candidate (I18): once an entity_merge is open
