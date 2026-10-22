@@ -31,8 +31,8 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead, step 52, the map on a phone, and step 53, time on the map. Step 54, the agent
-> surface says where, is specified.
+> and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
+> surface says where.
 
 ## 1. Why this exists
 
@@ -1988,7 +1988,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 7 revised): each entity carries when it was last said, the hover card, the sheet and List
    say it, and a Said filter dims what was not said today, in the last 7 days or since the person's
    last visit.
-54. **The agent surface says where** (Section 29.20; compatibility.md Section 7 and architecture.md
+54. **The agent surface says where** [built] (Section 29.20; compatibility.md Section 7 and architecture.md
    Section 7 revised): every write's answer names its workspace and says when it made a new one,
    search hits name their entity, a name passed as an id is said to be one, a failed call is flagged
    as failed, a merged promotion says what it granted, and a merged demotion is no longer capped.
@@ -5359,3 +5359,11 @@ No row needs a principle changed.
   vocabulary is defined on purpose rather than written by the way.
 - It does not decide whether an agent may settle a person's conflict; the granted tier says what it
   did.
+
+**Guarded by** `p18_a_demotion_lowers_to_the_tier_it_asks_for` and
+`p18_a_merged_promotion_says_what_it_granted` in the engine's policy cases;
+`a_write_says_where_and_a_new_workspace_is_said` and
+`hits_name_their_entity_and_a_name_is_said_to_be_one` in the agent surface's tests (the workspace on
+each write, the note and its nearest-first order, a known workspace saying nothing, named hits, and
+the name hint by shape); and `a_failure_is_flagged_and_a_not_found_is_a_result` over the protocol
+(the error flag, a not-found answer left a result, and the instructions' naming).

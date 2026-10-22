@@ -1324,6 +1324,12 @@ pub trait AssertionStore: Send + Sync {
     /// A query/schema-level backend failure (not an individual row) is still `Err`.
     /// Note: a reprojection that needs completeness (M3) must treat excluded rows as restore/recovery, not a drop.
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError>;
+    /// Whether `workspace` holds any observation - what makes a workspace exist. The agent surface
+    /// asks it before a write, to say when the write makes a new one (design-system.md Section 29.20).
+    /// The default reads the workspace's log; an adapter with a workspace index answers from it.
+    fn holds_observations(&self, workspace: &str) -> Result<bool, StoreError> {
+        Ok(!self.all_observations(Some(workspace))?.is_empty())
+    }
     /// The sync delta read (docs/federation.md Section 5, M4 Phase 1): every sync-stamped attestation
     /// in `workspace` NOT yet covered by `since`, as wire-unit events, ordered deterministically by
     /// (origin_node, origin_seq, content id). Attestations without a sync block (pre-federation /

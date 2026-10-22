@@ -436,6 +436,61 @@ impl SupragnosisServer {
 
     /// The remote checks for a resource read: an authenticated principal (R2), a granted workspace
     /// (R3) that may be served (R5). A refusal reads as "not found for you", never as absence.
+    /// Search hits as an agent reads them (design-system.md Section 29.20): an entity hit from this node
+    /// carries its name, type and workspace, read from its projected row, so two hits named alike
+    /// can be told apart. A hit whose row cannot be read keeps what it had.
+    fn named_hits(&self, hits: &[supragnosis_core::SearchHit]) -> serde_json::Value {
+        let store = self.engine.store();
+        serde_json::Value::Array(
+            hits.iter()
+                .map(|h| {
+                    let mut v = serde_json::to_value(h).unwrap_or(serde_json::Value::Null);
+                    if h.kind == supragnosis_core::SearchHitKind::Entity {
+                        if let Ok(Some(e)) = store.get_entity(&h.id) {
+                            v["name"] = e.canonical_name.clone().into();
+                            v["type"] = e.kind.clone().into();
+                            if let Some(p) = e.provenance.first() {
+                                v["workspace"] = p.workspace.clone().into();
+                            }
+                        }
+                    }
+                    v
+                })
+                .collect(),
+        )
+    }
+
+    /// The note a local `observe` adds when it makes a new workspace (design-system.md Section
+    /// 29.20): the workspaces that hold knowledge, nearest to the new name first by the distance
+    /// between their letters and digits, then by name, ten at most and how many more.
+    fn new_workspace_note(&self, ws: &str) -> Option<String> {
+        let mut known: Vec<String> = match self.engine.workspaces() {
+            Ok(list) => list.into_iter().filter(|w| w != ws).collect(),
+            Err(_) => return None,
+        };
+        if known.is_empty() {
+            return Some(format!("workspace {ws} is new; this node held no knowledge before"));
+        }
+        let key = |w: &str| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<Vec<_>>()
+        };
+        let target = key(ws);
+        known.sort_by_cached_key(|w| (edit_distance(&key(w), &target), w.clone()));
+        let more = known.len().saturating_sub(10);
+        known.truncate(10);
+        let mut list = known.join(", ");
+        if more > 0 {
+            list.push_str(&format!(" and {more} more"));
+        }
+        Some(format!(
+            "workspace {ws} is new; the workspaces that hold knowledge are {list} - observe there if \
+             this was meant for one of them"
+        ))
+    }
+
     /// On this node `*` is the all-workspaces view, and a write is filed in one workspace (design-system.md
     /// Section 29.15). The remote surface refuses `*` before a write reaches the tool (`admit_write`);
     /// this is the same answer for the local one, which used to file into a workspace named `*`.
@@ -513,6 +568,17 @@ impl SupragnosisServer {
         } else {
             "unknown - not found is not a negation (open-world assumption)"
         };
+        // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
+        // on every surface (design-system.md Section 29.20, remote-viewer.md Section 3.4).
+        let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
+        let note = if looks_like_id {
+            note.to_string()
+        } else {
+            format!(
+                "{note}. This looks like a name; an entity's id is the 64-character hex id \
+                 search_knowledge returns - search for the name"
+            )
+        };
         serde_json::json!({ "found": false, "id": id, "note": note }).to_string()
     }
 
@@ -526,7 +592,7 @@ impl SupragnosisServer {
 #[tool_router]
 impl SupragnosisServer {
     #[tool(
-        description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id and the linked entity/relation ids."
+        description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id, the linked entity/relation ids and the workspace written to; a write that makes a new workspace adds a note naming the ones that hold knowledge."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
         if let Some(why) = self.all_is_no_place("observe", req.workspace.as_deref()) {
@@ -568,6 +634,10 @@ impl SupragnosisServer {
         };
         // Run the blocking store call on spawn_blocking so concurrent HTTP requests do not starve
         // the tokio workers (harmless with a single stdio client, but essential for a daemon with multiple connections).
+        // Whether this write makes a new workspace, asked before it (design-system.md Section 29.20).
+        // The remote surface already refuses a workspace outside the write grants.
+        let new_ws = remote::current().is_none()
+            && matches!(self.engine.holds_observations(&workspace), Ok(false));
         let engine = self.engine.clone();
         let app = writing_app();
         let as_app = app.clone();
@@ -584,10 +654,17 @@ impl SupragnosisServer {
                         observation: out.observation_id.clone(),
                         entities: out.entities.clone(),
                         relations: out.relations.len(),
-                        workspace,
+                        workspace: workspace.clone(),
                     },
                 );
-                to_json(&out)
+                let mut answer = serde_json::to_value(&out).unwrap_or(serde_json::Value::Null);
+                answer["workspace"] = workspace.clone().into();
+                if new_ws {
+                    if let Some(note) = self.new_workspace_note(&workspace) {
+                        answer["note"] = note.into();
+                    }
+                }
+                answer.to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -734,8 +811,7 @@ impl SupragnosisServer {
                     .then_with(|| a.id.cmp(&b.id))
             });
             hits.truncate(limit);
-            let mut resp =
-                serde_json::json!({ "mode": mode, "hits": hits, "workspaces": p.readable() });
+            let mut resp = serde_json::json!({ "mode": mode, "hits": self.named_hits(&hits), "workspaces": p.readable() });
             if hits.is_empty() {
                 resp["note"] =
                     "no hits in the workspaces granted to you - absence is unknown, not a negation"
@@ -774,7 +850,8 @@ impl SupragnosisServer {
                         .to_string(),
                     },
                 );
-                let mut resp = serde_json::json!({ "mode": out.mode, "hits": out.hits });
+                let mut resp =
+                    serde_json::json!({ "mode": out.mode, "hits": self.named_hits(&out.hits) });
                 if !remote_results.is_empty() {
                     resp["remote"] = serde_json::Value::Array(remote_results);
                 }
@@ -1006,6 +1083,10 @@ impl SupragnosisServer {
             };
             defs.push(EngineTypeDefInput { target, name: d.name, description: d.description });
         }
+        let written = req
+            .workspace
+            .clone()
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
         let input = DefineTypeInput {
             workspace: req.workspace,
             source_ref: req.source_ref,
@@ -1020,7 +1101,8 @@ impl SupragnosisServer {
         .await
         {
             Ok(Ok(observation_id)) => {
-                serde_json::json!({ "observation_id": observation_id }).to_string()
+                serde_json::json!({ "observation_id": observation_id, "workspace": written })
+                    .to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -1105,6 +1187,10 @@ impl SupragnosisServer {
                 }
             }
         }
+        let written = req
+            .workspace
+            .clone()
+            .unwrap_or_else(|| self.engine.default_workspace().to_string());
         let input = EngineProposeInput {
             workspace: req.workspace,
             kind: req.kind,
@@ -1123,14 +1209,16 @@ impl SupragnosisServer {
         })
         .await
         {
-            Ok(Ok(id)) => serde_json::json!({ "proposal_id": id }).to_string(),
+            Ok(Ok(id)) => {
+                serde_json::json!({ "proposal_id": id, "workspace": written }).to_string()
+            }
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id."
+        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
@@ -1150,6 +1238,7 @@ impl SupragnosisServer {
                 Err(e) => return store_failure_json(&e),
             }
         }
+        let written = ws.clone().unwrap_or_else(|| self.engine.default_workspace().to_string());
         // This is the agent-facing surface (resolution.md Section 6): the engine stamps the Agent
         // marker, capping what a merged promotion can grant. Never client-suppliable.
         let app = writing_app();
@@ -1167,14 +1256,16 @@ impl SupragnosisServer {
         })
         .await
         {
-            Ok(Ok(id)) => serde_json::json!({ "observation_id": id }).to_string(),
+            Ok(Ok(id)) => {
+                serde_json::json!({ "observation_id": id, "workspace": written }).to_string()
+            }
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
         }
     }
 
     #[tool(
-        description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in. A verdict counts only in its proposal's workspace."
+        description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace."
     )]
     async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -1191,7 +1282,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in."
+        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted."
     )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -1572,8 +1663,9 @@ impl ServerHandler for SupragnosisServer {
                  routinely empty by design - an empty default means 'wrong scope', never 'no \
                  knowledge here'. Orient with workspace '*' (survey all) before concluding \
                  anything is absent, and scope observe to the workspace the knowledge belongs to \
-                 so it is not split across two. search_knowledge already spans all workspaces \
-                 unless you narrow it. \
+                 so it is not split across two: name it after the project you work in - the \
+                 repository's top-level directory name - and keep using that name. \
+                 search_knowledge already spans all workspaces unless you narrow it. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
@@ -1599,7 +1691,7 @@ impl ServerHandler for SupragnosisServer {
             // (design-system.md Section 29.8). A server that serves principals never sets it (O7).
             let app = client_name(&context);
             let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-            return WRITING_APP.scope(app, self.tool_router.call(tcc)).await;
+            return flag_error(WRITING_APP.scope(app, self.tool_router.call(tcc)).await);
         };
         let refuse = |why: String| -> Result<CallToolResponse, ErrorData> {
             Ok(CallToolResult::error(vec![ContentBlock::text(
@@ -1634,7 +1726,7 @@ impl ServerHandler for SupragnosisServer {
         tracing::info!(principal = %p.name, tool = %request.name, workspace = ?ws, admitted = true, "remote call");
         request.arguments = Some(args);
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        remote::as_principal(p, self.tool_router.call(tcc)).await
+        flag_error(remote::as_principal(p, self.tool_router.call(tcc)).await)
     }
 
     /// Tool listing, hand-written so that the SEP-2549 cache hints are always present.
@@ -2078,6 +2170,44 @@ fn store_failure_json(e: &impl std::fmt::Display) -> String {
     .to_string()
 }
 
+/// A tool answer that is a top-level `error` object is flagged as a tool error, MCP's own convention,
+/// so a client tells a failure from a result without reading it (design-system.md Section 29.20). A
+/// not-found answer is a result and stays one (P5); an error inside a larger answer - one server's
+/// failure in a federated search or a sync round - stays inside it.
+fn flag_error(resp: Result<CallToolResponse, ErrorData>) -> Result<CallToolResponse, ErrorData> {
+    resp.map(|r| match r {
+        CallToolResponse::Complete(mut result) => {
+            let failed = result
+                .content
+                .first()
+                .and_then(|c| c.as_text())
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t.text).ok())
+                .is_some_and(|v| v.as_object().is_some_and(|o| o.contains_key("error")));
+            if failed {
+                result.is_error = Some(true);
+            }
+            CallToolResponse::Complete(result)
+        }
+        other => other,
+    })
+}
+
+/// The Levenshtein distance between two letter sequences: how a new workspace's name ranks the ones
+/// that hold knowledge (design-system.md Section 29.20).
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cur = row[j + 1];
+            row[j + 1] = (prev + usize::from(ca != cb)).min(row[j] + 1).min(cur + 1);
+            prev = cur;
+        }
+    }
+    row[b.len()]
+}
+
 fn err_json(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
@@ -2280,5 +2410,112 @@ mod all_is_a_view {
         }
         assert_eq!(said[0], said[1], "a merge elsewhere answers differently from an absent one");
         assert!(!said[0].contains("secret"), "{}", said[0]);
+    }
+}
+
+#[cfg(test)]
+mod agent_answers {
+    //! design-system.md Section 29.20: the agent surface says where it wrote, names its hits, says a
+    //! name is one, and names the existing workspaces when a write makes a new one.
+    use super::*;
+    use supragnosis_store::InMemoryStore;
+
+    fn req<T: serde::de::DeserializeOwned>(v: serde_json::Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(v).expect("request"))
+    }
+
+    fn json(s: &str) -> serde_json::Value {
+        serde_json::from_str(s).expect("json")
+    }
+
+    #[tokio::test]
+    async fn a_write_says_where_and_a_new_workspace_is_said() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let s = SupragnosisServer::new(engine);
+        let first = json(&s.observe(req(serde_json::json!({ "content": "a", "workspace": "acme-api", "entities": [{ "name": "A" }] }))).await);
+        assert_eq!(first["workspace"], "acme-api");
+        assert!(
+            first["note"]
+                .as_str()
+                .is_some_and(|n| n.contains("this node held no knowledge before")),
+            "{first}"
+        );
+        for ws in ["home-lab", "zeta", "acme-web"] {
+            s.observe(req(
+                serde_json::json!({ "content": ws, "workspace": ws, "entities": [{ "name": ws }] }),
+            ))
+            .await;
+        }
+        let again = json(
+            &s.observe(req(serde_json::json!({ "content": "b", "workspace": "acme-api" })))
+                .await,
+        );
+        assert!(
+            again.get("note").is_none(),
+            "a workspace that holds knowledge is said to be new"
+        );
+        let typo = json(
+            &s.observe(req(serde_json::json!({ "content": "c", "workspace": "acme_api" })))
+                .await,
+        );
+        let note = typo["note"].as_str().expect("a note for a new workspace");
+        assert!(
+            note.starts_with("workspace acme_api is new; the workspaces that hold knowledge are acme-api, acme-web"),
+            "the nearest name is not first: {note}"
+        );
+        let p = json(&s.propose(req(serde_json::json!({
+            "workspace": "acme-api", "kind": "entity_merge", "targets": ["x".repeat(64), "y".repeat(64)], "into": "y".repeat(64),
+        }))).await);
+        assert!(p["workspace"] == "acme-api" || p["error"].is_string(), "{p}");
+    }
+
+    #[tokio::test]
+    async fn hits_name_their_entity_and_a_name_is_said_to_be_one() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        for ws in ["billing", "home-lab"] {
+            engine
+                .observe(ObserveInput {
+                    content: format!("PostgreSQL in {ws}"),
+                    workspace: Some(ws.into()),
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: vec![EngineEntityInput {
+                        name: "PostgreSQL".into(),
+                        kind: Some("Database".into()),
+                        description: None,
+                    }],
+                    relations: vec![],
+                })
+                .expect("observe");
+        }
+        let s = SupragnosisServer::new(engine);
+        let found =
+            json(&s.search_knowledge(req(serde_json::json!({ "query": "PostgreSQL" }))).await);
+        let named: Vec<(String, String)> = found["hits"]
+            .as_array()
+            .expect("hits")
+            .iter()
+            .filter(|h| h["kind"] == "entity")
+            .map(|h| {
+                (
+                    h["workspace"].as_str().unwrap_or("").to_string(),
+                    h["name"].as_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect();
+        assert!(named.contains(&("billing".into(), "PostgreSQL".into())), "{found}");
+        assert!(named.contains(&("home-lab".into(), "PostgreSQL".into())), "{found}");
+        let by_name = json(&s.get_entity(req(serde_json::json!({ "id": "PostgreSQL" }))).await);
+        assert!(
+            by_name["note"].as_str().is_some_and(|n| n.contains("This looks like a name")),
+            "{by_name}"
+        );
+        let by_id = json(&s.get_entity(req(serde_json::json!({ "id": "ab".repeat(32) }))).await);
+        assert!(
+            !by_id["note"].as_str().unwrap_or("").contains("looks like a name"),
+            "an id read as a name"
+        );
     }
 }

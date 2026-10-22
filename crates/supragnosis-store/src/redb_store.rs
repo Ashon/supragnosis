@@ -620,6 +620,13 @@ impl AssertionStore for RedbStore {
         Self::load_rows::<Relation>(&txn, RELATIONS, &ids, "relation")
     }
 
+    fn holds_observations(&self, workspace: &str) -> Result<bool, StoreError> {
+        let txn = self.db.begin_read().map_err(backend)?;
+        let idx = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
+        let mut ids = idx.get(workspace).map_err(backend)?;
+        Ok(ids.next().is_some())
+    }
+
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
         let txn = self.db.begin_read().map_err(backend)?;
         let ids = self.ids_in(&txn, OBSERVATIONS, OBS_BY_WS, workspace)?;
