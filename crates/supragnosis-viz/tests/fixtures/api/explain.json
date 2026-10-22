@@ -1,0 +1,148 @@
+{
+  "effective_tier": "agent_extracted",
+  "fields": [
+    {
+      "candidates": [
+        {
+          "base_tier": "agent_extracted",
+          "hlc": {
+            "counter": 0,
+            "node": "",
+            "wall": 1792000000000
+          },
+          "observation": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+          "observations": [
+            {
+              "base_tier": "agent_extracted",
+              "observation": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+              "trust_tier": "agent_extracted"
+            },
+            {
+              "base_tier": "agent_extracted",
+              "observation": "fb61fe5b538cecee7243a08023b3d70055d26207da3a7ead878af247acd8ebe2",
+              "trust_tier": "agent_extracted"
+            }
+          ],
+          "role": "winner",
+          "trust_tier": "agent_extracted",
+          "value": "supragnosis"
+        }
+      ],
+      "contested": false,
+      "field": "canonical_name",
+      "winner": "supragnosis"
+    },
+    {
+      "candidates": [
+        {
+          "base_tier": "agent_extracted",
+          "hlc": {
+            "counter": 0,
+            "node": "",
+            "wall": 1792000000000
+          },
+          "observation": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+          "observations": [
+            {
+              "base_tier": "agent_extracted",
+              "observation": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+              "trust_tier": "agent_extracted"
+            }
+          ],
+          "role": "winner",
+          "trust_tier": "agent_extracted",
+          "value": "Project"
+        },
+        {
+          "base_tier": "agent_extracted",
+          "hlc": {
+            "counter": 0,
+            "node": "",
+            "wall": 1792000000000
+          },
+          "observation": "fb61fe5b538cecee7243a08023b3d70055d26207da3a7ead878af247acd8ebe2",
+          "observations": [
+            {
+              "base_tier": "agent_extracted",
+              "observation": "fb61fe5b538cecee7243a08023b3d70055d26207da3a7ead878af247acd8ebe2",
+              "trust_tier": "agent_extracted"
+            }
+          ],
+          "role": "competitor",
+          "trust_tier": "agent_extracted",
+          "value": "System"
+        }
+      ],
+      "contested": true,
+      "field": "kind",
+      "winner": "Project"
+    }
+  ],
+  "id": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+  "name": "supragnosis",
+  "supporting": [
+    {
+      "attestations": [
+        {
+          "evaluated_tier": "agent_extracted",
+          "host": "h",
+          "observed_at": 1792000000000,
+          "trust_tier": "agent_extracted"
+        }
+      ],
+      "author": 0,
+      "content": "supragnosis depends on rmcp",
+      "effective_tier": "agent_extracted",
+      "entities": [
+        {
+          "id": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+          "name": "supragnosis"
+        },
+        {
+          "id": "b44ceaf256e12fea348ffea32efe41fb61e0a8d92e54740ebce8616cd8035829",
+          "name": "rmcp"
+        }
+      ],
+      "hlc": {
+        "counter": 0,
+        "node": "",
+        "wall": 1792000000000
+      },
+      "id": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+      "relations": [
+        {
+          "from": "supragnosis",
+          "to": "rmcp",
+          "type": "depends_on"
+        }
+      ],
+      "workspace": "ws"
+    },
+    {
+      "attestations": [
+        {
+          "evaluated_tier": "agent_extracted",
+          "host": "h",
+          "observed_at": 1792000000000,
+          "trust_tier": "agent_extracted"
+        }
+      ],
+      "author": 0,
+      "content": "supragnosis is a system",
+      "effective_tier": "agent_extracted",
+      "entities": [
+        {
+          "id": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+          "name": "supragnosis"
+        }
+      ],
+      "hlc": {
+        "counter": 0,
+        "node": "",
+        "wall": 1792000000000
+      },
+      "id": "fb61fe5b538cecee7243a08023b3d70055d26207da3a7ead878af247acd8ebe2",
+      "workspace": "ws"
+    }
+  ]
+}

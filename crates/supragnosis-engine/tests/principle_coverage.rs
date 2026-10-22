@@ -449,11 +449,7 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "no field of /api/graph, /api/explain or /api/observations is removed or narrowed",
-            Evidence::Deferred(
-                "the viewer API has no pinned example document the way the CLI's --json answers do (compatibility.md \
-                 Section 6); viz_serves_observation_log_and_explain asserts a handful of fields are present, not that \
-                 none left. Revisit when the viewer's responses get a fixture pin",
-            ),
+            Evidence::Scenario(&["the_viewer_api_keeps_its_fields"]),
         ),
     ]),
     (7, &[
