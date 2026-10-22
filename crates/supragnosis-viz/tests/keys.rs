@@ -262,3 +262,35 @@ fn a_panel_on_a_tablet_ends_above_the_camera() {
         "the strip"
     );
 }
+
+/// Section 29.30 (step 64): a pinch zooms as far as the fingers spread. The wheel keeps its notch
+/// step; a `ctrlKey` wheel - a trackpad pinch as Chrome and Firefox send it - scales by its delta
+/// through the touch pinch's camera move, at most 25% either way, and is not taken while a WebKit
+/// gesture runs; the gesture events scale by the ratio of the scale to the last, and keep the
+/// page's own zoom out.
+#[test]
+fn a_pinch_zooms_as_far_as_the_fingers_spread() {
+    let at = SCRIPT.find("canvas.addEventListener(\"wheel\"").expect("the wheel handler");
+    let wheel = &SCRIPT[at..at + SCRIPT[at..].find("}, { passive: false });").expect("it closes")];
+    assert!(
+        wheel.contains("zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);"),
+        "a mouse notch keeps its step"
+    );
+    let pinch = &wheel[wheel.find("if (ev.ctrlKey) {").expect("the pinch branch")..];
+    assert!(pinch.contains("if (gestureScale !== null) return;"), "never counted twice");
+    assert!(
+        pinch.contains("Math.min(1.25, Math.max(0.8, Math.exp(-dy / 100)))")
+            && pinch.contains("pinchTo(ev.clientX, ev.clientY,"),
+        "scaled by the delta through the touch pinch's camera move"
+    );
+    for (event, does) in [
+        ("gesturestart", "gestureScale = ev.scale || 1"),
+        ("gesturechange", "pinchTo(ev.clientX, ev.clientY, ev.scale / gestureScale)"),
+        ("gestureend", "gestureScale = null"),
+    ] {
+        let at = SCRIPT.find(&format!("canvas.addEventListener(\"{event}\"")).expect(event);
+        let body = &SCRIPT[at..at + SCRIPT[at..].find("});").expect("it closes")];
+        assert!(body.contains("ev.preventDefault()"), "{event} keeps the page's own zoom out");
+        assert!(body.contains(does), "{event}: {does}");
+    }
+}
