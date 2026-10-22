@@ -36,7 +36,8 @@
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
 > demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
-> ladder says what it held back, is built.
+> ladder says what it held back, is built. Step 63, the window's pages get only what they use, is
+> specified.
 
 ## 1. Why this exists
 
@@ -2029,6 +2030,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
 62. **The ladder says what it held back** [built] (Section 29.28; Section 29.27's owed row repaid): the
    name-variant ladder counts the pairs it left out because they are answered, and Suggestions says
    by name, as it does by meaning, whether none are alike or the ones it found are all answered.
+63. **The window's pages get only what they use** (Section 29.29; Section 29.13's owed menu
+   interface repaid, settings-page.md S8): a page in the main window may listen for and emit the
+   shell's events, ask whether the window is full screen and drag it, and nothing else of the
+   platform's: not the menus, the tray, images, paths or resources.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -4805,7 +4810,7 @@ No row needs a principle changed.
 - It does not change Settings' sidebar or remember the window's frame (R4-14, R4-16), which step 50c
   takes.
 - It does not take the menu interface from the pages of the main window, which any of them may still
-  call; it is owed with the window's permissions, unscheduled.
+  call; it is owed with the window's permissions, unscheduled. *(Repaid by step 63, Section 29.29.)*
 
 **Guarded by** `trouble_is_the_memory_that_cannot_be_used`, `the_tray_has_one_act_in_order`,
 `the_map_commands_act_where_their_control_is` and `each_menu_item_has_its_own_id` in the app's tray
@@ -6029,3 +6034,50 @@ reads Suggestions in a workspace holding "TrustTier" and "Trust Tier": with the 
 sentence by name; once a merge of them waits, "By name: none waiting - 1 alike-named pair is already
 proposed, split apart or held back by your reject." after "By meaning"; and in a workspace with
 nothing alike, "By name: none - no two names match ..." - a count of zero said as a known none.
+
+### 29.29 Step 63: the window's pages get only what they use
+
+**What was found.** Step 50b left it owed (Section 29.13): "It does not take the menu interface from
+the pages of the main window, which any of them may still call; it is owed with the window's
+permissions, unscheduled." The main window's baseline capability grants Tauri's `core:default`,
+which carries `core:menu:default` and `core:tray:default`: any page the window shows - the viewer a
+daemon serves, and once remote-viewer.md's app step lands, a page a hub serves - may replace the app
+menu (`set-as-app-menu`), add items, or change the tray's title, tooltip and icon, so a page can
+speak with the app's own voice where the person reads the app's state. The pages use none of it:
+the shell listens for and emits events, asks whether the window is full screen, and drags the
+window by its title bar; the app's own pages call the app's commands, which settings-page.md S1
+already locks.
+
+**Decisions.** None is open: the baseline names what the pages use and nothing else.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 29.13 | The menu interface stays callable by every page of the main window | repays |
+| settings-page.md Section 4 and S1 | No command is open by default; a capability is scoped to windows, so the caller check is the lock | agrees - S1 locks the app's commands by caller; this narrows the platform's to what the pages use, and the new S8 says so |
+| remote-viewer.md | A hub's page shown in the app is not trusted with the app's surfaces | agrees - repaid before the page that needs it arrives |
+| P18 | What can write is an attack surface | agrees - the menus and the tray are where the person reads the app's state, and no page writes them now |
+| Section 29.13's tray and menu | The tray says the memory's state and the menu holds the map's commands | agrees - both are built and changed in the app's Rust side, which no permission governs, and the pages' load report reaches it as an event |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The baseline.** The main window's `default` capability grants `core:event:default` (listen,
+  unlisten, emit, emit-to), `core:window:allow-is-fullscreen`, `core:window:allow-start-dragging`
+  and `core:window:allow-internal-toggle-maximize`, and no other platform permission.
+- **What stays.** The title bar drags and double-click zooms; a page loaded in full screen asks
+  and keeps no room for the traffic lights; the shell's `shell-page-loaded` report enables the
+  map's menu commands; Settings and Welcome hear `setup-line`; the app's own commands still answer
+  only the app's own pages (S1).
+- **What goes.** A page can no longer make or change a menu, the tray, an image, a path or a
+  resource, nor read the window's size, place or monitor.
+
+**What this step does not do.** It does not change S1's caller check, the commands' list, or the
+menu and tray themselves.
+
+**Guarded by** the app's capability test, which reads `capabilities/default.json` and holds it to
+exactly those four grants - no `core:default`, no `core:menu`, no `core:tray` - and holds each page
+API the shell calls (`event.listen`, `event.emit`, `getCurrentWindow().isFullscreen()`, the drag
+region) to a grant that covers it.
+

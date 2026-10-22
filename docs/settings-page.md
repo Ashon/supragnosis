@@ -279,6 +279,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 | **S5** | The page renders the text it is given as text, never as markup. |
 | **S6** | While a remote profile is active, the daemon controls are disabled with the reason, as the tray's were. |
 | **S7** | A daemon that cannot start because its store was indexed by another model is shown with that reason and one click that rebuilds the index - on the page the window shows while it cannot start, on This Mac and in Setup - never only as not running; and the index can be rebuilt from the page whenever the daemon runs with a model. |
+| **S8** | A page in the main window may listen for and emit events, ask whether the window is full screen, and drag it - and nothing else of the platform's: no page makes or changes a menu, the tray, an image, a path or a resource (design-system.md Section 29.29). |
 
 ## 8. What this revises
 
