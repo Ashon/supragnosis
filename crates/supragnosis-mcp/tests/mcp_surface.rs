@@ -777,6 +777,7 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        receive: None,
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
@@ -868,6 +869,7 @@ async fn a_sync_round_waiting_on_a_host_blocks_no_other_tool() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        receive: None,
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![ServerLink { url: host, auth_token: "t".into(), ..Default::default() }],
@@ -935,6 +937,7 @@ async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([7u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        receive: None,
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![ServerLink {
@@ -1011,6 +1014,7 @@ async fn routing_on_the_negotiated_map_records_nothing() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([8u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        receive: None,
         serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
@@ -1106,6 +1110,7 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([4u8; 32]))),
         share_workspaces: vec!["ws".into()],
+        receive: None,
         serve_workspaces: Vec::new(),
         config_notes: vec![note.clone()],
         servers: Vec::new(),

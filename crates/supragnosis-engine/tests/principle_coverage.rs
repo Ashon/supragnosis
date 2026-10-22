@@ -1061,7 +1061,10 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (3, &[c(
         "the joining machine accepts only the certificate the code names - by fingerprint, or by the built-in roots and the code's DNS names - during the join and after it",
-        Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        Evidence::Scenario(&[
+            "a_join_refuses_another_certificate_and_a_chain",
+            "a_machine_joins_and_both_sync_with_no_call",
+        ]),
     )]),
     (4, &[
         c(
@@ -1070,7 +1073,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the joining machine writes it to a 0600 file and never displays it",
-            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+            Evidence::Scenario(&["a_machine_joins_and_both_sync_with_no_call"]),
         ),
     ]),
     (5, &[
@@ -1080,7 +1083,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the joining machine sends only the ones it ticked that the signed answer names",
-            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+            Evidence::Scenario(&["a_machine_joins_and_both_sync_with_no_call"]),
         ),
     ]),
     (6, &[c(
@@ -1102,8 +1105,14 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             ]),
         ),
         c(
-            "hub leave and the Settings rows say so before they act",
-            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+            "hub leave removes this machine on the hub and only what the join wrote here",
+            Evidence::Scenario(&["leaving_removes_only_what_the_join_wrote"]),
+        ),
+        c(
+            "the Settings rows say so before they act",
+            Evidence::Deferred(
+                "docs/pairing.md's Settings acts are not built yet. Revisit when its Section 10 step 4 lands",
+            ),
         ),
     ]),
     (8, &[c(
@@ -1120,7 +1129,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a hub, or a machine admitting a node, does not join one",
-            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+            Evidence::Scenario(&["a_join_refuses_another_certificate_and_a_chain"]),
         ),
     ]),
     (10, &[c(
@@ -1140,7 +1149,10 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (12, &[c(
         "a joined machine pulls only the workspaces recorded at the join",
-        Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        Evidence::Scenario(&[
+            "a_joined_node_pulls_only_what_its_join_recorded",
+            "a_machine_joins_and_both_sync_with_no_call",
+        ]),
     )]),
     (13, &[c(
         "a vouched key is accepted only for the node id derived from it, never for the joining machine's own, verifies only up to its bound, and admits nothing",
@@ -1158,7 +1170,10 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the joining machine acts on no other answer",
-            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+            Evidence::Scenario(&[
+                "a_tampered_answer_writes_nothing",
+                "a_join_run_again_is_the_same_request_and_a_changed_nonce_ends_it",
+            ]),
         ),
     ]),
     (15, &[c(
@@ -3536,6 +3551,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-cli/src/hub.rs"),
     include_str!("../../supragnosis-cli/src/invite.rs"),
+    include_str!("../../supragnosis-cli/src/join.rs"),
     include_str!("../../supragnosis-cli/src/pair.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),

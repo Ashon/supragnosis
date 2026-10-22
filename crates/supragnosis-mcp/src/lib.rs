@@ -306,6 +306,10 @@ pub struct SyncContext {
     /// The shared workspaces this node lets a hub serve to its principals (docs/remote-server.md
     /// Section 4.5), said to the hub on every round.
     pub serve_workspaces: Vec<String>,
+    /// What a join recorded this node receives (docs/pairing.md Section 4.5, PA12): the round and
+    /// `sync_pull` pull these and the shared ones, and no others, whatever a hub admits. `None` on
+    /// a node no join set up, which pulls what it is asked to.
+    pub receive: Option<Vec<String>>,
     /// The sync servers (hubs) this node talks to, each with the credential presented to it.
     pub servers: Vec<supragnosis_sync::ServerLink>,
     /// Federation configuration that was worked around rather than obeyed, one line each.
@@ -1448,6 +1452,22 @@ impl SupragnosisServer {
             return sync_unconfigured();
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
+        // A node a join set up pulls what it shares and what the join recorded, whatever a hub
+        // would admit (docs/pairing.md Section 4.5, PA12).
+        if let Some(receive) = &ctx.receive {
+            if !ctx.share_workspaces.contains(&ws) && !receive.contains(&ws) {
+                return err_json(&format!(
+                    "this node pulls only the workspaces it shares and the ones its join recorded \
+                     ({}); {ws} is neither",
+                    ctx.share_workspaces
+                        .iter()
+                        .chain(receive)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
         // One round at a time, whoever starts it (docs/pairing.md Section 4.5).
         let _round = ctx.round.lock().await;
         to_json(&pull_workspace(&self.engine, ctx, &ws).await)
@@ -1703,9 +1723,21 @@ pub async fn sync_round(engine: &Arc<Engine>, ctx: &SyncContext) -> serde_json::
         let pull = pull_workspace(engine, ctx, ws).await;
         applied += count(&pull, "pulled", "applied", &mut errors);
     }
+    // What a join recorded this node receives and does not send: pulled only.
+    let received: Vec<&String> = ctx
+        .receive
+        .iter()
+        .flatten()
+        .filter(|w| !ctx.share_workspaces.contains(w))
+        .collect();
+    for ws in &received {
+        let pull = pull_workspace(engine, ctx, ws).await;
+        applied += count(&pull, "pulled", "applied", &mut errors);
+    }
+    let workspaces: Vec<&String> = ctx.share_workspaces.iter().chain(received).collect();
     let record = serde_json::json!({
         "at": supragnosis_core::now_millis(),
-        "workspaces": ctx.share_workspaces,
+        "workspaces": workspaces,
         "servers": ctx.servers.len(),
         "pushed": pushed,
         "applied": applied,
@@ -2705,6 +2737,39 @@ mod agent_answers {
             found["note"].as_str().is_some_and(|n| n.starts_with("tbox_change has no commit effect yet, so it cannot be merged until it has one. an identical proposal is already open")),
             "{found}"
         );
+    }
+
+    /// docs/pairing.md Section 4.5 and PA12: a node a join set up pulls what it shares and what the
+    /// join recorded, and no other workspace, whatever a hub would admit.
+    #[tokio::test]
+    async fn a_joined_node_pulls_only_what_its_join_recorded() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let ctx = Arc::new(SyncContext {
+            node: Arc::new(supragnosis_sync::SyncNode::new(
+                supragnosis_core::NodeIdentity::from_secret_bytes([3; 32]),
+            )),
+            share_workspaces: vec!["acme".into()],
+            receive: Some(vec!["acme".into(), "docs".into()]),
+            serve_workspaces: Vec::new(),
+            servers: Vec::new(),
+            config_notes: Vec::new(),
+            surfaces: Default::default(),
+            origin_keys: Default::default(),
+            peer_registry: None,
+            round: Default::default(),
+            last_round: Default::default(),
+            listener: Default::default(),
+        });
+        let s = SupragnosisServer::new(engine.clone()).with_sync(ctx.clone());
+        let refused = json(&s.sync_pull(req(serde_json::json!({ "workspace": "other" }))).await);
+        assert!(
+            refused["error"].as_str().is_some_and(|e| e.contains("its join recorded")),
+            "{refused}"
+        );
+        let docs = json(&s.sync_pull(req(serde_json::json!({ "workspace": "docs" }))).await);
+        assert!(!docs.to_string().contains("its join recorded"), "{docs}");
+        let round = sync_round(&engine, &ctx).await;
+        assert_eq!(round["workspaces"], serde_json::json!(["acme", "docs"]), "{round}");
     }
 
     /// docs/pairing.md Section 4.1: a node with no sync that an invitation made a hub says what its

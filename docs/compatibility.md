@@ -372,6 +372,16 @@ answers with its listener's state instead of the not-configured error. The JSON 
 list` print is not yet under Section 6's contract; it joins when the app reads it (pairing.md step
 4).
 
+**A machine joins a hub, and leaves it** ([pairing.md](pairing.md), step 3b of its ordering). New
+commands: `supragnosis join` (the code on stdin; `--send`, `--serve`, `--name`, `--json`) and
+`supragnosis hub leave`. A join writes, into `supragnosis.toml`, a `[[sync.server]]` entry, the
+hub's key in `origin_keys` and the ticked workspaces in `share_workspaces` (and `serve_workspaces`
+when allowed) - keys a release before pairing reads - and makes the file `0600`; leaving removes
+those and nothing the person wrote. A node a join set up pulls the invited workspaces on its rounds,
+received-only ones included, and `sync_pull` refuses a workspace that is neither shared nor
+recorded, as `supragnosis sync` does when no daemon runs - which then syncs all of them rather than
+the default workspace. A node no join set up pulls as before.
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
 receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
 one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in

@@ -937,6 +937,11 @@ pub fn peers_json(paths: &Paths) -> Result<serde_json::Value> {
     }))
 }
 
+/// The port of `host:port`, or 7420.
+pub fn port_of(address: &str) -> u16 {
+    address.rsplit_once(':').and_then(|(_, p)| p.parse().ok()).unwrap_or(7420)
+}
+
 /// The host part of `host:port`, `[v6]:port` or a bare name.
 pub fn host_of(address: &str) -> String {
     if let Some(rest) = address.strip_prefix('[') {
@@ -1133,7 +1138,7 @@ pub fn notes() -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests_support {
+pub mod tests_support {
     use super::*;
     pub use crate::pair::{CertCheck, Code, OneTime};
     pub use supragnosis_core::NodeIdentity;
@@ -1146,6 +1151,7 @@ mod tests_support {
         pub dir: PathBuf,
         pub paths: Paths,
         pub store: Arc<dyn AssertionStore>,
+        pub mem: Arc<supragnosis_store::InMemoryStore>,
     }
 
     impl Hub {
@@ -1169,7 +1175,8 @@ mod tests_support {
                 ),
             )
             .unwrap();
-            Hub { dir, paths, store: Arc::new(supragnosis_store::InMemoryStore::new()) }
+            let mem = Arc::new(supragnosis_store::InMemoryStore::new());
+            Hub { dir, paths, store: mem.clone(), mem }
         }
 
         /// The hub's pairing as a fresh process would open it.

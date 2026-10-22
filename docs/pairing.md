@@ -9,7 +9,7 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified; steps 1, 2 and 3a built** (Section 10). The author decided its choices on
+> Status: **specified; steps 1, 2, 3a and 3b built** (Section 10). The author decided its choices on
 > 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
@@ -114,7 +114,9 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
   firewall, or the server's (ufw, firewalld) and the network's.
 
 A joining machine on Linux runs `supragnosis join`, reading the code on stdin, and shows the three
-words in the terminal while it waits for the hub's answer.
+words in the terminal while it waits for the hub's answer. It asks which invited workspaces to
+also send, one by one, unless `--send` names them; `--serve` answers the serve question, and
+`--json` prints the preview, the words and the outcome as lines and asks nothing, for the app.
 
 ## 4. The mechanism
 
@@ -303,7 +305,9 @@ two of them can be confused; the secret, the nonces and every key are 32 bytes.
   hub serves principals, so the serve question rests on a signed word.
 - **The one-time key** stays on the joining machine, with its nonce and the hub's, in
   `~/.supragnosis/hubs/joining.toml` (`0600`) until the join ends or the code expires, so `join`
-  run again with the same code asks as the same request rather than ending the invitation. The
+  run again with the same code asks as the same request rather than ending the invitation. It
+  keeps what the person chose too, so a run after the hub's Allow - when the hub's preview already
+  says the code is used - finishes with the answer waiting for it and asks nothing twice. The
   file names the code it belongs to, so another code starts afresh. The hub's nonce is written
   there before the joining machine reveals its own or shows the words, so a run again that finds
   no kept hub nonce has revealed nothing. A hub nonce other than the one kept ends the join, and
@@ -347,7 +351,7 @@ widened by these acts. Pairing writes no key a release before it does not know (
 - `supragnosis hub leave` on the joining machine first asks the hub, with its credential, to
   remove its own entry - the `leave` call, which the hub accepts only for the machine the
   credential names - then removes the `[[sync.server]]` entry, the keys and the sidecar it wrote,
-  and restarts its daemon. A hub that does not answer keeps the row until it is removed there, and
+  and any `[sync]` key the join created once it is empty again, and restarts its daemon. A hub that does not answer keeps the row until it is removed there, and
   the joining machine says so.
 - Each says, before it acts, that what was synced stays.
 
@@ -520,7 +524,7 @@ as now (S6).
      across a restart, the listener opening for an invitation and closing at its expiry and its
      state read by `sync_status` on a node that had no `supragnosis.toml`, and a removal refusing
      the next request.
-   - **3b. The joining machine.** `join` reading stdin; the certificate checked by fingerprint or
+   - **3b. The joining machine** [built]. `join` reading stdin; the certificate checked by fingerprint or
      by name; `preview`; the commitment, `joining.toml` and the words in the terminal; the answer
      verified and opened, ticks bounded by it; the config and sidecar writes, `0600`, and the
      restart; the receive list applied to rounds and to `sync_pull`; `hub leave`; an unreachable
