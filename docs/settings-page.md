@@ -318,6 +318,9 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   granted are one set, so a command added later cannot act before the check.
 - **S2**: `a_credential_never_becomes_an_argument` - the arguments of `server add` are built without
   it.
+- **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
+  each control the tray gave up (`login_set`, `daemon_restart`, `server_use`, `server_add`,
+  `server_remove`, `app_toggle`) by name, and each is one of the app's registered commands.
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
   init script that builds the navigation on every page, a policy in the page's head, no inline
   script.
