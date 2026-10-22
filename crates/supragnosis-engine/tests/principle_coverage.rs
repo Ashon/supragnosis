@@ -1471,11 +1471,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "restart and stop act on nothing in a conflict, and install re-checks that the address and store went quiet after retiring the others",
-            Evidence::Deferred(
-                "the refusals are bail! arms of stop()/restart() and the re-check is `wait_until_released`, all \
-                 beside launchctl and socket IO no test drives. Revisit when the act-or-refuse step is lifted into \
-                 lifecycle.rs beside classify",
-            ),
+            Evidence::Scenario(&["a_conflict_is_acted_on_by_nothing"]),
         ),
     ]),
     (2, &[
