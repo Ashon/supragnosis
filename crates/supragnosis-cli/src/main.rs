@@ -1338,7 +1338,9 @@ async fn build_sync_context(
     let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
     // Keys a hub vouched for at a join, each good up to its bound (docs/pairing.md Section 4.3.1).
-    let vouched = join::vouched_keys(&join::Paths::default_paths(), &mut origin_keys);
+    let (vouched, vouched_note) =
+        join::vouched_keys(&join::Paths::default_paths(), &mut origin_keys);
+    config_notes.extend(vouched_note);
     // Federation status task: health-checks the configured hubs (connectivity + auth +
     // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
     // known-peer registry (hub role), and publishes it all to the viewer's /api/federation.
@@ -1933,17 +1935,16 @@ fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
         let store = engine.store();
         let mut keys = trusted_origin_keys(&fc.sync);
         keys.insert(node.node_id().to_string(), node.public_key_hex());
-        let vouched = join::vouched_keys(&join::Paths::default_paths(), &mut keys);
+        let (vouched, vouched_note) = join::vouched_keys(&join::Paths::default_paths(), &mut keys);
+        if let Some(note) = vouched_note {
+            eprintln!("{note}");
+        }
         for ws in &workspaces {
-            let bounds: std::collections::BTreeMap<String, u64> = vouched
-                .iter()
-                .map(|(origin, by_ws)| (origin.clone(), by_ws.get(ws).copied().unwrap_or(0)))
-                .collect();
             for link in &links {
                 let server = &link.url;
                 let client = supragnosis_sync::http::SyncClient::for_link(link)?
                     .with_serve(fc.sync.serve_set().0)
-                    .with_bounds(bounds.clone());
+                    .with_vouched(vouched.clone());
                 let s = client.sync_workspace(&store, &node, ws, share, &keys).await?;
                 println!(
                     "{server} {ws}: pushed {} pulled {} (rejected: by server {}, locally {})",
@@ -3450,16 +3451,7 @@ fn join_cmd(a: JoinArgs) -> Result<()> {
         Err(e) => return Err(e),
     };
     // `[sync]` is read at start: a running daemon restarts to sync with the hub.
-    let restarted = match hub::call("GET", "/hub/peers") {
-        Ok(Some(_)) => match restart(resolve(RunArgs::default(), true)) {
-            Ok(()) => "restarted",
-            Err(e) => {
-                tracing::warn!(error = %format!("{e:#}"), "the daemon did not restart after the join");
-                "not_restarted"
-            }
-        },
-        _ => "not_running",
-    };
+    let restarted = restart_the_answering_daemon();
     if a.json {
         println!("{}", serde_json::json!({"joined": joined, "daemon": restarted}));
         return Ok(());
@@ -3494,6 +3486,32 @@ fn list_or_none(list: &[String]) -> String {
     }
 }
 
+/// Restarts the daemon that answers this user's admin socket - and only when it is the one this
+/// CLI's service manager runs, so a join made under another HOME, or a daemon started by hand,
+/// never restarts a different one. Says "restarted", "not_restarted" or "not_running".
+fn restart_the_answering_daemon() -> &'static str {
+    let Ok(Some(who)) = hub::call("GET", "/who") else {
+        return "not_running";
+    };
+    let answering = who["pid"].as_u64();
+    let managed = match lifecycle::classify(&observe()) {
+        lifecycle::Situation::One(lifecycle::Manager::Pidfile { pid }) => Some(pid),
+        lifecycle::Situation::One(lifecycle::Manager::Launchd(job))
+        | lifecycle::Situation::One(lifecycle::Manager::Systemd(job)) => job.pid,
+        _ => None,
+    };
+    if answering.is_none() || managed.map(u64::from) != answering {
+        return "not_restarted";
+    }
+    match restart(resolve(RunArgs::default(), true)) {
+        Ok(()) => "restarted",
+        Err(e) => {
+            tracing::warn!(error = %format!("{e:#}"), "the daemon did not restart");
+            "not_restarted"
+        }
+    }
+}
+
 /// `supragnosis hub` (docs/pairing.md Section 4.6).
 fn hub_cmd(cmd: HubCmd) -> Result<()> {
     init_tracing();
@@ -3522,10 +3540,8 @@ fn hub_cmd(cmd: HubCmd) -> Result<()> {
                     left.hub_name
                 ),
             }
-            if let Ok(Some(_)) = hub::call("GET", "/hub/peers") {
-                if let Err(e) = restart(resolve(RunArgs::default(), true)) {
-                    println!("Restart Supragnosis to stop the rounds it runs: {e:#}");
-                }
+            if restart_the_answering_daemon() == "not_restarted" {
+                println!("Restart Supragnosis to stop the rounds it runs.");
             }
             Ok(())
         }

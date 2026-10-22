@@ -387,7 +387,8 @@ step 3c of its ordering). The keys a hub vouches for at a join, recorded in `hub
 `origin_keys` where the person wrote none for that origin, each verifying events only up to the
 sequence the hub gave per workspace; an event past it is refused as from an unknown origin, as one
 from an origin with no key is. The sync crate's apply gains `apply_wire_bounded`, and `SyncClient`
-`with_bounds`; `apply_wire` is the same with no bounds.
+`with_vouched`; `apply_wire` is the same with no bounds. The admin socket answers `GET /who` with
+the daemon's pid, so `join` and `hub leave` restart only the daemon that answered them.
 
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
 receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's

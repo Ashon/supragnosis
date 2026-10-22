@@ -316,6 +316,7 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
         CertCheck::ByName => join_client(JoinTls::ByName)?,
     };
     let (mut other_certificate, mut not_by_name) = (Vec::new(), Vec::new());
+    let mut no_route = false;
     for address in &code.addresses {
         let sent = client
             .post(format!("https://{address}/pair/preview"))
@@ -334,7 +335,11 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
             Err(e) if format!("{e:?}").contains("InvalidCertificate") => {
                 not_by_name.push(address.clone())
             }
-            Err(e) => tracing::warn!(%address, error = %e, "the hub did not answer there"),
+            Err(e) => {
+                let why = chain(&e);
+                no_route |= why.contains("os error 65") || why.contains("No route to host");
+                tracing::warn!(%address, error = %why, "the hub did not answer there");
+            }
         }
     }
     if !other_certificate.is_empty() {
@@ -352,12 +357,32 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
         );
     }
     let port = code.addresses.first().map(|a| crate::invite::port_of(a)).unwrap_or(7420);
+    // macOS answers "no route" for a process it does not let reach the local network (Section 3a).
+    let local_network = match cfg!(target_os = "macos") && no_route {
+        true => {
+            " On this Mac, also check that Supragnosis - or the terminal running it - may reach \
+             devices on the local network: System Settings > Privacy & Security > Local Network."
+        }
+        false => "",
+    };
     anyhow::bail!(
         "Could not reach the hub at {}. Check that it is on, on a network this machine reaches, and \
          that its firewall - the macOS firewall, or ufw or firewalld on a server - lets port {port} \
-         in.",
+         in.{local_network}",
         code.addresses.join(", ")
     )
+}
+
+/// An error with every cause under it, as a log line should say why.
+fn chain(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut cause = e.source();
+    while let Some(c) = cause {
+        out.push_str(": ");
+        out.push_str(&c.to_string());
+        cause = c.source();
+    }
+    out
 }
 
 fn said(answer: &serde_json::Value) -> String {
@@ -644,15 +669,27 @@ pub fn accept_vouched(vouched: &[pair::Vouched], me: &str, hub: &str) -> Vec<pai
         .collect()
 }
 
-/// The keys the hubs this machine joined vouched for, added to `origin_keys` - where the person
-/// wrote none for that origin - and their bounds by origin and workspace (Section 4.3.1). An
-/// origin the person wrote a key for keeps that key, unbounded.
+/// The keys the hubs this machine joined vouched for, added to `origin_keys` - where it names no
+/// key for that origin yet - and their bounds by origin and workspace (Section 4.3.1). Call it with
+/// `origin_keys` already holding this machine's own key and the ones the person wrote, which keep
+/// precedence, unbounded; and pass the bounds to every apply that uses these keys
+/// (`SyncContext::vouched`, `SyncClient::with_vouched`), or they verify unbounded. The second value
+/// says why, when the joined hubs cannot be read.
 pub fn vouched_keys(
     paths: &Paths,
     origin_keys: &mut BTreeMap<String, String>,
-) -> BTreeMap<String, BTreeMap<String, u64>> {
+) -> (BTreeMap<String, BTreeMap<String, u64>>, Option<String>) {
+    let hubs = match joined(paths) {
+        Ok(hubs) => hubs,
+        Err(e) => {
+            let why = format!(
+                "the hubs this node joined could not be read ({e:#}), so no vouched key is used"
+            );
+            return (BTreeMap::new(), Some(why));
+        }
+    };
     let mut bounds = BTreeMap::new();
-    for (hub, car) in joined(paths).unwrap_or_default() {
+    for (hub, car) in hubs {
         for v in accept_vouched(&car.vouched, "", &hub) {
             if origin_keys.contains_key(&v.node_id) {
                 continue;
@@ -661,7 +698,7 @@ pub fn vouched_keys(
             bounds.insert(v.node_id.clone(), v.bounds.clone());
         }
     }
-    bounds
+    (bounds, None)
 }
 
 /// `supragnosis.toml` holds the credential once a join has written it: owner-only, wherever
@@ -983,7 +1020,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         let mut origin_keys = fc.sync.origin_keys.clone();
         origin_keys.insert(m.me.node_id(), m.me.public_key_hex());
-        let vouched = vouched_keys(&m.paths, &mut origin_keys);
+        let (vouched, _) = vouched_keys(&m.paths, &mut origin_keys);
         supragnosis_mcp::SyncContext {
             node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes(m.secret))),
             share_workspaces: fc.sync.share_workspaces.clone(),
@@ -1284,16 +1321,15 @@ mod tests {
     }
 
     /// Section 4.3.1 and PA13: a machine that replaces a removed one receives what the removed one
-    /// wrote, up to the last event the hub stored from it when it was removed, and nothing past it -
-    /// even an event the hub holds with a valid signature.
+    /// wrote, up to the last event the hub held from it when it allowed the join, and nothing past
+    /// it - even an event the hub comes to hold later with a valid signature, in an invited workspace
+    /// with a bound or in one without. A vouched key admits nothing: it only verifies.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_replaced_machine_receives_the_removed_ones_events_up_to_its_bound() {
         let hub = Hub::new("join-replace");
         let (listener, port) = serve(&hub).await;
-        let has = |e: &Engine, name: &str| {
-            e.get_entity(&supragnosis_core::Entity::make_id("acme", name))
-                .unwrap()
-                .is_some()
+        let has = |e: &Engine, ws: &str, name: &str| {
+            e.get_entity(&supragnosis_core::Entity::make_id(ws, name)).unwrap().is_some()
         };
         // The first machine joins, writes two things and syncs them, and is removed.
         let first = Machine::new("replaced", 41);
@@ -1307,50 +1343,59 @@ mod tests {
         let round = supragnosis_mcp::sync_round(&theirs, &context(&first)).await;
         assert_eq!(round["ok"], true, "{round}");
         listener.pairing.remove("MacBook", invite::now()).unwrap();
-        // It writes once more, and that event reaches the hub's store by another way - signed, as
-        // a relay would carry it - past the bound the removal recorded.
-        observe(&theirs, "acme", "Refund");
-        let old = SyncNode::new(NodeIdentity::from_secret_bytes([41; 32]));
-        old.backfill(theirs.store().as_ref(), "acme").unwrap();
-        let held = supragnosis_sync::version_vector(hub.store.as_ref(), "acme").unwrap();
-        let late = supragnosis_sync::export_delta(
-            theirs.store().as_ref(),
-            "acme",
-            &held,
-            &["acme".to_string()],
-        )
-        .unwrap();
-        assert_eq!(late.len(), 1, "one event past what the hub held");
-        let hub_node = SyncNode::new(NodeIdentity::from_secret_bytes(HUB_SECRET));
-        let keys: BTreeMap<String, String> =
-            [(old.node_id().to_string(), old.public_key_hex())].into();
-        hub_node
-            .apply(hub.store.as_ref(), "acme", late, &keys, &mut Default::default())
-            .unwrap();
 
-        // The machine that replaces it receives the first two, and not the third.
+        // The machine that replaces it joins, invited to acme and docs.
         let second = Machine::new("replacing", 42);
-        let code = invite_at(&listener.pairing, port, &["acme"]);
+        let code = invite_at(&listener.pairing, port, &["acme", "docs"]);
         let allowed = allow_when_asked(listener.pairing.clone());
         second.join(&code, &mut Scripted::new(&[], false)).await.expect("joins");
         allowed.await.unwrap();
         let car = &joined(&second.paths).unwrap()[0].1;
         assert_eq!(car.vouched.len(), 1, "the hub vouched for the removed machine's key");
-        assert_eq!(car.vouched[0].bounds.get("acme"), Some(&2));
+        assert_eq!(car.vouched[0].bounds, [("acme".to_string(), 2)].into(), "acme only");
+        let fc = crate::fed::load_at(&second.paths.config).unwrap().unwrap();
+        assert!(fc.server.is_none(), "a vouched key admits nothing: no listener, no allowlist");
+        assert!(!fc.sync.origin_keys.contains_key(&car.vouched[0].node_id), "nor is it written");
+
+        // Later, the hub comes to hold two more of its events, validly signed: one in acme past the
+        // bound, and one in docs, where the hub gave none.
+        observe(&theirs, "acme", "Refund");
+        observe(&theirs, "docs", "Memo");
+        let old = SyncNode::new(NodeIdentity::from_secret_bytes([41; 32]));
+        let keys: BTreeMap<String, String> =
+            [(old.node_id().to_string(), old.public_key_hex())].into();
+        let hub_node = SyncNode::new(NodeIdentity::from_secret_bytes(HUB_SECRET));
+        for ws in ["acme", "docs"] {
+            old.backfill(theirs.store().as_ref(), ws).unwrap();
+            let held = supragnosis_sync::version_vector(hub.store.as_ref(), ws).unwrap();
+            let late = supragnosis_sync::export_delta(
+                theirs.store().as_ref(),
+                ws,
+                &held,
+                &["acme".to_string(), "docs".to_string()],
+            )
+            .unwrap();
+            assert_eq!(late.len(), 1, "one event in {ws} the hub did not hold");
+            let report = hub_node
+                .apply(hub.store.as_ref(), ws, late, &keys, &mut Default::default())
+                .unwrap();
+            assert_eq!(report.accepted, 1, "the hub holds it");
+        }
+
+        // The replacing machine receives the first two, and neither later one.
         let mine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "new", "acme"));
-        let round = supragnosis_mcp::sync_round(&mine, &context(&second)).await;
+        let ctx = context(&second);
+        let round = supragnosis_mcp::sync_round(&mine, &ctx).await;
         assert!(round["applied"].as_u64().unwrap_or(0) >= 2, "{round}");
-        assert!(has(&mine, "Ledger") && has(&mine, "Invoice"), "up to the bound");
-        assert!(!has(&mine, "Refund"), "and nothing past it");
-        // A machine with no vouched key for it receives none of the removed machine's events.
-        let mut ctx = context(&second);
-        ctx.vouched.clear();
-        ctx.origin_keys.remove(old.node_id());
-        let bare = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "bare", "acme"));
-        supragnosis_mcp::sync_round(&bare, &ctx).await;
-        assert!(
-            !has(&bare, "Ledger"),
-            "without the vouched key, the removed machine's events are not verified"
-        );
+        assert!(has(&mine, "acme", "Ledger") && has(&mine, "acme", "Invoice"), "up to the bound");
+        assert!(!has(&mine, "acme", "Refund"), "and nothing past it");
+        assert!(!has(&mine, "docs", "Memo"), "nor in a workspace the hub gave no bound for");
+
+        // The bound is what refuses: with the same key unbounded, both arrive.
+        let mut unbounded = context(&second);
+        unbounded.vouched.clear();
+        let control = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "control", "acme"));
+        supragnosis_mcp::sync_round(&control, &unbounded).await;
+        assert!(has(&control, "acme", "Refund") && has(&control, "docs", "Memo"));
     }
 }

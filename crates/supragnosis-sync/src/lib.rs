@@ -517,7 +517,10 @@ impl SyncNode {
             let not_admitted = admit.is_some_and(|a| {
                 origin_keys.contains_key(&origin_node) && !a.contains(&origin_node)
             });
-            let past_bound = bounds.get(&origin_node).is_some_and(|last| origin_seq > *last);
+            // A bounded origin's events verify from seq 1 to its bound; seq 0 is never stamped.
+            let past_bound = bounds
+                .get(&origin_node)
+                .is_some_and(|last| origin_seq > *last || origin_seq == 0);
             let checked = match item {
                 Inbound::Decoded(_) if past_bound => Err(RejectReason::UnknownOrigin),
                 Inbound::Decoded(_) if not_admitted => Err(RejectReason::OriginNotAdmitted),
@@ -546,6 +549,18 @@ impl SyncNode {
         }
         Ok(report)
     }
+}
+
+/// The bounds of vouched keys in one workspace (docs/pairing.md Section 4.3.1): each vouched origin's
+/// last sequence there, and 0 - nothing verifies - where the hub gave none.
+pub fn bounds_in(
+    vouched: &BTreeMap<String, BTreeMap<String, u64>>,
+    workspace: &str,
+) -> BTreeMap<String, u64> {
+    vouched
+        .iter()
+        .map(|(origin, by_ws)| (origin.clone(), by_ws.get(workspace).copied().unwrap_or(0)))
+        .collect()
 }
 
 /// One inbound event, decoded or not (sync-correctness.md Section 6).

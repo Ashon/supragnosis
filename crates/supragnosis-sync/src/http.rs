@@ -1149,9 +1149,9 @@ pub struct SyncClient {
     /// The workspaces this node lets the hub serve to its principals (`[sync] serve_workspaces`).
     /// `None` sends no consent header at all, as an older node does.
     serve: Option<std::collections::BTreeSet<String>>,
-    /// Origins whose keys verify only up to a sequence in the workspace this client syncs: keys a
-    /// hub vouched for at a join (docs/pairing.md Section 4.3.1).
-    bounds: BTreeMap<String, u64>,
+    /// Keys a hub vouched for at a join, by origin, and the last sequence each verifies in each
+    /// workspace (docs/pairing.md Section 4.3.1).
+    vouched: BTreeMap<String, BTreeMap<String, u64>>,
 }
 
 impl SyncClient {
@@ -1187,14 +1187,15 @@ impl SyncClient {
             token: token.into(),
             http,
             serve: None,
-            bounds: BTreeMap::new(),
+            vouched: BTreeMap::new(),
         })
     }
 
-    /// Verifies these origins' events in the workspace this client syncs only up to their sequence
-    /// (docs/pairing.md Section 4.3.1).
-    pub fn with_bounds(mut self, bounds: BTreeMap<String, u64>) -> Self {
-        self.bounds = bounds;
+    /// Verifies the vouched origins' events only up to their bound in each workspace, and none in
+    /// a workspace without one (docs/pairing.md Section 4.3.1). Their keys must also be among the
+    /// origin keys a sync is given; without this, those keys would verify unbounded.
+    pub fn with_vouched(mut self, vouched: BTreeMap<String, BTreeMap<String, u64>>) -> Self {
+        self.vouched = vouched;
         self
     }
 
@@ -1408,7 +1409,7 @@ impl SyncClient {
                         workspace,
                         events,
                         origin_keys,
-                        &self.bounds,
+                        &crate::bounds_in(&self.vouched, workspace),
                         None,
                         &mut vv,
                     )
@@ -1898,6 +1899,53 @@ mod tests {
         let cb = SyncClient::new(format!("http://{addr}"), "token-b").unwrap();
         let pulled = cb.sync_workspace(&b_store, &b, "ws", &share, &keys).await.unwrap();
         assert_eq!(pulled.pulled, 1_500, "every page applied");
+    }
+
+    /// docs/pairing.md Section 4.3.1: a client given a vouched key verifies that origin's events only
+    /// up to its bound in each workspace, and none in a workspace without one - the one-shot sync's
+    /// path, as the daemon's round is.
+    #[tokio::test]
+    async fn a_vouched_key_verifies_only_up_to_its_bound() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub_node = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let gone = SyncNode::new(NodeIdentity::from_secret_bytes([4u8; 32]));
+        let puller = SyncNode::new(NodeIdentity::from_secret_bytes([5u8; 32]));
+        let allow = vec![entry(&puller, "token-p", &["ws", "other"])];
+        let state = Arc::new(ServerState::new(hub_store.clone(), hub_node, allow));
+        let addr = spawn_server(state).await;
+        // The hub holds three events from a machine it no longer admits, in one workspace, and
+        // one in another.
+        let src = InMemoryStore::new();
+        for i in 0..3u64 {
+            src.add_observation(Observation::new(format!("gone {i}"), prov("ws", i)))
+                .unwrap();
+        }
+        src.add_observation(Observation::new("gone elsewhere".into(), prov("other", 9)))
+            .unwrap();
+        let keys: BTreeMap<String, String> =
+            [(gone.node_id().to_string(), gone.public_key_hex())].into();
+        for ws in ["ws", "other"] {
+            gone.backfill(&src, ws).unwrap();
+            let events = src.attestations_since(ws, &VersionVector::default()).unwrap();
+            gone.apply(hub_store.as_ref(), ws, events, &keys, &mut VersionVector::default())
+                .unwrap();
+        }
+        let mut with_mine = keys.clone();
+        with_mine.insert(puller.node_id().to_string(), puller.public_key_hex());
+        let vouched: BTreeMap<String, BTreeMap<String, u64>> =
+            [(gone.node_id().to_string(), [("ws".to_string(), 2)].into())].into();
+        let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let client = SyncClient::new(format!("http://{addr}"), "token-p")
+            .unwrap()
+            .with_vouched(vouched);
+        let share = Vec::new();
+        let ws = client.sync_workspace(&store, &puller, "ws", &share, &with_mine).await.unwrap();
+        assert_eq!((ws.pulled, ws.rejected_locally), (2, 1), "up to the bound, and not past it");
+        let other = client
+            .sync_workspace(&store, &puller, "other", &share, &with_mine)
+            .await
+            .unwrap();
+        assert_eq!((other.pulled, other.rejected_locally), (0, 1), "none where it has no bound");
     }
 
     /// Section 11 with Section 6: a stream held by a rejection is claimed whole for the rest of the
