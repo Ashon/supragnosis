@@ -1534,10 +1534,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the app never discards the CLI's exit status: a refused install says why",
-            Evidence::Deferred(
-                "set_login routes the status through cli_outcome and no test calls it. Revisit when cli_outcome is \
-                 pinned on a failing Output and the switch's message on a refused CLI is asserted",
-            ),
+            Evidence::Scenario(&["a_refused_login_change_says_why"]),
         ),
     ]),
     (5, &[
