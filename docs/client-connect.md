@@ -233,6 +233,9 @@ Guarded by:
 - `the_bridge_relays_the_daemons_surface_unchanged` - C4. The tool list, and a tool call that lands
   in the daemon's store.
 - `a_daemon_restart_is_invisible_through_the_bridge` - the replayed handshake.
+- `the_daemons_own_errors_reach_the_client_as_written` - C4 for errors. A call to a tool the daemon
+  lacks gets the same JSON-RPC error through the bridge as without it, and an HTTP-level refusal
+  arrives as an error for that id carrying the daemon's words unchanged.
 - `the_bridge_says_what_to_do_when_no_daemon_answers` and
   `a_refused_token_is_reported_with_its_file` - errors a person can act on.
 - `registrations_run_the_bridge_and_carry_no_secret` - C2.
