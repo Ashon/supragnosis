@@ -303,6 +303,10 @@ answers did:
   draft. Its digest, read for all workspaces, gains `stray_verdicts`, and the prompt says what they
   are.
 
+**Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
+resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
+resources have no golden file as the tools and prompts do, so this list is their record.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

@@ -101,6 +101,7 @@ costs eight pixels and means the field is never wholly absent from the panel.
 | "belief decision" disclosure | when some field has more than one candidate | absent; the observation that asserted the value stays one row in the evidence list |
 | degree | not in the header; the relation group headers carry the counts | - |
 | sources | in the evidence header. The attestation count appears beside the observation count only when they differ | - |
+| last said | under the type: the latest time any attestation of the entity was observed, in the Log's form (design-system.md Section 29.19) | nothing when no attestation supports the entity. *(Added by design-system.md step 53.)* |
 | ids and hashes | the card footer | - |
 
 Two of these deserve their reason in prose.
