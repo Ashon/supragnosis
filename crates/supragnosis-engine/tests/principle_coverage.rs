@@ -2075,6 +2075,12 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
              (federation.md F17); until then there are no two principals to compare and the \
              deployment stays solo under the P23 exception",
           )),
+        c("a withdrawal is the proposer's own: one from another principal closes nothing",
+          Evidence::Deferred(
+            "M4 Phase 5 - the fold takes a withdrawal from anyone, as it takes any merge, since \
+             there are no two principals to compare until principal identity lands (Section 8 \
+             [impl]); in a solo deployment every withdrawal is the proposer's",
+          )),
         c("claim-demotion and recall keep self-approval as the exception when the check lands",
           Evidence::Deferred(
             "M4 Phase 5 - costs nothing to honor today because no principal check exists \

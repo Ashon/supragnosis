@@ -399,6 +399,12 @@ function of the log set alone (I2).
 - **Withdraw** = termination by the proposer. Since it is not a verdict, it has no effect on
   any tier. It is also the only means to permanently close a provisional conclusion
   (Rejected) (it cannot be closed by a wall clock, I4).
+  [impl] "By the proposer" is not enforced: the fold takes a withdrawal from anyone, as it
+  takes a merge from anyone, because telling the proposer's principal from another's is the
+  principal comparison of I9, which waits for principal identity (M4 Phase 5). In a solo
+  deployment there is one principal, so every withdrawal is the proposer's. The coverage
+  registry carries it under I9 as owed. *(Added 2026-10-22, from the audit of that day: the
+  rule was stated here and tracked nowhere.)*
 - **Reversal** = undoing a promotion is always a new proposal (demotion). **Merged is an
   absorbing state and thus immutable** (I16). But Rejected is provisional, so a
   late-arriving valid merge raises the conclusion to Merged even without a new proposal -
