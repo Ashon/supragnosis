@@ -2209,6 +2209,10 @@ const KIND_WORDS = {
   entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Confirm a claim",
   claim_demotion: "Demote a claim", tbox_change: "Change a type", recall: "Recall",
 };
+// A kind with no commit effect yet, in the screen's words (Section 29.22): the server marks the
+// proposal no_effect_yet, and it cannot be accepted until its kind has an effect.
+const NO_EFFECT_SAID = { tbox_change: ["a type change", "type changes"], recall: ["a recall", "recalls"] };
+function noEffectSaid(p) { return NO_EFFECT_SAID[p.kind] || ["this kind of proposal", "proposals of its kind"]; }
 // A proposal's state said as its outcome (Section 29.3, U17); the ids stay the fold's.
 const OUTCOME = { merged: "Accepted", rejected: "Rejected", withdrawn: "Withdrawn", blocked: "Blocked" };
 // How a proposal's target is said: the server's label (it names a merged-away entity, and a gate
@@ -2304,7 +2308,8 @@ function itemTag(it) {
   if (it.kind === "signal") return "";
   // Only what the title does not say: under Needs you that it is blocked, under Decided its outcome.
   const st = it.p.state;
-  return st === "open" ? "" : html`<span class="rv-st ${st}">${OUTCOME[st] || st}</span>`;
+  if (st === "open") return it.p.no_effect_yet ? html`<span class="rv-st">No effect yet</span>` : "";
+  return html`<span class="rv-st ${st}">${OUTCOME[st] || st}</span>`;
 }
 function updateReviewPill() {
   const pill = document.getElementById("reviewPill");
@@ -2452,7 +2457,10 @@ function itemDetail(it, local) {
   const ev = reviewEvidence && reviewEvidence.id === p.id ? reviewEvidence : null;
   // A decided item's diff is worked out against today's beliefs, so it says so (Section 29.3); a
   // merge's leads with what happens to identity (Section 29.7).
-  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, identityHtml(p, ev), diffHtml(v ? v.diff : null));
+  const none = p.no_effect_yet ? noEffectSaid(p) : null;   // no Accept until its kind has an effect (Section 29.22)
+  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, none
+    ? html`<div class="dnote">Nothing yet: ${none[0]} has no effect in this version, so it cannot be accepted until it has one.</div>`
+    : [identityHtml(p, ev), diffHtml(v ? v.diff : null)]);
   parts.push(html`<div class="sec">Checks</div>`);
   if (!v) parts.push(html`<div class="dnote">reading the checks...</div>`);
   else {
@@ -2471,7 +2479,7 @@ function itemDetail(it, local) {
   const ready = !!v;   // the diff and checks are on screen
   const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
   const revAccepted = !!rev && rev.state === "merged";   // no Accept of any kind: no cycle (Section 29.17)
-  const accept = (p.state === "open" || p.state === "rejected") && !revAccepted;
+  const accept = (p.state === "open" || p.state === "rejected") && !revAccepted && !none;
   if (accept) {
     const armed = recallArmed === p.id;
     const label = p.kind === "recall" && armed ? "Confirm the recall" : p.state === "rejected" ? "Accept after all" : "Accept";
@@ -2492,7 +2500,9 @@ function itemDetail(it, local) {
   if (pair && p.state === "open" && !revAccepted) parts.push(html`<p class="hint">Keep ${pair.name} instead rejects this merge and makes ${pair.name} the one kept; the merge into it then waits for your verdict.</p>`);
   if (revAccepted && (p.state === "open" || p.state === "rejected")) parts.push(html`<p class="hint">Its reverse is accepted.</p>`);
   if (u) parts.push(u.note);
-  if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">If its check passes later, the accept it carries still merges it.</p>`);
+  if (none && p.state === "open") parts.push(html`<p class="hint">Reject sets it aside, and the log keeps it. It can still be accepted once ${none[1]} have an effect.</p>`);
+  else if (none && p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: it can still be accepted once ${none[1]} have an effect.</p>`);
+  else if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">If its check passes later, the accept it carries still merges it.</p>`);
   else if (p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: accepting it later still merges it.</p>`);
   if (p.kind === "entity_merge" && p.state === "merged" && !reversed) parts.push(html`<p class="hint">Un-merge opens a proposal to separate them again. The pair is then never suggested again, and merging them later takes a proposal distinguishable from this one.</p>`);
   if (p.state === "merged" && !undoable(p) && !(p.kind === "entity_merge" && !reversed)) {
@@ -2760,6 +2770,7 @@ async function reviewDecide(item, decision) {
   const p = item.p;
   if (!reviewView || reviewView.id !== p.id) return;   // the diff and checks are not on screen yet
   if (decision === "merge") {
+    if (p.no_effect_yet) return;   // no Accept until its kind has an effect (Section 29.22)
     if (reviewView.checks.some(c => c.blocking && !c.passed)) return;
     const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
     if (rev && rev.state === "merged") return;   // its reverse is accepted: no cycle (Section 29.17)
@@ -2777,7 +2788,7 @@ async function reviewDecide(item, decision) {
   const action = decision === "merge" && p.kind === "entity_merge" ? { label: "Un-merge", decided: true, run: () => proposeSplit(p) } : null;
   const done = decision === "merge"
     ? await consoleWrite("/api/review", q, "Accepted: " + title, action)
-    : await consoleWrite("/api/review", q, "Rejected: " + title, null, "Accept after all is under Decided.");
+    : await consoleWrite("/api/review", q, "Rejected: " + title, null, p.no_effect_yet ? null : "Accept after all is under Decided.");
   if (done) { reviewFocus = true; stepReview(1); }
   refreshProposals();
 }
@@ -2851,7 +2862,8 @@ function itemNodes(it) {
 function previewOnMap(it, only) {
   if (!it) return;
   const ns = only ? [only] : itemNodes(it);
-  reviewPreview = { seg: reviewSeg, key: it.key, title: itemTitle(it) };
+  // The map shows what a kind with no effect yet names, not a change (Section 29.22).
+  reviewPreview = { seg: reviewSeg, key: it.key, title: itemTitle(it) + (it.kind === "proposal" && it.p.no_effect_yet ? " (no effect yet)" : "") };
   location.hash = "";
   if (it.kind === "proposal") { proposalSel = null; selectProposal(it.p); }
   if (ns.length > 1) { fitView(ns); userMoved = true; }
@@ -2940,8 +2952,8 @@ async function fetchProposalDiff(id) {
   } catch (e) { /* the overlay still works - the diff is additive */ }
 }
 
-// Render the diff as a before -> after comparison. An uncomputable diff says so: for the three
-// proposal kinds that still enforce nothing, an empty diff would read as "changes nothing".
+// Render the diff as a before -> after comparison. An uncomputable diff says so: for a proposal kind
+// that still enforces nothing, an empty diff would read as "changes nothing".
 // A diff row's field, in the screen's words (design-system.md Section 29.6): the engine's ids
 // `kind` and `edge` are a type and a relation.
 const FIELD_SAID = { kind: "Type", edge: "Relation", tier: "Trust", definition: "Definition", description: "Description" };

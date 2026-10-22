@@ -624,7 +624,8 @@ pub struct CurationStats {
     pub type_axis_collisions: usize,
 }
 
-/// The five canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3).
+/// The six canon-affecting proposal kinds (Principle 23 / proposal-workflow.md 3.3): five intents,
+/// with entity identity's two directions as two kinds.
 pub const PROPOSAL_KINDS: [&str; 6] = [
     "entity_merge",
     "entity_split",
@@ -633,6 +634,23 @@ pub const PROPOSAL_KINDS: [&str; 6] = [
     "tbox_change",
     "recall",
 ];
+
+/// Whether a merge of this kind changes anything. A type change and a recall have no commit effect
+/// yet (architecture.md Section 14), so no merge of either is valid until each has one: the fold
+/// reads it as a comment and the write surfaces refuse it (proposal-workflow.md 7.1 (f),
+/// design-system.md Section 29.22). The one place every caller asks.
+pub fn has_commit_effect(kind: &str) -> bool {
+    !matches!(kind, "tbox_change" | "recall")
+}
+
+/// Whether a verdict carries the engine-stamped console marker on any of its attestations - the
+/// human's direct act of I17. Read off every attestation, as the gate ceiling is: one decision cast
+/// twice is one row with two attestations (P3), and a person's console act on it is still theirs.
+fn console_cast(obs: &Observation) -> bool {
+    obs.provenance
+        .iter()
+        .any(|p| p.source_ref.as_deref() == Some(VERDICT_SURFACE_CONSOLE))
+}
 
 /// Which way an endpoint travels in a merge/split preview: a merge moves it onto the canonical id,
 /// a split moves it back off. The only asymmetry between the two previews.
@@ -990,6 +1008,10 @@ pub struct ProposalView {
     /// verdicts count (proposal-workflow.md I2). An all-workspaces list names it on every row.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub workspace: String,
+    /// Its kind has no commit effect yet, so it cannot be merged until it has one ([`has_commit_effect`],
+    /// design-system.md Section 29.22). Said only when true.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_effect_yet: bool,
     /// open | blocked | merged | rejected | withdrawn (merge is the absorbing state, I16).
     pub state: String,
     pub verdicts: usize,
@@ -3007,10 +3029,20 @@ impl Engine {
             if view.kind == "recall" && surface == VerdictSurface::Agent {
                 return Err(ObserveError::Invalid(
                     "a recall verdict is a human's direct act (Principle 23, I17): this surface \
-                     cannot merge one, and the fold would not count it. Decide it in the Review \
-                     panel of the Supragnosis app or viewer; a `comment` is accepted here"
+                     cannot merge one, and the fold would not count it. Until recall has its \
+                     commit effect no surface merges one; a `comment` is accepted here, and the \
+                     person can reject it in the Review panel of the Supragnosis app or viewer"
                         .into(),
                 ));
+            }
+            // 7.1 (f): the fold would read this merge as a comment, so say why instead of taking it.
+            if !has_commit_effect(&view.kind) {
+                return Err(ObserveError::Invalid(format!(
+                    "{} has no commit effect yet, so it cannot be merged until it has one - a merge \
+                     without a diff is a merge without review (Principle 23). A comment or a \
+                     withdrawal is accepted, and the person can reject it in the Review panel",
+                    view.kind
+                )));
             }
             let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
             let decided: HashSet<String> = views
@@ -3196,6 +3228,7 @@ impl Engine {
                     .unwrap_or_default();
                 views.entry(obs.id.clone()).or_insert(ProposalView {
                     id: obs.id.clone(),
+                    no_effect_yet: !has_commit_effect(&kind),
                     kind,
                     targets,
                     into,
@@ -3225,20 +3258,24 @@ impl Engine {
                         let v: serde_json::Value =
                             serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
                         let decision = v.get("decision").and_then(|x| x.as_str());
+                        let kind = views.get(&ev.proposal).map(|p| p.kind.as_str());
+                        // 7.1 (f): a merge of a kind with no commit effect yet has no diff, and a
+                        // merge without a diff is a merge without review (Principle 23). It is
+                        // demoted to a comment - it stays in the log and decides nothing - whichever
+                        // path it arrived by, so a merge an earlier build took, or one replicated
+                        // from it, never fires once the kind has its effect (design-system.md Section
+                        // 29.22). The stamp that lets a merge count then is built with the effect.
+                        if decision == Some("merge") && kind.is_some_and(|k| !has_commit_effect(k))
+                        {
+                            continue;
+                        }
                         // I17: a recall merge counts only when the verdict carries the engine-stamped
                         // console marker - the human's direct act (resolution.md Section 6). Any other
-                        // recall merge is demoted to a comment: it stays in the log and decides
-                        // nothing. The marker is read off the log, never off the write path, so a
-                        // verdict that arrived replicated, or landed through MCP before the agent
-                        // surface refused them, is judged the same way (P16). It is read off every
-                        // attestation, as the gate ceiling is: one decision cast twice is one row
-                        // with two attestations (P3), and a person's console act on it is still theirs.
-                        if decision == Some("merge")
-                            && views.get(&ev.proposal).is_some_and(|p| p.kind == "recall")
-                            && !obs
-                                .provenance
-                                .iter()
-                                .any(|p| p.source_ref.as_deref() == Some(VERDICT_SURFACE_CONSOLE))
+                        // recall merge is demoted to a comment. The marker is read off the log, never
+                        // off the write path, so a verdict that arrived replicated, or landed through
+                        // MCP before the agent surface refused them, is judged the same way (P16).
+                        // Until recall has its effect, (f) above has demoted every recall merge first.
+                        if decision == Some("merge") && kind == Some("recall") && !console_cast(obs)
                         {
                             continue;
                         }
@@ -3561,6 +3598,7 @@ impl Engine {
         for act in acts {
             let view = ProposalView {
                 id: String::new(),
+                no_effect_yet: !has_commit_effect(&act.kind),
                 kind: act.kind.clone(),
                 targets: act.targets.clone(),
                 into: None,
@@ -4035,11 +4073,12 @@ impl Engine {
         if view.kind == "entity_split" {
             return self.split_diff(workspace, view, cx);
         }
+        // A type change or a recall - or a kind this build does not know, which only a foreign log holds.
         if !GATE_KINDS.contains(&view.kind.as_str()) {
             return Ok(BeliefDiff {
                 computable: false,
                 note: Some(format!(
-                    "{} has no commit effect yet, so there is no difference to compute - an empty diff here would mean 'not computable', never 'changes nothing' (architecture.md Section 14)",
+                    "{} has no commit effect yet, so it cannot be merged until it has one, and there is no difference to compute - an empty diff here would mean 'not computable', never 'changes nothing' (architecture.md Section 14)",
                     view.kind
                 )),
                 tier_changes: Vec::new(),
@@ -7204,6 +7243,38 @@ mod tests {
             "last-write-wins must follow the HLC order (I11), not observed_at"
         );
         assert_eq!(types[0].sources, 2);
+    }
+
+    /// I17's discriminator, pinned on its own: until recall has its commit effect the fold demotes
+    /// every recall merge before this is read (design-system.md Section 29.22), so no merged recall
+    /// can show it end to end. A verdict counts as the console's when any attestation carries the
+    /// marker - a person's console act on an agent-marked row is a second attestation on that row (P3).
+    #[test]
+    fn the_console_marker_is_read_off_every_attestation() {
+        let at = |source_ref: Option<&str>| Provenance {
+            host: "h".into(),
+            on_behalf_of: None,
+            workspace: "ws".into(),
+            source_ref: source_ref.map(String::from),
+            observed_at: 1,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        };
+        let mut obs = Observation::with_assertions(
+            "proposal(merge) p".into(),
+            at(Some(VERDICT_SURFACE_AGENT)),
+            Assertions::default(),
+        );
+        assert!(!console_cast(&obs), "an agent's verdict is not the console's");
+        obs.provenance.push(at(None));
+        assert!(!console_cast(&obs), "an unmarked writer is not the console");
+        obs.provenance.push(at(Some(VERDICT_SURFACE_CONSOLE)));
+        assert!(console_cast(&obs), "the person's act on the same row is theirs");
+        assert!(!has_commit_effect("recall") && !has_commit_effect("tbox_change"));
+        for kind in ["entity_merge", "entity_split", "claim_promotion", "claim_demotion"] {
+            assert!(has_commit_effect(kind), "{kind}");
+        }
     }
 
     /// Proposal gate skeleton (Principle 23, solo): open -> Open, verdict(merge) -> Merged (absorbing),

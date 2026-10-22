@@ -89,7 +89,7 @@
     },
     {
       "name": "get_proposal",
-      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted.",
+      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "list_proposals",
-      "description": "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace.",
+      "description": "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -285,7 +285,7 @@
     },
     {
       "name": "propose",
-      "description": "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs.",
+      "description": "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs.",
       "inputSchema": {
         "$defs": {
           "AffectedTypeItem": {
@@ -324,7 +324,7 @@
             ]
           },
           "kind": {
-            "description": "Proposal kind, one of:\n- `entity_merge` - fold duplicate entities into one canonical id.\n- `entity_split` - reverse a merge. The folded entities separate again and the pair stops\n  being suggested for merging, without becoming unmergeable.\n- `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A\n  merged verdict is what the resolution policy consumes, so this settles a contested entity\n  kind; demotion is also the revert path for knowledge that turned out wrong.\n- `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was\n  so far only induced from use into one the canon declares.\n- `recall` - bulk retraction of everything derived from a contamination source, for when bad\n  input has already been built on. Its verdict is always a human's direct act: `review` refuses\n  to merge one from this surface, and the fold does not count a merge cast outside the human\n  console. Open it, comment on it, and point the person to the Review panel.",
+            "description": "Proposal kind, one of:\n- `entity_merge` - fold duplicate entities into one canonical id.\n- `entity_split` - reverse a merge. The folded entities separate again and the pair stops\n  being suggested for merging, without becoming unmergeable.\n- `claim_promotion` / `claim_demotion` - raise or lower the trust tier of observations. A\n  merged verdict is what the resolution policy consumes, so this settles a contested entity\n  kind; demotion is also the revert path for knowledge that turned out wrong.\n- `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was\n  so far only induced from use into one the canon declares. It has no commit effect yet, so it\n  can be opened, commented on, rejected or withdrawn, and no surface merges it until it has one.\n- `recall` - bulk retraction of everything derived from a contamination source, for when bad\n  input has already been built on. It has no commit effect yet either, so no surface merges\n  one until it has; then its verdict is a human's direct act, which `review` never casts from\n  this surface. Open it, comment on it, and tell the person, who can reject it in the Review\n  panel.",
             "type": "string"
           },
           "on_behalf_of": {
@@ -382,7 +382,7 @@
     },
     {
       "name": "review",
-      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own.",
+      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17), and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect (Principle 23: no merge without a diff); comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {

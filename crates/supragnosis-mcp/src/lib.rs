@@ -134,11 +134,13 @@ pub struct ProposeRequest {
     ///   merged verdict is what the resolution policy consumes, so this settles a contested entity
     ///   kind; demotion is also the revert path for knowledge that turned out wrong.
     /// - `tbox_change` - add or revise a type in the workspace's vocabulary, promoting one that was
-    ///   so far only induced from use into one the canon declares.
+    ///   so far only induced from use into one the canon declares. It has no commit effect yet, so it
+    ///   can be opened, commented on, rejected or withdrawn, and no surface merges it until it has one.
     /// - `recall` - bulk retraction of everything derived from a contamination source, for when bad
-    ///   input has already been built on. Its verdict is always a human's direct act: `review` refuses
-    ///   to merge one from this surface, and the fold does not count a merge cast outside the human
-    ///   console. Open it, comment on it, and point the person to the Review panel.
+    ///   input has already been built on. It has no commit effect yet either, so no surface merges
+    ///   one until it has; then its verdict is a human's direct act, which `review` never casts from
+    ///   this surface. Open it, comment on it, and tell the person, who can reject it in the Review
+    ///   panel.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
     /// For entity_merge an entity may also be named by its name in the workspace; it is stored as its id.
@@ -1110,7 +1112,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
         if let Some(why) = self.all_is_no_place("propose", req.workspace.as_deref()) {
@@ -1191,6 +1193,7 @@ impl SupragnosisServer {
             .workspace
             .clone()
             .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let note = no_effect_note(&req.kind);
         let input = EngineProposeInput {
             workspace: req.workspace,
             kind: req.kind,
@@ -1210,7 +1213,11 @@ impl SupragnosisServer {
         .await
         {
             Ok(Ok(id)) => {
-                serde_json::json!({ "proposal_id": id, "workspace": written }).to_string()
+                let mut answer = serde_json::json!({ "proposal_id": id, "workspace": written });
+                if let Some(note) = note {
+                    answer["note"] = note.into();
+                }
+                answer.to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -1218,7 +1225,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
+        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17), and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect (Principle 23: no merge without a diff); comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
@@ -1265,7 +1272,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace."
+        description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -1282,7 +1289,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted."
+        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -2212,6 +2219,19 @@ fn err_json(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
 
+/// What `propose` adds when it opens a kind with no commit effect yet, so the agent can tell the
+/// person what is left to do with it (design-system.md Section 29.22).
+fn no_effect_note(kind: &str) -> Option<String> {
+    (supragnosis_engine::PROPOSAL_KINDS.contains(&kind)
+        && !supragnosis_engine::has_commit_effect(kind))
+    .then(|| {
+        format!(
+            "{kind} has no commit effect yet: it can be commented on, rejected or withdrawn, \
+                 and cannot be merged until it has one"
+        )
+    })
+}
+
 /// Why a remote call may not see the workspace an id resolved to (remote-viewer.md Section 3.4).
 enum Unseen {
     /// Outside the principal's grants. Answered exactly as an unknown id: entity and observation
@@ -2517,5 +2537,41 @@ mod agent_answers {
             !by_id["note"].as_str().unwrap_or("").contains("looks like a name"),
             "an id read as a name"
         );
+    }
+
+    /// design-system.md Section 29.22: a kind with no commit effect yet says so when it is opened and
+    /// listed, and a merge of it is refused with why.
+    #[tokio::test]
+    async fn what_has_no_effect_says_so() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let s = SupragnosisServer::new(engine);
+        s.observe(req(serde_json::json!({ "content": "a and b", "workspace": "w", "entities": [{ "name": "A" }, { "name": "B" }] }))).await;
+        let opened = json(&s.propose(req(serde_json::json!({ "workspace": "w", "kind": "tbox_change", "targets": ["A"], "rationale": "a type" }))).await);
+        assert!(
+            opened["note"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("tbox_change has no commit effect yet")),
+            "{opened}"
+        );
+        let merge = json(&s.propose(req(serde_json::json!({ "workspace": "w", "kind": "entity_merge", "targets": ["A", "B"], "into": "A" }))).await);
+        assert!(merge.get("note").is_none(), "a kind with an effect carries no note: {merge}");
+        let id = opened["proposal_id"].as_str().expect("id").to_string();
+        let refused =
+            json(&s.review(req(serde_json::json!({ "proposal": id, "decision": "merge" }))).await);
+        assert!(
+            refused["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("cannot be merged until it has one")),
+            "{refused}"
+        );
+        let listed = json(&s.list_proposals(req(serde_json::json!({ "workspace": "w" }))).await);
+        let row = listed
+            .as_array()
+            .expect("rows")
+            .iter()
+            .find(|p| p["id"] == id.as_str())
+            .expect("row");
+        assert_eq!(row["no_effect_yet"], true);
+        assert_eq!(row["state"], "open", "the refused merge decided nothing");
     }
 }
