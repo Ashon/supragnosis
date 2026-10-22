@@ -291,3 +291,57 @@ fn under_all_the_console_files_where_items_live() {
         "Show the proposal does nothing"
     );
 }
+
+/// Section 29.16: the same name in other workspaces is said on the local console's sheet, read once
+/// per selected entity and kept while the graph holds; All lights the drawn namesakes, a hover without
+/// dimming; and the Suggestions row says each entity's workspace and what the shared name means.
+#[test]
+fn the_same_name_is_said_on_the_local_console() {
+    let also = function("alsoNamedHtml");
+    for part in [
+        "surfaceKind !== \"local\"",
+        "namesakes.tag !== heldGraph.tag",
+        "Not compared with other workspaces: ",
+        "Also named in ",
+        "nsshow",
+    ] {
+        assert!(also.contains(part), "the sheet's line does not hold {part}");
+    }
+    let read = function("readNamesakes");
+    assert!(read.contains("the workspace list did not load"), "a missing list is not said");
+    assert!(
+        read.contains("\"&in=\" + encodeURIComponent(w)"),
+        "the workspaces are not sent one by one"
+    );
+    assert!(
+        read.contains("focus.id !== id) return;"),
+        "an answer for an earlier selection is kept"
+    );
+    let index = function("namesakesOf");
+    assert!(
+        index.contains("surfaceKind !== \"local\"") && index.contains("cur !== \"*\""),
+        "namesakes light outside All on the local console"
+    );
+    assert!(
+        function("hoverSet").contains("namesakesOf(hover)"),
+        "a hover does not light them"
+    );
+    assert!(
+        function("activeSet").contains("namesakesOf(anchor)"),
+        "a selection does not light them"
+    );
+    let items = function("signalItems");
+    assert!(
+        items.contains("\"Same name in \" + spaces + \" workspaces: \"")
+            && items.contains("a merge cannot join entities of two workspaces"),
+        "the shared-name row does not say what it is"
+    );
+    assert!(
+        function("nchipHtml").contains("n.ws ? n.name + \" - \" + n.ws : n.name"),
+        "a chip does not say its workspace"
+    );
+    assert!(
+        SCRIPT.contains("a sharing unit. The same name in two workspaces is two entities"),
+        "the Workspace line still says no entity is in two"
+    );
+}

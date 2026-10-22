@@ -49,6 +49,10 @@ pub const PREVIEW: &str = "the diff of a settle at a node's own console - the re
 /// The refusal of the undo read: what reverses a decision is the console's to ask.
 pub const UNDO: &str = "what would reverse a decision at a node's own console - the read tier \
      offers no undo (docs/remote-viewer.md Section 3.2)";
+/// The refusal of the namesake read: each workspace is read alone here, so none is compared with
+/// another (docs/remote-viewer.md Section 12, design-system.md Section 29.16).
+pub const NAMESAKES: &str = "the read tier compares no workspaces - each is read alone; the same \
+     name is shown at a node's own console (docs/remote-viewer.md Section 12)";
 /// The refusal of a write path.
 pub const WRITE: &str = "the read tier changes nothing - a principal with a write grant reaches \
      `observe` and `propose` through MCP at /mcp (docs/remote-viewer.md Section 2)";
@@ -87,6 +91,7 @@ pub const POLICY: &[(&str, Policy)] = &[
     ("/api/reify", Policy::Refused(WRITE)),
     ("/api/propose_merge", Policy::Refused(WRITE)),
     ("/api/propose_split", Policy::Refused(WRITE)),
+    ("/api/namesakes", Policy::Refused(NAMESAKES)),
 ];
 
 pub fn policy(path: &str) -> Option<Policy> {

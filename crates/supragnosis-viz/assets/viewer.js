@@ -1281,6 +1281,7 @@ function hoverSet() {
     const e = edges[i];
     if (e.a.id === hover.id || e.b.id === hover.id) { es.add(i); ns.add(e.a.id); ns.add(e.b.id); }
   }
+  for (const m of namesakesOf(hover)) ns.add(m.id);   // the same name elsewhere (Section 29.16)
   return { ns, es };
 }
 // The faint strength a selection leaves the rest at, which a dimmed trust tier takes too (D5).
@@ -1295,6 +1296,7 @@ function activeSet() {
       const e = edges[i];
       if (e.a.id === anchor.id || e.b.id === anchor.id) { es.add(i); ns.add(e.a.id); ns.add(e.b.id); }
     }
+    for (const m of namesakesOf(anchor)) ns.add(m.id);   // lit as its neighbours are (Section 29.16)
     return { ns, es };
   }
   // The open search lights what the engine answered, not names that contain the typed text, so the
@@ -1668,6 +1670,20 @@ function nodesById() {
   if (byIdOf !== nodes) { byIdOf = nodes; byIdMap = new Map(nodes.map(n => [n.id, n])); }
   return byIdMap;
 }
+// The drawn entities of other workspaces with the same name (Section 29.16), under All on the local
+// console only: the read tier compares no workspaces. Indexed once per node list, by the page's lower
+// case of the trimmed name - the id's rule, which can differ from the server's on rare characters.
+let namesOf = null, namesMap = new Map();
+const nameKey = n => String(n.name).trim().toLowerCase();
+function namesakesOf(n) {
+  const cur = currentWs();
+  if (!n || surfaceKind !== "local" || (cur !== "*" && cur !== "all") || !n.workspace) return [];
+  if (namesOf !== nodes) {
+    namesOf = nodes; namesMap = new Map();
+    for (const m of nodes) { const k = nameKey(m); if (!namesMap.has(k)) namesMap.set(k, []); namesMap.get(k).push(m); }
+  }
+  return (namesMap.get(nameKey(n)) || []).filter(m => m.workspace && m.workspace !== n.workspace);
+}
 // Escape for both element-text and quoted-attribute contexts. Quotes must be escaped too: entity/type
 // names come from untrusted observe calls (including federation sync - Principle 18, writes are an attack
 // surface), and they are interpolated into `title="..."` / `data-id="..."` attributes below; without quote
@@ -1884,7 +1900,13 @@ function signalItems(seg) {
         { pair: { a: m[0].id, b: m[1].id, a_name: m[0].name, b_name: m[1].name }, src: "variant:" + v.rung, meta });
       else add("v:" + v.key, "Possible duplicates: " + nameList(names(m)), { group: m, meta });
     }
-    for (const g of curation.duplicates || []) add("d:" + g.key, "Same name in two workspaces: " + g.key, { group: g.members || [] });
+    // A name two workspaces share is two entities (Section 29.16): titled as written, each chip saying
+    // its workspace, read from the graph the page holds.
+    for (const g of curation.duplicates || []) {
+      const ms = (g.members || []).map(m => { const n = nodeById(m.id); return n && n.workspace ? { ...m, ws: n.workspace } : m; });
+      const spaces = new Set(ms.map(m => m.ws).filter(Boolean)).size || ms.length;
+      add("d:" + g.key, "Same name in " + spaces + " workspaces: " + (ms[0] ? ms[0].name : g.key), { group: ms, hint: "Each workspace keeps its own entity by this name, and a merge cannot join entities of two workspaces." });
+    }
   } else {
     // Contradictory accepted merges (Principle 6): the remedy is a settling merge, never an edit.
     for (const c of curation.merge_cycles || []) add("y:" + names(c.members).join("|"), "Conflicting merges: " + nameList(names(c.members)),
@@ -1918,7 +1940,7 @@ function signalHint(seg) {
   return "";
 }
 function nchipHtml(n) {
-  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
+  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.ws ? n.name + " - " + n.ws : n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
 }
 // How a stray verdict's act is said (Section 29.15).
 const STRAY_ACTS = { merge: "accept", reject: "reject", withdraw: "withdrawal" };
@@ -3950,6 +3972,46 @@ function stepSelection(dir) {
     return;
   }
 }
+// Also named in (Section 29.16): the same name's entities in other workspaces, read once per selected
+// entity on the local console and kept while the graph does not change, so a poll re-draws the line
+// without reading again. Nothing shows while the read is in flight, and an answer for an entity no
+// longer selected is dropped.
+let namesakes = null;   // { id, tag, list } or { id, tag, why }
+function alsoNamedHtml(node) {
+  if (surfaceKind !== "local" || !node.workspace) return "";
+  if (!namesakes || namesakes.id !== node.id || namesakes.tag !== heldGraph.tag) { readNamesakes(node); return ""; }
+  if (namesakes.why) return html`<div class="meta">Not compared with other workspaces: ${namesakes.why}</div>`;
+  return namesakes.list.map(m => html`<div class="meta also">Also named in ${m.workspace}: ${m.name} (${m.type}) <button type="button" class="linkish nsshow" data-id="${m.id}" aria-label="${"Show " + m.name + " in " + m.workspace}">Show</button></div>`);
+}
+let namesakesFor = null;
+async function readNamesakes(node) {
+  if (namesakesFor === node.id) return;
+  namesakesFor = node.id;
+  const id = node.id, tag = heldGraph.tag;
+  let answer;
+  if (!wsListed) answer = { id, tag, why: "the workspace list did not load" };
+  else {
+    try {
+      const q = "?entity=" + encodeURIComponent(id) + wsListed.map(w => "&in=" + encodeURIComponent(w)).join("");
+      const r = await fetch("/api/namesakes" + q, { cache: "no-store" });
+      const j = await r.json();
+      answer = r.ok ? { id, tag, list: j.namesakes || [] } : { id, tag, why: j.error || "the server answered " + r.status };
+    } catch (e) { answer = { id, tag, why: "the server is not answering" }; }
+  }
+  namesakesFor = null;
+  if (!focus || focus.id !== id) return;   // the selection moved on
+  namesakes = answer;
+  if (answer.why || answer.list.length) renderDetail(focus);
+}
+// Show selects the namesake: in place under All, otherwise by changing the scope to All, which starts
+// the selection history afresh, as any change of scope does (Section 29.4).
+function showNamesake(id) {
+  const cur = currentWs();
+  if (cur === "*" || cur === "all") { const n = nodeById(id); if (n) select(n); return; }
+  clearSelection();
+  linkedEntity = id;
+  wsInput.value = "*"; beginWorkspaceTransition(); renderChipsActive(); syncUrlWorkspace(); poll();
+}
 // The selected entity that the address named when the page opened, selected once the graph holds it.
 let linkedEntity = new URLSearchParams(location.search).get("entity");
 function selectLinked() {
@@ -4055,6 +4117,7 @@ function renderDetail(node) {
   // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
   const workspace = base.workspace === null
     ? html`<div class="meta">workspace: ${node.workspace || "more than one (merged across workspaces)"}</div>` : "";
+  const also = alsoNamedHtml(node);
   // With a single candidate per field the disclosure can only answer "nobody said otherwise", and the
   // asserting observation is already a row of the evidence column - so it appears only when some
   // field has a second candidate: an alias spelling or a competing kind (Section 5).
@@ -4074,7 +4137,7 @@ function renderDetail(node) {
       scopeSaid.length ? html`<span class="scopeline">All here: ${scopeSaid.join(", ")}</span>` : "",
     html`</div>`,
     node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
-    origin, workspace,
+    origin, workspace, also,
     node.description ? html`<div class="desc">${node.description}</div>` : "",
     waitsHtml(node),
     contestedBlock(node),
@@ -4099,6 +4162,7 @@ function renderDetail(node) {
     b.onclick = () => { reviewSeg = "needs"; reviewSel = b.dataset.waits; reviewFocus = true; if (reviewOpen()) renderReview(); else location.hash = "#review"; };
   });
   detailEl.querySelector(".grow").onclick = () => { detailTall = !detailTall; renderDetail(node); };
+  detailEl.querySelectorAll(".nsshow").forEach(b => { b.onclick = () => showNamesake(b.dataset.id); });
   detailEl.querySelectorAll(".shrel").forEach(b => {
     b.onclick = () => keepInView([node.id, ...relatedDrawn(node).map(n => n.id)], { kind: "related", name: node.name });
   });
@@ -4533,6 +4597,8 @@ function neighbourhoodOf(n) {
 // focusing is exactly when the inspector opens - fitting past it would hide the neighbours under the
 // panel that is describing them.
 function focusView(n) {
+  // The neighbourhood, not the namesakes the selection also lights: they can sit across the map
+  // (Section 29.16).
   const box = boundsOf(neighbourhoodOf(n));
   // An isolated node (or one whose neighbours are all filtered out) has a degenerate box - there is
   // no extent to fit, and zooming to a point is not framing. Centring is the honest answer.
@@ -4672,7 +4738,7 @@ function drawWsHulls(ctx, hullLabels) {
 // it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
 // "b" still cycles, for whoever finds it.
 const BOUNDARY_MODES = [
-  ["workspace", "A workspace outline around each workspace: a sharing unit, and no entity is in two", "Workspace"],
+  ["workspace", "A workspace outline around each workspace: a sharing unit. The same name in two workspaces is two entities", "Workspace"],
   ["origin", "Who signed for each entity; outlines overlap where two machines both did", "Origin"],
   ["off", "The workspaces keep together, without outlines", "None"],
 ];

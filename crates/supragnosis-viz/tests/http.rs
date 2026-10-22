@@ -1949,3 +1949,54 @@ async fn every_act_under_all_is_filed_where_its_item_lives() {
     );
     let _ = std::fs::remove_file(&sock);
 }
+
+/// The same name in other workspaces, on the local console (design-system.md Section 29.16): one
+/// `in` per workspace the page lists, each a lookup; the entity's own workspace is never listed, an
+/// unknown entity is said without spelling its id, and the read tier refuses the path.
+#[tokio::test]
+async fn the_console_reads_the_same_name_in_other_workspaces() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "default"));
+    for (ws, name) in [("infra", "Payment service"), ("atlas, web", "payment service")] {
+        engine
+            .observe(ObserveInput {
+                content: format!("{name} in {ws}"),
+                workspace: Some(ws.into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    description: None,
+                    name: name.into(),
+                    kind: Some("Service".into()),
+                }],
+                relations: vec![],
+            })
+            .expect("observe");
+    }
+    let here = supragnosis_core::Entity::make_id("infra", "Payment service");
+    let sock = serve_uds("namesakes", engine, ev_channel()).await;
+    let r = uds_get(
+        &sock,
+        &format!("/api/namesakes?entity={here}&in=infra&in=atlas%2C%20web&in=default"),
+    )
+    .await;
+    let list = json_get(&r)["namesakes"].clone();
+    assert_eq!(list.as_array().map(Vec::len), Some(1), "{list}");
+    assert_eq!(list[0]["workspace"], "atlas, web", "a comma in a workspace name split it");
+    assert_eq!(list[0]["name"], "payment service");
+    assert_eq!(list[0]["type"], "Service");
+    let r = uds_get(&sock, &format!("/api/namesakes?entity={}&in=infra", "ab".repeat(32))).await;
+    let body = body_of(&r, "404");
+    assert!(body.contains("no entity by that id") && !body.contains("abab"), "{body}");
+    body_of(&uds_get(&sock, "/api/namesakes?in=infra").await, "400");
+    assert!(
+        matches!(
+            supragnosis_viz::remote::policy("/api/namesakes"),
+            Some(supragnosis_viz::remote::Policy::Refused(_))
+        ),
+        "the read tier serves the namesakes"
+    );
+    let _ = std::fs::remove_file(&sock);
+}

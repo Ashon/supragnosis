@@ -443,6 +443,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/proposal" => proposal_response(engine, query),
         "/api/propose_merge" => propose_merge_response(engine, query),
         "/api/propose_split" => propose_split_response(engine, query),
+        "/api/namesakes" => namesakes_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
         // Which surface the page is on (remote-viewer.md Section 3.5): this socket is the owner's
@@ -478,7 +479,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
             status: "404 Not Found",
             content_type: "application/json",
             body: err_body(
-                "unknown path - try /, /api/surface, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/propose_split, /api/workspaces, /api/observations, /api/explain, or /api/events",
+                "unknown path - try /, /api/surface, /api/proposal, /api/graph, /api/hypergraph, /api/types, /api/curation, /api/proposals, /api/review, /api/resolve, /api/reify, /api/propose_merge, /api/propose_split, /api/namesakes, /api/workspaces, /api/observations, /api/explain, or /api/events",
             ),
         },
     }
@@ -1294,6 +1295,54 @@ fn propose_split_response(engine: &Engine, query: &str) -> Response {
             content_type: "application/json",
             body: err_body(&e.to_string()),
         },
+    }
+}
+
+/// `/api/namesakes?entity=<id>&in=<ws>&in=<ws>...` - the entities of the listed workspaces that carry
+/// this entity's name (design-system.md Section 29.16). The name is matched by the id's own rule -
+/// trimmed and lower-cased with the workspace - so each workspace costs one lookup, and the page
+/// sends the list it already holds rather than this server scanning for one. A namesake its own
+/// workspace merged into another entity is left out, as the curation report's `duplicates` leaves
+/// it out. The local console's alone: the read tier compares no workspaces (remote-viewer.md
+/// Section 12).
+fn namesakes_response(engine: &Engine, query: &str) -> Response {
+    let param = |k: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+            .map(percent_decode)
+            .filter(|s| !s.is_empty())
+    };
+    // One `in` per workspace, each percent-encoded, so a name with a comma in it stays one name.
+    let list: Vec<String> = query
+        .split('&')
+        .filter_map(|kv| kv.strip_prefix("in="))
+        .map(percent_decode)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let Some(id) = param("entity") else {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("namesakes needs ?entity=<id>&in=<workspace>&in=<workspace>"),
+        };
+    };
+    let workspaces: Vec<&str> = list.iter().map(String::as_str).collect();
+    let out = match engine.namesakes(&id, &workspaces) {
+        Ok(Some(out)) => out,
+        Ok(None) => {
+            return Response {
+                status: "404 Not Found",
+                content_type: "application/json",
+                body: err_body("no entity by that id"),
+            }
+        }
+        Err(e) => return store_failure(&e),
+    };
+    Response {
+        status: "200 OK",
+        content_type: "application/json",
+        body: serde_json::json!({ "namesakes": out }).to_string(),
     }
 }
 
