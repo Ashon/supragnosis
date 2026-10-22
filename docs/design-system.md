@@ -33,7 +33,8 @@
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
-> is built. Step 57, a repeat says what it found, is built.
+> is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
+> the camera, is specified.
 
 ## 1. Why this exists
 
@@ -2012,6 +2013,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    resolution-identity.md Section 3 revised): a person's act at the console asks again when the
    answer it would land on no longer holds, an act that finds its answer waiting or in force says so,
    the agent's `propose` says what it found, and suggestions follow the person's no.
+58. **A panel on a tablet ends above the camera** (Section 29.24; Section 29.18's owed overlap repaid):
+   from 760 to 1200 pixels a floating panel ends above the camera toolbar under a finger as with a
+   mouse.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5725,3 +5729,52 @@ its review tests (the sentences, a found item opened, Keep reading its state, th
 Browser checks propose a name variant from Suggestions, reject it and see Suggestions leave it out
 with the new line, and press Un-merge twice to see the second find the first; an agent's identical
 `propose` answers found with its note.
+
+### 29.24 Step 58: a panel on a tablet ends above the camera
+
+**What was found.** Step 52 left it owed (Section 29.18): from 760 to 1200 pixels, under a coarse
+pointer, the camera buttons and a floating panel overlap. A measure in Chromium with touch at 1024 by
+768 and 1180 by 820 shows the inspector's bottom 20 pixels over the buttons' top, across their full
+width, and the same for a floating dock; with a mouse the two are 8 pixels apart. Its review found
+more of the same cause:
+- **The panels' bottom is a sum written for a mouse.** They end 90 pixels above the window's bottom:
+  the status bar's 28, a gap of 16, the toolbar's 38 and a gap of 8. A finger makes the status bar
+  44 and the toolbar 50 (U19), and 200% text makes the status bar 56 even with a mouse (U21).
+- **The minimap and the View popover** sit 62 pixels above the status bar, the same mouse-only sum,
+  at every width; under a finger they reach 4 pixels over the toolbar.
+- **The strip** at the window's lower left keeps 200 pixels clear for the toolbar, which is 230 wide
+  with a mouse and 314 under a finger, so below about 900 pixels the toolbar covers the strip's end.
+
+**Decisions.** No choice is open: everything that clears the toolbar does it by the toolbar's own
+size. `--hud-h`, which a phone's page already measures, becomes the toolbar's height at every
+width, and `--hud-w` its width.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 18, step 7 | Between 760 and 1200 pixels a floating panel ends above the camera toolbar | repays - under a finger and at 200% text too |
+| Section 18's note on the status bar | `--bar` is a rem token, and every panel and the camera above the bar read it | repays - the panels, the minimap and the View popover read the toolbar's size as well |
+| Section 29.18 | The tablet band's overlap is owed | repays |
+| U19 | Under a coarse pointer every target is 44 pixels | agrees - unchanged; the things around the toolbar make room for it |
+| U21 | Text scales to 200% without loss | repays - the panels' bottom grows with the status bar |
+| U7 | Every custom property a rule reads is declared, with one value per token | agrees - `--hud-h` and `--hud-w` are declared at the root and redefined for a finger |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Two tokens.** The camera toolbar is `--hud-h` tall and `--hud-w` wide: 38 by 230 pixels with a
+  mouse, 50 by 314 under a coarse pointer. On a phone the page still measures the height, since
+  there the toolbar can wrap.
+- **From 760 to 1200 pixels** a floating panel, dock or inspector, ends the status bar's height, 16,
+  the toolbar's height and 8 above the window's bottom. With a mouse at the default text size
+  nothing moves; under a finger the panel ends 8 pixels above the toolbar. A phone held sideways
+  falls in this band, and its panel is short and scrolls.
+- **At every width** the minimap and the View popover sit at that same height, and the popover's
+  tallest is the window less the header, the status bar, the toolbar and the gaps.
+- **The strip** keeps the toolbar's width and three gaps clear.
+- The panels' tallest reads the visible height where the browser knows it (`dvh`), as the phone's
+  sheet does.
+
+**What this step does not do.** It does not change the phone's sheet, which already reads the
+toolbar's measured height, or the wide window's docked panels, which the toolbar does not meet.
