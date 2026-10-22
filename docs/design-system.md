@@ -35,7 +35,7 @@
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
-> demote a claim, is specified.
+> demote a claim, is built.
 
 ## 1. Why this exists
 
@@ -2019,7 +2019,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    mouse.
 59. **Un-merge opens what it proposed** [built] (Section 29.25): the split Un-merge proposes opens under Needs
    you, as Same as... and Keep ... instead open theirs.
-60. **A person can demote a claim** (Section 29.26; Section 2, U18 and proposal-workflow.md Section 14.3
+60. **A person can demote a claim** [built] (Section 29.26; Section 2, U18 and proposal-workflow.md Section 14.3
    revised): the observation card offers a demotion to Unverified, with what it overturns, its
    reach, its ceiling and its checks before the act, and Undo after it.
 
@@ -5875,8 +5875,8 @@ No row needs a principle changed.
 - **The question.** It opens in the card, "Demote this claim to Unverified?", and reads the act's
   preview. Then it says:
   - what flips, a line per value the diff overturns: "Ledger's type becomes Concept.", "...becomes
-    contested and waits under Needs you." or "...is no longer contested."; when nothing flips,
-    "Every value it states stays; it is trusted less.";
+    contested and waits under Needs you." or "...becomes View and is no longer contested."; when
+    nothing flips, "Every value it states stays; it is trusted less.";
   - whose trust ring drops: "With it, Ledger drops to Unverified.", or "No entity's ring moves.";
   - what else it states: "It also states 2 relations." and "It also defines 1 type: Driver.";
   - "Unverified: Trusted less than an agent's claim: a review lowered it, or its sender marked it
@@ -5895,3 +5895,12 @@ No row needs a principle changed.
 **What this step does not do.**
 - It does not lower to a tier between: a person who wants Agent back undoes the confirmation.
 - It does not offer Withdraw, for the reasons under Decisions.
+
+**Guarded by** `a_person_can_demote_a_claim` in the viewer's settle tests (the offer and its
+condition, the question's lines and Demote waiting for them, the demotion kind, the reason and
+notice, Undo from the act's own undo read, the card read again by id, the downward ring verb, and Esc
+closing the question first). A browser check seeds two claims of one entity's type, demotes one from
+its card, and reads the question ("Ledger's type becomes View and is no longer contested.", "With it,
+Billing drops to Unverified.", "It also states 1 relation."), Esc closing only the question with focus
+back on the offer, the notice with its Undo note, the card's "Lowered to Unverified by you at this
+console", focus on Close, and the contradiction settled on the map.
