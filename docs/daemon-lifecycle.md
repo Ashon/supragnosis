@@ -366,6 +366,9 @@ Guarded by:
   reader; a pid that is gone or another program's is stale and cleared, and the only pid the
   lifecycle commands observe, and so signal, is a live supragnosis one.
 - `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
+- `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: every CLI call in the app that can
+  stop a daemon, listed with the function it sits in, each reached from one command of the app's
+  pages.
 
 Checked on this machine without changing it:
 - With a scratch stdio server holding a scratch store, `status --json` reported `store_held: true`,
