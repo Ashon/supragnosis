@@ -1109,7 +1109,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["leaving_removes_only_what_the_join_wrote"]),
         ),
         c(
-            "the Settings rows say so before they act",
+            "hub leave and the Settings rows say so before they act - hub leave prints it, and the step that builds the rows tests both",
             Evidence::Deferred(
                 "docs/pairing.md's Settings acts are not built yet. Revisit when its Section 10 step 4 lands",
             ),

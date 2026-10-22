@@ -1900,25 +1900,30 @@ fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     // does, and no other workspace (docs/pairing.md Section 4.5, PA12); any other node syncs the
     // one workspace named, or its default.
     let share = &fc.sync.share_workspaces;
-    let workspaces: Vec<String> =
-        match (a.workspace, join::receive_list(&join::Paths::default_paths())) {
-            (Some(ws), (Some(receive), _)) => {
-                anyhow::ensure!(
-                    share.contains(&ws) || receive.contains(&ws),
-                    "this node syncs only the workspaces it shares and the ones its join recorded \
+    let workspaces: Vec<String> = match (a.workspace, {
+        let (receive, note) = join::receive_list(&join::Paths::default_paths());
+        if let Some(note) = note {
+            eprintln!("{note}");
+        }
+        (receive, ())
+    }) {
+        (Some(ws), (Some(receive), _)) => {
+            anyhow::ensure!(
+                share.contains(&ws) || receive.contains(&ws),
+                "this node syncs only the workspaces it shares and the ones its join recorded \
                  ({}); {ws} is neither",
-                    share.iter().chain(&receive).cloned().collect::<Vec<_>>().join(", ")
-                );
-                vec![ws]
-            }
-            (Some(ws), _) => vec![ws],
-            (None, (Some(receive), _)) => {
-                let mut all = share.clone();
-                all.extend(receive.into_iter().filter(|w| !share.contains(w)));
-                all
-            }
-            (None, (None, _)) => vec![cfg.workspace.clone()],
-        };
+                share.iter().chain(&receive).cloned().collect::<Vec<_>>().join(", ")
+            );
+            vec![ws]
+        }
+        (Some(ws), _) => vec![ws],
+        (None, (Some(receive), _)) => {
+            let mut all = share.clone();
+            all.extend(receive.into_iter().filter(|w| !share.contains(w)));
+            all
+        }
+        (None, (None, _)) => vec![cfg.workspace.clone()],
+    };
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(async {
         let engine = build_engine(&cfg, None)?;
@@ -3303,6 +3308,12 @@ struct TerminalPerson {
     json: bool,
 }
 
+/// What the hub's unsigned preview says, as a terminal may print it: no control characters, so a
+/// name cannot move the cursor or rewrite the line.
+fn printable(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 impl join::Person for TerminalPerson {
     fn preview(
         &mut self,
@@ -3310,6 +3321,8 @@ impl join::Person for TerminalPerson {
         workspaces: &[String],
         serves_principals: bool,
     ) -> Result<join::Choices> {
+        let hub = printable(hub);
+        let hub = hub.as_str();
         if self.json {
             println!(
                 "{}",
@@ -3323,14 +3336,18 @@ impl join::Person for TerminalPerson {
         println!();
         match workspaces.is_empty() {
             true => println!("{hub} shares no workspace yet."),
-            false => println!("From {hub}, this machine will receive {}.", workspaces.join(", ")),
+            false => println!(
+                "From {hub}, this machine will receive {}.",
+                workspaces.iter().map(|w| printable(w)).collect::<Vec<_>>().join(", ")
+            ),
         }
         let send = match &self.send {
             Some(send) => send.clone(),
             None => {
                 let mut send = Vec::new();
                 for w in workspaces {
-                    if ask_yes(&format!("Also send {w} from this machine to {hub}?"))? {
+                    if ask_yes(&format!("Also send {} from this machine to {hub}?", printable(w)))?
+                    {
                         send.push(w.clone());
                     }
                 }
@@ -3348,6 +3365,7 @@ impl join::Person for TerminalPerson {
     }
 
     fn words(&mut self, hub: &str, words: &[&str]) {
+        let hub = printable(hub);
         if self.json {
             println!("{}", serde_json::json!({"words": words, "hub_name": hub}));
             return;
@@ -3371,9 +3389,28 @@ fn join_cmd(a: JoinArgs) -> Result<()> {
         print!("Paste the code from the hub, then press Return: ");
         std::io::stdout().flush()?;
     }
-    let mut line = String::new();
-    std::io::stdin().lock().read_line(&mut line)?;
-    let code = pair::Code::decode(&line)?;
+    // A code pasted across lines is read until it is whole; from a pipe, all of it is the code.
+    let code = if interactive {
+        let mut text = String::new();
+        let mut lines = 0;
+        loop {
+            let mut line = String::new();
+            if std::io::stdin().lock().read_line(&mut line)? == 0 {
+                break pair::Code::decode(&text)?;
+            }
+            text.push_str(&line);
+            lines += 1;
+            match pair::Code::decode(&text) {
+                Ok(code) => break code,
+                Err(pair::CodeError::Damaged) if lines < 6 => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+    } else {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+        pair::Code::decode(&text)?
+    };
     let send = a
         .send
         .as_deref()
@@ -3471,7 +3508,8 @@ fn hub_cmd(cmd: HubCmd) -> Result<()> {
             match left.hub_answered {
                 true => println!("{} removed this machine.", left.hub_name),
                 false => println!(
-                    "{} did not answer, so it keeps this machine's row until it is removed there                      (`supragnosis peer remove`). This machine no longer syncs with it.",
+                    "{} did not answer, so it keeps this machine's row until it is removed there \
+                     (`supragnosis peer remove`). This machine no longer syncs with it.",
                     left.hub_name
                 ),
             }
@@ -6103,29 +6141,31 @@ mod fed {
         };
         let (edited, out) = edit(&text)?;
         if edited != text {
-            if existed {
-                crate::connect::write_replacing(path, &edited)
-                    .with_context(|| format!("writing {}", path.display()))?;
-            } else {
-                // Made owner-only from its first byte, without touching the directory it lands
-                // in, which SUPRAGNOSIS_CONFIG may put anywhere.
-                use std::io::Write;
-                let tmp = path.with_file_name(format!(".{name}.supragnosis-new"));
-                let _ = std::fs::remove_file(&tmp);
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    options.mode(0o600);
-                }
-                let mut f =
-                    options.open(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
-                f.write_all(edited.as_bytes())?;
-                f.sync_all()?;
-                std::fs::rename(&tmp, path)
-                    .with_context(|| format!("installing {}", path.display()))?;
+            // Written to a file that is owner-only from its first byte, then given the old file's
+            // mode and renamed over it: the file may hold a sync credential, and no reader sees
+            // half of it. A new file stays owner-only; nothing touches the directory it lands
+            // in, which SUPRAGNOSIS_CONFIG may put anywhere.
+            use std::io::Write;
+            let tmp = path.with_file_name(format!(".{name}.supragnosis-new"));
+            let _ = std::fs::remove_file(&tmp);
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
             }
+            let mut f =
+                options.open(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+            f.write_all(edited.as_bytes())?;
+            f.sync_all()?;
+            if existed {
+                if let Ok(meta) = std::fs::metadata(path) {
+                    std::fs::set_permissions(&tmp, meta.permissions())?;
+                }
+            }
+            std::fs::rename(&tmp, path)
+                .with_context(|| format!("installing {}", path.display()))?;
         }
         Ok(out)
     }
