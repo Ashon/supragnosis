@@ -173,6 +173,9 @@ D1 is guarded by `inspector_never_folds_a_contested_belief`, a source-level trip
 `crates/supragnosis-viz/tests/http.rs` written in the style of the escaping guard beside it: the
 contested branch is the first decision the block makes and returns before any fold is built, the
 silence rule never reaches it, and the panel renders it outside any condition of its own.
+D6 is held by `the_viewer_api_keeps_its_fields`: the three responses the inspector reads keep every
+field of their example documents (compatibility.md Section 8).
+
 D7 is held by the lint in CI and, beside it, by `every_html_sink_takes_an_html_template`, which
 scans the viewer's scripts: each `innerHTML` assignment takes an `html` template or a plain literal,
 no other sink appears, and no comment turns the lint off.
