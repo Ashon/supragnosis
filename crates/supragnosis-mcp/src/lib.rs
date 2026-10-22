@@ -779,7 +779,7 @@ impl SupragnosisServer {
                                 Ok(c) => c,
                                 Err(e) => {
                                     remote_results.push(
-                                        serde_json::json!({"server": server, "error": e.to_string()}),
+                                        serde_json::json!({"server": server, "error": e.said()}),
                                     );
                                     continue;
                                 }
@@ -800,9 +800,8 @@ impl SupragnosisServer {
                                         "note": "remote retrieval surface - sync_pull this workspace to materialize the hits locally before traverse/get_entity",
                                     }));
                                 }
-                                Err(e) => remote_results.push(
-                                    serde_json::json!({"server": server, "error": e.to_string()}),
-                                ),
+                                Err(e) => remote_results
+                                    .push(serde_json::json!({"server": server, "error": e.said()})),
                             }
                         }
                     }
@@ -1509,7 +1508,7 @@ pub async fn pull_workspace(
         let client = match supragnosis_sync::http::SyncClient::for_link(link) {
             Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
             Err(e) => {
-                results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                results.push(serde_json::json!({"server": server, "error": e.said()}));
                 continue;
             }
         };
@@ -1568,7 +1567,7 @@ pub async fn pull_workspace(
                     "rejected": report.rejected.len(),
                 }))
             }
-            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.said()})),
         }
     }
     // Re-materialize once after all pulls (Prop C: convergence point).
@@ -1610,13 +1609,13 @@ pub async fn push_workspace(
         let client = match supragnosis_sync::http::SyncClient::for_link(link) {
             Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
             Err(e) => {
-                results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                results.push(serde_json::json!({"server": server, "error": e.said()}));
                 continue;
             }
         };
         match client.advertise(&ws).await {
             Ok(remote) => asked.push((server.clone(), client, remote)),
-            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.said()})),
         }
     }
     {
@@ -1704,7 +1703,7 @@ pub async fn push_workspace(
                     "rejected": resp.rejected,
                 }))
             }
-            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.said()})),
         }
     }
     serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped, "reprojected": reprojected})

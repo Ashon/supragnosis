@@ -344,6 +344,44 @@ pub enum TransportError {
     Io(#[from] std::io::Error),
 }
 
+impl TransportError {
+    /// Whether the host was not reached at all - a partition, not an answer.
+    pub fn unreachable(&self) -> bool {
+        matches!(self, TransportError::Http(e) if e.is_connect() || e.is_timeout())
+    }
+
+    /// What a failed call says to a person: the error and every cause under it, and, when the host
+    /// was not reached, that this node goes on offline and syncs once it is reached again - a
+    /// partition is a state a node works through, not a fault (docs/pairing.md, decision D16). On a
+    /// Mac, "no route" is also how macOS refuses a process without Local Network access.
+    pub fn said(&self) -> String {
+        let mut out = self.to_string();
+        let mut cause = std::error::Error::source(self);
+        while let Some(c) = cause {
+            let text = c.to_string();
+            if !out.contains(&text) {
+                out.push_str(": ");
+                out.push_str(&text);
+            }
+            cause = c.source();
+        }
+        if self.unreachable() {
+            out.push_str(
+                ". This node keeps working offline, and its next round syncs once the hub can be \
+                 reached",
+            );
+            let no_route = out.contains("os error 65") || out.contains("No route to host");
+            if cfg!(target_os = "macos") && no_route {
+                out.push_str(
+                    ". On a Mac, macOS answers this way for a process without Local Network \
+                     access (System Settings > Privacy & Security > Local Network)",
+                );
+            }
+        }
+        out
+    }
+}
+
 /// F10 bind guard: loopback is always fine (local trust surface); a non-loopback bind demands both
 /// in-process TLS and someone admitted - a node on the allowlist, or a principal of the agent
 /// surface the wiring layer mounts beside the sync API (docs/remote-server.md Section 4.1). The

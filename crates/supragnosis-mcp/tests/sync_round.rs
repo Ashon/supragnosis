@@ -101,7 +101,8 @@ async fn a_round_carries_a_write_to_the_other_node_with_no_call() {
     assert_eq!(said["applied"], second["applied"]);
 }
 
-/// A round against a hub that does not answer says why, and is recorded as failed.
+/// A round against a hub that does not answer says why, and is recorded as failed - and that the
+/// node goes on offline and syncs once the hub is reached (docs/pairing.md, decision D16).
 #[tokio::test]
 async fn a_round_that_fails_says_why() {
     let node = SyncNode::new(NodeIdentity::from_secret_bytes([3u8; 32]));
@@ -110,5 +111,9 @@ async fn a_round_that_fails_says_why() {
     let round = sync_round(&engine, &ctx).await;
     assert_eq!(round["ok"], false, "{round}");
     assert!(round["error"].as_str().is_some_and(|e| !e.is_empty()), "{round}");
+    assert!(
+        round["error"].as_str().is_some_and(|e| e.contains("keeps working offline")),
+        "a hub out of reach is a partition the node works through: {round}"
+    );
     assert_eq!(ctx.last_round.read().expect("lock").clone().expect("recorded")["ok"], false);
 }

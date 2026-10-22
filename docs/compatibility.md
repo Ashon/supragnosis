@@ -390,6 +390,12 @@ from an origin with no key is. The sync crate's apply gains `apply_wire_bounded`
 `with_vouched`; `apply_wire` is the same with no bounds. The admin socket answers `GET /who` with
 the daemon's pid, so `join` and `hub leave` restart only the daemon that answered them.
 
+**A hub out of reach is said as a partition** ([pairing.md](pairing.md), decision D16). A sync call
+that does not reach its host now says so with every cause under it, that the node keeps working
+offline and syncs once the host is reached, and, on a Mac when the system answers "no route", that
+macOS refuses a process without Local Network access that way. The text is in the round's `error`,
+`sync_status`'s `last_round` and the `sync_*` tools' per-server `error`; no field changed.
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
 receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
 one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in
