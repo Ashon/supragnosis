@@ -1542,6 +1542,8 @@ async fn the_topic_curate_and_review_prompts_answer_or_refuse() {
     let curate = get("curate", json!({"workspace": "ws"})).await.expect("curate");
     assert!(prompt_text(&curate).contains("\"contradictions\""), "the curation report");
     assert!(prompt_text(&curate).contains("Never propose recall"));
+    // Section 29.27: a count beside an empty list is not "no duplicates".
+    assert!(prompt_text(&curate).contains("A nonzero `merge_band.held_back`"));
     // Every prompt keeps the rule for a kind with no effect yet (design-system.md Section 29.22).
     assert!(prompt_text(&curate).contains("A proposal marked no_effect_yet changes nothing"));
 

@@ -508,7 +508,14 @@ fn the_console_says_what_a_repeat_found() {
     assert!(keep.contains("waits under Needs you, but a check holds it back."));
     assert!(function("openSameMerge")
         .contains("\"A merge of these two already waits under Needs you.\""));
-    assert!(function("bandEmptyReason").contains(
-        "none waiting - no near pairs that are not already proposed, split apart or held back by your reject"
-    ));
+    // Section 29.27: the band says what it held back, apart from absence.
+    let band = function("bandEmptyReason");
+    for part in [
+        "band.held_back != null ? band.held_back : null",
+        "already proposed, split apart or held back by your reject",
+        "held ? \"none waiting - \" + answered : \"none - no embedding-near pairs\"",
+        "none waiting - no near pairs that are not already proposed, split apart or held back by your reject",
+    ] {
+        assert!(band.contains(part), "the empty band does not say: {part}");
+    }
 }

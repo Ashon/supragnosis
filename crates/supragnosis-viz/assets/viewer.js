@@ -1994,10 +1994,14 @@ function bandEmptyReason(band) {
   if (band && band.available === false) {
     return "unavailable - no embedder is configured, so this signal was not computed (which is not a claim that no pairs exist)";
   }
+  // What it held back, said apart from absence (Section 29.27): a count of 0 is a known none.
+  const held = band && band.held_back != null ? band.held_back : null;
+  const answered = held ? `${held} near pair${held === 1 ? " is" : "s are"} already proposed, split apart or held back by your reject` : "";
   if (band && band.embedded < band.examined) {
-    return `none among the ${band.embedded} of ${band.examined} entities carrying a name vector - the rest were projected before an embedder existed, so reproject to cover them`;
+    return `none ${held ? "waiting " : ""}among the ${band.embedded} of ${band.examined} entities carrying a name vector${answered ? " - " + answered : ""} - the rest were projected before an embedder existed, so reproject to cover them`;
   }
-  return "none waiting - no near pairs that are not already proposed, split apart or held back by your reject";
+  if (held === null) return "none waiting - no near pairs that are not already proposed, split apart or held back by your reject";
+  return held ? "none waiting - " + answered : "none - no embedding-near pairs";
 }
 
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.

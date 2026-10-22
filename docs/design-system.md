@@ -35,7 +35,7 @@
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
-> demote a claim, is built. Step 61, the band says what it held back, is specified.
+> demote a claim, is built. Step 61, the band says what it held back, is built.
 
 ## 1. Why this exists
 
@@ -2022,7 +2022,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 60. **A person can demote a claim** [built] (Section 29.26; Section 2, U18 and proposal-workflow.md Section 14.3
    revised): the observation card offers a demotion to Unverified, with what it overturns, its
    reach, its ceiling and its checks before the act, and Undo after it.
-61. **The band says what it held back** (Section 29.27; resolution-identity.md Section 3 and
+61. **The band says what it held back** [built] (Section 29.27; resolution-identity.md Section 3 and
    unmerge.md Section 5 repaid): `merge_band` counts the near pairs it left out, and an empty band
    says whether none are near or the near pairs it found are all answered.
 
@@ -5953,3 +5953,10 @@ No row needs a principle changed.
 
 **What this step does not do.** It does not count what the name-variant ladder leaves out, the owed
 row above.
+
+**Guarded by** `the_band_counts_what_it_held_back` in the engine's unit tests (three near pairs, one
+put in flight: two listed and one held back, counted once though reached from both ends), the review
+tests' `the_console_says_what_a_repeat_found` (each line of the empty band, the count read apart from
+its absence), and the MCP prompts test (the `curate` sentence). A browser check on a scenario daemon,
+whose embedder finds no near pair among four names, reads `held_back: 0` and the line "none - no
+embedding-near pairs": a count of zero is said as a known none.
