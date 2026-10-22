@@ -303,6 +303,18 @@ answers did:
   draft. Its digest, read for all workspaces, gains `stray_verdicts`, and the prompt says what they
   are.
 
+**The agent surface says where** (design-system.md step 54). No tool's input changed, and these
+answers did:
+- `observe`, `define_type`, `propose` and `review` answer with `workspace` beside their ids, and a
+  local `observe` that makes a new workspace adds a `note` naming the ones that hold knowledge.
+- An entity hit of `search_knowledge` from this node carries `name`, `type` and `workspace`.
+- `get_entity`'s not-found note says when the id looks like a name.
+- A tool answer that is a top-level `error` object is flagged `isError`, MCP's convention for a tool
+  error; a client that read the error from an unflagged result reads the same text, now flagged. The
+  release note names this change.
+- A merged claim promotion in `list_proposals` and `get_proposal` carries `granted_tier`.
+- The descriptions of `observe`, `review`, `list_proposals` and `get_proposal` change to say so.
+
 **Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.

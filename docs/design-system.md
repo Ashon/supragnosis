@@ -31,7 +31,8 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead, step 52, the map on a phone, and step 53, time on the map.
+> and Keep ... instead, step 52, the map on a phone, and step 53, time on the map. Step 54, the agent
+> surface says where, is specified.
 
 ## 1. Why this exists
 
@@ -1987,6 +1988,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 7 revised): each entity carries when it was last said, the hover card, the sheet and List
    say it, and a Said filter dims what was not said today, in the last 7 days or since the person's
    last visit.
+54. **The agent surface says where** (Section 29.20; compatibility.md Section 7 and architecture.md
+   Section 7 revised): every write's answer names its workspace and says when it made a new one,
+   search hits name their entity, a name passed as an id is said to be one, a failed call is flagged
+   as failed, a merged promotion says what it granted, and a merged demotion is no longer capped.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5282,3 +5287,75 @@ No row needs a principle changed.
 agreeing) and `the_map_says_when_each_entity_was_said` in the viewer's key tests (the Said section
 and its radio group, the read tier's missing last visit, the visit's half hour, the status line, the
 relations dimmed, and the hover card, the sheet and List saying the time).
+
+### 29.20 Step 54: the agent surface says where
+
+**What was found.** By the usability audit of 2026-10-22, run as an agent over stdio, and its review:
+- **A write in the wrong place reads as success.** `observe` with no workspace, or with a typo -
+  `acme_api` beside `acme-api` - answers only ids, and the typo becomes a workspace of its own.
+- **Hits cannot be told apart.** `search_knowledge` spans every workspace, but two entity hits named
+  "PostgreSQL" carry only an id, a snippet and a score.
+- **A name passed as an id reads as absent.** `get_entity` with "PostgreSQL" answers "unknown - not
+  found is not a negation", though the entity exists, and says nothing about ids.
+- **A failure reads as a result.** A refused or failed local call comes back as an ordinary result
+  holding an `error` object; only the remote surface's own refusals are flagged.
+- **A promotion over-reports.** A claim promotion to human_confirmed that an agent merges is granted
+  host_signed, the agent surface's ceiling, yet `get_proposal` reports only the tier it asked for.
+- **A demotion is capped, against resolution.md Section 6.** The fold caps a merged demotion as it
+  caps a promotion, so an agent's demotion to human_confirmed lowers the source to host_signed,
+  though Section 6 says a demotion needs no ceiling. The author's store holds no merged demotion.
+
+**Decisions.** None was needed: the audit's recommendations hold, and resolution.md decided the
+demotion. Flagging a failure as an error is MCP's own convention for a tool error, so it is listed as
+a changed answer, and the release note says so.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P5 | Not found, withheld and unavailable are distinct answers; a bounded answer says what it left out | repays - a refused or unavailable call is flagged as an error, a not-found id stays an ordinary `found: false` answer, and the new workspace's list says how many it left out |
+| P21 and architecture.md Section 7 | A narrow surface whose answers say what to do next | repays - the answers name their workspace and their entities, and a new workspace's answer names the ones that hold knowledge |
+| P17 and remote-viewer.md Section 3.4 | A remote answer names nothing outside the grants | agrees - the new-workspace note is the local surface's alone, since the remote one already refuses a workspace outside the write grants, and search hits come only from the grants; the name hint depends only on the id's shape |
+| P18 and resolution.md Section 6 | A merged promotion grants at most its surface's ceiling; a demotion needs no ceiling | repays - a merged promotion says the tier it granted, and a merged demotion now lowers to the tier it asked for, as Section 6 says |
+| P16 | Equal logs read equally | agrees - the nearest names are ranked by a stated rule with the name as the tie-break |
+| compatibility.md Section 7 | Changes to the MCP surface are listed | revised - the added fields, the note, the error flag and the descriptions that change are listed there |
+| architecture.md Section 7 | LLM-friendly response conventions | revised - it gains: a failure is flagged as an error, and a not-found answer stays a result |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Writes say where.** The answers of `observe`, `define_type`, `propose` and `review` carry
+  `workspace`, the one written to - for `review`, the proposal's own, after step 51a resolved it. The
+  MCP layer adds it, so the CLI's own output is unchanged.
+- **A new workspace is said.** When an `observe` on the local surface writes to a workspace that held
+  no observation before, its answer adds a note: "workspace acme_api is new; the workspaces that hold
+  knowledge are acme-api, home-lab - observe there if this was meant for one of them". The names are
+  ranked by the distance between their letters and digits, lower-cased, nearest first and then by
+  name; ten at most, then "and 3 more". With no other workspace the note says "this node held no
+  knowledge before". The check is one lookup of whether the workspace holds any observation, made
+  before the write; the list is read only when the workspace is new.
+- **Hits name their entity.** An entity hit of `search_knowledge` from this node carries `name`,
+  `type` and `workspace`, read from the entity's projected row. A federated hit, from another
+  server, is left as it is.
+- **A name is said to be one.** When `get_entity` is given something that is not a 64-character hex
+  id and finds nothing, its note adds "this looks like a name; an entity's id is the 64-character hex
+  id search_knowledge returns - search for the name".
+- **Failures are flagged.** A tool answer that is a top-level `error` object comes back with
+  `isError` set, on the local surface as on the remote. An error inside a larger answer - one
+  server's failure in a federated search or a sync round - stays inside it, unflagged.
+- **A promotion says what it granted.** A merged claim promotion in `list_proposals` and
+  `get_proposal` carries `granted_tier`: the tier asked for, capped by the highest surface among its
+  merge verdicts, read by the same fold that applies it.
+- **A demotion is not capped.** A merged demotion lowers its sources to the tier it asked for,
+  whichever surface merged it.
+- **Descriptions.** The tool descriptions of `observe`, `review`, `list_proposals` and
+  `get_proposal` say the new fields. The server's instructions ask an agent to name the workspace
+  after the project it works in - the repository's top-level directory name - and to keep using it.
+
+**What this step does not do.**
+- It does not change `list_proposals`' answer for an empty workspace, which stays an empty list:
+  wrapping it would change its shape.
+- It does not add the name hint to `traverse`, or the new-workspace note to `define_type`, whose
+  vocabulary is defined on purpose rather than written by the way.
+- It does not decide whether an agent may settle a person's conflict; the granted tier says what it
+  did.
