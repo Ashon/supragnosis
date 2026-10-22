@@ -643,6 +643,29 @@ pub fn has_commit_effect(kind: &str) -> bool {
     !matches!(kind, "tbox_change" | "recall")
 }
 
+/// What opening a proposal did (design-system.md Section 29.23): its id, its state after the act,
+/// and whether that id was already in the log before it.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Proposed {
+    pub id: String,
+    pub state: String,
+    pub found: bool,
+}
+
+/// A reason that asks again: ", again" the second time, ", again (3)" the third, and so on - a
+/// different reason, so a different proposal (P14, unmerge.md S10).
+fn again(rationale: &Option<String>, asked: usize) -> Option<String> {
+    let suffix = match asked {
+        0 => return rationale.clone(),
+        1 => "again".to_string(),
+        n => format!("again ({})", n + 1),
+    };
+    Some(match rationale {
+        Some(r) if !r.is_empty() => format!("{r}, {suffix}"),
+        _ => suffix,
+    })
+}
+
 /// Whether a verdict carries the engine-stamped console marker on any of its attestations - the
 /// human's direct act of I17. Read off every attestation, as the gate ceiling is: one decision cast
 /// twice is one row with two attestations (P3), and a person's console act on it is still theirs.
@@ -2193,8 +2216,9 @@ impl Engine {
     /// NOTHING (IR2/I18) - acting on it opens an entity_merge through the gate. Excludes same-id,
     /// already-merged (either side forwarded away), and pairs already under an open entity_merge.
     /// Without an embedder there are no candidates (degrade, P19). Within-node reproducible order
-    /// Every pair a candidate generator must not offer: in flight under an open merge
-    /// ([`Self::open_merge_pairs`]) or pulled apart by a merged split ([`Self::split_pairs`]).
+    /// Every pair a candidate generator must not offer: in flight under an open or Blocked merge
+    /// ([`Self::open_merge_pairs`]), pulled apart by a merged split ([`Self::split_pairs`]), or held
+    /// back by the person's no ([`Self::person_no_pairs`], design-system.md Section 29.23).
     ///
     /// One set rather than two parameters, because both generators have to suppress both and a
     /// generator that learned about only one would re-offer what the other withheld. Neither of them
@@ -2206,6 +2230,85 @@ impl Engine {
     ) -> Result<HashSet<(String, String)>, StoreError> {
         let mut out = self.open_merge_pairs(workspace, cx)?;
         out.extend(self.split_pairs(workspace, cx)?);
+        out.extend(self.person_no_pairs(workspace, cx)?);
+        Ok(out)
+    }
+
+    /// Entity pairs the person's no still holds back (design-system.md Section 29.23, dreaming.md
+    /// Section 5.5): every pair a merge names whose reject carries the console's mark, until an
+    /// observation that is not a proposal event, ordered after that reject's console attestation by
+    /// HLC, asserts one of the merge's targets as named. A console reject counts whichever node cast
+    /// it, so equal logs hold back equal pairs (P16); an agent's reject and a withdrawal hold nothing.
+    fn person_no_pairs(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+    ) -> Result<HashSet<(String, String)>, StoreError> {
+        let props = self.fold_proposals(workspace, cx)?;
+        let log = self.log(workspace, cx)?;
+        let attested = |p: &Provenance| {
+            p.sync
+                .as_ref()
+                .map(|s| s.hlc.clone())
+                .unwrap_or_else(|| Hlc::legacy(p.observed_at))
+        };
+        // Each merge's earliest console reject.
+        let mut no: HashMap<&str, Hlc> = HashMap::new();
+        for obs in log.iter() {
+            for ev in &obs.assertions.proposal_events {
+                if ev.event != ProposalEventKind::Verdict
+                    || !props.get(&ev.proposal).is_some_and(|p| p.kind == "entity_merge")
+                {
+                    continue;
+                }
+                let v: serde_json::Value =
+                    serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
+                if v.get("decision").and_then(|d| d.as_str()) != Some("reject") {
+                    continue;
+                }
+                let at = obs
+                    .provenance
+                    .iter()
+                    .filter(|p| p.source_ref.as_deref() == Some(VERDICT_SURFACE_CONSOLE))
+                    .map(attested)
+                    .min();
+                if let Some(at) = at {
+                    let e = no.entry(ev.proposal.as_str()).or_insert_with(|| at.clone());
+                    if at < *e {
+                        *e = at;
+                    }
+                }
+            }
+        }
+        let mut out = HashSet::new();
+        if no.is_empty() {
+            return Ok(out);
+        }
+        // When each entity was last said by knowledge rather than by a proposal event.
+        let mut said: HashMap<String, Hlc> = HashMap::new();
+        for obs in log.iter().filter(|o| o.assertions.proposal_events.is_empty()) {
+            let (ws, at) = (obs.workspace(), ordering_hlc(obs));
+            let names = obs.assertions.entities.iter().map(|e| e.name.as_str()).chain(
+                obs.assertions.relations.iter().flat_map(|r| [r.from.as_str(), r.to.as_str()]),
+            );
+            for name in names {
+                let e = said.entry(Entity::make_id(ws, name)).or_insert_with(|| at.clone());
+                if at > *e {
+                    *e = at.clone();
+                }
+            }
+        }
+        for (proposal, at) in no {
+            let p = &props[proposal];
+            if p.targets.iter().any(|t| said.get(t).is_some_and(|h| *h > at)) {
+                continue; // the knowledge has changed since the person's no
+            }
+            for i in 0..p.targets.len() {
+                for j in (i + 1)..p.targets.len() {
+                    out.insert(unordered_pair(&p.targets[i], &p.targets[j]));
+                }
+            }
+        }
         Ok(out)
     }
 
@@ -2247,9 +2350,9 @@ impl Engine {
         Ok(out)
     }
 
-    /// Entity pairs already carried by an OPEN entity_merge proposal. Every candidate generator
-    /// suppresses these: a pair in flight is not a fresh candidate, and re-offering it invites a
-    /// second proposal for a merge already awaiting a verdict. Shared by the merge band and the
+    /// Entity pairs already carried by an OPEN or Blocked entity_merge proposal. Every candidate
+    /// generator suppresses these: a pair in flight is not a fresh candidate, and re-offering it
+    /// invites a second proposal for a merge already awaiting a verdict. Shared by the merge band and the
     /// name-variant ladder so the two cannot drift apart on what "already proposed" means.
     fn open_merge_pairs(
         &self,
@@ -2258,7 +2361,7 @@ impl Engine {
     ) -> Result<HashSet<(String, String)>, StoreError> {
         let mut open_pairs: HashSet<(String, String)> = HashSet::new();
         for p in self.fold_proposals(workspace, cx)?.values() {
-            if p.kind == "entity_merge" && p.state == "open" {
+            if p.kind == "entity_merge" && matches!(p.state.as_str(), "open" | "blocked") {
                 for i in 0..p.targets.len() {
                     for j in (i + 1)..p.targets.len() {
                         open_pairs.insert(unordered_pair(&p.targets[i], &p.targets[j]));
@@ -2613,8 +2716,32 @@ impl Engine {
     }
 
     pub fn propose(&self, input: ProposeInput) -> Result<String, ObserveError> {
+        self.propose_reporting(input).map(|p| p.id)
+    }
+
+    /// [`Engine::propose`], saying what it found: an identical proposal already in the log is that
+    /// proposal (P14), absorbed (P3), and its state is the answer's (design-system.md Section 29.23).
+    pub fn propose_reporting(&self, input: ProposeInput) -> Result<Proposed, ObserveError> {
         reject_reserved_source_ref(input.source_ref.as_deref())?;
-        self.propose_marked(input, None)
+        self.propose_marked(input, None, false)
+    }
+
+    /// A person's act at the local console's own server (design-system.md Section 29.23): when the
+    /// proposal it would open is in the log and its answer no longer holds, it is opened again with
+    /// ", again" in its reason; when it still holds, nothing is written and the answer says what was
+    /// found. `marked` stamps the console's mark on the opening, as [`Engine::propose_at_console`].
+    pub fn propose_anew(
+        &self,
+        input: ProposeInput,
+        marked: bool,
+    ) -> Result<Proposed, ObserveError> {
+        if input.source_ref.is_some() {
+            return Err(ObserveError::Invalid(
+                "a proposal opened at the console carries the console's mark, not a source of its own"
+                    .into(),
+            ));
+        }
+        self.propose_marked(input, marked.then_some(VERDICT_SURFACE_CONSOLE), true)
     }
 
     /// [`Engine::propose`] for the local console's own server: the opening observation carries the
@@ -2628,7 +2755,7 @@ impl Engine {
                     .into(),
             ));
         }
-        self.propose_marked(input, Some(VERDICT_SURFACE_CONSOLE))
+        self.propose_marked(input, Some(VERDICT_SURFACE_CONSOLE), false).map(|p| p.id)
     }
 
     /// How many merged un-merges of the same two-or-more entities, merged into the same one, this
@@ -2658,7 +2785,8 @@ impl Engine {
         &self,
         input: ProposeInput,
         marker: Option<&str>,
-    ) -> Result<String, ObserveError> {
+        anew: bool,
+    ) -> Result<Proposed, ObserveError> {
         if !PROPOSAL_KINDS.contains(&input.kind.as_str()) {
             return Err(ObserveError::Invalid(format!(
                 "unknown proposal kind '{}'. use one of {PROPOSAL_KINDS:?}",
@@ -2824,33 +2952,59 @@ impl Engine {
                 target: a.target,
             })
             .collect();
-        let payload = serde_json::json!({
-            "kind": input.kind,
-            "targets": input.targets,
-            "into": input.into,
-            "tier": gate_tier.map(|t| tier_label(t).to_string()),
-            "rationale": input.rationale,
-            "affected_types": affected_types,
-        })
-        .to_string();
-        let content = format!("proposal(open) {}: {:?}", input.kind, input.targets);
-        let assertions = Assertions {
-            proposal_events: vec![ProposalEventAssertion {
-                proposal: String::new(),
-                event: ProposalEventKind::Opened,
-                payload,
-            }],
-            ..Default::default()
+        let open = |rationale: &Option<String>| {
+            let payload = serde_json::json!({
+                "kind": input.kind,
+                "targets": input.targets,
+                "into": input.into,
+                "tier": gate_tier.map(|t| tier_label(t).to_string()),
+                "rationale": rationale,
+                "affected_types": affected_types,
+            })
+            .to_string();
+            let content = format!("proposal(open) {}: {:?}", input.kind, input.targets);
+            let assertions = Assertions {
+                proposal_events: vec![ProposalEventAssertion {
+                    proposal: String::new(),
+                    event: ProposalEventKind::Opened,
+                    payload,
+                }],
+                ..Default::default()
+            };
+            Observation::with_assertions(content, prov.clone(), assertions)
         };
-        let obs = Observation::with_assertions(content, prov, assertions);
+        // A proposal is its content (P14), so the same act on the same items is the proposal it
+        // opened before. A person's act at the console asks again when that answer no longer holds,
+        // with ", again" in its reason, and otherwise writes nothing and says what it found; an
+        // agent's identical content is that proposal, absorbed (P3) and said (design-system.md
+        // Section 29.23). Read and written under the write lock, so two acts cannot both ask again.
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cx = &ReadCtx::default();
+        let views = self.fold_proposals(Some(&workspace), cx)?;
+        let mut asked = 0usize;
+        let (obs, found) = loop {
+            let obs = open(&again(&input.rationale, asked));
+            let found = match self.store.get_observation(&obs.id)? {
+                Some(_) => views.get(&obs.id),
+                None => None,
+            };
+            match found {
+                Some(view) if anew && !self.still_holds(&workspace, view, cx)? => asked += 1,
+                _ => break (obs, found),
+            }
+        };
         let id = obs.id.clone();
+        if anew {
+            if let Some(view) = found {
+                return Ok(Proposed { id, state: view.state.clone(), found: true });
+            }
+        }
         // A proposal IS its content (Principle 14), so re-opening an identical merge yields the same
         // id - including one a split has already reversed, and the split names that id forever. The
         // re-proposal would be permanently dead: accepted, verdicted, and unable to ever forward.
         // Refuse and name the fix instead (P21), which is also the honest one - a re-merge after a
         // split is a different act and should say why (unmerge.md Section 7).
-        if input.kind == "entity_merge"
-            && self.reversed_merges(Some(&workspace), &ReadCtx::default())?.contains(&id)
+        if input.kind == "entity_merge" && self.reversed_merges(Some(&workspace), cx)?.contains(&id)
         {
             return Err(ObserveError::Invalid(format!(
                 "this exact resolution was already reversed by an entity_split. A proposal is its \
@@ -2859,7 +3013,8 @@ impl Engine {
                  makes it a different proposal, which is what it is"
             )));
         }
-        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = found.map_or_else(|| "open".to_string(), |v| v.state.clone());
+        let found = found.is_some();
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
         self.store.add_observation(obs)?;
@@ -2867,7 +3022,44 @@ impl Engine {
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
         self.repaid(&id);
-        Ok(id)
+        Ok(Proposed { id, state, found })
+    }
+
+    /// Whether a decided proposal's answer still holds, so a person's act asking the same at the
+    /// console finds it rather than asking again (design-system.md Section 29.23): one that waits
+    /// holds; a rejected or withdrawn one does not; an accepted merge holds until a split reverses
+    /// it, and an accepted gate act until a later accepted act on one of its sources supersedes it.
+    fn still_holds(
+        &self,
+        workspace: &str,
+        view: &ProposalView,
+        cx: &ReadCtx,
+    ) -> Result<bool, StoreError> {
+        Ok(match view.state.as_str() {
+            "rejected" | "withdrawn" => false,
+            "merged" if view.kind == "entity_merge" => {
+                !self.reversed_merges(Some(workspace), cx)?.contains(&view.id)
+            }
+            "merged" if GATE_KINDS.contains(&view.kind.as_str()) => {
+                let (opened, rep_merge) = self.gate_verdicts(Some(workspace), cx)?;
+                let states = self.fold_proposals(Some(workspace), cx)?;
+                let (Some((targets, _, _)), Some((at, _, _))) =
+                    (opened.get(&view.id), rep_merge.get(&view.id))
+                else {
+                    return Ok(true);
+                };
+                // "Later" in the order the gate fold applies acts: by verdict HLC, then proposal id.
+                !opened.iter().any(|(other, (theirs, _, _))| {
+                    other != &view.id
+                        && theirs.iter().any(|t| targets.contains(t))
+                        && states.get(other).is_some_and(|p| p.state == "merged")
+                        && rep_merge
+                            .get(other)
+                            .is_some_and(|(hlc, _, _)| (hlc, other) > (at, &view.id))
+                })
+            }
+            _ => true,
+        })
     }
 
     /// Every verdict or withdrawal filed in a workspace its proposal does not live in, oldest first
