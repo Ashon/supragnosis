@@ -245,11 +245,12 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "tls_listener_serves_https_and_refuses_plaintext",
         ]),
     ), c(
-        "an open invitation counts as an admission, and a listener that cannot bind leaves the rest \
-         of the node serving",
+        "a listener that cannot bind leaves the rest of the node serving",
+        Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"]),
+    ), c(
+        "an open invitation counts as an admission",
         Evidence::Deferred(
-            "today the bind rule counts nodes and principals, and a refused bind stops the daemon. \
-             Revisit when docs/pairing.md Section 10 step 2 lands",
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
         ),
     )]),
     // A round grew past one small delta exchange in 00aae4e (batched pushes, paged pulls), which
@@ -1030,12 +1031,18 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
 
 // docs/pairing.md Section 8 - a second machine joins a hub (PA rows).
 const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
-    (1, &[c(
-        "the hub's listener opens only with TLS and an admitted node, principal or open invitation, an invitation admits only its holder's preview and join, and a listener that cannot open leaves the node serving and says why",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 2 lands",
+    (1, &[
+        c(
+            "a listener that cannot open leaves the rest of the node serving and says why, and it opens and closes at run time as the bind rule allows",
+            Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"]),
         ),
-    )]),
+        c(
+            "an open invitation counts as an admission and admits only its holder's preview and join",
+            Evidence::Deferred(
+                "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+            ),
+        ),
+    ]),
     (2, &[c(
         "an invitation is used at most once and not after its expiry, the hub keeps only its secret's hash, and a used, denied or expired one is said as such",
         Evidence::Deferred(
@@ -1086,9 +1093,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (10, &[c(
         "no MCP tool and no page reaches a hub act: they are calls on a 0600 admin socket",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 2 lands",
-        ),
+        Evidence::Scenario(&["the_admin_socket_is_owner_only_and_says_what_it_cannot_do"]),
     )]),
     (11, &[c(
         "a join completes only on the hub's Allow for the keys whose request it showed, and a request from other keys ends the invitation",
@@ -2741,11 +2746,11 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
             // principals-only hub off loopback died at startup while the daemon counted nodes alone.
             "a_principals_only_hub_passes_the_bind_guard",
           ])),
-        c("an open invitation is an admission too, and a listener that cannot start leaves the rest \
-           of the daemon serving",
+        c("a listener that cannot start leaves the rest of the daemon serving",
+          Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"])),
+        c("an open invitation is an admission too",
           Evidence::Deferred(
-            "today the daemon exits when its listener may not start. Revisit when docs/pairing.md \
-             Section 10 step 2 lands",
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
           )),
     ]),
     (2, &[c(
@@ -3484,6 +3489,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
+    include_str!("../../supragnosis-cli/src/hub.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),

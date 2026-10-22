@@ -329,6 +329,9 @@ pub struct SyncContext {
     pub round: Arc<tokio::sync::Mutex<()>>,
     /// What the daemon's last round did, said by `sync_status` (P24, P5).
     pub last_round: Arc<std::sync::RwLock<Option<serde_json::Value>>>,
+    /// The hub's listener, `{listening, address, why}` - null on a node with no `[server]`
+    /// (docs/pairing.md Section 4.1). Written by the wiring layer whenever it opens or closes.
+    pub listener: Arc<std::sync::RwLock<serde_json::Value>>,
 }
 
 /// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
@@ -1409,6 +1412,7 @@ impl SupragnosisServer {
         // The daemon's own rounds (docs/pairing.md Section 4.5): when the last ran, what it moved,
         // and why it failed - null until one has run.
         status["last_round"] = ctx.last_round.read().map(|l| l.clone()).ok().flatten().into();
+        status["listener"] = ctx.listener.read().map(|l| l.clone()).unwrap_or_default();
         to_json(&status)
     }
 
@@ -1678,6 +1682,7 @@ pub async fn sync_round(engine: &Arc<Engine>, ctx: &SyncContext) -> serde_json::
     let record = serde_json::json!({
         "at": supragnosis_core::now_millis(),
         "workspaces": ctx.share_workspaces,
+        "servers": ctx.servers.len(),
         "pushed": pushed,
         "applied": applied,
         "ok": errors.is_empty(),

@@ -320,7 +320,7 @@ impl PeerRegistry {
 
 /// The wiring-layer hooks injected into the sync API (all optional): re-materialization after
 /// inbound pushes, activity streaming to the viewer, and the engine-backed federated retrieval.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Hooks {
     pub on_applied: Option<OnApplied>,
     pub on_activity: Option<OnActivity>,
@@ -335,6 +335,7 @@ pub struct Hooks {
 }
 
 /// Routes the wiring layer serves beside the sync API, on the same TLS listener.
+#[derive(Clone)]
 pub struct ExtraSurface {
     pub router: Router,
     /// How many principals it admits at startup - the bind rule needs someone admitted.

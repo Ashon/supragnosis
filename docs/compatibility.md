@@ -340,6 +340,14 @@ and every five minutes, backing off to an hour while it fails; before, nothing m
 `sync_push` or `sync_pull` call or `supragnosis sync`. `sync_status` gains `last_round`, an added
 field. A node that should not sync on its own removes its servers from `[sync]`.
 
+**The daemon's admin socket, and a listener that does not stop it** ([pairing.md](pairing.md), the
+second step of its ordering). The daemon serves `~/.supragnosis/admin.sock`, `0600`, for this
+user's processes; `supragnosis sync` runs its round through it when a daemon runs, where it used to
+need the daemon stopped. A `[server]` whose listener cannot open - no TLS off loopback, nothing
+admitted, the port taken, a certificate it cannot read - no longer stops the daemon: the node serves
+without it and `sync_status`'s new `listener` field says why. `principal add` and `remove` tell the
+daemon, which opens or closes the listener.
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md D15, specified). A joined machine's
 receive list, the hub's name and the vouched keys live in `~/.supragnosis/hubs/`, and a hub's
 invitations and pairing's peer records in `~/.supragnosis/hub/`, so a release before pairing still

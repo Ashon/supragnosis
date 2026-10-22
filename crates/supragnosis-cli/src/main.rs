@@ -31,7 +31,7 @@ use clap::{Args, Parser, Subcommand};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{stdio, StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::ServiceExt;
-use supragnosis_core::{AssertionStore, EmbeddingProvider, KnowledgeStore, VersionVector};
+use supragnosis_core::{EmbeddingProvider, KnowledgeStore, VersionVector};
 use supragnosis_embed::HashingEmbedder;
 use supragnosis_engine::{Engine, Event, SearchMode};
 use supragnosis_mcp::SupragnosisServer;
@@ -321,6 +321,7 @@ struct RunArgs {
 mod bridge;
 mod connect;
 mod hook;
+mod hub;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 mod principal;
@@ -1136,11 +1137,14 @@ async fn run(cfg: Config) -> Result<()> {
     // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5). Built
     // before the viewer so a misconfigured federation dies before any socket is bound, and so the
     // console can be handed the admission handler this produces.
-    let (sync_ctx, narrow) =
+    let (sync_ctx, narrow, hub_listener) =
         build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone()).await?;
     if let Some(ctx) = sync_ctx.as_ref().filter(|c| !c.servers.is_empty()) {
         spawn_sync_rounds(engine.clone(), ctx.clone());
     }
+    // This user's processes reach the running daemon here: Sync now, and the hub re-reading its
+    // admissions (docs/pairing.md Section 4).
+    hub::spawn_admin(engine.clone(), sync_ctx.clone(), hub_listener).await;
 
     if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
         spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
@@ -1174,14 +1178,22 @@ async fn run(cfg: Config) -> Result<()> {
 
 /// Builds the MCP sync context from supragnosis.toml (and starts the sync API server when a
 /// `[server]` section is present). Returns None on a standalone node.
+/// What `build_sync_context` wires: the sync tools' context, the viewer's narrowing act, and the
+/// hub's listener when the node has a `[server]` section.
+type SyncWiring = (
+    Option<Arc<supragnosis_mcp::SyncContext>>,
+    Option<supragnosis_viz::NarrowShare>,
+    Option<Arc<hub::HubListener>>,
+);
+
 async fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
     events: Option<tokio::sync::broadcast::Sender<String>>,
-) -> Result<(Option<Arc<supragnosis_mcp::SyncContext>>, Option<supragnosis_viz::NarrowShare>)> {
+) -> Result<SyncWiring> {
     let Some(fc) = fedcfg else {
-        return Ok((None, None));
+        return Ok((None, None, None));
     };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
     // clock and the per-workspace seq counters (two live counters over one store would collide).
@@ -1206,6 +1218,8 @@ async fn build_sync_context(
     // Runtime peer observability (hub role): who actually checked in, when, how much.
     // Set on a hub: the live admission directory, published so the console can show who is in.
     let mut admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>> = None;
+    let mut hub_listener: Option<Arc<hub::HubListener>> = None;
+    let listener_state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
     let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
     if let Some(srv) = &fc.server {
         // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
@@ -1286,7 +1300,23 @@ async fn build_sync_context(
             extra: Some(extra),
             on_consent: Some(on_consent),
         };
-        admitted = Some(spawn_sync_server(engine.store(), node.clone(), srv.clone(), hooks).await?);
+        // The listener is up only while the bind rule allows it, and a listener that cannot open
+        // leaves the node serving and says why (docs/pairing.md Section 4.1, Principle 24).
+        let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
+            srv.allowlist.clone(),
+            node.node_id(),
+            &node.public_key_hex(),
+        ));
+        let listener = Arc::new(hub::HubListener::new(
+            engine.store(),
+            node.clone(),
+            hooks,
+            peers.clone(),
+            listener_state.clone(),
+        ));
+        listener.apply(srv).await;
+        admitted = Some(peers);
+        hub_listener = Some(listener);
     }
     let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -1358,8 +1388,10 @@ async fn build_sync_context(
             peer_registry: fc.server.is_some().then_some(peer_registry),
             round: Default::default(),
             last_round: Default::default(),
+            listener: listener_state.clone(),
         })),
         narrow,
+        hub_listener,
     ))
 }
 
@@ -1563,49 +1595,6 @@ fn spawn_fed_status(task: FedStatusTask) {
     });
 }
 
-/// Starts the federation sync API (the ONLY surface allowed to bind non-loopback - and only with
-/// TLS and an admitted node or principal, F10). A misconfigured [server] section fails daemon
-/// startup loudly (P5) instead of silently running without the role: the address, the TLS pair,
-/// the bind rule, the certificate and the port are all tried before anything runs in the
-/// background, and only accepting connections is left to the spawned task.
-async fn spawn_sync_server(
-    store: Arc<dyn AssertionStore>,
-    node: Arc<supragnosis_sync::SyncNode>,
-    srv: fed::ServerSection,
-    hooks: supragnosis_sync::http::Hooks,
-) -> Result<Arc<supragnosis_sync::http::PeerDirectory>> {
-    use supragnosis_sync::http as sync_http;
-    let listen: std::net::SocketAddr = srv
-        .listen
-        .parse()
-        .with_context(|| format!("invalid [server] listen address: {:?} (IP:port)", srv.listen))?;
-    let tls = match (&srv.tls_cert, &srv.tls_key) {
-        (Some(c), Some(k)) => Some(sync_http::TlsPaths { cert_pem: c.into(), key_pem: k.into() }),
-        (None, None) => None,
-        _ => anyhow::bail!("[server] tls_cert and tls_key must be set together"),
-    };
-    tracing::info!(%listen, allowlist = srv.allowlist.len(), tls = tls.is_some(), "starting federation sync API");
-    // Admission is created here and handed BOTH to the server and back to the caller, so who may
-    // connect stops being a startup snapshot: the returned handle is what a management surface
-    // changes, and the running server reads it per request.
-    let peers = Arc::new(sync_http::PeerDirectory::new(
-        srv.allowlist,
-        node.node_id(),
-        &node.public_key_hex(),
-    ));
-    // The bind rule is checked here against the directory's count, which leaves out an entry it
-    // could not admit (a malformed key, this node's own id) - the count the server answers by.
-    let bound = sync_http::bind(store, node, listen, tls, peers.clone(), hooks)
-        .await
-        .with_context(|| format!("the [server] listener on {listen} could not start"))?;
-    tokio::spawn(async move {
-        if let Err(e) = bound.run().await {
-            tracing::error!(error = %e, "federation sync API terminated");
-        }
-    });
-    Ok(peers)
-}
-
 /// `supragnosis identity` - prints the node's federation identity (generating the keypair on first
 /// use); --hash-token prints what a server allowlist entry stores for a peer's bearer token.
 fn identity_cmd(a: IdentityArgs) -> Result<()> {
@@ -1713,6 +1702,42 @@ fn reproject_cmd(a: WorkspaceArgs) -> Result<()> {
 /// is single-process (RocksDB lock): with a running daemon, use the sync_* MCP tools instead.
 fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     init_tracing();
+    // A running daemon holds the store, so it runs the round itself, over its shared workspaces
+    // (docs/pairing.md Section 4.5); only with none running does this process sync on its own.
+    if let Some(round) = hub::call("POST", "/sync")? {
+        if let Some(e) = round
+            .get("error")
+            .and_then(|e| e.as_str())
+            .filter(|_| round.get("at").is_none())
+        {
+            anyhow::bail!("{e}");
+        }
+        let shared: Vec<&str> = round["workspaces"]
+            .as_array()
+            .map(|w| w.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
+        if round["servers"] == 0 {
+            println!("nothing to sync: [sync] names no server");
+            return Ok(());
+        }
+        if shared.is_empty() {
+            println!("nothing to sync: [sync] shares no workspace (share_workspaces is empty)");
+            return Ok(());
+        }
+        println!(
+            "the running daemon synced {}: pushed {}, applied {}",
+            shared.join(", "),
+            round["pushed"],
+            round["applied"]
+        );
+        if round["ok"] == false {
+            anyhow::bail!(
+                "the round failed: {}",
+                round["error"].as_str().unwrap_or("no reason given")
+            );
+        }
+        return Ok(());
+    }
     let cfg = resolve(RunArgs::default(), false);
     let fc = fed::load()?.ok_or_else(|| {
         anyhow::anyhow!(
@@ -2927,6 +2952,23 @@ fn server_cmd(a: ServerArgs) -> Result<()> {
     }
 }
 
+/// Tells a running daemon the hub's admissions changed, so its listener opens or closes as the bind
+/// rule now allows (docs/pairing.md Section 4.1). With no daemon running there is nothing to tell.
+fn refresh_hub() {
+    match hub::call("POST", "/server/refresh") {
+        Ok(Some(state)) if state["listening"] == true => {
+            println!("the hub listens on {}", state["address"].as_str().unwrap_or("its address"));
+        }
+        Ok(Some(state)) => {
+            if let Some(why) = state["why"].as_str().or(state["error"].as_str()) {
+                println!("the hub is not listening: {why}");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("could not tell the running daemon: {e:#}"),
+    }
+}
+
 /// `supragnosis principal` (docs/remote-server.md Section 4.2). Edits `[server]` in supragnosis.toml
 /// in place - comments and layout survive - and the running hub follows the edit on its next request.
 fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
@@ -2955,6 +2997,7 @@ fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
                 listen.0.rsplit(':').next().unwrap_or("7420")
             );
             println!("or, for an agent's own MCP client: Authorization: Bearer <credential>");
+            refresh_hub();
             Ok(())
         }
         PrincipalCmd::Remove { name } => {
@@ -2962,6 +3005,7 @@ fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
             connect::write_replacing(&path, &edited)
                 .with_context(|| format!("writing {}", path.display()))?;
             println!("revoked {name} - its credential stops working at its next request");
+            refresh_hub();
             Ok(())
         }
         PrincipalCmd::List => {
@@ -6482,26 +6526,52 @@ mod json_contract {
 mod link_transport {
     use super::*;
 
-    /// docs/federation.md F10 with P5: a [server] section whose listener cannot start stops the
-    /// daemon with the reason. The certificate is read and the port bound before the server is
-    /// spawned, so a typo in tls_cert is a startup error, not a hub that runs with no listener.
+    /// docs/pairing.md Section 4.1 and Principle 24: a `[server]` whose listener cannot open leaves
+    /// the node serving and says why, and the listener opens and closes as the bind rule allows. It
+    /// stopped the daemon before, and launchd restarted it into the same exit.
     #[tokio::test]
-    async fn a_server_section_that_cannot_start_fails_the_daemon() {
-        let store: Arc<dyn AssertionStore> = Arc::new(supragnosis_store::InMemoryStore::new());
+    async fn a_listener_that_cannot_open_leaves_the_node_serving() {
+        let store: Arc<dyn supragnosis_core::AssertionStore> =
+            Arc::new(supragnosis_store::InMemoryStore::new());
         let node = Arc::new(supragnosis_sync::SyncNode::new(
             supragnosis_core::NodeIdentity::from_secret_bytes([7u8; 32]),
         ));
-        let srv = fed::ServerSection {
-            listen: "127.0.0.1:0".into(),
-            tls_cert: Some("/nonexistent/hub.crt".into()),
-            tls_key: Some("/nonexistent/hub.key".into()),
+        let state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
+        let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
+            Vec::new(),
+            node.node_id(),
+            &node.public_key_hex(),
+        ));
+        let listener = hub::HubListener::new(
+            store,
+            node,
+            supragnosis_sync::http::Hooks::default(),
+            peers,
+            state.clone(),
+        );
+        let srv = |listen: &str, cert: Option<&str>| fed::ServerSection {
+            listen: listen.into(),
+            tls_cert: cert.map(String::from),
+            tls_key: cert.map(|_| "/nonexistent/hub.key".to_string()),
             allowlist: Vec::new(),
             principals: Vec::new(),
         };
-        let hooks = supragnosis_sync::http::Hooks::default();
-        let err = spawn_sync_server(store, node, srv, hooks).await.err().expect("refused");
-        let why = format!("{err:#}");
-        assert!(why.contains("could not start") && why.contains("hub.crt"), "{why}");
+        let unreadable = listener.apply(&srv("127.0.0.1:0", Some("/nonexistent/hub.crt"))).await;
+        assert_eq!(unreadable["listening"], false, "{unreadable}");
+        assert!(
+            unreadable["why"].as_str().is_some_and(|w| w.contains("could not start")),
+            "{unreadable}"
+        );
+        let loopback = listener.apply(&srv("127.0.0.1:0", None)).await;
+        assert_eq!(loopback["listening"], true, "loopback needs no admission: {loopback}");
+        let open = listener.apply(&srv("0.0.0.0:0", None)).await;
+        assert_eq!(open["listening"], false, "{open}");
+        assert!(open["why"].as_str().is_some_and(|w| w.contains("TLS")), "{open}");
+        assert_eq!(
+            state.read().expect("lock")["listening"],
+            false,
+            "sync_status reads the same state"
+        );
     }
 
     fn links_of(toml: &str) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {

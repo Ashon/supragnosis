@@ -36,6 +36,7 @@ fn context(node: SyncNode, hub: &str, token: &str, keys: &BTreeMap<String, Strin
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     }
 }
 
