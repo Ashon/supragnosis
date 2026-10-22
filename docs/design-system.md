@@ -34,7 +34,8 @@
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
-> the camera, is built, and so is step 59, Un-merge opens what it proposed.
+> the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
+> demote a claim, is specified.
 
 ## 1. Why this exists
 
@@ -265,7 +266,7 @@ set.
 
 **It adds no new write path.** Undoing a confirmation is a demotion, the gated act resolution.md
 Section 5 already defines, and `/api/resolve` gains a `kind` that casts it, on a path the read tier
-already refuses (U1). "Neither is right" asks an agent to record the right value. The console still
+already refuses (U1). *(Revised by step 60: a claim's card casts the same demotion, Section 29.26.)* "Neither is right" asks an agent to record the right value. The console still
 observes nothing.
 
 ## 3. Tokens
@@ -1559,7 +1560,7 @@ social image.
 | **U15** | The viewer's search says how each hit was reached and over what scope: hits that contain the query's words are grouped apart from hits only the semantic surface or the graph's neighbors reached, each related row saying which, each group in the engine's order; the field names the scope; no row is chosen before the person moves to one; and a scope where nothing contains the words says so and offers the wider scope with its count, or "20+" at the limit (P5, P19). |
 | **U16** | A type's color is never a signal's: every color of the band stands at least 25 degrees of OKLCH hue from the accent, human-confirmed, ok and bad tokens and has OKLCH lightness 0.62 or more and 5.5:1 or more on `--surface`; the band's first tone stands 0.09 apart in OKLab, 0.11 from every signal and 0.10 from every neutral the map draws, and its second 0.06 from every color of the band and 0.08 from every signal; a type keeps one color in every view a page shows, and the store's sixteen most used types differ in hue or tone (D4); a relation kind draws no color; and every copy of the band is the viewer's (P6, P18). |
 | **U17** | No line a person reads first spells a system identifier: a tier is shown by its legend name; every proposal kind the engine opens and every event it carries has a sentence in the Log, and a hash id is left out of it; each observation row has a who-line naming tier, who and when, and its mark is the map's ring for its tier; a place keeps one name wherever it is reached; a state of the daemon keeps one word on every surface that shows it, from Section 9's state words; and no retired word of Section 9 reaches a page, the tray or Setup's sentences (P2). |
-| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). |
+| **U18** | Settling a contested value says why the shown value is shown, offers every value the same act at the same weight, says what the act does before it is cast - both halves when it demotes the shown value, each naming the source it moves, every entity whose ring it moves and what else that source states, read from the engine's diff and checks, with no act and no Undo before that diff is read - lets the person choose the source when several assert the value, and is undone by the reverse gated events, which the log keeps; every act is filed in the workspace of the observation it changes, and the console asserts no value of its own (P3, P6, P23). A demotion from a claim's card holds to the same: what it overturns, the rings it moves and what else the claim states, read from the engine's diff and checks before the act, and no Undo before its own diff. *(Revised by step 60.)* |
 | **U19** | Every control on the viewer, the Settings and Setup pages, the landing and the principles page has a name, is the kind its act is and exposes its state; a dialog holds focus and makes the page behind it inert; a page that draws itself again keeps the control that had focus; a key that decides acts only while focus is in its list or item, and the view's single keys can be turned off; every target a pointer presses is at least 28 pixels with its spacing on the viewer and the app's pages, 44 under a coarse pointer, and 24, 28 below 760 pixels wide, on the landing and the principles page; and nothing but a focusable code block scrolls sideways at 320 pixels. |
 | **U20** | On the local console the status bar always holds the way to Review, its count the items under Needs you, which lists only beliefs that tie on trust, with the contested ones counted in it; and follow never changes the scope, the selection or the open sheet - it frames activity in the scope on screen while the person is not using the map, names it in a notice with Show while they are, and names a write elsewhere in a notice - while a selected entity a merge folds is followed to what it became, and one that leaves the scope closes its sheet with a line that says so (P22, P24). |
 | **U21** | Every font size the viewer and the Settings and Setup pages draw is one of Section 4's six, through a size token in rem; running text and every control's label are 13 pixels or more, and nothing is under 11; the map's labels scale with the root's size; the app's View menu sets the root's size from 100% to 200% and keeps it, while the title bar keeps its height and its traffic lights' place; and no text is cut short except where focus or a press shows it whole. |
@@ -2018,6 +2019,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    mouse.
 59. **Un-merge opens what it proposed** [built] (Section 29.25): the split Un-merge proposes opens under Needs
    you, as Same as... and Keep ... instead open theirs.
+60. **A person can demote a claim** (Section 29.26; Section 2, U18 and proposal-workflow.md Section 14.3
+   revised): the observation card offers a demotion to Unverified, with what it overturns, its
+   reach, its ceiling and its checks before the act, and Undo after it.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5817,3 +5821,77 @@ opens the split it proposed under Needs you, selected and focused, with its noti
 **Guarded by** `the_console_says_what_a_repeat_found` in the viewer's review tests, which holds
 Un-merge to opening the split it proposed, found or new. A browser check accepts a merge, presses
 Un-merge on its Decided item, and finds the split selected and focused under Needs you.
+
+### 29.26 Step 60: a person can demote a claim
+
+**What was found.** By the audit of 2026-10-22: some acts on the canon only an agent can take. Two
+were closed by steps 51c and 57: naming any two entities as one (Same as...), and merging them again
+after an un-merge. Two remain:
+- **Demoting a claim.** A person who reads a claim and knows it is wrong can confirm another value
+  of a contested field (Confirm instead) or undo a confirmation, but cannot lower the trust of a
+  claim that is simply wrong. resolution.md Section 4.2 names that demotion as "the stronger act",
+  and it "remains fast-path". Today it takes an agent.
+- **Withdrawing a proposal.** Only the agent surface withdraws.
+
+**Decisions.** By the rules already written:
+- **The observation card offers the demotion.** It is the gate act the console already casts for
+  Undo and Confirm instead, through the same path (`/api/resolve`, `kind=claim_demotion`), so it
+  adds no write path. It asserts nothing, so the console still observes nothing and "Neither is
+  right" still asks an agent to record the right value (Section 12). It lowers to Unverified, the one
+  tier that says a person doubts the claim; Undo of a confirmation already returns a source to the
+  tier it had. It keeps Review's name for the act, Demote a claim, and its Undo is the Undo demotion
+  Decided offers (Section 29.6: one concept, one name).
+- **No Withdraw at the console.** A withdrawal closes a proposal for good, where a person's reject
+  stays provisional and can be taken back (Accept after all); and step 57's suggestions read a
+  withdrawal as no one's no because the console has none.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 2 | The viewer adds no new write path; the console observes nothing | revised - the sentence names Undo as the demotion the console casts; a demotion from the card is the same act on the same path |
+| proposal-workflow.md Section 14.3 | The viewer's write paths are the gated verdict, "the confirm act of resolve", the gate open and reify | revised - resolve's acts are confirm, undo and demote, each a gated proposal and verdict |
+| Section 12 | "Neither is right" asks an agent | agrees - a demotion states no value; the right one is still an agent's to record |
+| resolution.md Section 4.2 | Demoting the losing side is the stronger act, fast-path | repays - a person can now take it |
+| resolution.md Section 3 and R5 | A demotion is a ceiling: claims do not raise it, a raising review does | agrees - the question says so in those words |
+| P6 and resolution.md Section 4.1 | A contradiction is surfaced, never silently resolved | agrees - the question says which values flip and which contradictions start or end |
+| P23 | A merge comes with what it overturns and the contradictions it creates | agrees - the question reads the act's diff, overturned values included, before Demote acts |
+| P18 | Promotion only explicitly | agrees - a demotion promotes nothing, and its Undo is an explicit act with its own diff |
+| proposal-workflow.md I9 | A demotion may be approved by its proposer | agrees - the person's own act; `/api/resolve` opens it without the console's mark, as for Undo, so Decided names the machine that cast it |
+| U4 | A decision shows its diff and checks | agrees - Demote waits until both are read |
+| U18 | Settling a contested value says what the act does before it is cast, and offers no Undo before its diff | revised - the same holds for a demotion from the card |
+| U1 and U20 | A console write reports its outcome where it was made; an act names a workspace not on screen | agrees - the notice names the claim, and its workspace when it is not the scope |
+| U19 | Keys act where the person is | agrees - Esc closes the question before the card, and focus returns to the act that opened it |
+| Section 29.6 | One concept, one name | agrees - Demote a claim, as Review says it |
+| Section 29.23 | A repeat says what it found | agrees - a second demotion already in force says "Nothing changed: this is already so." |
+| remote-viewer.md Section 3.2 | The read tier refuses `/api/resolve` and its preview and undo | agrees - the card offers nothing there |
+| proposal-workflow.md Section 8 | A withdrawal is the proposer's | agrees - the console offers none |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The offer.** On the local console, the card of an observation that is not a proposal event and
+  reads above Unverified offers "Demote this claim".
+- **The question.** It opens in the card, "Demote this claim to Unverified?", and reads the act's
+  preview. Then it says:
+  - what flips, a line per value the diff overturns: "Ledger's type becomes Concept.", "...becomes
+    contested and waits under Needs you." or "...is no longer contested."; when nothing flips,
+    "Every value it states stays; it is trusted less.";
+  - whose trust ring drops: "With it, Ledger drops to Unverified.", or "No entity's ring moves.";
+  - what else it states: "It also states 2 relations." and "It also defines 1 type: Driver.";
+  - "Unverified: Trusted less than an agent's claim: a review lowered it, or its sender marked it
+    so." and "Later claims do not raise it; a review that raises it does.";
+  - the checks.
+  Demote waits until all of that is read. Cancel and Esc close the question, and focus returns to
+  "Demote this claim".
+- **The act.** Demote casts the demotion with "Demoted to Unverified: " and the claim's first words
+  as its reason and its notice; the notice names the claim's workspace when it is not the scope on
+  screen. The notice offers Undo once it has read the act's own undo, the read Decided's Undo
+  demotion makes, with that diff as its note: "Undo returns this claim to Agent and keeps it there
+  until a review moves it again." Undo casts with "Undid Demoted to Unverified: " and the first
+  words. The card then reads the claim again by its id, says "Lowered to Unverified by you at this
+  console", and focus goes to its Close.
+
+**What this step does not do.**
+- It does not lower to a tier between: a person who wants Agent back undoes the confirmation.
+- It does not offer Withdraw, for the reasons under Decisions.
