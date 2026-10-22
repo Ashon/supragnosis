@@ -1499,6 +1499,16 @@ pub trait KnowledgeStore: AssertionStore {
     /// Removes ledger entries once the projection that repays them is written (K2). Ids not in the
     /// ledger are ignored, so clearing is idempotent.
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError>;
+    /// Appends `obs` - absorbed into a stored row of the same id, as `add_observation` does - and
+    /// writes the rows projected from it, in one transaction: all of it lands or none does
+    /// (crash-recovery.md Section 3a). It records no ledger entry, since the projection commits with
+    /// the row, and clears none: an entry already held for the id is another writer's debt.
+    fn commit_projected(
+        &self,
+        obs: Observation,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError>;
     /// Attaches a retrieval vector to each named observation that has none - the backfill's write
     /// (semantic-retrieval.md Section 12, SR6). Nothing else is written: not the row, not its
     /// attestations, not the owed-projection ledger, which re-appending the row would touch. An id

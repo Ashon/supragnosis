@@ -298,7 +298,7 @@ fn an_unattested_observation_is_refused() {
     });
 }
 
-/// crash-recovery.md K1/K2 as the port states them: an append owes its projection until the engine
+/// crash-recovery.md K1/K2 as the port states them: an append owes its projection until a reproject
 /// clears it, and nothing but a clear removes the debt. The atomicity half of K1 (row and entry in
 /// one transaction) is structural in each adapter; what every adapter must show here is that the
 /// ledger is written by the append itself, so a caller holding only an `AssertionStore` - the sync
@@ -335,6 +335,52 @@ fn every_append_owes_its_projection_until_cleared() {
         // again.
         store.add_observation(a).expect("re-arrival after the clear");
         assert_eq!(store.owed_projections().expect("ledger").len(), 2);
+    });
+}
+
+/// crash-recovery.md Section 3a at the port: `commit_projected` writes the row - absorbed onto a
+/// stored row of its id, as an append is - with the rows projected from it, and owes nothing. It
+/// clears nothing either: an entry another append recorded for the same id is that append's debt.
+/// An unattested row is refused with none of its projection written. That all of it lands in one
+/// transaction is structural in each adapter.
+#[test]
+fn a_projected_commit_lands_whole_and_owes_nothing() {
+    for_each_adapter(|store| {
+        let a = obs("a fact and its projection");
+        let id = a.id.clone();
+        store
+            .commit_projected(a.clone(), vec![ent("alpha")], vec![rel("alpha", "uses", "beta")])
+            .expect("commit");
+        assert!(store.get_observation(&id).expect("get").is_some(), "the row");
+        assert!(store.get_entity(&eid("alpha")).expect("get").is_some(), "the entity");
+        assert_eq!(store.relations_of(&eid("alpha")).expect("relations").len(), 1, "the relation");
+        assert!(store.owed_projections().expect("ledger").is_empty(), "nothing is owed");
+
+        let attested = |host: &str| {
+            Observation::new(a.content.clone(), Provenance { host: host.into(), ..prov() })
+        };
+        store.commit_projected(attested("host-b"), vec![], vec![]).expect("re-arrival");
+        let row = store.get_observation(&id).expect("get").expect("row");
+        assert_eq!(row.provenance.len(), 2, "one row, absorbing the second attestation");
+
+        store.add_observation(attested("host-c")).expect("an apply of the same content");
+        store
+            .commit_projected(attested("host-d"), vec![], vec![])
+            .expect("commit after it");
+        assert_eq!(
+            store.owed_projections().expect("ledger"),
+            vec![(id.clone(), WS.to_string())],
+            "the apply's entry stays"
+        );
+
+        let mut unattested = obs("a projected commit nobody attested");
+        unattested.provenance.clear();
+        let uid = unattested.id.clone();
+        store
+            .commit_projected(unattested, vec![ent("gamma")], vec![])
+            .expect_err("no attestation, no row");
+        assert!(store.get_observation(&uid).expect("get").is_none(), "no row was written");
+        assert!(store.get_entity(&eid("gamma")).expect("get").is_none(), "nor its projection");
     });
 }
 

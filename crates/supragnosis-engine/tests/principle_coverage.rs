@@ -2472,6 +2472,10 @@ const IDENTITY_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&[
             "incremental_write_equals_replay",
             "incremental_write_equals_replay_for_relations",
+            // The observe folds from the log its commit leaves (crash-recovery.md Section 3a): a
+            // re-arrival's absorbed row, and a gate naming the row that only now arrives.
+            "an_engine_write_leaves_a_re_arrivals_entry",
+            "an_observe_folds_the_gate_that_names_its_row",
         ]),
     )]),
     (4, &[c(
@@ -2610,7 +2614,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
 // docs/crash-recovery.md Section 5 - the owed-projection ledger (K rows). Built.
 const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
-        c("every append writes its owed entry, and only a clear removes it, on every adapter",
+        c("every add_observation writes its owed entry, and only a clear removes it, on every adapter",
           Evidence::Scenario(&["every_append_owes_its_projection_until_cleared"])),
         c("the entry is written in the same store transaction as the row",
           Evidence::Structural(
@@ -2618,22 +2622,28 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
              the row, between the row insert and the single `txn.commit()`, so a crash cannot leave \
              one without the other; the in-memory adapter inserts both under one write lock",
           )),
-        c("no append path can skip it",
+        c("an engine writer commits its row and its projection in one store transaction",
+          Evidence::Scenario(&[
+            "a_projected_commit_lands_whole_and_owes_nothing",
+            "an_engine_write_that_fails_leaves_nothing_written",
+          ])),
+        c("no append path can do neither",
           Evidence::Structural(
-            "the ledger write is inside `add_observation`, the only log-append method on the \
-             `AssertionStore` port, and the adapters write it themselves; a caller holding only the \
-             narrow port - the sync crate's `apply` - has no other way into the log, which is the \
-             path every_append_owes_its_projection_until_cleared exercises",
+            "the port has two log-append methods: `add_observation`, which writes the ledger entry \
+             itself, and `commit_projected`, which writes the projection in the row's transaction \
+             (one redb write transaction; the in-memory adapter holds every table's lock across the \
+             writes). `commit_projected` is on `KnowledgeStore`, so a caller holding only the narrow \
+             port - the sync crate's `apply` - has `add_observation` alone, which is the path \
+             every_append_owes_its_projection_until_cleared exercises",
           )),
         c("appends from before the ledger existed are owed once, at the first ledger-aware open",
           Evidence::Scenario(&["a_store_from_before_the_ledger_is_owed_in_full_once"])),
     ]),
     (2, &[
-        c("a writer clears only its own entry, and only after its last projection write",
+        c("the engine's writers record no entry and clear none",
           Evidence::Scenario(&[
             "a_completed_write_owes_nothing",
-            // An append with no projection stays owed; the clear runs after `project_relations`.
-            "health_reports_owed_projections_and_the_last_recovery",
+            "a_projected_commit_lands_whole_and_owes_nothing",
           ])),
         c("a reproject clears the workspace it projected and no other",
           Evidence::Scenario(&["a_reproject_repays_only_its_own_workspace"])),
@@ -2641,13 +2651,8 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Scenario(&["a_reproject_leaves_an_entry_that_arrived_while_it_ran"])),
         c("the hub re-materializes after a pull or push that stamped rows",
           Evidence::Scenario(&["a_pull_that_stamps_rows_re_materializes_them"])),
-        c("a clear by id never covers a concurrent re-arrival of the same observation",
-          Evidence::Deferred(
-            "the accepted exception of crash-recovery.md Section 8: an observe's clear removes the \
-             entry an apply re-arrival shares, and the debt is lost if the process dies before the \
-             apply re-materializes. Revisit when the atomic-write follow-up lands - it removes the \
-             window, and a per-append sequence in the ledger would otherwise be the fix",
-          )),
+        c("no writer clears an entry it did not read, a re-arrival's included",
+          Evidence::Scenario(&["an_engine_write_leaves_a_re_arrivals_entry"])),
     ]),
     (3, &[
         c("a writer that opens a store with owed entries re-projects exactly those workspaces",
@@ -2667,8 +2672,10 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
             "redb_owed_projections_survive_a_reopen",
             "a_store_from_before_the_ledger_is_owed_in_full_once",
           ])),
-        c("a projection write that fails leaves the entry for the next open",
-          Evidence::Scenario(&["a_projection_write_that_fails_leaves_its_entry"])),
+        c("an engine write whose commit fails leaves nothing written",
+          Evidence::Scenario(&["an_engine_write_that_fails_leaves_nothing_written"])),
+        c("a reproject whose write fails leaves the entry for the next open",
+          Evidence::Scenario(&["a_reproject_that_fails_leaves_its_entry"])),
     ]),
     (5, &[
         c("/api/health carries the ledger's size and the last recovery",
