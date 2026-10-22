@@ -923,6 +923,17 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   post-apply sync hook - but that is again a deployment fact, not a guard, and it is the same class of argument this
   section exists to retire. M3's write path was to repay it and shipped without it; it is owed to a store-level
   atomic upsert, the atomic-write follow-up crash-recovery.md Section 2 names.
+  **Update (2026-10-23)**: repaid by the lock this section already relies on - `reproject` now takes
+  `write_guard` for its whole read-then-write section, so an `observe` waits for it rather than having its
+  projection overwritten by a snapshot taken before it. The failure was real: an observe landing between the
+  reproject's log read and its write of the row the observe touched was lost from the graph with nothing owed,
+  so the graph sat behind its log until the next re-materialization
+  (`p3_a_reproject_and_an_observe_do_not_interleave` reproduces it with the lock removed). The cost is that a
+  write waits out a reproject: about the per-workspace re-projection time crash-recovery.md Section 4 measures
+  (about 2 s at today's scale). It is longer when entity vectors must be computed - a freshly pulled workspace,
+  or a changed model - since `project_entities` embeds what has no vector while holding the lock. Embedding
+  outside it and re-checking the text under it, as the backfill does (semantic-retrieval.md SR7), is the
+  follow-up. The atomic-write follow-up stays owed for the crash window, which is a different boundary.
 - Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, the asserted close of a disproven relation's valid interval,
   `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
   semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
