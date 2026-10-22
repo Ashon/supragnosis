@@ -293,6 +293,10 @@ until it succeeds, is written without a vector.
 - **Outside the guard, then inside it.** The embedding runs without the write guard; only the
   write of a batch takes it (SR7). An `observe` waits for at most one batch's write, and its own
   embed waits for at most one batch's embed: the model is one session behind a mutex.
+- **A reproject follows the same order.** Since `reproject` holds the write guard for its whole
+  read-then-write section (architecture.md Section 14), it computes the vectors its rows need first,
+  with no lock held, and takes one for a row only if it was made for that row's text (IR4). A text a
+  concurrent write changed in between is embedded under the guard, as every projection did before.
 - **It is said.** The semantic report carries the backfill while it runs and after it: how many
   rows it found, how many it embedded, and whether it finished or stopped on an embed failure,
   with the failure. `status` reads `semantic on (<model>) - embedding what was written before the
@@ -331,6 +335,9 @@ re-materialization of a projection, and it still embeds the entities it projects
   row has a vector, the merge band covers every live entity, a semantic search finds the old
   observation by meaning, the ledger is empty, and the rows are what they were (SR6).
 - `a_second_backfill_embeds_nothing_and_keeps_a_stored_vector` (SR7).
+- `sr7_a_reproject_embeds_before_it_takes_the_write_lock` - an embedder that observes on another
+  thread during a reproject's first batch; the observe finishes, which it could not under the
+  guard, and every row ends with its vector.
 - `an_entity_whose_text_changed_mid_batch_is_left_for_the_next_run` - an embedder that renames
   the entity while its batch embeds; the old text's vector is not stored, and the next run embeds
   the new text (SR7, IR4).
