@@ -209,6 +209,55 @@ impl NodeIdentity {
         let bytes = attestation_signing_bytes(content_id, p, meta);
         hex_encode(&self.signing.sign(&bytes).to_bytes())
     }
+
+    /// Signs a message that is not an attestation, such as a join's answer (docs/pairing.md Section
+    /// 4.3.2), under `context`; returns hex. The signed bytes are [`message_signing_bytes`], which
+    /// never parse as an attestation's, so neither signature passes for the other.
+    pub fn sign_message(&self, context: &str, message: &[u8]) -> String {
+        use ed25519_dalek::Signer;
+        hex_encode(&self.signing.sign(&message_signing_bytes(context, message)).to_bytes())
+    }
+}
+
+/// What [`NodeIdentity::sign_message`] signs: a fixed tag, the context, a zero byte, the message.
+///
+/// An attestation's signed bytes open with its content id's length as eight little-endian bytes,
+/// so they start with a small number. These start with the ASCII tag "supragnosis message", whose
+/// first eight bytes read as a length above 2^62 - a buffer no attestation can have. A context
+/// keeps one kind of message from passing for another.
+pub fn message_signing_bytes(context: &str, message: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(32 + context.len() + message.len());
+    buf.extend_from_slice(b"supragnosis message\0");
+    buf.extend_from_slice(context.as_bytes());
+    buf.push(0);
+    buf.extend_from_slice(message);
+    buf
+}
+
+/// Verifies a [`NodeIdentity::sign_message`] signature. `false` for any malformed input.
+pub fn verify_message(
+    pubkey_hex: &str,
+    context: &str,
+    message: &[u8],
+    signature_hex: &str,
+) -> bool {
+    use ed25519_dalek::Verifier;
+    let (Some(pk), Some(sig)) = (hex_decode(pubkey_hex), hex_decode(signature_hex)) else {
+        return false;
+    };
+    let (Ok(pk), Ok(sig)) =
+        (<[u8; 32]>::try_from(pk.as_slice()), <[u8; 64]>::try_from(sig.as_slice()))
+    else {
+        return false;
+    };
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&pk) else {
+        return false;
+    };
+    key.verify(
+        &message_signing_bytes(context, message),
+        &ed25519_dalek::Signature::from_bytes(&sig),
+    )
+    .is_ok()
 }
 
 /// Whether `s` is an ed25519 public key in the one spelling this software writes: 64 lowercase hex
@@ -2225,6 +2274,38 @@ mod tests {
         // ...and a different key cannot claim the event.
         let other = NodeIdentity::from_secret_bytes([43u8; 32]);
         assert!(!verify_attestation(&other.public_key_hex(), &obs.id, &p, &meta));
+    }
+
+    /// A message signature (docs/pairing.md Section 4.3.2) verifies under its own context and key
+    /// only, and it and an attestation's signature never pass for each other.
+    #[test]
+    fn a_message_signature_is_not_an_attestation_signature() {
+        let identity = NodeIdentity::from_secret_bytes([42u8; 32]);
+        let pubkey = identity.public_key_hex();
+        let sig = identity.sign_message("join answer", b"body");
+        assert!(verify_message(&pubkey, "join answer", b"body", &sig));
+        assert!(!verify_message(&pubkey, "join answer", b"bodx", &sig), "the message is signed");
+        assert!(!verify_message(&pubkey, "other", b"body", &sig), "the context is signed");
+        let other = NodeIdentity::from_secret_bytes([43u8; 32]);
+        assert!(!verify_message(&other.public_key_hex(), "join answer", b"body", &sig));
+        assert!(!verify_message(&pubkey, "join answer", b"body", "zz"), "malformed is false");
+        // The two encodings cannot meet: an attestation's bytes open with a small length, and a
+        // message's with a tag that reads as one larger than any buffer.
+        let obs = Observation::new("signed fact".into(), prov());
+        let p =
+            stamped(&identity, &obs.id, 1, Hlc { wall: 7, counter: 0, node: identity.node_id() });
+        let meta = p.sync.clone().expect("stamped");
+        let att = attestation_signing_bytes(&obs.id, &p, &meta);
+        let msg = message_signing_bytes("join answer", b"body");
+        let len = |b: &[u8]| u64::from_le_bytes(b[..8].try_into().unwrap());
+        assert!(len(&att) < 1 << 20 && len(&msg) > 1 << 62);
+        assert!(!verify_message(&pubkey, "", &att, &meta.signature));
+        // Known answers (compatibility.md Section 4): the bytes and a signature over them, pinned.
+        assert_eq!(
+            hex_encode(&msg),
+            "7375707261676e6f736973206d657373616765006a6f696e20616e7377657200626f6479"
+        );
+        assert_eq!(sig, "9a7b8c2b3b39c990b333f8183b1c86dcc833d9da5c204f34761dd222439b653aaf2447d4f2f9a403b4e3f847f95c28712b0a73a79454a1abed72d7e0f7e1660a");
     }
 
     /// Known answers for the two encodings that outlive the process computing them

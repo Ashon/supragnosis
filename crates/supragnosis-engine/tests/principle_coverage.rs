@@ -1037,88 +1037,123 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"]),
         ),
         c(
-            "an open invitation counts as an admission and admits only its holder's preview and join",
-            Evidence::Deferred(
-                "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-            ),
+            "an open invitation counts as an admission until it expires and admits only its holder's preview and join",
+            Evidence::Scenario(&[
+                "a_listener_that_cannot_open_leaves_the_node_serving",
+                "a_machine_joins_over_the_listener_and_is_refused_once_removed",
+            ]),
+        ),
+        c(
+            "a hub an invitation made says what its listener does, in sync_status too, on a node with no sync",
+            Evidence::Scenario(&["a_hub_with_no_sync_says_what_its_listener_does"]),
         ),
     ]),
     (2, &[c(
-        "an invitation is used at most once and not after its expiry, the hub keeps only its secret's hash, and a used, denied or expired one is said as such",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        "an invitation is used at most once and not after its expiry, the hub keeps only its secret's hash, and a used, denied, cancelled or expired one is said as such for a day after its expiry",
+        Evidence::Scenario(&[
+            "an_invitation_says_what_became_of_it",
+            "a_join_is_allowed_and_answered_for_its_request_alone",
+        ]),
     )]),
     (3, &[c(
         "the joining machine accepts only the certificate the code names - by fingerprint, or by the built-in roots and the code's DNS names - during the join and after it",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
     )]),
-    (4, &[c(
-        "the bearer credential a join mints is never displayed: it travels sealed to a 0600 file and the hub keeps only its hash",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+    (4, &[
+        c(
+            "the bearer credential a join mints travels sealed to the one-time key, and the hub keeps only its hash",
+            Evidence::Scenario(&["a_join_is_allowed_and_answered_for_its_request_alone"]),
         ),
-    )]),
-    (5, &[c(
-        "a join grants exactly the invitation's workspaces, the joining machine sends only the ones it ticked, and none chosen shares nothing",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        c(
+            "the joining machine writes it to a 0600 file and never displays it",
+            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
         ),
-    )]),
+    ]),
+    (5, &[
+        c(
+            "a join grants exactly the invitation's workspaces, none chosen granting nothing",
+            Evidence::Scenario(&["a_join_is_allowed_and_answered_for_its_request_alone"]),
+        ),
+        c(
+            "the joining machine sends only the ones it ticked that the signed answer names",
+            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        ),
+    ]),
     (6, &[c(
         "every edit of supragnosis.toml keeps every line the person wrote, runs under one lock, adds only what the act chose, removes only what pairing recorded, and writes no key an earlier release refuses",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Scenario(&[
+            "two_edits_never_lose_each_others_change",
+            "the_first_invitation_makes_the_server_section",
+            "a_join_is_allowed_and_answered_for_its_request_alone",
+            "who_may_join_and_who_may_invite",
+        ]),
     )]),
-    (7, &[c(
-        "removing a machine refuses its next request, takes back nothing it holds, and says so before it acts",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+    (7, &[
+        c(
+            "removing a machine on the hub refuses its next request, keeps its key verify-only and takes back nothing it holds",
+            Evidence::Scenario(&[
+                "a_machine_joins_over_the_listener_and_is_refused_once_removed",
+                "a_removed_machine_is_refused_and_its_key_kept",
+            ]),
         ),
-    )]),
+        c(
+            "hub leave and the Settings rows say so before they act",
+            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        ),
+    ]),
     (8, &[c(
         "the hub derives a joining machine's node id from its key and refuses its own and one already admitted",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Scenario(&[
+            "who_may_join_and_who_may_invite",
+            "a_join_is_allowed_and_answered_for_its_request_alone",
+        ]),
     )]),
-    (9, &[c(
-        "a hub admits one joined machine, a hub or a machine admitting a node by hand does not join, and a joined machine does not invite, in this version",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+    (9, &[
+        c(
+            "a hub admits one joined machine, and a machine that syncs to a hub or admits a node by hand does not invite, in this version",
+            Evidence::Scenario(&["who_may_join_and_who_may_invite"]),
         ),
-    )]),
+        c(
+            "a hub, or a machine admitting a node, does not join one",
+            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        ),
+    ]),
     (10, &[c(
         "no MCP tool and no page reaches a hub act: they are calls on a 0600 admin socket",
         Evidence::Scenario(&["the_admin_socket_is_owner_only_and_says_what_it_cannot_do"]),
     )]),
     (11, &[c(
-        "a join completes only on the hub's Allow for the keys whose request it showed, and a request from other keys ends the invitation",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        "a join completes only on the hub's Allow for the keys whose request it showed with words drawn from both nonces, and a request with other keys or another commitment, or a wrong nonce, ends the invitation",
+        Evidence::Scenario(&[
+            "an_invitation_says_what_became_of_it",
+            "a_join_is_allowed_and_answered_for_its_request_alone",
+            "the_request_and_the_answer_survive_a_restart",
+            "the_words_depend_on_every_part_of_the_request",
+        ]),
     )]),
     (12, &[c(
         "a joined machine pulls only the workspaces recorded at the join",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
     )]),
     (13, &[c(
         "a vouched key is accepted only for the node id derived from it, never for the joining machine's own, verifies only up to its bound, and admits nothing",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Deferred("docs/pairing.md's vouched keys are not checked on the joining machine yet. Revisit when its Section 10 step 3c lands"),
     )]),
-    (14, &[c(
-        "the joining machine acts on a join's answer only if it is signed by the node key the code names and its credential is sealed to the one-time key it sent",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+    (14, &[
+        c(
+            "an answer verifies only under the node key the code names and for its own request and invitation, and its credential opens only with the one-time key it was sealed to",
+            Evidence::Scenario(&[
+                "an_answer_verifies_only_from_the_codes_hub_for_this_request",
+                "a_seal_opens_only_with_its_key",
+                "a_message_signature_is_not_an_attestation_signature",
+                "the_wire_holds_its_known_answers",
+            ]),
         ),
-    )]),
+        c(
+            "the joining machine acts on no other answer",
+            Evidence::Deferred("docs/pairing.md's joining machine is not built yet. Revisit when its Section 10 step 3b lands"),
+        ),
+    ]),
     (15, &[c(
         "a node with a hub runs a sync round on its own over its shared workspaces, one at a time whatever starts it, and says when the last ran, what it moved and why it failed",
         Evidence::Scenario(&[
@@ -3493,6 +3528,8 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-cli/src/hub.rs"),
+    include_str!("../../supragnosis-cli/src/invite.rs"),
+    include_str!("../../supragnosis-cli/src/pair.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),

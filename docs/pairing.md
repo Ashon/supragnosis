@@ -9,8 +9,8 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified; steps 1 and 2 built** (Section 10). The author decided its choices on 2026-10-22
-> (Section 7, D1-D15), among
+> Status: **specified; steps 1, 2 and 3a built** (Section 10). The author decided its choices on
+> 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
 
@@ -102,7 +102,7 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
   `supragnosis invite --show` prints it and any waiting request, and asks again.
 - **The address.** `--address` names how the joining machine reaches the server - a DNS name, a
   Tailscale or VPN name, an address - and may be repeated. Without it the code carries the host's
-  `.local` name where mDNS answers for it and its IPv4 addresses.
+  `.local` name where mDNS answers for it and the IPv4 address its default route leaves from.
 - **The certificate.** A server often has a certificate of its own from a public CA, renewed every
   few months. When that certificate verifies against the root bundle built into supragnosis for
   every name `--address` gives, the code says to verify the hub by name, so a renewal breaks
@@ -166,16 +166,18 @@ two require the code's secret, the last a joined machine's credential.
 - **The secret.** 32 random bytes; the daemon keeps their hash, never the secret, with the
   workspaces chosen and the expiry - and, once a machine asks, its request and later the signed
   answer (Section 4.3) - in `~/.supragnosis/hub/invites.toml` (`0600`), not in `supragnosis.toml`,
-  which the person edits. A used, denied or expired invitation stays there as a tombstone until its expiry
-  has passed, so a later attempt is told "This code was already used." rather than "no such code".
+  which the person edits. A used, denied, cancelled or expired invitation stays there as a
+  tombstone for a day after its expiry, so a code tried late is told "This code was already used."
+  or "This code has expired." rather than "no such code".
 - **One open at a time.** A new invitation cancels the open one, and the sheet says so.
   `supragnosis invite --cancel` ends the open one; a cancelled invitation stays a tombstone, as a
   used one does.
 - **The code.** `sgjoin1-` and a base32 body (Section 4.3.2) holding the hub's node id; the
   expiry; the secret; how to verify its certificate - its SHA-256 fingerprint, or "by name"
   (Section 3a, D13); and its addresses with the port (the `--address` names, or its `.local` name
-  and IPv4 addresses). Every address is reached over HTTPS. The page's Copy writes the pasteboard through
-  NSPasteboard and marks the item concealed, so clipboard managers that honor it do not keep it.
+  and the IPv4 address of its default route). Every address is reached over HTTPS. The page's
+  Copy writes the pasteboard through NSPasteboard and marks the item concealed, so clipboard
+  managers that honor it do not keep it.
 - **Expiry is wall-clock** - an operational timer like a login prompt's, not a fact any fold
   reads, so it does not touch P16 or I4.
 
@@ -197,8 +199,8 @@ two require the code's secret, the last a joined machine's credential.
   key made for this join, and a commitment to a random nonce of its own. The hub:
   - checks the secret's hash against an open invitation in constant time, and refuses an expired,
     used or denied one with what happened;
-  - derives the node id from the node key, as core derives every node id, rather than taking one, and
-    refuses its own and one already admitted;
+  - derives the node id from the node key, as core derives every node id, rather than taking
+    one, and refuses its own and one already admitted;
   - checks the keys' form and cuts the name to 64 characters, shown as text;
   - holds the request and answers "pending" at once with a random nonce of its own, so no call
     waits on a person. The request's keys, its commitment and the hub's nonce are fixed by the
@@ -438,7 +440,7 @@ as now (S6).
 | # | Invariant |
 |---|---|
 | PA1 | The hub's listener is open only with TLS and an admitted node, an admitted principal or an open invitation; an open invitation admits only its holder's `preview` and `join`; a listener that cannot open leaves the rest of the node serving and says why. |
-| PA2 | An invitation is used at most once and not after its expiry; the hub keeps only its secret's hash, and a used, denied or expired one is said as such until its expiry has passed. |
+| PA2 | An invitation is used at most once and not after its expiry; the hub keeps only its secret's hash, and a used, denied, cancelled or expired one is said as such for a day after its expiry. |
 | PA3 | The joining machine accepts only the certificate the code names - by fingerprint, or by the built-in root bundle and the code's DNS names when the code says so - during the join and after it. |
 | PA4 | The bearer credential a join mints is never displayed: it travels sealed in the join's answer to a `0600` file, and the hub keeps only its hash. |
 | PA5 | A join grants exactly the invitation's workspaces; the joining machine sends only the ones it ticked; none chosen shares nothing (P17). |
@@ -491,7 +493,7 @@ as now (S6).
    that walks one listener through an unreadable certificate, loopback and an unadmitted network
    address, and one that holds the admin socket to its owner.
 3. **The CLI**, on macOS and Linux alike, in four parts:
-   - **3a. The hub.** The wiring on a node with no `[server]`, built by its first invitation; the
+   - **3a. The hub** [built]. The wiring on a node with no `[server]`, built by its first invitation; the
      certificate it makes (rcgen moves from a test dependency to the CLI's, already in the lock
      file and checked by cargo-deny), and the code's check - pinned, or by name when the
      certificate verifies against the built-in roots for every `--address` name, never for an IP;
@@ -526,7 +528,8 @@ as now (S6).
    - **3d. A Linux hub** in a throwaway machine, invited over SSH with Allow in the terminal and
      joined from this Mac, with the run recorded in the pull request.
 4. **Settings**: the invitation and join sheets with Allow, the rows' Remove, Stop syncing and Sync
-   now, and the hint.
+   now, and the hint. `invite --json`, `invite --show --json` and `peer list --json`, which the
+   sheets read, join compatibility.md Section 6 then, with their schema and examples.
 5. **Setup** on a second Mac points to Join another Mac.
 
 ### 10.1 What splitting step 3 checked

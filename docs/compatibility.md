@@ -359,6 +359,19 @@ admitted, the port taken, a certificate it cannot read - no longer stops the dae
 without it and `sync_status`'s new `listener` field says why. `principal add` and `remove` tell the
 daemon, which opens or closes the listener.
 
+**A hub invites, allows and removes** ([pairing.md](pairing.md), step 3a of its ordering). New
+commands: `supragnosis invite` (`--keep`, `--address`, `--show`, `--cancel`, `--json`) and
+`supragnosis peer list` and `remove`, each through the admin socket's new `/hub` calls. A hub's
+listener answers three new calls, `/pair/preview`, `/pair/join` and `/pair/leave`, and counts an
+open invitation as an admission; the bind rule's refusal names it. A node with no `[server]` gets
+one, a certificate of its own under `~/.supragnosis/hub/` and `listen = "0.0.0.0:7420"`, on its
+first invitation, with keys a release before pairing already reads. Every edit of
+`supragnosis.toml` - pairing's, the narrowing act's, `principal`'s - takes a lock file beside it,
+`.supragnosis.toml.lock`. `sync_status` on a node with no sync, which an invitation made a hub,
+answers with its listener's state instead of the not-configured error. The JSON `invite` and `peer
+list` print is not yet under Section 6's contract; it joins when the app reads it (pairing.md step
+4).
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
 receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
 one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in

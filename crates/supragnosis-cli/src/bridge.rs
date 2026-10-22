@@ -414,7 +414,7 @@ mod tests {
         store: Arc<InMemoryStore>,
     ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
         let engine = Arc::new(Engine::new(store, "h", "ws"));
-        let router = crate::mcp_router(engine, None, Some("tok".to_string()));
+        let router = crate::mcp_router(engine, None, None, Some("tok".to_string()));
         let listener = match at {
             None => tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.expect("bind"),
             Some(addr) => {
