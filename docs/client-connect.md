@@ -241,6 +241,10 @@ Guarded by:
 - `registrations_run_the_bridge_and_carry_no_secret` - C2.
 - `an_edit_changes_one_member_and_nothing_else`, `a_file_that_does_not_parse_is_refused` and
   `a_backup_never_replaces_an_earlier_one` - C3.
+- `an_entry_connect_did_not_write_is_left_alone` - C3: `connect::plan_connect` over every entry
+  (another's is refused without `--replace`, an unreadable config always), and
+  `connect::write_backed_up`, the CLI's only write of a client's config, copies the file before it
+  changes and stops with the file untouched when the copy cannot be taken.
 - `an_app_item_says_what_a_click_will_do` - the settings page's app rows (the tray's AI Apps items
   until settings-page.md).
 
