@@ -1609,11 +1609,12 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "every change is a CLI call, and a refusal from the CLI is what the page shows",
-            Evidence::Deferred(
-                "each command body is a run_cli call whose outcome is cli_outcome's line and none is under test; the \
-                 Add-server sheet also checks the URL's shape before the CLI does, which the document admits. Revisit \
-                 when the commands run against a stub CLI and the shown message is asserted for a refusal",
-            ),
+            Evidence::Scenario(&[
+                "every_setting_change_is_a_cli_call",
+                "a_refused_login_change_says_why",
+                "a_refused_server_change_says_why",
+                "a_credential_reaches_the_cli_on_stdin_only",
+            ]),
         ),
     ]),
     (4, &[c(

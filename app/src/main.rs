@@ -4041,6 +4041,79 @@ mod status_text_tests {
         }
     }
 
+    /// settings-page.md S3: the page decides nothing the CLI or the daemon decides. Every command
+    /// the Settings page calls is in one list here, by what it is. A change runs the CLI - in the
+    /// command or the helper it calls - and a refusal is an `Err` carrying what the CLI said, which
+    /// the page shows. Stopping a peer's sharing is the one change that goes to the daemon's
+    /// narrow-only endpoint instead, and runs no CLI. The rest read, or act on the system rather
+    /// than a setting. A command the page starts calling fails this until it is placed.
+    #[test]
+    fn every_setting_change_is_a_cli_call() {
+        let src = include_str!("main.rs");
+        let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
+        let body = |name: &str| -> &str {
+            let at = ["async fn ", "fn "]
+                .iter()
+                .find_map(|k| app.find(&format!("\n{k}{name}(")))
+                .unwrap_or_else(|| panic!("no fn {name}"));
+            let rest = &app[at + 1..];
+            &rest[..rest.find("\n}\n").expect("it closes")]
+        };
+        // Each change, with the helpers its body reaches the CLI through.
+        let changes: &[(&str, &[&str])] = &[
+            ("server_use", &["use_server", "cli_change"]),
+            ("server_add", &["add_server", "add_server_with"]),
+            ("server_remove", &["remove_server", "cli_change"]),
+            ("app_toggle", &["toggle_app"]),
+            ("capture_set", &[]),
+            ("login_set", &["set_login", "login_outcome", "cli_change"]),
+            ("daemon_restart", &["restart_daemon"]),
+            ("search_rebuild", &["rebuild_index"]),
+            ("setup_run", &["run_streamed"]),
+        ];
+        let reads = ["settings_state", "setup_running", "diagnostics"];
+        let system = ["clipboard_copy", "reveal", "app_helper", "setup_stop"];
+
+        // A command is a quoted name of the app's own on a line that calls `invoke(` or `act(`.
+        let js = include_str!("../assets/settings.js");
+        let mut called: Vec<&str> = Vec::new();
+        for line in js.lines().filter(|l| l.contains("invoke(") || l.contains("act(")) {
+            for command in crate::APP_COMMANDS {
+                if line.contains(&format!("\"{command}\"")) {
+                    called.push(command);
+                }
+            }
+        }
+        called.sort();
+        called.dedup();
+        let mut placed: Vec<&str> = changes.iter().map(|(c, _)| *c).collect();
+        placed.extend(reads);
+        placed.extend(system);
+        placed.push("peer_narrow");
+        placed.sort();
+        assert_eq!(called, placed, "every command the page calls, placed by what it is");
+
+        for (command, helpers) in changes {
+            let reach: String =
+                std::iter::once(*command).chain(helpers.iter().copied()).map(body).collect();
+            assert!(
+                reach.contains("run_cli(")
+                    || reach.contains("Command::new(bin)")
+                    || reach.contains("run_streamed("),
+                "{command} runs the CLI"
+            );
+            assert!(
+                reach.contains("cli_outcome")
+                    || reach.contains("cli_change")
+                    || reach.contains("restart_outcome(")
+                    || reach.contains("\"why\": (!status.success())"),
+                "{command}: a refusal carries what the CLI said"
+            );
+        }
+        let narrow = body("peer_narrow");
+        assert!(narrow.contains("/api/peer/share") && !narrow.contains("run_cli("));
+    }
+
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
     /// tray's line, Settings' Server and This Mac panes, Setup's first card and the starting page.
     /// "Answering" is a remote server's word only.
