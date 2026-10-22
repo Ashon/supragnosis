@@ -374,6 +374,10 @@ Guarded by:
   the timestamped path and leaves the file in place when it cannot; and the service commands remove
   no other file.
 - `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
+- `a_refused_lifecycle_command_exits_non_zero_with_the_reason` - L4 at the binary: `stop` and
+  `restart` run with `PATH` holding only a scripted launchctl that reports a conflict, and each
+  exits 1 naming every manager and `--take-over`, with no verb but `list` run. Nothing on that
+  `PATH` can reach the machine's own launchd, and the address points at a port nothing listens on.
 - `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: every CLI call in the app that can
   stop a daemon, listed with the function it sits in, each reached from one command of the app's
   pages.

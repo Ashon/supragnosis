@@ -1486,11 +1486,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
     (4, &[
         c(
             "every CLI lifecycle command exits non-zero on failure with the reason",
-            Evidence::Deferred(
-                "every lifecycle fn returns anyhow::Result and refuses with bail!, which main() propagates as exit 1, \
-                 but no test runs the binary: a_conflict_names_every_manager_and_the_fix pins the reason's text, not \
-                 the exit. Revisit when a CLI harness runs stop/restart against a scripted launchctl",
-            ),
+            Evidence::Scenario(&["a_refused_lifecycle_command_exits_non_zero_with_the_reason"]),
         ),
         c(
             "a job install loaded that does not come up is a non-zero exit naming the error log, and a slow start is reported as slow",
@@ -3457,6 +3453,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-cli/src/hub.rs"),
+    include_str!("../../supragnosis-cli/tests/lifecycle_exit.rs"),
     include_str!("../../supragnosis-cli/src/invite.rs"),
     include_str!("../../supragnosis-cli/src/join.rs"),
     include_str!("../../supragnosis-cli/src/pair.rs"),
