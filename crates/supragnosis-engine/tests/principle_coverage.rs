@@ -1626,11 +1626,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (6, &[c(
         "while a remote profile is active the daemon controls are disabled with the reason, and the commands behind them refuse",
-        Evidence::Deferred(
-            "login_set, daemon_restart and peer_narrow refuse with the reason when active_remote is set and \
-             settings.js disables the switch and hides Restart on d.remote; neither half is under test. Revisit when \
-             active_remote is injectable and the three refusals are asserted",
-        ),
+        Evidence::Scenario(&["the_daemon_controls_refuse_while_a_remote_server_is_in_use"]),
     )]),
     (7, &[c(
         "a daemon that cannot start because its store was indexed by another model is shown with that reason and one click that \

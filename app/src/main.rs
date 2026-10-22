@@ -1201,6 +1201,18 @@ fn active_remote(app: &tauri::AppHandle) -> Option<RemoteServer> {
     app.try_state::<ActiveRemote>().and_then(|s| s.0.lock().unwrap().clone())
 }
 
+/// Why this Mac's daemon controls refuse while a remote server is in use (settings-page.md Section
+/// 3.4): the daemon they act on is not the one the AI apps use.
+const THIS_MACS_DAEMON: &str = "this Mac's daemon is not what the AI apps use";
+
+/// A command that acts on this Mac's daemon refuses, saying why, while a remote server is active.
+fn not_while_remote(active: Option<&RemoteServer>, why: &str) -> Result<(), String> {
+    match active {
+        Some(_) => Err(format!("a remote server is active - {why}")),
+        None => Ok(()),
+    }
+}
+
 /// `supragnosis server --json`. `None` when the CLI predates profiles.
 fn cli_server_list() -> Option<serde_json::Value> {
     run_cli_json(&["server", "--json"])
@@ -2134,11 +2146,7 @@ async fn login_set(
     on: bool,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    if active_remote(&app).is_some() {
-        return Err(
-            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
-        );
-    }
+    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     // Turning it off is a choice the app remembers, so Welcome and the tray stop asking
     // (docs/onboarding.md Section 4.1); turning it on forgets it.
     let mut p = read_prefs(&app);
@@ -2172,9 +2180,7 @@ async fn peer_narrow(
     keep: Vec<String>,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    if active_remote(&app).is_some() {
-        return Err("a remote server is active - sync settings are this Mac's daemon's".into());
-    }
+    not_while_remote(active_remote(&app).as_ref(), "sync settings are this Mac's daemon's")?;
     if node.trim().is_empty() {
         return Err("no peer named".into());
     }
@@ -2207,11 +2213,7 @@ async fn peer_narrow(
 #[tauri::command]
 async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
     own_page_caller(&webview)?;
-    if active_remote(&app).is_some() {
-        return Err(
-            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
-        );
-    }
+    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     let sock = app.state::<VizSock>().0.clone();
     restart_daemon(&app, sock).await
 }
@@ -2219,11 +2221,7 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
 #[tauri::command]
 async fn search_rebuild(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
     own_page_caller(&webview)?;
-    if active_remote(&app).is_some() {
-        return Err(
-            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
-        );
-    }
+    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     let sock = app.state::<VizSock>().0.clone();
     rebuild_index(&app, sock).await
 }
@@ -2682,10 +2680,8 @@ async fn setup_run(
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     let installs = matches!(step.as_str(), "server" | "takeover");
-    if installs && active_remote(&app).is_some() {
-        return Err(
-            "a remote server is active - this Mac's daemon is not what the AI apps use".into()
-        );
+    if installs {
+        not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     }
     let args: Vec<String> = match step.as_str() {
         "server" => setup_args(&["--step", "server"], None),
@@ -3990,6 +3986,58 @@ mod status_text_tests {
         assert!(exit.contains("reaped_on_exit(prev)"), "{exit}");
         for acts in ["run_cli", "Command::new", "stop", "service"] {
             assert!(!exit.contains(acts), "the exit path does not reach {acts}: {exit}");
+        }
+    }
+
+    /// settings-page.md: while a remote profile is active, this Mac's daemon controls are disabled
+    /// with the reason, and the commands behind them refuse. The refusal says why; each command that
+    /// acts on the daemon - the switch, Restart, Rebuild index, a sync narrowing, Setup's install
+    /// steps - asks it right after its caller check, before anything else; and the page draws the
+    /// controls disabled or not at all, under the line that says which server is in use.
+    #[test]
+    fn the_daemon_controls_refuse_while_a_remote_server_is_in_use() {
+        let remote = super::RemoteServer {
+            name: "work".into(),
+            url: "https://hub.example".into(),
+            answering: true,
+            credential_refused: false,
+        };
+        assert_eq!(
+            super::not_while_remote(Some(&remote), super::THIS_MACS_DAEMON),
+            Err("a remote server is active - this Mac's daemon is not what the AI apps use".into())
+        );
+        assert_eq!(super::not_while_remote(None, super::THIS_MACS_DAEMON), Ok(()));
+
+        let src = include_str!("main.rs");
+        let body = |head: &str| {
+            let at = src.find(head).unwrap_or_else(|| panic!("no {head}"));
+            let rest = &src[at..];
+            &rest[..rest.find("\n}\n").expect("it closes")]
+        };
+        for command in
+            ["fn login_set(", "fn daemon_restart(", "fn search_rebuild(", "fn peer_narrow("]
+        {
+            let b = body(command);
+            let after = &b[b.find("own_page_caller(&webview)?;").expect("the caller check")..];
+            let next = after.lines().nth(1).unwrap_or_default().trim();
+            assert!(
+                next.starts_with("not_while_remote(active_remote(&app).as_ref(),"),
+                "{command} asks first: {next}"
+            );
+        }
+        let setup = body("fn setup_run(");
+        assert!(setup.contains("if installs {\n        not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;"));
+
+        let js = include_str!("../assets/settings.js");
+        for drawn in [
+            "disabled: remote || d.login === null",
+            "remote || drift || conflict ? null : h(\"div\", { class: \"row\" },",
+            "const drift = !remote &&",
+            "const conflict = !remote &&",
+            "if (remote) out.push(h(\"div\", { class: \"callout info\" }",
+            "if (state.daemon && state.daemon.remote) {",
+        ] {
+            assert!(js.contains(drawn), "the page: {drawn}");
         }
     }
 
