@@ -894,10 +894,16 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   entities - the swappable resolution policy computes kind/representative-spelling/aliases, conflicts
   are preserved AND surfaced, and `observe` and `reproject` now share one fold so the incremental
   write equals a fresh replay (IR3 - the arrival-order interim is gone on the local side). Spelling
-  variants accumulate into **aliases** (IR1). Still open: **relation** provenance is a single
-  attestation (relations do not yet accumulate multi-attestation like entities/observations do) and
-  relations have no belief resolution beyond last-write - deferred with negation semantics to M3c/M5
-  (a relation "conflict" needs an explicit negative assertion to be more than coexistence).
+  variants accumulate into **aliases** (IR1). **Relation attestations - repaid 2026-10-23**: a
+  relation carries `attestations`, every attestation of every observation asserting the edge, credited
+  once per observation as an entity's provenance is, and the graph's edges count them as `sources`, summed over the rows a merge collapses. The
+  edge's tier (the highest effective tier among the observations stating it) and its confidence (from
+  `provenance`, the authoring attestation of the HLC-latest asserting observation) are computed as before,
+  so accumulating changes what an edge says about its support and nothing about how far it is trusted
+  (the author's decision; a corroboration rule for edges belongs with P6's). `get_entity` leaves the
+  list off the relations it returns, since each attestation is already an endpoint's provenance. Still open: relations have no belief resolution beyond last-write - deferred with negation
+  semantics to M3c/M5 (a relation "conflict" needs an explicit negative assertion to be more than
+  coexistence).
   Note: because structured assertions (`assertions` - including entity kind) are enclosed in the observation log exactly as spelled,
   any resolution policy can be applied retroactively by reprojecting the log - the grounds that this deferral is
   non-destructive. **This defense is now discharged rather than promised**: `reproject` is implemented (it was

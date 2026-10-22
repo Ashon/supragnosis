@@ -336,7 +336,8 @@ had been renamed out from under it, which is the failure mode the sweep exists t
 [impl] Implemented - the corresponding architecture.md Section 14 updates are in effect:
 
 - Principle 1/6 deferral: the "swappable resolution policy" and conflict surfacing land;
-  multi-attestation accumulation for relations and alias rules stay with M3b.
+  alias rules stay with M3b, and multi-attestation accumulation for relations landed on
+  2026-10-23 (architecture.md Section 14).
 - Open Decision "current belief policy": **decided** - `TierWeighted` as specified here,
   replaceable per R1.
 - Overdue entry condition 2 (receiver tier re-evaluation): repaid **for the read path**
