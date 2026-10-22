@@ -611,21 +611,21 @@ fn check_event(
     workspace: &str,
     origin_keys: &BTreeMap<String, String>,
 ) -> Result<Observation, RejectReason> {
-    let Some(meta) = &ev.attestation.sync else {
+    // Destructured with no `..`: a field the wire envelope gains is a compile error here until it is
+    // decided whether it is part of the content address, the signed attestation, or neither.
+    let AttestationEvent { content, assertions, attestation } = ev;
+    let Some(meta) = &attestation.sync else {
         return Err(RejectReason::Unstamped);
     };
-    if ev.attestation.workspace != workspace {
+    if attestation.workspace != workspace {
         return Err(RejectReason::WorkspaceMismatch);
     }
     let Some(pubkey) = origin_keys.get(&meta.origin_node) else {
         return Err(RejectReason::UnknownOrigin);
     };
-    let mut obs = Observation::with_assertions(
-        ev.content.clone(),
-        ev.attestation.clone(),
-        ev.assertions.clone(),
-    );
-    if !verify_attestation(pubkey, &obs.id, &ev.attestation, meta) {
+    let mut obs =
+        Observation::with_assertions(content.clone(), attestation.clone(), assertions.clone());
+    if !verify_attestation(pubkey, &obs.id, attestation, meta) {
         return Err(RejectReason::BadSignature);
     }
     // A valid signature proves the origin, not that the content is well-formed (P18). Refuse a
