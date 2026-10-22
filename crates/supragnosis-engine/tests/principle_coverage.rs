@@ -2004,18 +2004,12 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
         c("an absent target reads as absent in the diff, never as an empty diff",
           Evidence::Scenario(&["p5_a_split_of_an_unreadable_target_says_so_instead_of_showing_nothing"])),
         c("a repeat split of one resolution is idempotent rather than an error",
-          Evidence::Deferred(
-            "Revisit when entity_split's fold next changes - reversal is set membership in `reversed_merges`, and a verbatim \
-             repeat is even the same observation id, but no case casts a second split and asserts \
-             that the map, the suppression set and the proposal states are unchanged")),
+          Evidence::Scenario(&["p3_a_repeat_split_changes_nothing"])),
     ]),
     (10, &[
         c("re-opening a reversed resolution verbatim is refused, because content addressing would \
            hand back the id the split already named",
-          Evidence::Deferred(
-            "Revisit when entity_split's fold next changes - `propose` refuses the verbatim re-open and names the fix, and \
-             p15_separated_entities_can_be_merged_again steps around it with a rationale, but no \
-             case asserts the refusal itself, so deleting it would fail nothing")),
+          Evidence::Scenario(&["p14_a_verbatim_reopen_of_a_reversed_merge_is_refused"])),
     ]),
 ];
 

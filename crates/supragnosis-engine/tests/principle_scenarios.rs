@@ -3167,6 +3167,101 @@ fn p16_equal_logs_suppress_suggestions_equally() {
     assert_ne!(report(&bare), authored, "the comparison above is not between two empty reports");
 }
 
+/// guard (unmerge.md S9): a repeat split of one resolution is idempotent rather than an error.
+/// Reversal is set membership, so once a merge is split, splitting it again - verbatim, which is the
+/// same proposal absorbed, or with a reason of its own, which is a second proposal - changes nothing:
+/// the graph, the suggestions the split suppresses and every proposal's state read as they did after
+/// the first.
+#[test]
+fn p3_a_repeat_split_changes_nothing() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+    let read = |e: &Engine| {
+        let state = |id: &str| e.get_proposal(Some(WS), id).unwrap().unwrap().state;
+        (
+            serde_json::to_string(&e.graph(Some(WS)).unwrap()).unwrap(),
+            // The suppression set, as the suggestions show it; the rest of the report also counts
+            // log rows, which a second proposal adds.
+            {
+                let c = serde_json::to_value(e.curation(Some(WS)).unwrap()).unwrap();
+                let fields = ["merge_suggestions", "name_variants", "name_ladder", "merge_cycles"];
+                fields.map(|f| c[f].to_string()).join("\n")
+            },
+            state(&merge),
+            state(&split),
+        )
+    };
+    let after_one = read(&engine);
+    assert_eq!((after_one.2.as_str(), after_one.3.as_str()), ("merged", "merged"));
+
+    let verbatim = propose_split(&engine, &merge, "ashon");
+    assert_eq!(verbatim, split, "the same split is the same proposal");
+    review(&engine, &verbatim, "merge", "reviewer");
+    assert_eq!(read(&engine), after_one, "a verbatim repeat changes nothing");
+
+    let second = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_split".into(),
+            targets: vec![merge.clone()],
+            into: None,
+            tier: None,
+            rationale: Some("the split, said again".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("a second split of the same merge is not an error");
+    assert_ne!(second, split);
+    review(&engine, &second, "merge", "reviewer");
+    let after_two = read(&engine);
+    assert_eq!(
+        (after_two.0, after_two.1, after_two.2),
+        (after_one.0, after_one.1, after_one.2),
+        "a second split of a merge already split changes nothing"
+    );
+}
+
+/// guard (unmerge.md S10, Principle 14): re-opening a reversed resolution verbatim is refused. A
+/// proposal is its content, so the identical merge would be the id the split already names - merged
+/// and reversed forever. `propose` refuses it and names the fix, a reason that makes the re-merge
+/// the different act it is; with one, it opens.
+#[test]
+fn p14_a_verbatim_reopen_of_a_reversed_merge_is_refused() {
+    let (_store, engine) = engine();
+    let (x, y) = mergeable_pair(&engine);
+    let merge = propose_merge(&engine, &[&x, &y], &x, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+    let split = propose_split(&engine, &merge, "ashon");
+    review(&engine, &split, "merge", "reviewer");
+
+    let input = |rationale: Option<&str>| ProposeInput {
+        workspace: None,
+        kind: "entity_merge".into(),
+        targets: vec![x.clone(), y.clone()],
+        into: Some(x.clone()),
+        tier: None,
+        rationale: rationale.map(String::from),
+        affected_types: vec![],
+        source_ref: None,
+        on_behalf_of: Some("ashon".into()),
+    };
+    let refused = engine.propose(input(None)).expect_err("the verbatim re-open is refused");
+    let said = refused.to_string();
+    assert!(said.contains("already reversed by an entity_split"), "{said}");
+    assert!(said.contains("rationale"), "the refusal names the fix: {said}");
+    assert_eq!(engine.get_proposal(Some(WS), &merge).unwrap().unwrap().state, "merged");
+
+    let again = engine
+        .propose(input(Some("the split read the names wrong")))
+        .expect("with a reason");
+    assert_ne!(again, merge, "a re-merge with a reason is a proposal of its own");
+}
+
 /// guard (Principle 15, unmerge.md Section 7): "both must be reversible". A split is not absorbing -
 /// unlike an excision tombstone - so re-merging separated entities is an ordinary new entity_merge
 /// and needs no special case. Suppression is of the suggestion, never of the possibility.
