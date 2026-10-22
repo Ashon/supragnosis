@@ -1529,8 +1529,21 @@ fn server_add_args(name: &str, url: &str, ca: Option<&str>) -> Vec<String> {
 
 /// Adds a remote server profile through the CLI, writing the credential to its stdin.
 fn add_server(name: &str, url: &str, credential: &str, ca: Option<&str>) -> Result<String, String> {
-    use std::io::Write;
     let bin = find_server_bin().ok_or("supragnosis CLI not found")?;
+    add_server_with(&bin, name, url, credential, ca)
+}
+
+/// [`add_server`] with the CLI named, so a test can stand one in. The credential goes to stdin and
+/// nowhere else (S2): not into an argument, and not into the answer - should the CLI's refusal quote
+/// it, the refusal reaches the page with the credential replaced.
+fn add_server_with(
+    bin: &std::path::Path,
+    name: &str,
+    url: &str,
+    credential: &str,
+    ca: Option<&str>,
+) -> Result<String, String> {
+    use std::io::Write;
     let mut child = Command::new(bin)
         .args(server_add_args(name, url, ca))
         .stdin(Stdio::piped())
@@ -1539,13 +1552,22 @@ fn add_server(name: &str, url: &str, credential: &str, ca: Option<&str>) -> Resu
         .spawn()
         .map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(format!("{}\n", credential.trim()).as_bytes())
-            .map_err(|e| format!("could not hand the credential to the CLI: {e}"))?;
+        // A CLI that refuses before it reads (a name taken, a CA file missing) has closed its end:
+        // its refusal is the answer, not the broken pipe.
+        match stdin.write_all(format!("{}\n", credential.trim()).as_bytes()) {
+            Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("could not hand the credential to the CLI: {e}"));
+            }
+            _ => {}
+        }
     }
     let out = child.wait_with_output().map_err(|e| format!("the CLI did not finish: {e}"))?;
+    let secret = credential.trim();
     match cli_outcome(&out) {
         (true, _) => Ok(format!("added {name}")),
+        (false, why) if !secret.is_empty() => Err(why.replace(secret, "[the credential]")),
         (false, why) => Err(why),
     }
 }
@@ -4097,6 +4119,73 @@ mod settings_tests {
             server_add_args("home", "https://hub.example", Some(" /etc/ca.pem ")),
             ["server", "add", "home", "https://hub.example", "--ca", "/etc/ca.pem"]
         );
+    }
+
+    /// S2: a credential typed into the page reaches the CLI on stdin and nowhere else. Stand-in CLIs
+    /// take the CLI's place: one records its arguments, environment and stdin, and the credential is
+    /// on stdin alone; one quotes its stdin in a refusal, as a CLI might, and the answer carries the
+    /// refusal with the credential replaced; one refuses before reading, and the answer is its
+    /// refusal rather than the pipe it closed. The page's script reads the field once and writes it
+    /// once, to clear it, before the call, hands the value only to the shape check and the call, and
+    /// neither it nor kit.js, the other script the page loads, logs anything.
+    #[test]
+    fn a_credential_reaches_the_cli_on_stdin_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("sg-server-add-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stub = |name: &str, body: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let secret = "s3cret-token-6f1d";
+        let add = |cli: &std::path::Path, credential: &str| {
+            super::add_server_with(cli, "home", "https://hub.example", credential, None)
+        };
+
+        let records = stub(
+            "records",
+            "printf '%s\\n' \"$@\" > \"$0.args\"\nenv > \"$0.env\"\ncat > \"$0.stdin\"\necho added\n",
+        );
+        assert_eq!(add(&records, &format!(" {secret}\n")), Ok("added home".to_string()));
+        let read = |file: &str| std::fs::read_to_string(dir.join(file)).unwrap();
+        assert_eq!(read("records.args"), "server\nadd\nhome\nhttps://hub.example\n", "no more");
+        assert_eq!(read("records.stdin"), format!("{secret}\n"));
+        assert!(!read("records.env").contains(secret), "nor in the CLI's environment");
+
+        let quotes =
+            stub("quotes", "read line\necho \"Error: the server refused $line\" >&2\nexit 1\n");
+        assert_eq!(add(&quotes, secret), Err("the server refused [the credential]".to_string()));
+        let early = stub("early", "echo 'Error: a profile named \"home\" exists' >&2\nexit 1\n");
+        assert_eq!(add(&early, secret), Err("a profile named \"home\" exists".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Read without whitespace, so no spacing hides a write.
+        let js: String = include_str!("../assets/settings.js")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let writes: Vec<_> = js.match_indices("cred.value=").collect();
+        assert_eq!(writes.len(), 1, "the field is written once");
+        assert!(js[writes[0].0..].starts_with("cred.value=\"\";"), "and only to clear it");
+        let call = js.find("invoke(\"server_add\"").expect("the call");
+        assert!(writes[0].0 < call, "the field is cleared before the value is handed over");
+        // The value read from the field goes to the shape check and to the call, and nowhere back.
+        assert_eq!(js.matches("cred.value").count(), 2, "read once, written once");
+        assert!(js.contains("credential:cred.value"));
+        let uses: Vec<&str> = js.match_indices("f.credential").map(|(i, _)| &js[i..]).collect();
+        assert_eq!(uses.len(), 2, "checked and handed over, nothing else");
+        assert!(uses[0].starts_with("f.credential.trim())errs.credential="));
+        assert!(uses[1].starts_with("f.credential,ca:f.ca});"));
+        // The scripts settings.html loads.
+        for (file, script) in [
+            ("settings.js", include_str!("../assets/settings.js")),
+            ("kit.js", include_str!("../assets/kit.js")),
+        ] {
+            assert!(!script.contains("console."), "{file} logs nothing");
+        }
     }
 
     /// S5: the settings page renders the text it is given as text. It shows CLI output, which can

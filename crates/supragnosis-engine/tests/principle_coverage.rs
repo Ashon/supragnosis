@@ -1641,11 +1641,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the credential reaches the CLI on stdin only, appears in no log line or response, and leaves the page once handed over",
-            Evidence::Deferred(
-                "add_server pipes it to stdin and answers `added <name>` or the CLI's first stderr line, and \
-                 settings.js clears the field on submit - neither is under test, and the CLI's stderr is not pinned \
-                 to exclude the value. Revisit when add_server is driven with a stub CLI that echoes its stdin",
-            ),
+            Evidence::Scenario(&["a_credential_reaches_the_cli_on_stdin_only"]),
         ),
     ]),
     (3, &[
