@@ -9,7 +9,8 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified.** The author decided its choices on 2026-10-22 (Section 7, D1-D15), among
+> Status: **specified; step 1 built** (Section 10). The author decided its choices on 2026-10-22
+> (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
 
@@ -417,7 +418,7 @@ as now (S6).
 
 ## 10. Ordering
 
-1. **The daemon syncs on its own** (Section 4.5): the round, its timer and backoff, one at a time
+1. **The daemon syncs on its own** [built] (Section 4.5): the round, its timer and backoff, one at a time
    with the tools, and `sync_status`'s `last_round`. Guarded by a two-node case in which a write on
    one reaches the other with no call.
 2. **The admin socket and the listener's life** (Sections 4 and 4.1): Sync now and `supragnosis

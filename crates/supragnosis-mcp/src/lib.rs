@@ -324,6 +324,11 @@ pub struct SyncContext {
     /// Known-peer registry (hub role): runtime observability of who checked in (None on a
     /// client-only node).
     pub peer_registry: Option<std::sync::Arc<supragnosis_sync::http::PeerRegistry>>,
+    /// One sync round at a time, whatever starts it: the daemon's own timer or a `sync_*` tool
+    /// (docs/pairing.md Section 4.5).
+    pub round: Arc<tokio::sync::Mutex<()>>,
+    /// What the daemon's last round did, said by `sync_status` (P24, P5).
+    pub last_round: Arc<std::sync::RwLock<Option<serde_json::Value>>>,
 }
 
 /// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
@@ -1401,6 +1406,9 @@ impl SupragnosisServer {
         if let Some(reg) = &ctx.peer_registry {
             status["known_peers"] = serde_json::to_value(reg.snapshot()).unwrap_or_default();
         }
+        // The daemon's own rounds (docs/pairing.md Section 4.5): when the last ran, what it moved,
+        // and why it failed - null until one has run.
+        status["last_round"] = ctx.last_round.read().map(|l| l.clone()).ok().flatten().into();
         to_json(&status)
     }
 
@@ -1412,86 +1420,9 @@ impl SupragnosisServer {
             return sync_unconfigured();
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
-        // Narrow the round to hosts that admit this workspace, and say which were left out. The two
-        // halves ship together on purpose: filtering alone replaces a host's loud `403` with a
-        // silent skip, which trades a legible failure for an invisible one (N5).
-        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
-        let mut results = Vec::new();
-        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
-            let server = &link.url;
-            let client = match supragnosis_sync::http::SyncClient::for_link(link) {
-                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
-                    continue;
-                }
-            };
-            let store = self.engine.store();
-            let mine = match tokio::task::spawn_blocking({
-                let ws = ws.clone();
-                move || supragnosis_sync::version_vector(store.as_ref(), &ws)
-            })
-            .await
-            {
-                Ok(Ok(vv)) => vv,
-                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
-                Err(e) => return err_json(&format!("task join error: {e}")),
-            };
-            // Page after page (sync-correctness.md Section 11); each page is applied off the
-            // async runtime, as one pull was.
-            let pulled = client
-                .pull_all(&ws, mine, |events| {
-                    let (store, node) = (self.engine.store(), ctx.node.clone());
-                    let (keys, ws2) = (ctx.origin_keys.clone(), ws.clone());
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            let mut vv = supragnosis_sync::VersionVector::default();
-                            node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
-                        })
-                        .await
-                        .map_err(|e| {
-                            supragnosis_sync::http::TransportError::Io(std::io::Error::other(
-                                format!("join: {e}"),
-                            ))
-                        })?
-                        .map_err(Into::into)
-                    }
-                })
-                .await;
-            match pulled {
-                Ok(report) => {
-                    self.engine.emit(Event::Sync {
-                        direction: "pull".into(),
-                        peer: server.clone(),
-                        workspace: ws.clone(),
-                        count: report.accepted,
-                    });
-                    results.push(serde_json::json!({
-                        "server": server,
-                        "applied": report.accepted,
-                        "rejected": report.rejected.len(),
-                    }))
-                }
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
-                }
-            }
-        }
-        // Re-materialize once after all pulls (Prop C: convergence point).
-        let engine = self.engine.clone();
-        let ws2 = ws.clone();
-        let reprojected = match tokio::task::spawn_blocking(move || engine.reproject(Some(&ws2)))
-            .await
-        {
-            Ok(Ok(r)) => {
-                serde_json::json!({"observations": r.observations, "entities": r.entities, "relations": r.relations})
-            }
-            Ok(Err(e)) => serde_json::json!({"error": e.to_string()}),
-            Err(e) => serde_json::json!({"error": format!("join: {e}")}),
-        };
-        to_json(
-            &serde_json::json!({"workspace": ws, "pulled": results, "skipped": routed.skipped, "reprojected": reprojected}),
-        )
+        // One round at a time, whoever starts it (docs/pairing.md Section 4.5).
+        let _round = ctx.round.lock().await;
+        to_json(&pull_workspace(&self.engine, ctx, &ws).await)
     }
 
     #[tool(
@@ -1502,127 +1433,260 @@ impl SupragnosisServer {
             return sync_unconfigured();
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
-        if !ctx.share_workspaces.iter().any(|w| w == &ws) {
-            return err_json(&format!(
-                "workspace {ws:?} is not on the share whitelist (P17: nothing leaves by default) - \
-                 add it to [sync] share_workspaces in supragnosis.toml to share it"
-            ));
-        }
-        // Ask each routed host first. Its copy of this node's own stream floors the seq counter
-        // before anything is stamped (sync-correctness.md Section 5), and the version vector it
-        // advertises is what the push below is computed against.
-        let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
-        let mut results = Vec::new();
-        let mut asked = Vec::new();
-        for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
-            let server = &link.url;
-            let client = match supragnosis_sync::http::SyncClient::for_link(link) {
-                Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}));
-                    continue;
-                }
-            };
-            match client.advertise(&ws).await {
-                Ok(remote) => asked.push((server.clone(), client, remote)),
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
-                }
-            }
-        }
-        {
-            let store = self.engine.store();
-            let node = ctx.node.clone();
-            let ws2 = ws.clone();
-            let seen: Vec<u64> =
-                asked.iter().map(|(_, _, r)| r.vv.get(node.node_id(), &ws)).collect();
-            let floored = tokio::task::spawn_blocking(move || {
-                seen.into_iter().try_for_each(|s| node.floor_seq(store.as_ref(), &ws2, s))
-            })
-            .await;
-            match floored {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
-                Err(e) => return err_json(&format!("task join error: {e}")),
-            }
-        }
-        // Stamp before export (export-boundary stamping, Phase 2).
-        let mut reprojected = serde_json::Value::Null;
-        {
-            let store = self.engine.store();
-            let node = ctx.node.clone();
-            let ws2 = ws.clone();
-            match tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await {
-                Ok(Err(e)) => return err_json(&format!("backfill stamping failed: {e}")),
-                // Stamping rewrites log rows the projection carries, so the graph is behind the log
-                // until re-materialized (crash-recovery.md K2). A failure here is not the push's -
-                // the rows stay owed and the next open repays them.
-                Ok(Ok(stamped)) if stamped > 0 => {
-                    let engine = self.engine.clone();
-                    let ws3 = ws.clone();
-                    reprojected = match tokio::task::spawn_blocking(move || {
-                        engine.reproject(Some(&ws3))
-                    })
-                    .await
-                    {
-                        Ok(Ok(r)) => {
-                            serde_json::json!({"stamped": stamped, "entities": r.entities, "relations": r.relations})
-                        }
-                        Ok(Err(e)) => {
-                            serde_json::json!({"stamped": stamped, "error": e.to_string()})
-                        }
-                        Err(e) => {
-                            serde_json::json!({"stamped": stamped, "error": format!("join: {e}")})
-                        }
-                    };
-                }
-                _ => {}
-            }
-        }
-        // The round was narrowed above to hosts that admit this workspace, and `skipped` says which
-        // were left out. The two halves ship together on purpose: filtering alone replaces a host's
-        // loud `403` with a silent skip, which trades a legible failure for an invisible one (N5).
-        for (server, client, remote) in asked {
-            let server = &server;
-            let store = self.engine.store();
-            let share = ctx.share_workspaces.clone();
-            let ws2 = ws.clone();
-            let surplus = match tokio::task::spawn_blocking(move || {
-                supragnosis_sync::export_delta(store.as_ref(), &ws2, &remote.vv, &share)
-            })
-            .await
-            {
-                Ok(Ok(ev)) => ev,
-                Ok(Err(e)) => return err_json(&format!("store failure: {e}")),
-                Err(e) => return err_json(&format!("task join error: {e}")),
-            };
-            if surplus.is_empty() {
-                results.push(serde_json::json!({"server": server, "pushed": 0}));
+        let _round = ctx.round.lock().await;
+        to_json(&push_workspace(&self.engine, ctx, &ws).await)
+    }
+}
+
+/// One workspace pulled from every host that admits it and applied: verify, absorb, re-materialize.
+/// It is what the `sync_pull` tool answers, and what a daemon's own round does (docs/pairing.md,
+/// Section 4.5). The caller holds the context's round lock.
+pub async fn pull_workspace(
+    engine: &Arc<Engine>,
+    ctx: &SyncContext,
+    ws: &str,
+) -> serde_json::Value {
+    let ws = ws.to_string();
+    // Narrow the round to hosts that admit this workspace, and say which were left out. The two
+    // halves ship together on purpose: filtering alone replaces a host's loud `403` with a
+    // silent skip, which trades a legible failure for an invisible one (N5).
+    let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
+    let mut results = Vec::new();
+    for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
+        let server = &link.url;
+        let client = match supragnosis_sync::http::SyncClient::for_link(link) {
+            Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
+            Err(e) => {
+                results.push(serde_json::json!({"server": server, "error": e.to_string()}));
                 continue;
             }
-            match client.push(&ws, surplus).await {
-                Ok(resp) => {
-                    self.engine.emit(Event::Sync {
-                        direction: "push".into(),
-                        peer: server.clone(),
-                        workspace: ws.clone(),
-                        count: resp.accepted,
-                    });
-                    results.push(serde_json::json!({
-                        "server": server,
-                        "pushed": resp.accepted,
-                        "rejected": resp.rejected,
-                    }))
+        };
+        let store = engine.store();
+        let mine = match tokio::task::spawn_blocking({
+            let ws = ws.clone();
+            move || supragnosis_sync::version_vector(store.as_ref(), &ws)
+        })
+        .await
+        {
+            Ok(Ok(vv)) => vv,
+            Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+        };
+        // Page after page (sync-correctness.md Section 11); each page is applied off the
+        // async runtime, as one pull was.
+        let pulled = client
+            .pull_all(&ws, mine, |events| {
+                let (store, node) = (engine.store(), ctx.node.clone());
+                let (keys, ws2) = (ctx.origin_keys.clone(), ws.clone());
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let mut vv = supragnosis_sync::VersionVector::default();
+                        node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
+                    })
+                    .await
+                    .map_err(|e| {
+                        supragnosis_sync::http::TransportError::Io(std::io::Error::other(format!(
+                            "join: {e}"
+                        )))
+                    })?
+                    .map_err(Into::into)
                 }
-                Err(e) => {
-                    results.push(serde_json::json!({"server": server, "error": e.to_string()}))
-                }
+            })
+            .await;
+        match pulled {
+            Ok(report) => {
+                engine.emit(Event::Sync {
+                    direction: "pull".into(),
+                    peer: server.clone(),
+                    workspace: ws.clone(),
+                    count: report.accepted,
+                });
+                results.push(serde_json::json!({
+                    "server": server,
+                    "applied": report.accepted,
+                    "rejected": report.rejected.len(),
+                }))
+            }
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+        }
+    }
+    // Re-materialize once after all pulls (Prop C: convergence point).
+    let engine = engine.clone();
+    let ws2 = ws.clone();
+    let reprojected = match tokio::task::spawn_blocking(move || engine.reproject(Some(&ws2))).await
+    {
+        Ok(Ok(r)) => {
+            serde_json::json!({"observations": r.observations, "entities": r.entities, "relations": r.relations})
+        }
+        Ok(Err(e)) => serde_json::json!({"error": e.to_string()}),
+        Err(e) => serde_json::json!({"error": format!("join: {e}")}),
+    };
+    serde_json::json!({"workspace": ws, "pulled": results, "skipped": routed.skipped, "reprojected": reprojected})
+}
+
+/// One shared workspace pushed to every host that admits it - what the `sync_push` tool answers, and
+/// what a daemon's own round does. The caller holds the context's round lock.
+pub async fn push_workspace(
+    engine: &Arc<Engine>,
+    ctx: &SyncContext,
+    ws: &str,
+) -> serde_json::Value {
+    let ws = ws.to_string();
+    if !ctx.share_workspaces.iter().any(|w| w == &ws) {
+        return serde_json::json!({"error": format!(
+            "workspace {ws:?} is not on the share whitelist (P17: nothing leaves by default) - \
+             add it to [sync] share_workspaces in supragnosis.toml to share it"
+        )});
+    }
+    // Ask each routed host first. Its copy of this node's own stream floors the seq counter
+    // before anything is stamped (sync-correctness.md Section 5), and the version vector it
+    // advertises is what the push below is computed against.
+    let routed = supragnosis_sync::route(&ctx.servers, &ctx.surfaces, &ws);
+    let mut results = Vec::new();
+    let mut asked = Vec::new();
+    for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
+        let server = &link.url;
+        let client = match supragnosis_sync::http::SyncClient::for_link(link) {
+            Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
+            Err(e) => {
+                results.push(serde_json::json!({"server": server, "error": e.to_string()}));
+                continue;
+            }
+        };
+        match client.advertise(&ws).await {
+            Ok(remote) => asked.push((server.clone(), client, remote)),
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+        }
+    }
+    {
+        let store = engine.store();
+        let node = ctx.node.clone();
+        let ws2 = ws.clone();
+        let seen: Vec<u64> = asked.iter().map(|(_, _, r)| r.vv.get(node.node_id(), &ws)).collect();
+        let floored = tokio::task::spawn_blocking(move || {
+            seen.into_iter().try_for_each(|s| node.floor_seq(store.as_ref(), &ws2, s))
+        })
+        .await;
+        match floored {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+        }
+    }
+    // Stamp before export (export-boundary stamping, Phase 2).
+    let mut reprojected = serde_json::Value::Null;
+    {
+        let store = engine.store();
+        let node = ctx.node.clone();
+        let ws2 = ws.clone();
+        match tokio::task::spawn_blocking(move || node.backfill(store.as_ref(), &ws2)).await {
+            Ok(Err(e)) => {
+                return serde_json::json!({"error": format!("backfill stamping failed: {e}")})
+            }
+            // Stamping rewrites log rows the projection carries, so the graph is behind the log
+            // until re-materialized (crash-recovery.md K2). A failure here is not the push's -
+            // the rows stay owed and the next open repays them.
+            Ok(Ok(stamped)) if stamped > 0 => {
+                let engine = engine.clone();
+                let ws3 = ws.clone();
+                reprojected = match tokio::task::spawn_blocking(move || {
+                    engine.reproject(Some(&ws3))
+                })
+                .await
+                {
+                    Ok(Ok(r)) => {
+                        serde_json::json!({"stamped": stamped, "entities": r.entities, "relations": r.relations})
+                    }
+                    Ok(Err(e)) => {
+                        serde_json::json!({"stamped": stamped, "error": e.to_string()})
+                    }
+                    Err(e) => {
+                        serde_json::json!({"stamped": stamped, "error": format!("join: {e}")})
+                    }
+                };
+            }
+            _ => {}
+        }
+    }
+    // The round was narrowed above to hosts that admit this workspace, and `skipped` says which
+    // were left out. The two halves ship together on purpose: filtering alone replaces a host's
+    // loud `403` with a silent skip, which trades a legible failure for an invisible one (N5).
+    for (server, client, remote) in asked {
+        let server = &server;
+        let store = engine.store();
+        let share = ctx.share_workspaces.clone();
+        let ws2 = ws.clone();
+        let surplus = match tokio::task::spawn_blocking(move || {
+            supragnosis_sync::export_delta(store.as_ref(), &ws2, &remote.vv, &share)
+        })
+        .await
+        {
+            Ok(Ok(ev)) => ev,
+            Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+        };
+        if surplus.is_empty() {
+            results.push(serde_json::json!({"server": server, "pushed": 0}));
+            continue;
+        }
+        match client.push(&ws, surplus).await {
+            Ok(resp) => {
+                engine.emit(Event::Sync {
+                    direction: "push".into(),
+                    peer: server.clone(),
+                    workspace: ws.clone(),
+                    count: resp.accepted,
+                });
+                results.push(serde_json::json!({
+                    "server": server,
+                    "pushed": resp.accepted,
+                    "rejected": resp.rejected,
+                }))
+            }
+            Err(e) => results.push(serde_json::json!({"server": server, "error": e.to_string()})),
+        }
+    }
+    serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped, "reprojected": reprojected})
+}
+
+/// One round over the shared workspaces: each pushed, then pulled (docs/pairing.md Section 4.5).
+/// It takes the round lock, so a tool's push or pull and the daemon's timer never overlap, and
+/// records what it did for `sync_status`: when, how much moved, and the first failure.
+pub async fn sync_round(engine: &Arc<Engine>, ctx: &SyncContext) -> serde_json::Value {
+    let _round = ctx.round.lock().await;
+    let (mut pushed, mut applied, mut errors) = (0u64, 0u64, Vec::<String>::new());
+    let count = |v: &serde_json::Value, list: &str, field: &str, errors: &mut Vec<String>| -> u64 {
+        if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
+            errors.push(e.to_string());
+        }
+        let mut n = 0;
+        for r in v.get(list).and_then(|l| l.as_array()).into_iter().flatten() {
+            n += r.get(field).and_then(|x| x.as_u64()).unwrap_or(0);
+            if let Some(e) = r.get("error").and_then(|e| e.as_str()) {
+                let server = r.get("server").and_then(|s| s.as_str()).unwrap_or("a host");
+                errors.push(format!("{server}: {e}"));
             }
         }
-        to_json(
-            &serde_json::json!({"workspace": ws, "pushed": results, "skipped": routed.skipped, "reprojected": reprojected}),
-        )
+        n
+    };
+    for ws in &ctx.share_workspaces {
+        let push = push_workspace(engine, ctx, ws).await;
+        pushed += count(&push, "pushed", "pushed", &mut errors);
+        let pull = pull_workspace(engine, ctx, ws).await;
+        applied += count(&pull, "pulled", "applied", &mut errors);
     }
+    let record = serde_json::json!({
+        "at": supragnosis_core::now_millis(),
+        "workspaces": ctx.share_workspaces,
+        "pushed": pushed,
+        "applied": applied,
+        "ok": errors.is_empty(),
+        "error": errors.first(),
+    });
+    if let Ok(mut last) = ctx.last_round.write() {
+        *last = Some(record.clone());
+    }
+    record
 }
 
 /// Guidance answer for the `sync_*` tools on a node with no sync configuration (P5).

@@ -629,6 +629,12 @@ pub struct PushResp {
 type HandlerError = (StatusCode, String);
 
 /// Bearer authentication (6a): hash the presented token and look it up on the allowlist. 401 when
+/// The hash an allowlist entry keeps of a node's bearer credential: blake3, in hex. The hub never
+/// keeps the credential itself (docs/pairing.md PA4).
+pub fn bearer_hash(token: &str) -> String {
+    blake3::hash(token.as_bytes()).to_hex().to_string()
+}
+
 /// absent/unknown; the caller then checks per-workspace authorization (403).
 fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEntry, HandlerError> {
     let token = headers
@@ -636,7 +642,7 @@ fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEn
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or((StatusCode::UNAUTHORIZED, "missing bearer token".to_string()))?;
-    let hash = blake3::hash(token.as_bytes()).to_hex().to_string();
+    let hash = bearer_hash(token);
     // Compared in constant time, as the principal surface does: an early-exit string compare tells
     // a caller, by how long a refusal takes, how much of a hash it has right.
     let same = |a: &str, b: &str| {
