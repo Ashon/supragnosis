@@ -30,7 +30,7 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
-> Step 51a, All as a view, is built, and step 51b, the same name, is specified.
+> Step 51a, All as a view, is built, and so is step 51b, the same name.
 
 ## 1. Why this exists
 
@@ -1963,7 +1963,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    proposal's workspace, and one filed elsewhere is listed in Health; every console act under All is
    filed where its item lives; and a merge joins entities of one workspace. The same name is step
    51b, and Same as... and Keep ... instead are step 51c.
-51b. **The same name** (Section 29.16; D9; Section 7, inspector.md Section 5 and remote-viewer.md
+51b. **The same name** [built] (Section 29.16; D9; Section 7, inspector.md Section 5 and remote-viewer.md
    Section 3.2 revised): on the local console the sheet says when another workspace
    uses the entity's name, All lights the drawn namesakes with what is pointed at or selected, and
    the Suggestions row for a shared name says what it is and which workspace each entity is in.
@@ -5021,3 +5021,9 @@ No row needs a principle changed.
 - It does not offer Same as... or Keep ... instead, which are step 51c.
 - It does not compare names on the read tier.
 - It does not look up aliases: a name is matched by the id's rule, as the Suggestions row matches it.
+
+**Guarded by** `p15_namesakes_are_the_same_name_standing_in_other_workspaces` in the engine's policy
+cases (workspace order, a merged-away namesake left out, an unknown id unknown);
+`the_console_reads_the_same_name_in_other_workspaces` over the viewer's socket (one `in` per
+workspace, a comma inside a name, the unknown entity unspelled, the read tier's refusal); and
+`the_same_name_is_said_on_the_local_console` in the viewer's review tests.

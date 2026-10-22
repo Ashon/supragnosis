@@ -2021,3 +2021,39 @@ fn p17_a_region_named_under_all_is_filed_where_it_was_asserted() {
         );
     }
 }
+
+/// GIVEN the same name in three workspaces, one of them merged into another entity there, WHEN the
+/// namesakes of one are read, THEN the others that still stand on their own are listed in workspace
+/// order, the merged-away one is left out, and an unknown id is unknown (design-system.md Section
+/// 29.16).
+#[test]
+fn p15_namesakes_are_the_same_name_standing_in_other_workspaces() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let web = Engine::new(store.clone(), "h", "web");
+    let ops = Engine::new(store.clone(), "h", "ops");
+    observe(&infra, "in infra", &["Payment service"]);
+    observe(&web, "in web", &["Payment Service"]);
+    observe(&ops, "in ops", &["Payment service", "Payments"]);
+    let gone = Entity::make_id("ops", "Payment service");
+    let kept = Entity::make_id("ops", "Payments");
+    let merge = propose_in(&ops, "ops", "entity_merge", vec![gone, kept.clone()], Some(kept))
+        .expect("propose");
+    ops.review_proposal(
+        Some("ops".into()),
+        merge,
+        "merge".into(),
+        None,
+        None,
+        VerdictSurface::Console,
+    )
+    .expect("merge");
+    let here = Entity::make_id("infra", "Payment service");
+    let found = infra
+        .namesakes(&here, &["ops", "web", "infra", "nowhere"])
+        .expect("read")
+        .expect("the entity is known");
+    let said: Vec<(String, String)> = found.into_iter().map(|n| (n.workspace, n.name)).collect();
+    assert_eq!(said, vec![("web".to_string(), "Payment Service".to_string())]);
+    assert!(infra.namesakes(&"ab".repeat(32), &["web"]).expect("read").is_none());
+}

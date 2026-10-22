@@ -427,6 +427,16 @@ pub struct CurationReport {
     pub stats: CurationStats,
 }
 
+/// An entity of another workspace that carries the same name ([`Engine::namesakes`]).
+#[derive(Serialize)]
+pub struct Namesake {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub workspace: String,
+}
+
 /// A verdict filed away from its proposal ([`CurationReport::stray_verdicts`]).
 #[derive(Serialize)]
 pub struct StrayVerdict {
@@ -2827,6 +2837,46 @@ impl Engine {
             }
         }
         Ok(out)
+    }
+
+    /// The entities of `workspaces` that carry this entity's name (design-system.md Section 29.16),
+    /// in workspace order; `None` when this node holds no entity by that id. The name is matched by
+    /// the id's own rule, so each workspace costs one lookup. A namesake its own workspace merged into
+    /// another entity is left out, as the curation report's `duplicates` leaves it out; the entity's
+    /// own workspace is never listed.
+    pub fn namesakes(
+        &self,
+        id: &str,
+        workspaces: &[&str],
+    ) -> Result<Option<Vec<Namesake>>, StoreError> {
+        let Some(entity) = self.store.get_entity(id)? else {
+            return Ok(None);
+        };
+        let own = entity_workspace(&entity).to_string();
+        let mut list: Vec<&str> = workspaces
+            .iter()
+            .map(|w| w.trim())
+            .filter(|w| !w.is_empty() && *w != own)
+            .collect();
+        list.sort_unstable();
+        list.dedup();
+        let mut out = Vec::new();
+        for ws in list {
+            let nid = Entity::make_id(ws, &entity.canonical_name);
+            // `get_entity` forwards within the namesake's own workspace: one merged away there
+            // comes back as the entity it became.
+            if let Some(v) = self.get_entity(&nid)? {
+                if v.entity.id == nid {
+                    out.push(Namesake {
+                        id: nid,
+                        name: v.entity.canonical_name,
+                        kind: v.entity.kind,
+                        workspace: ws.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(Some(out))
     }
 
     /// The workspace a proposal lives in: the one its opening observation was written to. `None` when
