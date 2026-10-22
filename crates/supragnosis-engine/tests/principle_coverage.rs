@@ -2044,11 +2044,7 @@ const UNMERGE_REGISTRY: &[(u8, &[Clause])] = &[
         c("a split never suppresses the possibility - the pair stays mergeable by hand",
           Evidence::Scenario(&["p15_separated_entities_can_be_merged_again"])),
         c("suppression is derived from the log, so nodes with equal logs suppress equally",
-          Evidence::Deferred(
-            "Revisit when the curation report joins the P16 convergence suite - `split_pairs` is computed from the \
-             proposal fold on every read and no flag is stored (the port has nowhere to put one), \
-             but no case delivers one log to two nodes in different orders and compares their \
-             suggestions; the P16 suite compares graphs, not curation reports")),
+          Evidence::Scenario(&["p16_equal_logs_suppress_suggestions_equally"])),
     ]),
     (6, &[
         c("aliases the merge contributed leave the canonical row on a split; asserted spellings \
