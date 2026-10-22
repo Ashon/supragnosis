@@ -4088,6 +4088,44 @@ fn a_completed_write_owes_nothing() {
     assert_eq!(engine.owed_count().expect("ledger"), 0);
 }
 
+/// guard (crash-recovery.md K2): a reproject clears only the entries it read before it began. While
+/// it is between reading the log and writing its first row, an append lands the way a sync apply
+/// writes - through the log alone, owing its projection - and the reproject's clear must leave that
+/// late entry owed, since the snapshot it projected never held the row. The next reproject repays it.
+#[test]
+fn a_reproject_leaves_an_entry_that_arrived_while_it_ran() {
+    let inner = Arc::new(InMemoryStore::new());
+    let store = Arc::new(InterposedStore { inner: inner.clone(), ..Default::default() });
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    store.add_observation(kind_obs("alpha", "Service", 100)).unwrap();
+    let late = kind_obs("beta", "Service", 200);
+    let late_id = late.id.clone();
+    let appender = inner.clone();
+    *store.armed.lock().unwrap() = Some(Box::new(move || {
+        appender.add_observation(late).expect("an apply's append");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = tx.send(());
+        rx
+    }));
+
+    engine.reproject(Some(WS)).expect("reproject");
+    let owed: Vec<String> =
+        inner.owed_projections().unwrap().into_iter().map(|(id, _)| id).collect();
+    assert_eq!(
+        owed,
+        std::slice::from_ref(&late_id),
+        "the entry that arrived while it ran stays owed"
+    );
+    assert!(
+        inner.get_entity(&Entity::make_id(WS, "beta")).unwrap().is_none(),
+        "never projected"
+    );
+
+    engine.reproject(Some(WS)).expect("the next one");
+    assert!(inner.owed_projections().unwrap().is_empty(), "and the next reproject repays it");
+    assert!(inner.get_entity(&Entity::make_id(WS, "beta")).unwrap().is_some());
+}
+
 /// guard (crash-recovery.md K2): a reproject repays the workspace it projected and no other - an
 /// entry in a workspace it never read is still owed afterwards.
 #[test]

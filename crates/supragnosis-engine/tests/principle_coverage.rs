@@ -2638,12 +2638,7 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
         c("a reproject clears the workspace it projected and no other",
           Evidence::Scenario(&["a_reproject_repays_only_its_own_workspace"])),
         c("a reproject clears only the entries it read before it began",
-          Evidence::Deferred(
-            "`reproject` reads the owed ids before it opens its read context and clears exactly \
-             those, but no case appends during a reproject to see the late entry survive. Revisit \
-             when the atomic-write follow-up lands - crash-recovery.md Section 2 names, which removes the \
-             window this ordering exists for",
-          )),
+          Evidence::Scenario(&["a_reproject_leaves_an_entry_that_arrived_while_it_ran"])),
         c("the hub re-materializes after a pull or push that stamped rows",
           Evidence::Scenario(&["a_pull_that_stamps_rows_re_materializes_them"])),
         c("a clear by id never covers a concurrent re-arrival of the same observation",
