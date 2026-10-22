@@ -612,6 +612,54 @@ fn inspector_never_folds_a_contested_belief() {
     );
 }
 
+/// guard (inspector.md D7): every HTML sink takes an `html` tagged template - which escapes what
+/// it interpolates - or a plain literal with nothing in it, and no comment turns the lint off. The
+/// `no-unsanitized` lint holds this in CI; this scan stands beside it, so a sink added where the
+/// lint did not run still fails here. `innerHTML` is the only sink the viewer's scripts use.
+#[test]
+fn every_html_sink_takes_an_html_template() {
+    /// A quoted literal with no interpolation, ended by the statement: `'...';` or `"...";`.
+    fn plain_literal(value: &str) -> bool {
+        let Some(quote) = value.chars().next().filter(|c| *c == '\'' || *c == '"') else {
+            return false;
+        };
+        let body = &value[1..];
+        let Some(end) = body.find(quote) else {
+            return false;
+        };
+        !body[..end].contains('\\') && body[end + 1..].trim_start().starts_with(';')
+    }
+    for (file, js) in [
+        ("viewer.js", include_str!("../assets/viewer.js")),
+        ("viewer-sim.js", include_str!("../assets/viewer-sim.js")),
+        ("viewer-gl.js", include_str!("../assets/viewer-gl.js")),
+    ] {
+        assert!(!js.contains("eslint-disable"), "{file}: no comment turns the lint off");
+        for sink in
+            ["outerHTML", "insertAdjacentHTML", "document.write", "createContextualFragment"]
+        {
+            assert!(!js.contains(sink), "{file}: {sink} is a sink the viewer does not use");
+        }
+        let mut sinks = 0;
+        for (at, _) in js.match_indices(".innerHTML") {
+            let rest = js[at + ".innerHTML".len()..].trim_start();
+            let Some(value) = rest.strip_prefix('=').filter(|v| !v.starts_with('=')) else {
+                continue; // read, not written
+            };
+            let value = value.trim_start();
+            sinks += 1;
+            let line = js[at..].lines().next().unwrap_or_default();
+            assert!(
+                value.starts_with("html`") || plain_literal(value),
+                "{file}: an innerHTML sink takes an html template or a plain literal: {line}"
+            );
+        }
+        if file == "viewer.js" {
+            assert!(sinks > 20, "the scan found the viewer's sinks ({sinks})");
+        }
+    }
+}
+
 /// guard (inspector.md D4): the silence rule's baseline is the loaded scope, never the
 /// legend-filtered subset. A source tripwire: `nodes` is set in one place, from the /api/graph
 /// response mapped whole, and `scopeBaseline` loops once, over `nodes`, naming none of the legend's

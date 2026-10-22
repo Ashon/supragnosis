@@ -462,13 +462,8 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["viz_source_escapes_untrusted_names"]),
         ),
         c(
-            "every HTML sink takes an html tagged template, with no no-unsanitized disable comment",
-            Evidence::Deferred(
-                "held by ESLint no-unsanitized (crates/supragnosis-viz/assets/eslint.config.js, run by \
-                 frontend-lint.yml), which this registry cannot name - it scans Rust sources for test fns. Revisit \
-                 when a Rust scan of viewer.js for sinks outside an html`...` and for eslint-disable can stand beside \
-                 the lint",
-            ),
+            "every HTML sink takes an html tagged template or a plain literal, with no no-unsanitized disable comment",
+            Evidence::Scenario(&["every_html_sink_takes_an_html_template"]),
         ),
     ]),
 ];
