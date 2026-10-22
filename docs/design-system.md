@@ -34,7 +34,7 @@
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
-> the camera, is specified.
+> the camera, is built.
 
 ## 1. Why this exists
 
@@ -2013,7 +2013,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    resolution-identity.md Section 3 revised): a person's act at the console asks again when the
    answer it would land on no longer holds, an act that finds its answer waiting or in force says so,
    the agent's `propose` says what it found, and suggestions follow the person's no.
-58. **A panel on a tablet ends above the camera** (Section 29.24; Section 29.18's owed overlap repaid):
+58. **A panel on a tablet ends above the camera** [built] (Section 29.24; Section 29.18's owed overlap repaid):
    from 760 to 1200 pixels a floating panel ends above the camera toolbar under a finger as with a
    mouse.
 
@@ -5778,3 +5778,10 @@ No row needs a principle changed.
 
 **What this step does not do.** It does not change the phone's sheet, which already reads the
 toolbar's measured height, or the wide window's docked panels, which the toolbar does not meet.
+
+**Guarded by** `a_panel_on_a_tablet_ends_above_the_camera` in the viewer's key tests (the two tokens
+equal to the toolbar's buttons and padding, with a mouse and under a finger; the band's panels, the
+minimap, the View popover and the strip reading them; no mouse-only sum left). Browser checks in
+Chromium measure the toolbar against the inspector, both docks, the View popover and the strip at
+1024 by 768, 1180 by 820, 820 by 1180 and 844 by 390 under touch, and at 1024 by 768 with a mouse at
+100% and 200% text: nothing overlaps, and the band's inspector ends 8 pixels above the toolbar.

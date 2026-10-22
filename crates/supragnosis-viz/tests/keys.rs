@@ -229,3 +229,36 @@ fn a_finger_moves_the_map_on_a_phone() {
         "the toolbar does not follow the sheet"
     );
 }
+
+/// design-system.md Section 29.24: what clears the camera toolbar reads its size - the floating
+/// panels from 760 to 1200 pixels, the minimap, the View popover and the strip - so a finger's
+/// larger toolbar and a larger status bar are cleared as a mouse's are.
+#[test]
+fn a_panel_on_a_tablet_ends_above_the_camera() {
+    let hud = &PAGE[PAGE.find("id=\"hud\"").expect("the toolbar")..];
+    let hud = &hud[..hud.find("\n</div>").expect("it closes")];
+    let buttons = hud.matches("<button").count();
+    assert!(
+        CSS.contains(&format!("--hud-h:38px; --hud-w:{}px;", buttons * 32 + 6)),
+        "the toolbar's tokens are not its {buttons} 32-pixel buttons and padding"
+    );
+    assert!(
+        CSS.contains(&format!("--bar:2.75rem; --hud-h:50px; --hud-w:{}px;", buttons * 44 + 6)),
+        "a finger's toolbar is not its {buttons} 44-pixel buttons"
+    );
+    let band = &CSS[CSS.find("@media (max-width: 1199px)").expect("the band")..];
+    let band = &band[..band.find("\n  }\n").expect("it closes")];
+    for part in [
+        "max-height:calc(100dvh - 61px - var(--bar) - var(--hud-h) - 24px)",
+        "bottom:calc(var(--bar) + var(--hud-h) + 24px)",
+    ] {
+        assert!(band.contains(part), "a floating panel does not clear the toolbar: {part}");
+    }
+    for stale in ["bottom:90px", "151px", "var(--bar) + 62px", "- 200px));"] {
+        assert!(!CSS.contains(stale), "a mouse-only sum is left: {stale}");
+    }
+    assert!(
+        CSS.contains("calc(100vw - var(--win-l) - var(--win-r) - var(--hud-w) - 48px)"),
+        "the strip"
+    );
+}
