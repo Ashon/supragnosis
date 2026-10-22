@@ -2080,3 +2080,91 @@ async fn the_console_opens_marked_merges_that_can_follow_an_unmerge() {
     );
     let _ = std::fs::remove_file(&sock);
 }
+
+/// design-system.md Section 29.23: the console's acts that open a proposal say what they found. A
+/// merge or an un-merge that waits is found, not opened twice; a rejected one is asked again; and a
+/// Confirm after an Undo confirms, while one already in force changes nothing and says so.
+#[tokio::test]
+async fn a_console_repeat_says_what_it_found() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "infra"));
+    let obs = engine
+        .observe(ObserveInput {
+            content: "Postgres and PostgreSQL".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: ["Postgres", "PostgreSQL"]
+                .iter()
+                .map(|n| EntityInput {
+                    description: None,
+                    name: (*n).into(),
+                    kind: Some("Database".into()),
+                })
+                .collect(),
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let id = |n: &str| supragnosis_core::Entity::make_id("infra", n);
+    let sock = serve_uds("repeat", engine.clone(), ev_channel()).await;
+    let merge_q = format!("/api/propose_merge?a={}&b={}", id("Postgres"), id("PostgreSQL"));
+    let first = json_get(&uds_get(&sock, &merge_q).await);
+    assert_eq!((first["state"].as_str(), first["found"].as_bool()), (Some("open"), Some(false)));
+    let pid = first["proposal_id"].as_str().expect("id").to_string();
+    let found = json_get(&uds_get(&sock, &merge_q).await);
+    assert_eq!(found["proposal_id"], pid.as_str());
+    assert_eq!((found["state"].as_str(), found["found"].as_bool()), (Some("open"), Some(true)));
+    body_of(
+        &uds_get(&sock, &format!("/api/review?proposal={pid}&decision=reject")).await,
+        "200",
+    );
+    let asked = json_get(&uds_get(&sock, &merge_q).await);
+    assert_ne!(asked["proposal_id"], pid.as_str(), "a rejected merge is asked again");
+    assert_eq!(asked["found"], false);
+
+    // Confirm, Undo, Confirm: the third act confirms; a fourth finds it in force.
+    let resolve = |tier: &str, kind: &str, why: &str| {
+        format!(
+            "/api/resolve?observation={obs}&tier={tier}&kind={kind}&rationale={}",
+            why.replace(' ', "%20")
+        )
+    };
+    let tier = || engine.observation(&obs, None).expect("read").expect("obs").effective_tier;
+    // A local act's order is its wall-clock millisecond (Hlc::legacy), and two in one millisecond
+    // fall back to the proposal id; a person's acts are never that close, so these are not.
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(2));
+    let before = tier();
+    body_of(
+        &uds_get(&sock, &resolve("human_confirmed", "claim_promotion", "Confirmed it")).await,
+        "200",
+    );
+    assert_eq!(tier(), supragnosis_core::TrustTier::HumanConfirmed);
+    pause();
+    body_of(
+        &uds_get(&sock, &resolve("agent_extracted", "claim_demotion", "Undid it")).await,
+        "200",
+    );
+    assert_eq!(tier(), before);
+    pause();
+    let again = json_get(
+        &uds_get(&sock, &resolve("human_confirmed", "claim_promotion", "Confirmed it")).await,
+    );
+    assert!(again.get("verdict_observation_id").is_some(), "{again}");
+    assert_eq!(
+        tier(),
+        supragnosis_core::TrustTier::HumanConfirmed,
+        "the Confirm after the Undo confirms"
+    );
+    let in_force = json_get(
+        &uds_get(&sock, &resolve("human_confirmed", "claim_promotion", "Confirmed it")).await,
+    );
+    assert_eq!(
+        (in_force["state"].as_str(), in_force["found"].as_bool()),
+        (Some("merged"), Some(true))
+    );
+    assert!(in_force.get("verdict_observation_id").is_none(), "nothing cast: {in_force}");
+    let _ = std::fs::remove_file(&sock);
+}

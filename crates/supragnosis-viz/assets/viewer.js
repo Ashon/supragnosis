@@ -1913,10 +1913,29 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
     return null;
   }
   waitAllAt = 0;   // what waits elsewhere is read again after an act (Section 29.21)
+  // An act that found itself already in force changed nothing, and says so (Section 29.23); a
+  // caller whose notice reads what was found says it in its own words.
+  if (body && body.found && body.state === "merged" && typeof said !== "function") {
+    toast("ok", "Nothing changed: this is already so.");
+    return body;
+  }
+  // The notice may read what the act found (Section 29.23).
+  if (typeof said === "function") said = said(body || {});
   // An action may be built once the write has landed - Undo reads its own preview (Section 29.2).
   if (typeof action === "function") action = await action();
   toast("ok", said, detail || null, action);
   return body || {};
+}
+
+// What an act that opens a merge or an un-merge found already there (Section 29.23), or null when it
+// opened one: the notice says it, and the caller opens the item.
+function foundSaid(body, noun) {
+  if (!body || !body.found) return null;
+  if (body.state === "open" || body.state === "blocked") {
+    return noun === "merge" ? "A merge of these two already waits under Needs you." : "An un-merge of this merge already waits under Needs you.";
+  }
+  if (body.state === "merged") return noun === "merge" ? "These two are already merged." : "This merge is already un-merged.";
+  return null;
 }
 
 // Type glossary (T-Box) section body: entity types and relation types with their define_type
@@ -1978,7 +1997,7 @@ function bandEmptyReason(band) {
   if (band && band.embedded < band.examined) {
     return `none among the ${band.embedded} of ${band.examined} entities carrying a name vector - the rest were projected before an embedder existed, so reproject to cover them`;
   }
-  return "none - no embedding-near pairs";
+  return "none waiting - no near pairs that are not already proposed, split apart or held back by your reject";
 }
 
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
@@ -2153,8 +2172,9 @@ function wireCuration(host) {
       if (row.dataset.src) q += "&src=" + encodeURIComponent(row.dataset.src);
       // Under All the server files the merge where its pair lives (design-system.md Section 29.15).
       if (ws) q += "&workspace=" + encodeURIComponent(ws);
-      await consoleWrite("/api/propose_merge", q, "Merge proposed - it waits under Needs you for a verdict");
+      const o = await consoleWrite("/api/propose_merge", q, b => foundSaid(b, "merge") || "Merge proposed - it waits under Needs you for a verdict");
       await poll();
+      if (o && o.found) openReviewItem(o.proposal_id);
     };
   });
 }
@@ -2671,8 +2691,9 @@ async function undoDecided(p) {
 async function proposeSplit(p) {
   const ws = wsInput.value.trim();
   const sq = "?merge=" + encodeURIComponent(p.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-  await consoleWrite("/api/propose_split", sq, "Un-merge proposed - it waits under Needs you for a verdict");
-  refreshProposals();
+  const o = await consoleWrite("/api/propose_split", sq, b => foundSaid(b, "un-merge") || "Un-merge proposed - it waits under Needs you for a verdict");
+  await refreshProposals();
+  if (o && o.found) openReviewItem(o.proposal_id);
 }
 // One decision on one item (U4). It runs only when the item's view - its diff and checks - is the
 // one on screen, never for a blocked merge, and a recall asks twice; there is no decide-all.
@@ -2752,16 +2773,19 @@ async function keepInstead(item) {
   const wq = ws ? "&workspace=" + encodeURIComponent(ws) : "";
   const kept = pair.name;
   let rev = reverseOf(p, pair.id);
+  // A reverse merge a split has since reversed holds nothing: the server asks again (Section 29.23).
+  if (rev && rev.state === "merged" && proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(rev.id))) rev = null;
   if (!rev) {
     const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(p.into) + "&b=" + encodeURIComponent(pair.id) + "&src=reverse" + wq, null, null, null, true);
     if (!o.ok) { toast("bad", "Not changed: the merge into " + kept + " could not be opened", o.why); return; }
-    rev = { id: o.body.proposal_id, state: "open" };
+    rev = { id: o.body.proposal_id, state: o.body.state || "open" };
   }
   const r = await consoleWrite("/api/review", "?proposal=" + encodeURIComponent(p.id) + "&decision=reject" + wq, null, null, null, true);
   await refreshProposals();
   if (!r.ok) { toast("bad", "Opened the merge into " + kept + "; this one was not rejected", r.why); openReviewItem(rev.id); return; }
   if (rev.state === "merged") { toast("ok", "Kept " + kept + ": it was already merged into it."); reviewFocus = true; renderReview(); return; }
   if (rev.state === "rejected") toast("info", "Rejected. The merge into " + kept + " was rejected before; accept it after all there.");
+  else if (rev.state === "blocked") toast("info", "Rejected. The merge into " + kept + " waits under Needs you, but a check holds it back.");
   else toast("ok", "Kept " + kept + ": the merge into it waits for your verdict.");
   openReviewItem(rev.id);
 }
@@ -6877,11 +6901,11 @@ async function openSameMerge(a, b) {
   const want = [a, b].sort().join("|");
   const open = proposals.find(q => q.kind === "entity_merge" && (q.state === "open" || q.state === "blocked")
     && [...new Set(q.targets || [])].sort().join("|") === want);
-  if (open) { sameDlg.close(); toast("info", "A merge of these two is already open."); openReviewItem(open.id); return; }
+  if (open) { sameDlg.close(); toast("info", "A merge of these two already waits under Needs you."); openReviewItem(open.id); return; }
   const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(a) + "&b=" + encodeURIComponent(b) + "&src=picked&workspace=" + encodeURIComponent(sameFor.workspace), null, null, null, true);
   if (!o.ok) { toast("bad", "Not opened", o.why); return; }
   sameDlg.close();
-  toast("ok", "Merge proposed - it waits under Needs you for a verdict");
+  toast("ok", foundSaid(o.body, "merge") || "Merge proposed - it waits under Needs you for a verdict");
   await refreshProposals();
   openReviewItem(o.body.proposal_id);
 }

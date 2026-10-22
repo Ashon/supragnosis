@@ -1149,20 +1149,26 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
     }
     let workspace = homes.into_iter().next().or_else(|| write_workspace(param("workspace")));
     let rationale = param("rationale");
-    let proposal = match engine.propose(supragnosis_engine::ProposeInput {
-        workspace: workspace.clone(),
-        kind: kind.into(),
-        targets: observations,
-        into: None,
-        tier: Some(tier),
-        rationale: rationale.or_else(|| {
-            Some("confirmed from the curation console (contested belief mediation)".into())
-        }),
-        affected_types: Vec::new(),
-        source_ref: None,
-        on_behalf_of: None,
-    }) {
-        Ok(id) => id,
+    // A person's act, asked again when the act it would land on was superseded - Confirm after Undo
+    // confirms - and otherwise said as found (design-system.md Section 29.23). Opened without the
+    // console's mark, as before; its verdict carries it.
+    let opened = match engine.propose_anew(
+        supragnosis_engine::ProposeInput {
+            workspace: workspace.clone(),
+            kind: kind.into(),
+            targets: observations,
+            into: None,
+            tier: Some(tier),
+            rationale: rationale.or_else(|| {
+                Some("confirmed from the curation console (contested belief mediation)".into())
+            }),
+            affected_types: Vec::new(),
+            source_ref: None,
+            on_behalf_of: None,
+        },
+        false,
+    ) {
+        Ok(opened) => opened,
         Err(e) => {
             return Response {
                 status: "400 Bad Request",
@@ -1171,6 +1177,30 @@ fn resolve_response(engine: &Engine, query: &str) -> Response {
             }
         }
     };
+    let proposal = opened.id.clone();
+    // Found in force: the act is already so, and nothing is cast. Found Blocked: refused with its
+    // check, so a two-act Confirm instead stops at its first act. Found open: the verdict is the act.
+    match opened.state.as_str() {
+        "merged" if opened.found => return opened_response(&opened),
+        "blocked" if opened.found => {
+            let why = engine
+                .get_proposal(workspace.as_deref(), &proposal)
+                .ok()
+                .flatten()
+                .and_then(|v| {
+                    v.checks.into_iter().find(|c| c.blocking && !c.passed).map(|c| c.detail)
+                })
+                .unwrap_or_else(|| "a check holds it back".into());
+            return Response {
+                status: "409 Conflict",
+                content_type: "application/json",
+                body: err_body(&format!(
+                    "this act was accepted before, but a check holds it back: {why}"
+                )),
+            };
+        }
+        _ => {}
+    }
     match engine.review_proposal(
         workspace,
         proposal.clone(),
@@ -1274,22 +1304,23 @@ fn propose_split_response(engine: &Engine, query: &str) -> Response {
         Ok(w) => w,
         Err(r) => return r,
     };
-    match engine.propose_at_console(supragnosis_engine::ProposeInput {
-        workspace,
-        kind: "entity_split".into(),
-        targets: vec![merge],
-        into: None,
-        tier: None,
-        rationale: Some("console reversal of an accepted merge".into()),
-        affected_types: Vec::new(),
-        source_ref: None,
-        on_behalf_of: None,
-    }) {
-        Ok(id) => Response {
-            status: "200 OK",
-            content_type: "application/json",
-            body: serde_json::json!({ "proposal_id": id }).to_string(),
+    // A person's act: asked again when the split it would land on no longer holds, and said as
+    // found when it waits or is in force (design-system.md Section 29.23).
+    match engine.propose_anew(
+        supragnosis_engine::ProposeInput {
+            workspace,
+            kind: "entity_split".into(),
+            targets: vec![merge],
+            into: None,
+            tier: None,
+            rationale: Some("console reversal of an accepted merge".into()),
+            affected_types: Vec::new(),
+            source_ref: None,
+            on_behalf_of: None,
         },
+        true,
+    ) {
+        Ok(opened) => opened_response(&opened),
         Err(e) => Response {
             status: "400 Bad Request",
             content_type: "application/json",
@@ -1418,27 +1449,43 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
         1 => format!("{rationale}, again after 1 un-merge"),
         n => format!("{rationale}, after {n} un-merges"),
     };
-    match engine.propose_at_console(supragnosis_engine::ProposeInput {
-        workspace,
-        kind: "entity_merge".into(),
-        targets: vec![a, b.clone()],
-        into: Some(b),
-        tier: None,
-        rationale: Some(rationale),
-        affected_types: Vec::new(),
-        source_ref: None,
-        on_behalf_of: None,
-    }) {
-        Ok(id) => Response {
-            status: "200 OK",
-            content_type: "application/json",
-            body: serde_json::json!({ "proposal_id": id }).to_string(),
+    // S10's count is in the reason first; ", again" follows when the merge it would land on no
+    // longer holds (design-system.md Section 29.23).
+    match engine.propose_anew(
+        supragnosis_engine::ProposeInput {
+            workspace,
+            kind: "entity_merge".into(),
+            targets: vec![a, b.clone()],
+            into: Some(b),
+            tier: None,
+            rationale: Some(rationale),
+            affected_types: Vec::new(),
+            source_ref: None,
+            on_behalf_of: None,
         },
+        true,
+    ) {
+        Ok(opened) => opened_response(&opened),
         Err(e) => Response {
             status: "400 Bad Request",
             content_type: "application/json",
             body: err_body(&e.to_string()),
         },
+    }
+}
+
+/// The answer of a console act that opens a proposal: its id, the state it is in, and whether it
+/// was already in the log - so the notice says what the act found (design-system.md Section 29.23).
+fn opened_response(opened: &supragnosis_engine::Proposed) -> Response {
+    Response {
+        status: "200 OK",
+        content_type: "application/json",
+        body: serde_json::json!({
+            "proposal_id": opened.id,
+            "state": opened.state,
+            "found": opened.found,
+        })
+        .to_string(),
     }
 }
 

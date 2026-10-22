@@ -327,6 +327,13 @@ answers did:
 - The descriptions of `propose`, `review`, `list_proposals` and `get_proposal`, the rules every
   prompt keeps, and the `brief` digest's open proposals say which kinds have no effect yet.
 
+**A repeat says what it found** (design-system.md step 57). No tool's input changed, and these
+answers did:
+- `propose` answers `state` and `found` beside its id and workspace, added fields; `found` is true
+  when an identical proposal was already in the log, which the answer's `note` then describes.
+- Merge suggestions and name variants also leave out a pair under a Blocked merge, and a pair whose
+  merge the person rejected at the console, until new knowledge about one of the pair arrives.
+
 **Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.

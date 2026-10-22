@@ -2341,3 +2341,176 @@ fn p18_a_merged_promotion_says_what_it_granted() {
         .expect("console merge");
     assert_eq!(granted(&up), Some(TrustTier::HumanConfirmed));
 }
+
+/// GIVEN a person's acts at the console, WHEN the same act is asked again, THEN it is a new act when
+/// the answer it would land on no longer holds - Confirm after Undo confirms again - and otherwise
+/// nothing is written and the answer says what was found; an agent's identical content is the same
+/// proposal and says so (design-system.md Section 29.23, P14).
+#[test]
+fn p14_a_repeat_says_what_it_found() {
+    let (store, engine) = engine();
+    let obs = engine
+        .observe(ObserveInput {
+            content: "the ledger is a table".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Ledger".into(),
+                kind: Some("Table".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let tier = |e: &Engine| e.observation(&obs, None).expect("read").expect("obs").effective_tier;
+    let before = tier(&engine);
+    let gate = |kind: &str, t: &str, why: &str| ProposeInput {
+        workspace: None,
+        kind: kind.into(),
+        targets: vec![obs.clone()],
+        into: None,
+        tier: Some(t.into()),
+        rationale: Some(why.into()),
+        affected_types: vec![],
+        source_ref: None,
+        on_behalf_of: None,
+    };
+    let act = |input: ProposeInput| {
+        // A local act's order is its wall-clock millisecond (Hlc::legacy), and two in one millisecond
+        // fall back to the proposal id; a person's acts are never that close, so these are not.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let opened = engine.propose_anew(input, false).expect("open");
+        if !opened.found {
+            decide(&engine, &opened.id, "merge");
+        }
+        opened
+    };
+    let confirm =
+        act(gate("claim_promotion", "human_confirmed", "Confirmed Table as Ledger's type"));
+    assert!(!confirm.found && confirm.state == "open");
+    assert_eq!(tier(&engine), TrustTier::HumanConfirmed);
+    // In force: asked again, it is found and nothing is written.
+    let case = Case::new("Principle 14", "a repeat says what it found");
+    let quiet = snapshot(store.as_ref());
+    let again = engine
+        .propose_anew(
+            gate("claim_promotion", "human_confirmed", "Confirmed Table as Ledger's type"),
+            false,
+        )
+        .expect("open");
+    assert_eq!(
+        (again.id.as_str(), again.state.as_str(), again.found),
+        (confirm.id.as_str(), "merged", true)
+    );
+    case.changed_nothing(&quiet, &snapshot(store.as_ref()));
+    // Undo, then Confirm again: the first Confirm no longer holds, so the second is a new act.
+    let undo = act(gate(
+        "claim_demotion",
+        "agent_extracted",
+        "Undid: Confirmed Table as Ledger's type",
+    ));
+    assert!(!undo.found);
+    assert_eq!(tier(&engine), before);
+    let reconfirm =
+        act(gate("claim_promotion", "human_confirmed", "Confirmed Table as Ledger's type"));
+    assert_ne!(reconfirm.id, confirm.id, "a new act, not the first one");
+    assert!(!reconfirm.found);
+    let view = engine.get_proposal(None, &reconfirm.id).expect("get").expect("proposal");
+    assert_eq!(view.rationale.as_deref(), Some("Confirmed Table as Ledger's type, again"));
+    assert_eq!(tier(&engine), TrustTier::HumanConfirmed, "the Confirm after the Undo confirms");
+    // And the Undo after that undoes, as a third act of its kind would say "again (3)".
+    let reundo = act(gate(
+        "claim_demotion",
+        "agent_extracted",
+        "Undid: Confirmed Table as Ledger's type",
+    ));
+    assert_ne!(reundo.id, undo.id);
+    assert_eq!(tier(&engine), before);
+
+    // A merge the person rejected is asked again; one that waits is found.
+    observe(&engine, "postgres", &["Postgres"]);
+    observe(&engine, "postgresql", &["PostgreSQL"]);
+    let (a, b) = (Entity::make_id(WS, "PostgreSQL"), Entity::make_id(WS, "Postgres"));
+    let merge = |why: &str| ProposeInput {
+        workspace: None,
+        kind: "entity_merge".into(),
+        targets: vec![a.clone(), b.clone()],
+        into: Some(b.clone()),
+        tier: None,
+        rationale: Some(why.into()),
+        affected_types: vec![],
+        source_ref: None,
+        on_behalf_of: None,
+    };
+    let first = engine.propose_anew(merge("merge-band suggestion"), true).expect("open");
+    let quiet = snapshot(store.as_ref());
+    let waiting = engine.propose_anew(merge("merge-band suggestion"), true).expect("open");
+    assert_eq!(
+        (waiting.id.as_str(), waiting.state.as_str(), waiting.found),
+        (first.id.as_str(), "open", true)
+    );
+    case.changed_nothing(&quiet, &snapshot(store.as_ref()));
+    decide(&engine, &first.id, "reject");
+    let asked = engine.propose_anew(merge("merge-band suggestion"), true).expect("open");
+    assert!(!asked.found && asked.state == "open" && asked.id != first.id);
+
+    // An agent's identical content is the rejected proposal, absorbed and said.
+    let agent = engine
+        .propose_reporting(ProposeInput {
+            on_behalf_of: Some("agent".into()),
+            ..merge("merge-band suggestion")
+        })
+        .expect("open");
+    assert_eq!(
+        (agent.id.as_str(), agent.state.as_str(), agent.found),
+        (first.id.as_str(), "rejected", true)
+    );
+}
+
+/// GIVEN a pair the name-variant ladder offers, WHEN its merge is rejected, THEN the pair is held
+/// back only by the person's console reject, and only until new knowledge about one of the pair
+/// arrives; an agent's reject holds nothing back (design-system.md Section 29.23, dreaming.md 5.5).
+#[test]
+fn p19_suggestions_follow_the_persons_no() {
+    let (_store, engine) = engine();
+    observe(&engine, "an enum", &["TrustTier"]);
+    observe(&engine, "a concept", &["Trust Tier"]);
+    let offered = |e: &Engine| !e.curation(Some(WS)).expect("curation").name_variants.is_empty();
+    assert!(offered(&engine), "the separator variant is offered");
+    let members = vec![Entity::make_id(WS, "TrustTier"), Entity::make_id(WS, "Trust Tier")];
+    let merge = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: members.clone(),
+            into: Some(members[1].clone()),
+            tier: None,
+            rationale: Some("name-variant ladder".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
+    assert!(!offered(&engine), "in flight");
+    engine
+        .review_proposal(
+            None,
+            merge.clone(),
+            "reject".into(),
+            Some("agent's view".into()),
+            None,
+            VerdictSurface::Agent,
+        )
+        .expect("an agent's reject");
+    assert!(offered(&engine), "an agent's reject is not the person's no");
+    decide(&engine, &merge, "reject");
+    assert!(!offered(&engine), "the person's no holds the pair back");
+    // Ordered after the reject by HLC, which for a local write is its millisecond.
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    observe(&engine, "the enum gained a variant", &["TrustTier"]);
+    assert!(offered(&engine), "new knowledge about one of the pair lifts the no");
+}

@@ -476,3 +476,36 @@ fn the_console_says_what_has_no_effect() {
     );
     assert!(function("previewOnMap").contains("\" (no effect yet)\""));
 }
+
+/// design-system.md Section 29.23: an act that opens a proposal says what it found - a merge or an
+/// un-merge that waits or is in force, a gate act already so - and a found item opens; Keep ...
+/// instead reads the state it gets back; the empty band no longer says that none are near.
+#[test]
+fn the_console_says_what_a_repeat_found() {
+    let found = function("foundSaid");
+    for part in [
+        "A merge of these two already waits under Needs you.",
+        "An un-merge of this merge already waits under Needs you.",
+        "These two are already merged.",
+        "This merge is already un-merged.",
+    ] {
+        assert!(found.contains(part), "a found act is not said: {part}");
+    }
+    let write = function("consoleWrite");
+    assert!(
+        write.contains("body.found && body.state === \"merged\" && typeof said !== \"function\"")
+    );
+    assert!(write.contains("\"Nothing changed: this is already so.\""));
+    assert!(function("proposeSplit").contains("if (o && o.found) openReviewItem(o.proposal_id);"));
+    assert!(SCRIPT.contains(
+        "b => foundSaid(b, \"merge\") || \"Merge proposed - it waits under Needs you for a verdict\""
+    ));
+    let keep = function("keepInstead");
+    assert!(keep.contains("state: o.body.state || \"open\""), "Keep assumes what it opened");
+    assert!(keep.contains("waits under Needs you, but a check holds it back."));
+    assert!(function("openSameMerge")
+        .contains("\"A merge of these two already waits under Needs you.\""));
+    assert!(function("bandEmptyReason").contains(
+        "none waiting - no near pairs that are not already proposed, split apart or held back by your reject"
+    ));
+}

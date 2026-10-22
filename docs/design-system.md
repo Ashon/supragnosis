@@ -33,7 +33,7 @@
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
-> is built. Step 57, a repeat says what it found, is specified.
+> is built. Step 57, a repeat says what it found, is built.
 
 ## 1. Why this exists
 
@@ -2008,7 +2008,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    recall, which have no commit effect yet, cannot be merged until they have one - the fold counts
    no merge of either and every surface refuses one - and Review, the agent's answers and tool
    descriptions, and the prompts say so.
-57. **A repeat says what it found** (Section 29.23; Section 29.17, unmerge.md Section 5 and
+57. **A repeat says what it found** [built] (Section 29.23; Section 29.17, unmerge.md Section 5 and
    resolution-identity.md Section 3 revised): a person's act at the console asks again when the
    answer it would land on no longer holds, an act that finds its answer waiting or in force says so,
    the agent's `propose` says what it found, and suggestions follow the person's no.
@@ -5622,8 +5622,8 @@ engine:
 **Decisions.** By rules already written:
 - **A person's act at the console asks again when the answer no longer holds.** When the proposal
   it would open is already in the log, the console reads what that proposal still does:
-  - It no longer holds when it was rejected or withdrawn, when it is a gate act no source is still
-    gated by, or when it is a merge a split reversed. The console then opens it again with ", again"
+  - It no longer holds when it was rejected or withdrawn, when it is a gate act a later accepted act
+    on one of its sources has superseded, or when it is a merge a split reversed. The console then opens it again with ", again"
     added to its reason, ", again (3)" the third time, and so on, which makes it a new proposal, as
     unmerge.md S10 does for a merge after its un-merges. S10's count comes first in the reason.
   - It still holds when it is open, Blocked, or accepted and still in force. The console then writes
@@ -5711,3 +5711,17 @@ No row needs a principle changed.
   owes.
 - It does not change what an agent's identical content means: the same proposal.
 - It does not give `/api/resolve`'s opening the console's mark.
+
+**Guarded by** `p14_a_repeat_says_what_it_found` in the engine's policy cases (Confirm, Undo, Confirm
+confirms with ", again" in its reason, and the Undo after it undoes; a Confirm in force and a merge
+that waits are found with nothing written; a rejected merge is asked again; an agent's identical
+content is the rejected proposal, found) and `p19_suggestions_follow_the_persons_no` (a merge in
+flight, an agent's reject, the person's reject, and new knowledge that lifts it);
+`a_repeat_says_what_it_found` in the MCP crate's unit tests (state, found and each note, Section
+29.22's note first) and the golden tool list; `a_console_repeat_says_what_it_found` in the viewer's
+HTTP tests (the console's merge found and asked again, and Confirm, Undo, Confirm through
+`/api/resolve`, then found in force with nothing cast); and `the_console_says_what_a_repeat_found` in
+its review tests (the sentences, a found item opened, Keep reading its state, the empty band's line).
+Browser checks propose a name variant from Suggestions, reject it and see Suggestions leave it out
+with the new line, and press Un-merge twice to see the second find the first; an agent's identical
+`propose` answers found with its note.

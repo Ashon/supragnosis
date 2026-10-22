@@ -1112,7 +1112,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs."
+        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs. Returns the proposal id, the workspace, its state and found - true when an identical proposal was already there, since a proposal is its content - with a note saying what is left."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
         if let Some(why) = self.all_is_no_place("propose", req.workspace.as_deref()) {
@@ -1208,14 +1208,26 @@ impl SupragnosisServer {
         let engine = self.engine.clone();
         let app = writing_app();
         match tokio::task::spawn_blocking(move || {
-            engine.as_app(app.as_deref(), || engine.propose(input))
+            engine.as_app(app.as_deref(), || engine.propose_reporting(input))
         })
         .await
         {
-            Ok(Ok(id)) => {
-                let mut answer = serde_json::json!({ "proposal_id": id, "workspace": written });
-                if let Some(note) = note {
-                    answer["note"] = note.into();
+            Ok(Ok(opened)) => {
+                let mut answer = serde_json::json!({
+                    "proposal_id": opened.id,
+                    "workspace": written,
+                    "state": opened.state,
+                    "found": opened.found,
+                });
+                let note = [
+                    note.map(|n| if opened.found { no_effect_found(&n) } else { n }),
+                    opened.found.then(|| found_note(&opened.state)),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+                if !note.is_empty() {
+                    answer["note"] = note.join(". ").into();
                 }
                 answer.to_string()
             }
@@ -2219,6 +2231,26 @@ fn err_json(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
 
+/// What `propose` adds when its content names a proposal already in the log: what that one is and
+/// what is left (design-system.md Section 29.23).
+fn found_note(state: &str) -> String {
+    match state {
+        "open" => "an identical proposal is already open - a proposal is its content, so this is that one",
+        "blocked" => "an identical proposal was accepted but a check holds it back - get_proposal names the check",
+        "rejected" => "an identical proposal was rejected - a reject is provisional, and a different rationale opens a new one",
+        "merged" => "an identical proposal was already accepted - if a later act has superseded it, a different rationale opens a new one",
+        "withdrawn" => "an identical proposal was withdrawn - a different rationale opens a new one",
+        other => return format!("an identical proposal already exists, {other}"),
+    }
+    .to_string()
+}
+
+/// Section 29.22's note for a found proposal: what is left is in the found note.
+fn no_effect_found(note: &str) -> String {
+    note.split(':').next().unwrap_or(note).trim().to_string()
+        + ", so it cannot be merged until it has one"
+}
+
 /// What `propose` adds when it opens a kind with no commit effect yet, so the agent can tell the
 /// person what is left to do with it (design-system.md Section 29.22).
 fn no_effect_note(kind: &str) -> Option<String> {
@@ -2536,6 +2568,49 @@ mod agent_answers {
         assert!(
             !by_id["note"].as_str().unwrap_or("").contains("looks like a name"),
             "an id read as a name"
+        );
+    }
+
+    /// design-system.md Section 29.23: an identical proposal is the one already there, and the answer
+    /// says what it found.
+    #[tokio::test]
+    async fn a_repeat_says_what_it_found() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let s = SupragnosisServer::new(engine);
+        s.observe(req(serde_json::json!({ "content": "a and b", "workspace": "w", "entities": [{ "name": "A" }, { "name": "B" }] }))).await;
+        let merge = serde_json::json!({ "workspace": "w", "kind": "entity_merge", "targets": ["A", "B"], "into": "A", "rationale": "one thing" });
+        let first = json(&s.propose(req(merge.clone())).await);
+        assert_eq!(
+            (first["state"].as_str(), first["found"].as_bool()),
+            (Some("open"), Some(false)),
+            "{first}"
+        );
+        assert!(first.get("note").is_none());
+        let again = json(&s.propose(req(merge.clone())).await);
+        assert_eq!(again["proposal_id"], first["proposal_id"]);
+        assert_eq!(again["found"], true);
+        assert!(
+            again["note"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("an identical proposal is already open")),
+            "{again}"
+        );
+        let id = first["proposal_id"].as_str().expect("id").to_string();
+        s.review(req(serde_json::json!({ "proposal": id, "decision": "reject" }))).await;
+        let rejected = json(&s.propose(req(merge)).await);
+        assert_eq!(rejected["state"], "rejected");
+        assert!(
+            rejected["note"]
+                .as_str()
+                .is_some_and(|n| n.contains("a different rationale opens a new one")),
+            "{rejected}"
+        );
+        let change = serde_json::json!({ "workspace": "w", "kind": "tbox_change", "targets": ["A"], "rationale": "a type" });
+        s.propose(req(change.clone())).await;
+        let found = json(&s.propose(req(change)).await);
+        assert!(
+            found["note"].as_str().is_some_and(|n| n.starts_with("tbox_change has no commit effect yet, so it cannot be merged until it has one. an identical proposal is already open")),
+            "{found}"
         );
     }
 
