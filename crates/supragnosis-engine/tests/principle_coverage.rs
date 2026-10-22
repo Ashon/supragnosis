@@ -1156,7 +1156,10 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (13, &[c(
         "a vouched key is accepted only for the node id derived from it, never for the joining machine's own, verifies only up to its bound, and admits nothing",
-        Evidence::Deferred("docs/pairing.md's vouched keys are not checked on the joining machine yet. Revisit when its Section 10 step 3c lands"),
+        Evidence::Scenario(&[
+            "vouched_keys_are_checked_against_their_ids",
+            "a_replaced_machine_receives_the_removed_ones_events_up_to_its_bound",
+        ]),
     )]),
     (14, &[
         c(

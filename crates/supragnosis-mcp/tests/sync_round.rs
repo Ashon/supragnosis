@@ -25,6 +25,7 @@ fn context(node: SyncNode, hub: &str, token: &str, keys: &BTreeMap<String, Strin
         node: Arc::new(node),
         share_workspaces: vec!["ws".into()],
         receive: None,
+        vouched: Default::default(),
         serve_workspaces: Vec::new(),
         servers: vec![ServerLink {
             url: hub.into(),

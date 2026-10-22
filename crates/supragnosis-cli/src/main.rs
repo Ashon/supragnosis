@@ -1337,6 +1337,8 @@ async fn build_sync_context(
     }
     let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
+    // Keys a hub vouched for at a join, each good up to its bound (docs/pairing.md Section 4.3.1).
+    let vouched = join::vouched_keys(&join::Paths::default_paths(), &mut origin_keys);
     // Federation status task: health-checks the configured hubs (connectivity + auth +
     // authorization in one round trip), computes per-workspace diffs vs each hub, snapshots the
     // known-peer registry (hub role), and publishes it all to the viewer's /api/federation.
@@ -1397,6 +1399,7 @@ async fn build_sync_context(
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
             receive,
+            vouched,
             serve_workspaces,
             servers: links,
             config_notes,
@@ -1930,11 +1933,17 @@ fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
         let store = engine.store();
         let mut keys = trusted_origin_keys(&fc.sync);
         keys.insert(node.node_id().to_string(), node.public_key_hex());
+        let vouched = join::vouched_keys(&join::Paths::default_paths(), &mut keys);
         for ws in &workspaces {
+            let bounds: std::collections::BTreeMap<String, u64> = vouched
+                .iter()
+                .map(|(origin, by_ws)| (origin.clone(), by_ws.get(ws).copied().unwrap_or(0)))
+                .collect();
             for link in &links {
                 let server = &link.url;
                 let client = supragnosis_sync::http::SyncClient::for_link(link)?
-                    .with_serve(fc.sync.serve_set().0);
+                    .with_serve(fc.sync.serve_set().0)
+                    .with_bounds(bounds.clone());
                 let s = client.sync_workspace(&store, &node, ws, share, &keys).await?;
                 println!(
                     "{server} {ws}: pushed {} pulled {} (rejected: by server {}, locally {})",
