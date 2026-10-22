@@ -930,10 +930,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   so the graph sat behind its log until the next re-materialization
   (`p3_a_reproject_and_an_observe_do_not_interleave` reproduces it with the lock removed). The cost is that a
   write waits out a reproject: about the per-workspace re-projection time crash-recovery.md Section 4 measures
-  (about 2 s at today's scale). It is longer when entity vectors must be computed - a freshly pulled workspace,
-  or a changed model - since `project_entities` embeds what has no vector while holding the lock. Embedding
-  outside it and re-checking the text under it, as the backfill does (semantic-retrieval.md SR7), is the
-  follow-up. The atomic-write follow-up stays owed for the crash window, which is a different boundary.
+  (about 2 s at today's scale). The vectors a reproject needs are computed before it takes the lock and used
+  only for the text they were made for, as the backfill does (semantic-retrieval.md SR7), so a freshly pulled
+  workspace or a changed model does not make writes wait out the embedder. The atomic-write follow-up stays owed for the crash window, which is a different boundary.
 - Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, the asserted close of a disproven relation's valid interval,
   `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
   semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
