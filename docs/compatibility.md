@@ -92,7 +92,8 @@ would strip it (Section 1).
 |---|---|---|---|
 | 1 | The redb tables as v0.2.0 created them. | 1 | v0.2.0 - v0.4.3 |
 | 2 | Adds the `owed_projection` ledger. A format 1 writer appends without recording what it owes. | 2 | v0.4.4 onward |
-| 3 | Adds the `attestation_app` table: the app that wrote an attestation, by a key of its own (design-system.md Section 29.8). A format 2 writer ignores it and records no app for what it writes, which reads as no app. | 2 | v0.9.0 onward |
+| 3 | Adds the `attestation_app` table: the app that wrote an attestation, by a key of its own (design-system.md Section 29.8). A format 2 writer ignores it and records no app for what it writes, which reads as no app. | 2 | v0.9.0 |
+| 4 | A relation row carries `attestations` (architecture.md Section 14). Relations are derived, so the upgrade rewrites none: it owes every log row once, and the first open re-projects them. A format 3 writer writes relations without the list, which read as one source each until the next re-projection - stale without harm, so only `format` rises. | 2 | v0.9.1 onward |
 
 Format 2 should have raised `min_reader` when it shipped. It could not, because there was nowhere to
 write it. The first release with the stamp writes format 2 and `min_reader` 2. That does not raise
@@ -422,6 +423,12 @@ list means.
 gains `held_back`, an added field: the near pairs the band left out because a merge names them, a
 split pulled them apart or the person's reject holds them back. The `curate` prompt, whose digest
 carries the report, says what a nonzero count beside an empty list means.
+
+**Edges count their support** (architecture.md Section 14, relation attestations). The graph's
+edges - `/api/graph`, the graph resource - gain `sources`, the number of attestations asserting the
+edge, as a node's `sources` counts its own. A stored relation row gains `attestations`; a row written
+before it reads as carrying none until the next re-materialization, and its edge counts 1. Both are
+added fields.
 
 **Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
