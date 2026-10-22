@@ -660,6 +660,42 @@ fn every_html_sink_takes_an_html_template() {
     }
 }
 
+/// guard (inspector.md D3, Section 5): silence is declared. In `renderDetail`, each field the
+/// silence rule hides is said for the scope instead: the tier's text and the origin row show only
+/// when the scope is not uniform, and when it is, the value goes into `scopeSaid`, which the scope
+/// line prints whenever it holds anything. The workspace row hides only when the scope has one
+/// workspace, which the workspace chips name.
+#[test]
+fn a_silenced_field_is_said_for_the_scope() {
+    let js = include_str!("../assets/viewer.js");
+    let start = js
+        .find("\nfunction renderDetail(")
+        .expect("viewer.js no longer defines renderDetail");
+    let rest = &js[start + 1..];
+    let body = &rest[..rest.find("\n}\n").expect("renderDetail has no closing brace")];
+    for (silenced, said) in [
+        (
+            "base.tier === null ? html`<span>${tierName(tier)}</span>`",
+            "if (base.tier !== null) scopeSaid.push(tierName(base.tier));",
+        ),
+        (
+            "const origin = base.origin === null && node.origins",
+            "if (base.origin) scopeSaid.push(",
+        ),
+    ] {
+        assert!(
+            body.contains(silenced),
+            "the field shows only when the scope differs: {silenced}"
+        );
+        assert!(body.contains(said), "and is said for the scope when it does not: {said}");
+    }
+    assert!(
+        body.contains("scopeSaid.length ? html`<span class=\"scopeline\">All here: ${scopeSaid.join(\", \")}</span>`"),
+        "the scope line prints whatever was silenced"
+    );
+    assert!(body.contains("const workspace = base.workspace === null"), "the workspace row");
+}
+
 /// guard (inspector.md D4): the silence rule's baseline is the loaded scope, never the
 /// legend-filtered subset. A source tripwire: `nodes` is set in one place, from the /api/graph
 /// response mapped whole, and `scopeBaseline` loops once, over `nodes`, naming none of the legend's

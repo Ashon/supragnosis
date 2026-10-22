@@ -406,10 +406,7 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (3, &[c(
         "a silenced field is stated once for the scope on the inspector, so silence never reads as absence",
-        Evidence::Deferred(
-            "built in viewer.js (`scopeSaid` and the .scopeline span of renderDetail) but nothing reads it. Revisit \
-             when the D1 tripwire is extended to pin that the line is emitted whenever a baseline value is non-null",
-        ),
+        Evidence::Scenario(&["a_silenced_field_is_said_for_the_scope"]),
     )]),
     (4, &[
         c(
