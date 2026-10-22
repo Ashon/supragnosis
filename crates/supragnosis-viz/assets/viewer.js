@@ -97,6 +97,7 @@ const LIST_COLS = {
   trust: (a, b) => (TIER_RANK[a.trust_tier] ?? -1) - (TIER_RANK[b.trust_tier] ?? -1) || a.name.localeCompare(b.name),
   relations: (a, b) => (a.degree || 0) - (b.degree || 0) || a.name.localeCompare(b.name),
   workspace: (a, b) => String(a.workspace).localeCompare(String(b.workspace)) || a.name.localeCompare(b.name),
+  said: (a, b) => (a.last_said || 0) - (b.last_said || 0) || a.name.localeCompare(b.name),
 };
 function listRows() {
   const by = LIST_COLS[listSort.key] || LIST_COLS.type;
@@ -115,12 +116,12 @@ function renderList() {
   // Redrawing keeps the person's place (Section 10): the focused row keeps focus.
   const had = listWin.contains(document.activeElement) ? document.activeElement.dataset.id : null;
   listWin.innerHTML = html`<p class="lhead"></p>${workSet ? html`<p class="lset"><span></span> <button type="button" class="linkish lclear">Clear</button></p>` : ""}<table class="ltable"><thead><tr>${listHead("name", "Name")}${listHead("type", "Type")}${
-    listHead("trust", "Trust")}${listHead("relations", "Relations", "n")}${many ? listHead("workspace", "Workspace") : ""}</tr></thead><tbody>${
+    listHead("trust", "Trust")}${listHead("relations", "Relations", "n")}${listHead("said", "Last said")}${many ? listHead("workspace", "Workspace") : ""}</tr></thead><tbody>${
     rows.map(n => html`<tr${n === focus ? html` class="on"` : ""}><td><button type="button" class="lrow" data-id="${n.id}">${
       // A contested entity carries the map's badge here too, in words for a screen reader (U3).
       n.contested ? html`<span class="i i-circle-alert lbad" role="img" aria-label="Two sources disagree"></span>` : ""}${
       html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>${n.name}</button></td>`}${
-      html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td>`}${
+      html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td><td>${n.last_said ? obsWhen(n.last_said) : ""}</td>`}${
       many ? html`<td>${n.workspace}</td>` : ""}</tr>`)}</tbody></table>`;
   // List's head says what the status bar says (Section 29.9, U24).
   listWin.querySelector(".lhead").textContent = statsLine(currentWs(), drawnCounts());
@@ -575,6 +576,7 @@ async function loadSurface() {
     if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
     if (s && s.default_workspace) defaultWs = String(s.default_workspace);
   } catch (_) { /* no surface answer - nothing is remembered */ }
+  loadVisit();
 }
 function loadLayout() {
   storedLayout = null;
@@ -634,6 +636,7 @@ function statsLine(cur, c) {
   let line = scope + " - " + e + ", " + r;
   if (c.reg !== null) line += ", " + (c.reg === 1 ? "1 region" : c.reg + " regions");
   if (c.dimmed.length) line += ", " + c.dimmed.map(tierName).join(" and ") + " dimmed";
+  if (saidWin !== "any" && saidSince() !== null) line += ", said before " + SAID_BEFORE[saidWin] + " dimmed";
   // A pinned working set is said after the counts, as a dimmed tier is (Section 29.11).
   if (workSet) line += ", " + workSetSaid();
   return line;
@@ -747,7 +750,7 @@ function showStats(cur) {
 }
 function showAll() {
   typeOff.clear(); edgeTypeOff.clear(); trustOff.clear(); workSet = null;
-  renderLegend(); renderTrustLegend(); renderStats(); requestFrame();
+  renderLegend(); renderTrustLegend(); renderSaidLegend(); renderStats(); requestFrame();
 }
 // A line that does not fit gives up its counts before it cuts the scope's name (Section 6).
 function fitStats() {
@@ -1341,6 +1344,7 @@ function noteTrustAndContest() {
   trustUniform = nodes.length && tiers.size === 1 ? [...tiers][0] : null;
   contestedCount = nodes.reduce((k, n) => k + (n.contested ? 1 : 0), 0);
   renderTrustLegend();
+  renderSaidLegend();
   renderTierNote();
   const pill = document.getElementById("contestedPill");
   if (pill) {
@@ -1351,6 +1355,83 @@ function noteTrustAndContest() {
   }
 }
 let trustMeansOpen = false;   // the disclosure survives the legend's redraw
+// Said (Section 29.19): a window of time dims every entity not said in it, as a dimmed tier does.
+const SAID_WINDOWS = [["any", "Any time"], ["today", "Today"], ["week", "Last 7 days"], ["visit", "Since your last visit"]];
+const SAID_BEFORE = { today: "today", week: "the last 7 days", visit: "your last visit" };
+let saidWin = "any";
+// Where the chosen window starts, or null when it has none here (no earlier visit).
+function saidSince(win = saidWin) {
+  if (win === "today") { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  if (win === "week") return Date.now() - 7 * 24 * 3600 * 1000;
+  if (win === "visit") return visitSince(currentWs() || "");
+  return null;
+}
+function saidOut(n) {
+  if (saidWin === "any") return false;
+  const since = saidSince();
+  return since !== null && !((n.last_said || 0) >= since);
+}
+function renderSaidLegend() {
+  const host = document.getElementById("legendSaid");
+  if (!host) return;
+  host.innerHTML = "";
+  const drawn = nodes.filter(n => !typeOff.has(n.type));
+  for (const [win, label] of SAID_WINDOWS) {
+    if (win === "visit" && surfaceKind !== "local") continue;   // the read tier remembers nothing (Section 5)
+    const since = win === "any" ? 0 : saidSince(win);
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "tlg" + (saidWin === win ? " on" : "");
+    el.append(document.createTextNode(label));
+    const n = document.createElement("span"); n.className = "n";
+    if (since === null) {
+      n.textContent = "No earlier visit here";
+      el.setAttribute("aria-disabled", "true");
+    } else n.textContent = String(drawn.filter(x => win === "any" || (x.last_said || 0) >= since).length);
+    el.append(n);
+    el.onclick = () => {
+      if (el.getAttribute("aria-disabled") === "true") return;
+      saidWin = win; renderSaidLegend(); renderStats(); requestFrame();
+    };
+    host.appendChild(el);
+  }
+  radioGroup(host, "Said");
+}
+// The last visit (Section 29.19), on the local console only: a visit ends after half an hour with the
+// page unseen, and the last visit to a scope is when this browser last showed it before this visit,
+// kept per node and scope so a reload in the middle of a visit keeps it.
+const VISIT_GAP = 30 * 60 * 1000;
+let visit = null;   // { seen, last: {scope: ms}, since: {scope: ms | null} }
+function visitKey() { return surfaceKind === "local" && surfaceNode ? "supra.visit." + surfaceNode : null; }
+function loadVisit() {
+  const key = visitKey();
+  if (!key) return;
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(key) || "null"); } catch (_) { v = null; }
+  const now = Date.now();
+  if (!v || typeof v !== "object" || !(now - (v.seen || 0) < VISIT_GAP)) v = { seen: now, last: (v && v.last) || {}, since: {} };
+  visit = v;
+  visitSince(currentWs() || "");
+  markSeen();
+}
+function visitSince(scope) {
+  if (!visit) return null;
+  if (!(scope in visit.since)) visit.since[scope] = typeof visit.last[scope] === "number" ? visit.last[scope] : null;
+  return visit.since[scope];
+}
+function markSeen() {
+  const key = visitKey();
+  if (!visit || !key || document.hidden) return;
+  const now = Date.now();
+  if (now - visit.seen >= VISIT_GAP) visit.since = {};   // back after a while: a new visit
+  visitSince(currentWs() || "");
+  visit.seen = now;
+  visit.last[currentWs() || ""] = now;
+  try { localStorage.setItem(key, JSON.stringify(visit)); } catch (_) { /* private mode */ }
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) { if (visit) { visit.seen = Date.now(); try { localStorage.setItem(visitKey(), JSON.stringify(visit)); } catch (_) { /* private mode */ } } } else markSeen(); });
+// The windows move every minute while the page is open.
+setInterval(() => { markSeen(); if (saidWin !== "any") { renderSaidLegend(); renderStats(); requestFrame(); } }, 60 * 1000);
 function renderTrustLegend() {
   const host = document.getElementById("legendTrust");
   if (!host) return;
@@ -2863,6 +2944,8 @@ function obsWhen(ms) {
   const now = new Date();
   const hm = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  // The year too when it is not this one, so last October does not read as two days ago (Section 29.19).
+  if (d.getFullYear() !== now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${hm}`;
   return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
 }
 function obsWhenSec(ms) {
@@ -4189,6 +4272,7 @@ function renderDetail(node) {
       html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
       scopeSaid.length ? html`<span class="scopeline">All here: ${scopeSaid.join(", ")}</span>` : "",
     html`</div>`,
+    node.last_said ? html`<div class="meta">Last said ${obsWhen(node.last_said)}</div>` : "",
     node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
     origin, workspace, also,
     node.description ? html`<div class="desc">${node.description}</div>` : "",
@@ -5805,7 +5889,7 @@ function draw() {
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : DIM_EDGE) : hot ? 1 : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA))
       // An end in a dimmed trust tier dims its relation too, unless a selection or hover lights it.
-      * (!hot && trustOff.size && (trustOff.has(e.a.trust_tier) || trustOff.has(e.b.trust_tier)) ? DIM_EDGE / EDGE_ALPHA : 1)
+      * (!hot && ((trustOff.size && (trustOff.has(e.a.trust_tier) || trustOff.has(e.b.trust_tier))) || saidOut(e.a) || saidOut(e.b)) ? DIM_EDGE / EDGE_ALPHA : 1)
       // A relation leaving the working set dims with the rest; one between two members keeps its strength.
       * (!hot && kept && !(kept.has(e.a.id) && kept.has(e.b.id)) ? DIM_EDGE / EDGE_ALPHA : 1);
     // A relation's kind is said by its label, not a color (Section 5); an active edge or one whose kind
@@ -5848,7 +5932,7 @@ function draw() {
     const on = typeHl ? n.type === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : kept ? kept.has(n.id) : true;
-    const base = stepped((on && !trustOff.has(n.trust_tier) ? 1 : DIM_NODE) * n._o), r = rOf(n);
+    const base = stepped((on && !trustOff.has(n.trust_tier) && !saidOut(n) ? 1 : DIM_NODE) * n._o), r = rOf(n);
     const layer = layersOf.get(base);
     if (layer) layer.push(n); else layersOf.set(base, [n]);
     if (n === anchor) {
@@ -6094,6 +6178,7 @@ function showTip(n, cx, cy) {
     html`<b>${n.name}</b><br>`,
     html`<span class="k">${many && n.workspace ? n.type + " in " + n.workspace : n.type}</span><br>`,
     html`${plural(n.degree || 0, "relation")} - ${plural(n.sources || 0, "source")} - ${tierName(n.trust_tier)}`,
+    n.last_said ? html`<br><span class="k">Last said ${obsWhen(n.last_said)}</span>` : "",
     first ? html`<div class="tdesc">${first.length > 120 ? first.slice(0, 120).trimEnd() + "..." : first}</div>` : "",
     n.contested ? html`<div class="tcontest">Two sources disagree</div>` : ""]}`;
 }

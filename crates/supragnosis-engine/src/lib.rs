@@ -1091,6 +1091,12 @@ pub struct GraphNode {
     /// The node's representative trust: the highest EFFECTIVE tier over its supporting observations
     /// (receiver-evaluated + gate grants - resolution.md Section 3; never a max over claimed tiers,
     /// which would let a remote self-declaration raise the displayed tier - F13).
+    /// When the entity was last said: the latest `observed_at` among the attestations its rows hold,
+    /// its merged-away rows' included, in epoch milliseconds (design-system.md Section 29.19). Signed
+    /// with each attestation and kept by every stamp upgrade, so equal logs give the same time (P16);
+    /// the recording axis of P4, never the valid one. `None` when no attestation supports the node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_said: Option<Timestamp>,
     pub trust_tier: TrustTier,
     /// True when distinct kind values survive whose effective tiers tie at the top - the winner was
     /// decided by recency alone, not trust, so this node invites mediation (resolution.md R6).
@@ -6091,6 +6097,11 @@ impl Engine {
                             _ => String::new(),
                         }
                     },
+                    last_said: members
+                        .iter()
+                        .flat_map(|m| m.provenance.iter())
+                        .map(|p| p.observed_at)
+                        .max(),
                     trust_tier: trust,
                     contested,
                     competitors,
@@ -6194,6 +6205,16 @@ impl Engine {
             }
         }
 
+        // When each node was last said, its merged-away rows' attestations included, so the hypergraph
+        // and the graph give one entity one time (design-system.md Section 29.19).
+        let mut last_said: HashMap<&str, Timestamp> = HashMap::new();
+        for e in &all_entities {
+            let canon = fwd.get(&e.id).map(String::as_str).unwrap_or(e.id.as_str());
+            if let Some(t) = e.provenance.iter().map(|p| p.observed_at).max() {
+                let slot = last_said.entry(canon).or_insert(t);
+                *slot = (*slot).max(t);
+            }
+        }
         let mut nodes: Vec<GraphNode> = entities
             .iter()
             .map(|e| {
@@ -6238,6 +6259,7 @@ impl Engine {
                             _ => String::new(),
                         }
                     },
+                    last_said: last_said.get(e.id.as_str()).copied(),
                     trust_tier: trust,
                     contested: false,
                     competitors: Vec::new(),

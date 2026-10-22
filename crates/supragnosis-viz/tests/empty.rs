@@ -20,7 +20,7 @@ fn function(name: &str) -> &'static str {
 /// sentence, and act on nothing. The canvas's name says the scope holds nothing, without List.
 #[test]
 fn an_empty_scope_keeps_no_idle_controls() {
-    for id in ["legendNodes", "legendEdges", "legendTrust"] {
+    for id in ["legendNodes", "legendEdges", "legendTrust", "legendSaid"] {
         assert!(
             PAGE.contains(&format!("id=\"{id}\" data-needs=\"entities\"")),
             "{id} hides with no entity"
@@ -28,7 +28,7 @@ fn an_empty_scope_keeps_no_idle_controls() {
     }
     assert_eq!(
         PAGE.matches("class=\"rsec\" data-needs=\"entities\"").count(),
-        3,
+        4,
         "their headings too"
     );
     assert!(CSS.contains(

@@ -788,6 +788,17 @@
   #defsBox summary::-webkit-details-marker { display:none; }
   /* What each tier means, under the Trust legend (Section 29.2). */
   #legendTrust .tmeans { flex-basis:100%; }
+  /* Said (Section 29.19): one window at a time, a row each with its count; the chosen
+     one takes the selection's tint, and one with nothing to offer says why in its count's place. */
+  #legendSaid { display:flex; flex-direction:column; gap:1px; }
+  #legendSaid .tlg { display:flex; align-items:baseline; justify-content:space-between; gap:10px; width:100%;
+                     min-height:24px; padding:2px 8px; border:none; border-radius:var(--r-control); background:none;
+                     color:var(--ink2); text-align:left; cursor:pointer; font:var(--text-body)/1.4 var(--sans); }
+  #legendSaid .tlg:hover { background:var(--panel-2); color:var(--ink); }
+  #legendSaid .tlg.on { background:var(--select); color:var(--ink); }
+  #legendSaid .tlg .n { color:var(--muted); font-size:var(--text-small); }
+  #legendSaid .tlg[aria-disabled="true"] { cursor:default; color:var(--muted); }
+  #legendSaid .tlg[aria-disabled="true"]:hover { background:none; }
   #legendTrust .tmeans summary { display:flex; align-items:center; gap:4px; cursor:pointer; list-style:none; min-height:24px;
                                  color:var(--muted); font-size:var(--text-small); }
   #legendTrust .tmeans summary::-webkit-details-marker { display:none; }

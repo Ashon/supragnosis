@@ -130,8 +130,8 @@ fn a_trust_filter_dims_and_keeps_the_count() {
     assert!(SCRIPT.contains("const DIM_NODE = 0.12, DIM_EDGE = 0.06;"));
     assert!(SCRIPT.contains("const DIM_REGION = "), "the region's dim strength has its name");
     assert!(
-        SCRIPT.contains("!trustOff.has(n.trust_tier) ? 1 : DIM_NODE"),
-        "a dimmed tier draws at DIM_NODE"
+        SCRIPT.contains("!trustOff.has(n.trust_tier) && !saidOut(n) ? 1 : DIM_NODE"),
+        "a dimmed tier, or a window of Said, draws at DIM_NODE (Section 29.19)"
     );
     let legend = function("renderTrustLegend");
     assert!(legend.contains("trustOff.has(t)") && legend.contains("el.disabled = true"));
@@ -196,4 +196,55 @@ fn the_cloud_is_a_region_everywhere() {
         );
     }
     assert!(SCRIPT.contains("Overloaded region: ") && PAGE.contains("Arrange by type"));
+}
+
+/// Section 29.19: each entity says when it was last said - on the hover card, the sheet and List - in
+/// the Log's form with the year when it is not this one; the Said filter is a radio group whose
+/// window dims, as a tier does, and whose last visit lives on the local console only, a visit ending
+/// after half an hour away.
+#[test]
+fn the_map_says_when_each_entity_was_said() {
+    assert!(
+        PAGE.contains("<div class=\"rsec\" data-needs=\"entities\">Said</div>"),
+        "no Said section"
+    );
+    let when = function("obsWhen");
+    assert!(
+        when.contains("d.getFullYear() !== now.getFullYear()"),
+        "an old time reads as this year's"
+    );
+    let legend = function("renderSaidLegend");
+    for part in [
+        "if (win === \"visit\" && surfaceKind !== \"local\") continue;",
+        "\"No earlier visit here\"",
+        "radioGroup(host, \"Said\")",
+        "!typeOff.has(n.type)",
+    ] {
+        assert!(legend.contains(part), "the Said legend does not hold {part}");
+    }
+    assert!(SCRIPT.contains("[\"visit\", \"Since your last visit\"]"));
+    assert!(SCRIPT.contains("const VISIT_GAP = 30 * 60 * 1000;"));
+    assert!(
+        function("visitKey").contains("surfaceKind === \"local\" && surfaceNode"),
+        "the read tier keeps a visit"
+    );
+    assert!(
+        function("statsLine").contains("\", said before \" + SAID_BEFORE[saidWin] + \" dimmed\"")
+    );
+    assert!(
+        SCRIPT.contains("saidOut(e.a) || saidOut(e.b)"),
+        "a dimmed entity's relations stay lit"
+    );
+    assert!(
+        SCRIPT.contains("Last said ${obsWhen(node.last_said)}"),
+        "the sheet does not say it"
+    );
+    assert!(
+        SCRIPT.contains("Last said ${obsWhen(n.last_said)}"),
+        "the hover card does not say it"
+    );
+    assert!(
+        SCRIPT.contains("listHead(\"said\", \"Last said\")"),
+        "List has no Last said column"
+    );
 }
