@@ -76,7 +76,9 @@ Embedding similarity **generates candidates; only the gate commits.**
   projected before one existed carries no vector, so an empty `merge_suggestions` could mean "no near
   pairs", "this node cannot run the band", or "it ran over part of the workspace" - three different
   epistemic states behind one empty list. The report therefore carries `merge_band`
-  (`available` / `embedded` / `examined`) alongside it, the same refusal-to-conflate that makes
+  (`available` / `embedded` / `examined`, and since design-system.md step 61 `held_back`, the near
+  pairs it left out because a merge names them, a split pulled them apart or the person's reject
+  holds them back) alongside it, the same refusal-to-conflate that makes
   `search_knowledge` label the `mode` it actually used. `reproject` is what closes a coverage gap,
   since it re-embeds every live entity whose name text changed or was never embedded.
 - [impl] **The scan is bounded per entity**: candidates are the union, over the workspace's entities,

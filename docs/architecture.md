@@ -813,9 +813,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   and the tool description states that score scale differs per mode. Embeddings deliberately do not
   replicate - they are a node-local retrieval aid, exempt from the convergence norm. The curation report
   applies the same rule to its one embedding-dependent signal: `merge_band`
-  (`available`/`embedded`/`examined`) accompanies `merge_suggestions`, so an empty list separates "no
-  near pairs" from "no embedder here" from "ran over part of the workspace" instead of collapsing the
-  three (the other curation signals are deterministic and need no such caveat).
+  (`available`/`embedded`/`examined`/`held_back`) accompanies `merge_suggestions`, so an empty list
+  separates "no near pairs" from "no embedder here" from "ran over part of the workspace" from "the
+  near pairs are already answered" instead of collapsing them (the other curation signals are deterministic and need no such caveat).
 - Principle 17 (knowledge sovereignty, sync boundary): sharing is a workspace whitelist defaulting to
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
   (bearer) and authorizes per workspace on every route. **Federated retrieval goes through the same
