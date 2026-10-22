@@ -259,8 +259,10 @@ widened by these acts. Pairing writes no key a release before it does not know (
   failed (P24, P5).
 - **One round at a time**, whatever starts it: the timer, Sync now, or the `sync_push` and
   `sync_pull` tools. Its store work runs off the async threads, as the tools' does (F11).
-- **What it pulls.** Where a join recorded a receive list, the round and the `sync_pull` tool pull
-  only those workspaces, whatever the hub's answer admits (PA12); without one, as today.
+- **What it covers.** The workspaces in `share_workspaces`, each pushed and then pulled. Where a
+  join recorded a receive list, the round and the `sync_pull` tool also pull those, and only
+  those, whatever the hub's answer admits (PA12). A workspace the hub merely admits is not pulled
+  on its own, so a hub's answer never widens what the node asks for (federation.md F21).
 - **Sync now** in the Sync pane starts a round through the admin socket and the pane polls for its
   result. `supragnosis sync` does the same when a daemon runs, and runs a round itself, as now,
   when none does.
@@ -385,6 +387,7 @@ as now (S6).
 | PA12 | A joined machine pulls only the workspaces recorded at the join. |
 | PA13 | A vouched key is accepted only for the node id derived from it, never for the joining machine's own, and verifies events only up to the bound the hub gave; it admits nothing. |
 | PA14 | The joining machine acts on a join's answer only if it is signed by the node key the code names, and the credential in it is sealed to the one-time key it sent. |
+| PA15 | A node with a hub runs a sync round on its own, over its shared workspaces, one at a time whatever starts it, and says when the last ran, what it moved and why it failed. |
 
 ## 9. What this revises
 
@@ -414,11 +417,13 @@ as now (S6).
 
 ## 10. Ordering
 
-1. **The daemon syncs on its own** (Section 4.5), with Sync now and `supragnosis sync` through the
-   daemon. Guarded by a two-node case in which a write on one reaches the other with no call.
-2. **The admin socket and the listener's life** (Sections 4 and 4.1): no exit at start for any
-   listener failure, the hub's wiring always built, open and close at run time, the bind rule with
-   invitations, principals telling the daemon.
+1. **The daemon syncs on its own** (Section 4.5): the round, its timer and backoff, one at a time
+   with the tools, and `sync_status`'s `last_round`. Guarded by a two-node case in which a write on
+   one reaches the other with no call.
+2. **The admin socket and the listener's life** (Sections 4 and 4.1): Sync now and `supragnosis
+   sync` through the daemon, no exit at start for any listener failure, the hub's wiring always
+   built, open and close at run time, the bind rule with invitations, principals telling the
+   daemon.
 3. **The CLI**, on macOS and Linux alike: `invite` (with `--address`, `--show` and the terminal's
    Allow), `join`, the hub's `preview`, `join` and `leave` calls with Allow, Deny and "pending",
    the signed and sealed answer, the three words, certificates pinned or verified by name, the
