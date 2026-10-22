@@ -421,11 +421,13 @@ as now (S6).
 1. **The daemon syncs on its own** [built] (Section 4.5): the round, its timer and backoff, one at a time
    with the tools, and `sync_status`'s `last_round`. Guarded by a two-node case in which a write on
    one reaches the other with no call.
-2. **The admin socket and the listener's life** (Sections 4 and 4.1): Sync now and `supragnosis
-   sync` through the daemon, no exit at start for any listener failure, the hub's wiring always
-   built, open and close at run time, the bind rule with invitations, principals telling the
-   daemon.
-3. **The CLI**, on macOS and Linux alike: `invite` (with `--address`, `--show` and the terminal's
+2. **The admin socket and the listener's life** (Sections 4 and 4.1): the admin socket, `supragnosis
+   sync` through the daemon, no exit at start for any listener failure, the listener opened and
+   closed at run time as the bind rule allows, principals telling the daemon. Guarded by a case
+   that walks one listener through an unreadable certificate, loopback and an unadmitted network
+   address, and one that holds the admin socket to its owner.
+3. **The CLI**, on macOS and Linux alike: the hub's wiring on a node with no `[server]`, built by its
+   first invitation, and the bind rule counting invitations; `invite` (with `--address`, `--show` and the terminal's
    Allow), `join`, the hub's `preview`, `join` and `leave` calls with Allow, Deny and "pending",
    the signed and sealed answer, the three words, certificates pinned or verified by name, the
    vouched and bounded keys, the receive list, `peer remove`, `hub leave`, the certificate (rcgen
