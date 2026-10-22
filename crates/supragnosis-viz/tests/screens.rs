@@ -103,7 +103,7 @@ fn the_review_page_works_from_the_keyboard() {
     );
     assert!(function("wireDecisions").contains("[data-skip]"), "Skip does nothing");
     let at = SCRIPT
-        .find("window.addEventListener(\"keydown\", e => {\n  if (!reviewOpen()) return;")
+        .find("window.addEventListener(\"keydown\", e => {\n  if (!reviewOpen() || dialogOpen()) return;")
         .expect("the Review keys");
     let keys = &SCRIPT[at..at + SCRIPT[at..].find("\n});").expect("it closes")];
     assert!(

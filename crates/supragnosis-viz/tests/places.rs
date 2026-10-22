@@ -60,10 +60,24 @@ fn follow_frames_what_is_in_scope_and_notes_the_rest() {
     assert!(note.contains("label: \"Show\""), "the notice has no Show");
 }
 
-/// The first view is where the knowledge is: an empty default with knowledge elsewhere opens on All
-/// and says so, and the scope in use is always a selected chip.
+/// The first view is where the knowledge is: a default holding at most half of the node's entities,
+/// with the rest elsewhere, opens on All, decided once before the first draw (design-system.md
+/// Section 29.21); an empty default with knowledge elsewhere opens on All and says so; and the scope
+/// in use is always a selected chip.
 #[test]
 fn the_first_view_opens_where_the_knowledge_is() {
+    let first = SCRIPT
+        .find("async function decideFirstView()")
+        .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
+        .expect("decideFirstView");
+    assert!(
+        first.contains("if (t > d && d * 2 <= t)"),
+        "a default holding most of the knowledge is left"
+    );
+    assert!(
+        SCRIPT.contains("loadSurface().then(decideFirstView).finally(poll)"),
+        "decided after the first draw"
+    );
     let empty = function("refreshEmpty");
     assert!(
         empty.contains("if (firstView && cur === \"\" && others.length)"),
@@ -73,7 +87,7 @@ fn the_first_view_opens_where_the_knowledge_is() {
     let load = function("loadWorkspaces");
     // The default by its name (design-system.md Section 29.10).
     assert!(
-        load.contains("\"Showing all workspaces - \" + defaultName() + \" is empty\""),
+        load.contains("\"Showing all workspaces - \" + defaultName() + (openedHeld ? \" holds \" + openedHeld.d + \" of \" + openedHeld.t : \" is empty\")"),
         "the page does not say why it opened on All"
     );
     assert!(load.contains("mk(defaultName(), \"\")"), "an empty default has no chip");

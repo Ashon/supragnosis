@@ -840,23 +840,23 @@
      Small, centred, and deliberately plain: it is a settings surface, not a view. The peer rows
      reuse the panel type scale so the dialog reads as the same application rather than a bolted-on
      form. */
-  #settings, #keysDlg, #sameDlg { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
+  #settings, #keysDlg, #sameDlg, #blockedDlg { width:min(560px,92vw); max-height:82vh; padding:0; border:0;
             border-radius:var(--r-surface); background:var(--panel); color:var(--ink2);
             font:var(--text-body)/1.5 var(--mono); box-shadow:0 18px 60px var(--shadow); }
-  #settings::backdrop, #keysDlg::backdrop, #sameDlg::backdrop { background:var(--scrim); }
-  #settings .fchead, #keysDlg .fchead, #sameDlg .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
+  #settings::backdrop, #keysDlg::backdrop, #sameDlg::backdrop, #blockedDlg::backdrop { background:var(--scrim); }
+  #settings .fchead, #keysDlg .fchead, #sameDlg .fchead, #blockedDlg .fchead { display:flex; align-items:center; justify-content:space-between; margin:0;
                     padding:12px 14px 4px; }
-  #settings .ftitle, #keysDlg .ftitle, #sameDlg .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
+  #settings .ftitle, #keysDlg .ftitle, #sameDlg .ftitle, #blockedDlg .ftitle { color:var(--ink); font-weight:600; letter-spacing:0.04em; }
   /* Matches #detail/#obscard: a square hit target with a soft hover fill, not a bare glyph. */
   #settings .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
                       border-radius:var(--r-control); color:var(--muted); cursor:pointer;
                       display:flex; align-items:center; justify-content:center;
                       transition:color 0.15s ease, background 0.15s ease; }
-  #keysDlg .fclose, #sameDlg .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
+  #keysDlg .fclose, #sameDlg .fclose, #blockedDlg .fclose { width:24px; height:24px; min-height:24px; padding:0; border:none; background:none;
                       border-radius:var(--r-control); color:var(--muted); cursor:pointer;
                       display:flex; align-items:center; justify-content:center;
                       transition:color 0.15s ease, background 0.15s ease; }
-  #settings .fclose:hover, #keysDlg .fclose:hover, #sameDlg .fclose:hover { color:var(--ink); background:var(--panel-2); }
+  #settings .fclose:hover, #keysDlg .fclose:hover, #sameDlg .fclose:hover, #blockedDlg .fclose:hover { color:var(--ink); background:var(--panel-2); }
   /* Same as... (Section 29.17): a field, the entity rows, and the two merges once a row is chosen. */
   #sameDlg { width:min(460px,92vw); font-family:var(--sans); }
   #sameDlg .sbody { padding:6px 14px 14px; display:flex; flex-direction:column; gap:8px; }
@@ -872,6 +872,16 @@
   #sameList .sr .k { color:var(--muted); font-size:var(--text-small); }
   #sameList .none { color:var(--muted); font-size:var(--text-small); padding:3px 2px; }
   #sameActs { display:flex; flex-wrap:wrap; gap:6px; }
+  /* Reject all blocked (Section 29.21): what it says, each item with its check, and the two acts. */
+  #blockedDlg { font-family:var(--sans); }
+  #blockedDlg .sbody { padding:6px 14px 14px; display:flex; flex-direction:column; gap:8px; }
+  #blockedDlg .bwhy { margin:0; color:var(--ink2); font-size:var(--text-body); }
+  #blockedList { margin:-6px; padding:6px 6px 6px 24px; max-height:40vh; overflow-y:auto; color:var(--ink2); font-size:var(--text-body); }
+  #blockedList li { margin:4px 0; }
+  #blockedList .why { display:block; color:var(--muted); font-size:var(--text-small); }
+  #blockedDlg .bacts { display:flex; justify-content:flex-end; gap:6px; }
+  .rv-else { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; margin:2px 0 8px; color:var(--ink2);
+             font-size:var(--text-small); }
   /* The Keys dialog (Section 29.12): each group a heading and a list of key and act. */
   #keysDlg { width:min(420px,92vw); font-family:var(--sans); }
   #keysDlg .kbody { padding:6px 14px 14px; overflow-y:auto; }

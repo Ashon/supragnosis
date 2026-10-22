@@ -32,7 +32,7 @@
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
-> surface says where. Step 55, the person finds what waits, is specified.
+> surface says where, and step 55, the person finds what waits.
 
 ## 1. Why this exists
 
@@ -1752,8 +1752,8 @@ U20 is guarded by `review_is_always_in_the_status_bar_with_one_count`,
 `follow_frames_what_is_in_scope_and_notes_the_rest` and `the_first_view_opens_where_the_knowledge_is`
 in `crates/supragnosis-viz/tests/places.rs`: Review's entry hides only on the read tier, reads Review at
 zero and counts the contested beliefs inside its one count; Needs you lists only ties; the event
-handler changes no scope and notes a write elsewhere with Show; and an empty default with knowledge
-elsewhere opens on All and says so.
+handler changes no scope and notes a write elsewhere with Show; and a default holding at most half
+of the knowledge, or nothing, with knowledge elsewhere opens on All and says so (Section 29.21).
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -1997,7 +1997,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 7 revised): every write's answer names its workspace and says when it made a new one,
    search hits name their entity, a name passed as an id is said to be one, a failed call is flagged
    as failed, a merged promotion says what it granted, and a merged demotion is no longer capped.
-55. **The person finds what waits** (Section 29.21; Sections 6 and 7 and U4 revised): the page opens
+55. **The person finds what waits** [built] (Section 29.21; Sections 6 and 7 and U4 revised): the page opens
    on All unless the default holds most of the knowledge, Review and its pill say what waits in other
    workspaces, and the Blocked items can be rejected together.
 
@@ -5442,3 +5442,11 @@ No row needs a principle changed.
   Reject decides it.
 - It does not drop anything without a person's act: the system rejects nothing on its own.
 - It does not count dream drafts, which the tray does not count either.
+
+**Guarded by** `the_first_view_opens_where_the_knowledge_is` in the viewer's place tests (decided
+once, before the first draw, at half the knowledge or less) and `the_person_finds_what_waits` in its
+review tests (the tray's reads, the pill's words, the line in Needs you, Reject all blocked leaving
+out recalls and items no longer blocked, and a partial failure said); browser checks seed a default
+with one entity beside a workspace of five and two Blocked merges, and measure the page opening on
+All, the pill and the line in a scoped Review, the dialog's list and its focus, and both items
+Rejected.
