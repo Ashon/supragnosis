@@ -1194,6 +1194,9 @@ pub struct GraphEdge {
     /// No annotation (None) stays as no annotation - it is not shown as 1.0 (Principle 2, 4th).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
+    /// How many attestations assert this edge, as a node's `sources` counts its own. A row written
+    /// before relations accumulated counts 1 until it is re-materialized.
+    pub sources: usize,
     /// Valid interval end (Principle 4). Some means it was superseded/refuted and is no longer true now - the viewer draws it faded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_to: Option<Timestamp>,
@@ -5141,10 +5144,14 @@ impl Engine {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
         });
         let mut rels: BTreeMap<String, Relation> = BTreeMap::new();
+        // Every attestation of every observation asserting the edge, credited once per observation
+        // however many times it names the edge - an entity's provenance is counted the same way.
+        let mut support: BTreeMap<String, Vec<Provenance>> = BTreeMap::new();
         for obs in &obss {
             let Some(prov) = authoring_attestation(obs).cloned() else {
                 continue;
             };
+            let mut credited: BTreeSet<String> = BTreeSet::new();
             for ra in &obs.assertions.relations {
                 let from = Entity::make_id(ws, &ra.from);
                 let to = Entity::make_id(ws, &ra.to);
@@ -5152,6 +5159,9 @@ impl Engine {
                 let id = Relation::make_id(&from, &kind, &to);
                 if only.is_some_and(|s| !s.contains(&id)) {
                     continue;
+                }
+                if credited.insert(id.clone()) {
+                    support.entry(id.clone()).or_default().extend(obs.provenance.iter().cloned());
                 }
                 // Ascending replay, upsert by id: the valid interval is last-write, which is the
                 // store's own semantics given a deterministic order. The description is the
@@ -5169,6 +5179,7 @@ impl Engine {
                         kind,
                         description,
                         provenance: prov.clone(),
+                        attestations: Vec::new(),
                         // The client's valid interval is projected as-is (Principle 4 capture);
                         // derivation such as auto-closing valid_to on refutation is M3c.
                         valid_from: ra.valid_from,
@@ -5178,7 +5189,8 @@ impl Engine {
             }
         }
         let written = rels.len();
-        for (_, r) in rels {
+        for (id, mut r) in rels {
+            r.attestations = support.remove(&id).unwrap_or_default();
             self.store.add_relation(r)?;
         }
         Ok(written)
@@ -5651,6 +5663,12 @@ impl Engine {
         let effective_tier = belief.tiers.get(&canon_id).copied().unwrap_or_else(|| {
             entity.provenance.iter().map(evaluated_tier).max().unwrap_or_default()
         });
+        // An edge's attestations are already this entity's or its neighbor's provenance; listing them
+        // again on every relation would grow the answer with edges times sayings for nothing new.
+        let mut relations = relations;
+        for r in &mut relations {
+            r.attestations.clear();
+        }
         Ok(Some(EntityView {
             entity,
             relations,
@@ -6375,6 +6393,16 @@ impl Engine {
             }
         }
 
+        // A merge collapses rows onto one edge, and its support is all of theirs, as a merged node's
+        // is; a row written before relations accumulated counts its one attestation.
+        let mut support: HashMap<(String, String, String), usize> = HashMap::new();
+        for r in &relations {
+            let (f, t) = (canon(&r.from), canon(&r.to));
+            if f != t {
+                *support.entry((f, r.kind.clone(), t)).or_default() += r.attestations.len().max(1);
+            }
+        }
+
         // Edges: rewire endpoints through canon, drop merge self-loops and duplicates, count degree.
         let mut degree: HashMap<String, usize> = HashMap::new();
         let mut seen: HashSet<(String, String, String)> = HashSet::new();
@@ -6388,7 +6416,9 @@ impl Engine {
                 .get(&(f.clone(), r.kind.clone(), t.clone()))
                 .copied()
                 .unwrap_or_else(|| evaluated_tier(&r.provenance));
-            if !seen.insert((f.clone(), r.kind.clone(), t.clone())) {
+            let key = (f.clone(), r.kind.clone(), t.clone());
+            let sources = support.get(&key).copied().unwrap_or(1);
+            if !seen.insert(key) {
                 continue; // the merge can produce duplicate edges - keep the lowest relation id
             }
             *degree.entry(f.clone()).or_default() += 1;
@@ -6403,6 +6433,7 @@ impl Engine {
                 trust_tier,
                 // The latest asserting row's, as the description is (design-system.md Section 29.7).
                 confidence: r.provenance.confidence,
+                sources,
                 valid_to: r.valid_to,
             });
         }

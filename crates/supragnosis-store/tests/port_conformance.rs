@@ -185,6 +185,7 @@ fn rel_in(workspace: &str, from: &str, kind: &str, to: &str) -> Relation {
         kind: kind.into(),
         description: None,
         provenance: prov_in(workspace),
+        attestations: Vec::new(),
         valid_from: None,
         valid_to: None,
     }

@@ -1136,7 +1136,16 @@ pub struct Relation {
     /// observation (last-write-wins in M0). Not part of the id - the full history stays in the log.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The authoring attestation of the HLC-latest observation asserting this edge. It decides the
+    /// edge's confidence, and its tier only when no observation in the log states the edge - the
+    /// tier is otherwise the highest effective tier among the observations that do.
     pub provenance: Provenance,
+    /// Every attestation of every observation asserting this edge, credited once per observation,
+    /// as an entity's provenance is (Principle 3: accumulated, never replaced). It says how many
+    /// support the edge and changes nothing about how far it is trusted.
+    /// Empty on a row written before relations accumulated, until the next re-materialization.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attestations: Vec<Provenance>,
     /// Valid time (Principle 4): the start of the interval during which the relation is true in the world.
     /// None = "from the observation time (provenance.observed_at) until refuted".
     #[serde(default, skip_serializing_if = "Option::is_none")]
