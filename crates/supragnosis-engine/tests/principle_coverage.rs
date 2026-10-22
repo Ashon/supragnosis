@@ -272,9 +272,7 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a store failure is reported as a failure, never as empty or converged",
-            Evidence::Deferred(
-                "the port returns Result at every call site and `internal()` maps a store error to                  500, but nothing forbids a future caller substituting a default, and no test pins                  it because there is no fault-injecting adapter. Revisit when one exists",
-            ),
+            Evidence::Scenario(&["a_store_failure_is_reported_as_a_failure"]),
         ),
     ]),
     (13, &[
@@ -2683,11 +2681,7 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
             "a_store_from_before_the_ledger_is_owed_in_full_once",
           ])),
         c("a projection write that fails leaves the entry for the next open",
-          Evidence::Deferred(
-            "the clear sits after the projection writes, so an error returns with the entry in \
-             place, but nothing pins it because there is no fault-injecting adapter - the gap F12's \
-             store leg records. Revisit when one exists",
-          )),
+          Evidence::Scenario(&["a_projection_write_that_fails_leaves_its_entry"])),
     ]),
     (5, &[
         c("/api/health carries the ledger's size and the last recovery",

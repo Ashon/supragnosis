@@ -1010,18 +1010,30 @@ fn p16_partitioned_and_duplicated_delivery_converges() {
 
 // --- P3 / P24: a re-materialization does not interleave with a write ----------------------------
 
-/// A view of a store whose next projection write, once armed, first runs a write on another thread
-/// and waits up to a moment for it - the window between a re-materialization reading the log and
-/// writing what it computed from it.
-struct PausingStore {
+/// A view of a store with two faults to inject into its projection writes. Armed, the next one first
+/// runs a write on another thread and waits up to a moment for it - the window between a
+/// re-materialization reading the log and writing what it computed from it. Failing, every one
+/// fails, as a full disk does, while the log still takes appends.
+#[derive(Default)]
+struct InterposedStore {
     inner: Arc<InMemoryStore>,
     armed: std::sync::Mutex<Option<ConcurrentWrite>>,
+    failing: std::sync::atomic::AtomicBool,
+}
+
+impl InterposedStore {
+    fn refuse(&self) -> Result<(), supragnosis_core::StoreError> {
+        if self.failing.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(supragnosis_core::StoreError::Backend("no space left on device".into()));
+        }
+        Ok(())
+    }
 }
 
 /// Starts a write on another thread; the receiver hears when it has finished.
 type ConcurrentWrite = Box<dyn FnOnce() -> std::sync::mpsc::Receiver<()> + Send>;
 
-impl supragnosis_core::AssertionStore for PausingStore {
+impl supragnosis_core::AssertionStore for InterposedStore {
     fn all_observations(
         &self,
         ws: Option<&str>,
@@ -1082,19 +1094,21 @@ impl supragnosis_core::AssertionStore for PausingStore {
     }
 }
 
-impl supragnosis_core::KnowledgeStore for PausingStore {
+impl supragnosis_core::KnowledgeStore for InterposedStore {
     fn put_entity(&self, e: supragnosis_core::Entity) -> Result<(), supragnosis_core::StoreError> {
         let armed = self.armed.lock().unwrap().take();
         if let Some(write) = armed {
             let done = write();
             let _ = done.recv_timeout(std::time::Duration::from_millis(300));
         }
+        self.refuse()?;
         self.inner.put_entity(e)
     }
     fn add_relation(
         &self,
         r: supragnosis_core::Relation,
     ) -> Result<(), supragnosis_core::StoreError> {
+        self.refuse()?;
         self.inner.add_relation(r)
     }
     fn owed_projections(&self) -> Result<Vec<(String, String)>, supragnosis_core::StoreError> {
@@ -1134,7 +1148,7 @@ impl supragnosis_core::KnowledgeStore for PausingStore {
 #[test]
 fn p3_a_reproject_and_an_observe_do_not_interleave() {
     let inner = Arc::new(InMemoryStore::new());
-    let store = Arc::new(PausingStore { inner: inner.clone(), armed: Default::default() });
+    let store = Arc::new(InterposedStore { inner: inner.clone(), ..Default::default() });
     let engine = Arc::new(Engine::new(store.clone(), "host-a", WS));
     observe(&engine, "kernel, as first said", &["kernel"], vec![]);
 
@@ -3830,6 +3844,49 @@ fn an_append_whose_projection_never_ran_is_projected_at_the_next_open() {
     assert_eq!(reopened.owed_count().expect("ledger"), 0, "the recovery cleared what it repaid");
     assert_eq!(reopened.repay_owed().expect("repay again"), None, "a second open owes nothing");
     assert_eq!(reopened.last_recovery(), Some(recovery), "the recovery stays reportable (K5)");
+}
+
+/// guard (crash-recovery.md K2/K3): a projection write that fails leaves the entry for the next
+/// open. With the store refusing projection writes - a full disk - an observe's append still
+/// commits and the write returns the error; its ledger entry stays, as it does through a reproject
+/// that fails the same way. The next engine to open the healthy store repays it.
+#[test]
+fn a_projection_write_that_fails_leaves_its_entry() {
+    let inner = Arc::new(InMemoryStore::new());
+    let store = Arc::new(InterposedStore { inner: inner.clone(), ..Default::default() });
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    store.failing.store(true, std::sync::atomic::Ordering::SeqCst);
+    let failed = engine.observe(ObserveInput {
+        content: "alpha is a service".into(),
+        workspace: None,
+        source_ref: None,
+        confidence: None,
+        on_behalf_of: None,
+        derived_from: vec![],
+        entities: vec![EntityInput {
+            name: "alpha".into(),
+            kind: Some("Service".into()),
+            description: None,
+        }],
+        relations: vec![],
+    });
+    let Err(failed) = failed else {
+        panic!("the projection write failed, and the observe says so")
+    };
+    let said = failed.to_string();
+    assert!(said.contains("no space left on device"), "{said}");
+    let alpha = Entity::make_id(WS, "alpha");
+    assert_eq!(inner.all_observations(Some(WS)).unwrap().len(), 1, "the append committed");
+    assert!(inner.get_entity(&alpha).unwrap().is_none(), "nothing was projected");
+    assert_eq!(engine.owed_count().unwrap(), 1, "the entry stays");
+    assert!(engine.reproject(Some(WS)).is_err(), "a reproject that cannot write says so");
+    assert_eq!(engine.owed_count().unwrap(), 1, "and leaves the entry too");
+
+    store.failing.store(false, std::sync::atomic::Ordering::SeqCst);
+    let reopened = Engine::new(inner.clone(), "host-a", WS);
+    reopened.repay_owed().expect("repay").expect("the failed write was owed");
+    assert!(inner.get_entity(&alpha).unwrap().is_some(), "projected at the next open");
+    assert_eq!(reopened.owed_count().unwrap(), 0);
 }
 
 /// guard (crash-recovery.md K2): every engine write that completes leaves nothing owed - observe
