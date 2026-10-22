@@ -369,6 +369,10 @@ Guarded by:
   refuse a conflict and an unrecognized holder and act on the one manager otherwise, and
   `lifecycle::released` lets install go on only once the address and the store went quiet; the
   source keeps the order retire, re-check, then the canonical file on both platforms.
+- `an_operators_file_is_moved_aside_never_deleted` - L5: `lifecycle::uninstall_file_step` removes
+  only the generated file and moves a hand-written one aside; `move_file_aside` keeps every byte at
+  the timestamped path and leaves the file in place when it cannot; and the service commands remove
+  no other file.
 - `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
 - `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: every CLI call in the app that can
   stop a daemon, listed with the function it sits in, each reached from one command of the app's

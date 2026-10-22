@@ -775,6 +775,24 @@ pub fn moved_aside_path(home: &str, label: &str, unix_secs: u64) -> std::path::P
     std::path::PathBuf::from(format!("{home}/.supragnosis/launchd/{label}.plist.{unix_secs}"))
 }
 
+/// What `service uninstall` does with the canonical plist or unit, by what `canonical_service_state`
+/// found there (L5): the file it generated is removed, one a person wrote is moved aside - never
+/// deleted - and with nothing there there is nothing to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileStep {
+    Remove,
+    MoveAside,
+    Nothing,
+}
+
+pub fn uninstall_file_step(state: &str) -> FileStep {
+    match state {
+        "generated" => FileStep::Remove,
+        "hand_written" => FileStep::MoveAside,
+        _ => FileStep::Nothing,
+    }
+}
+
 /// Parses one `--env KEY=VALUE`. Only SUPRAGNOSIS_* keys: the job's environment is this daemon's
 /// configuration, not a place to smuggle unrelated variables into a login-time process.
 pub fn parse_env_arg(arg: &str) -> Result<(String, String), String> {

@@ -1530,12 +1530,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "nothing deletes an operator's plist or unit: take-over and uninstall move it aside under ~/.supragnosis/launchd or ~/.supragnosis/systemd",
-            Evidence::Deferred(
-                "the destinations are pinned (env_args_configure_the_daemon_and_nothing_else, \
-                 a_copied_units_environment_is_read_as_systemd_quotes_it) but the act is `move_file_aside`, a rename \
-                 reached from the install and uninstall of both platforms, and nothing asserts a rename rather than \
-                 a remove. Revisit when the service commands' file steps run against a temp HOME in a test",
-            ),
+            Evidence::Scenario(&["an_operators_file_is_moved_aside_never_deleted"]),
         ),
     ]),
     (6, &[
