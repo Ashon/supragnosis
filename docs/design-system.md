@@ -34,7 +34,7 @@
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
-> the camera, is built, and step 59, Un-merge opens what it proposed, is specified.
+> the camera, is built, and so is step 59, Un-merge opens what it proposed.
 
 ## 1. Why this exists
 
@@ -2016,7 +2016,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 58. **A panel on a tablet ends above the camera** [built] (Section 29.24; Section 29.18's owed overlap repaid):
    from 760 to 1200 pixels a floating panel ends above the camera toolbar under a finger as with a
    mouse.
-59. **Un-merge opens what it proposed** (Section 29.25): the split Un-merge proposes opens under Needs
+59. **Un-merge opens what it proposed** [built] (Section 29.25): the split Un-merge proposes opens under Needs
    you, as Same as... and Keep ... instead open theirs.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
@@ -5813,3 +5813,7 @@ No row needs a principle changed.
 opens the split it proposed under Needs you, selected and focused, with its notice as before.
 
 **What this step does not do.** It does not accept the split: that stays the person's next act.
+
+**Guarded by** `the_console_says_what_a_repeat_found` in the viewer's review tests, which holds
+Un-merge to opening the split it proposed, found or new. A browser check accepts a merge, presses
+Un-merge on its Decided item, and finds the split selected and focused under Needs you.
