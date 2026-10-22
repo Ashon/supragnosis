@@ -358,11 +358,17 @@ Implemented:
 - `supragnosis://observation/{id}` - observation (raw text + provenance + derived_from lineage).
   The dereference path for an observation id returned by a search hit - it fulfills the query surface's obligation to
   answer "where did this answer come from" (Principle 2) and the dereferenceability of observation identifiers (Principle 14).
+- `supragnosis://entity/{id}` - an entity: the same answer as the `get_entity` tool (the entity, its
+  attestations and, for a merged-away id, where it was forwarded), so an entity id a search hit or a
+  graph hands out is dereferenceable as Principle 14 asks, not only callable. An unknown id is
+  `resource_not_found` saying absence is not a negation (Principle 5); on the hub's agent surface an
+  entity outside the reader's grants answers exactly as an unknown one, since an entity id is
+  computable from a workspace and a name (remote-viewer.md Section 3.4), and one the hub may not serve
+  says why, as the tool does (R5).
 
-Specified but not implemented: `supragnosis://entity/{id}` (reachable via the `get_entity` tool, but
-the URI is not dereferenceable - a standing Principle 14 gap), `supragnosis://workspace/{ws}/summary`,
-`supragnosis://proposal/{id}`, `supragnosis://workspace/{ws}/canon-policy` (the canon-policy artifact
-itself is M4 Phase 5).
+Specified but not implemented: `supragnosis://workspace/{ws}/summary`, `supragnosis://proposal/{id}`
+(a proposal id is dereferenceable today through the `get_proposal` tool), and
+`supragnosis://workspace/{ws}/canon-policy` (the canon-policy artifact itself is M4 Phase 5).
 
 ### Prompts
 Four prompts on the local surface ([prompts.md](prompts.md)): `brief {workspace, focus}` (the
@@ -801,8 +807,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   planting a delimiter in the content cannot collide an id with another observation (Principle 18).
   `Assertions::hash_into`, `attestation_signing_bytes`, `provenance_order`, and `absorb` **exhaustively
   destructure** their inputs, so adding a model field is a compile error that forces the
-  identity-vs-metadata and signed-vs-derived decisions to be explicit. *Caveat*:
-  `supragnosis://entity/{id}` is not dereferenceable (Section 7) - a standing gap in this principle.
+  identity-vs-metadata and signed-vs-derived decisions to be explicit. Every entity and observation
+  id the system hands out is a dereferenceable `supragnosis://` URI (Section 7).
 - Principle 16 (topology-independent convergence): CAS dedup + HLC total order + deterministic
   re-materialization (`reproject` replays the log in `(ordering_hlc, id)` order). Query responses pin ties
   and truncation by stable id. Per the 8th revision, the two convergence points are distinguished:
