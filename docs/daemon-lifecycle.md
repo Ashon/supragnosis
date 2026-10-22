@@ -239,8 +239,10 @@ classify managers itself - one implementation, in the workspace where it is test
   the status line then says what was retired) and re-attaches. Turning it off runs `supragnosis
   service uninstall`. That stops the daemon, so the shell then falls back to attach-or-spawn and
   runs one for the session, and the status line says the daemon is no longer started at login.
-  The switch is the only way the app stops a daemon it did not spawn: off uninstalls the job, and
-  on can retire another manager's daemon by taking over (L6).
+  The switch is one of the person's acts through which the app stops a daemon it did not spawn:
+  off uninstalls the job, and on can retire another manager's daemon by taking over (L6).
+  onboarding.md O8 added the other, with the same consent: Setup's Set up and Take over. Restart
+  Daemon and Rebuild index stop the daemon only to bring it back.
 - **The status line** names the manager (launchd, Homebrew, pidfile, spawned by this app) and
   carries version drift and conflicts from `status`.
 - **Restart Daemon** reports its outcome. The CLI's exit status and message reach the status line; a
@@ -303,7 +305,7 @@ which is the reason the shell attaches rather than owns.
 | **L3** | Version drift is visible: `status` and the tray show running and installed versions when they differ, and an unanswering daemon's version is unknown, not assumed. |
 | **L4** | Lifecycle failures are loud: every CLI lifecycle command exits non-zero on failure with the reason - including a job it loaded that does not come up - and the app never discards that exit status. |
 | **L5** | The operator's file is theirs: `install` never overwrites a plist or a unit it did not generate, and nothing deletes one - it is moved aside. |
-| **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon. The app stops a daemon it did not spawn only through the Start at Login switch: off uninstalls the job, and on takes over from another manager, stopping what that manager ran (Section 4). |
+| **L6** | The daemon's lifetime is not the app's. Quitting the app never stops a launchd-managed daemon. The app stops a daemon it did not spawn only on a person's act that asks for it: the Start at Login switch - off uninstalls the job, and on takes over from another manager, stopping what that manager ran (Section 4) - and Setup's Set up and Take over, the same consent (onboarding.md O8). Restart Daemon and Rebuild index stop it only to bring it back. |
 | **L7** | The generated job adds no exposure: loopback MCP, the viewer's unix socket, the bearer token unchanged. Nothing in the plist or the unit widens a bind or disables auth, and `install` refuses an environment that would. |
 | **L8** | No new privilege: a user LaunchAgent in the `gui/<uid>` domain or a unit in the person's own systemd manager, no administrator rights, no helper tool; lingering is asked of polkit, never escalated. |
 | **L9** | A signal goes only to a supragnosis process. A pidfile naming any other process is stale, and is cleared rather than acted on. |
