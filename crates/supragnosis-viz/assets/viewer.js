@@ -1922,7 +1922,7 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
   // The notice may read what the act found (Section 29.23).
   if (typeof said === "function") said = said(body || {});
   // An action may be built once the write has landed - Undo reads its own preview (Section 29.2).
-  if (typeof action === "function") action = await action();
+  if (typeof action === "function") action = await action(body || {});
   toast("ok", said, detail || null, action);
   return body || {};
 }
@@ -3205,6 +3205,12 @@ function obsCardHtml(o) {
     const what = g.promotion ? tierName(o.effective_tier) + " by " + by : "Lowered to " + tierName(o.effective_tier) + " by " + by;
     parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
   }
+  // A person can demote a claim (Section 29.26): on the local console, for knowledge that reads above
+  // Unverified. It asks first, with what the act does, and casts only then.
+  if (surfaceKind === "local" && !o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {
+    parts.push(demoteAsk && demoteAsk.id === o.id ? demoteHtml(o)
+      : html`<div class="oc-act"><button type="button" class="linkish" data-demote="open">Demote this claim</button></div>`);
+  }
   parts.push(html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`);
   for (const a of o.attestations || []) {
     parts.push(html`<div class="prow"><span class="pwho">${whoLine(a.trust_tier, a)}</span>`,
@@ -3259,11 +3265,124 @@ function openReviewItem(pid, ws) {
   reviewSel = "p:" + pid; reviewFocus = true;
   if (reviewOpen()) renderReview(); else location.hash = "#review";
 }
-function hideObsCard() { obscardEl.className = ""; obscardEl.innerHTML = ""; }
+function hideObsCard() { obscardEl.className = ""; obscardEl.innerHTML = ""; cardObs = null; demoteAsk = null; }
+// The observation on the card, and the card's open "Demote this claim to Unverified?" question:
+// { id, state: "reading" | "ok" | "err", preview, why } (Section 29.26).
+let cardObs = null, demoteAsk = null;
+// A claim's first words, as a notice and a reason say it.
+function claimWords(o) {
+  const t = String((o && o.content) || "").trim();
+  return t.length > 48 ? t.slice(0, 48).trimEnd() + "..." : t;
+}
+// The question, in step 41's form: what flips, whose ring drops, what else the claim states, what
+// Unverified means and the ceiling it leaves, then the checks - and Demote waits for all of it (U18).
+function demoteHtml(o) {
+  const v = demoteAsk, q = "Demote this claim to Unverified?";
+  const parts = [html`<div class="cq">${q}</div>`];
+  let can = false, state = "Reading what this demotes...";
+  if (v.state === "err") state = v.why || "What this act changes could not be read.";
+  if (v.state === "ok") {
+    const d = v.preview.belief_diff, mine = (d.reach || []).find(r => r.observation === o.id);
+    const flips = (d.overturned || []).map(b => {
+      const what = b.name + "'s " + fieldSaid(b.field).toLowerCase();
+      if (!b.contested_before && b.contested_after) return what + " becomes contested and waits under Needs you.";
+      if (b.contested_before && !b.contested_after) return what + (b.to ? " becomes " + b.to + " and" : "") + " is no longer contested.";
+      return what + " becomes " + (b.to || "nothing") + ".";
+    });
+    for (const t of flips.length ? flips : ["Every value it states stays; it is trusted less."]) parts.push(html`<div class="creach">${t}</div>`);
+    const rings = ringMoves(d, null, true);
+    for (const t of rings.length ? rings.map(l => "With it, " + l + ".") : ["No entity's ring moves."]) parts.push(html`<div class="creach">${t}</div>`);
+    const rel = mine ? (mine.relations || []).length : 0, defs = (mine && mine.type_defs) || [];
+    if (rel) parts.push(html`<div class="creach">It also states ${rel} relation${rel === 1 ? "" : "s"}.</div>`);
+    if (defs.length) parts.push(html`<div class="creach">It also defines ${defs.length} type${defs.length === 1 ? "" : "s"}: ${nameList(defs)}.</div>`);
+    parts.push(html`<div class="cdef">${tierName("unverified")}: ${TIER_MEANS.unverified}</div>`,
+      html`<div class="cdef">Later claims do not raise it; a review that raises it does.</div>`);
+    const words = c => CHECK_WORDS[c.name] || c.name;
+    const fails = (v.preview.checks || []).filter(c => !c.passed);
+    if (fails.length) state = "Blocked: " + fails.map(c => words(c) + " - " + c.detail).join("; ");
+    else {
+      parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>Checks pass: ${[...new Set((v.preview.checks || []).map(words))].join(", ")}</div>`);
+      can = true;
+    }
+  }
+  const sid = "dst-" + String(o.id).slice(0, 12);
+  return html`<div class="cask" role="group" aria-label="${q}">${parts}${
+    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-demote="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>Demote</button><button type="button" class="quiet" data-demote="no">Cancel</button></span></div>`;
+}
+async function openDemote(o) {
+  demoteAsk = { id: o.id, state: "reading" };
+  showObsCard(o);
+  const got = await readPreview([{ obs: o.id, tier: "unverified", kind: "claim_demotion" }]);
+  if (!demoteAsk || demoteAsk.id !== o.id || !cardObs || cardObs.id !== o.id) return;   // closed or moved on meanwhile
+  demoteAsk = got.preview ? { id: o.id, state: "ok", preview: got.preview } : { id: o.id, state: "err", why: got.why };
+  showObsCard(o);
+  const go = obscardEl.querySelector("[data-demote=yes]:not([disabled])") || obscardEl.querySelector("[data-demote=no]");
+  if (go) go.focus();
+}
+// Cancel and Esc close the question, and focus returns to the act that opened it (U19).
+function closeDemote(o) {
+  demoteAsk = null;
+  showObsCard(o);
+  const back = obscardEl.querySelector("[data-demote=open]");
+  if (back) back.focus();
+}
+// Demote casts the demotion through the path Undo uses; its notice offers Undo once the act's own
+// undo is read - the read Decided's Undo demotion makes - with that diff as its note (Section 29.26).
+async function castDemote(o) {
+  if (!demoteAsk || demoteAsk.id !== o.id || demoteAsk.state !== "ok") return;
+  const said = "Demoted to Unverified: " + claimWords(o);
+  const ws = currentWs(), away = o.workspace && ws && ws !== o.workspace && ws !== "*" && ws !== "all";
+  const undo = async body => {
+    if (!body.proposal_id) return null;
+    let u = null;
+    try {
+      const r = await fetch("/api/resolve/undo?proposal=" + encodeURIComponent(body.proposal_id), { cache: "no-store" });
+      if (r.ok) u = await r.json();
+    } catch (_) { /* said below */ }
+    if (!u) return { note: "Undo is not offered: what it would move back could not be read." };
+    const acts = u.acts || [];
+    if (!acts.length) return { note: "Nothing to undo: another decision holds this claim where it is." };
+    if ((u.checks || []).some(c => c.blocking && !c.passed)) return { note: "Undo is not offered: a check holds it back." };
+    const moves = ringMoves(u.belief_diff, null);
+    return {
+      label: "Undo",
+      note: "Undo returns this claim to " + tierName(acts[0].tier) + " and keeps it there until a review moves it again."
+        + (moves.length ? " " + moves.join(". ") + "." : ""),
+      run: async () => {
+        for (const a of acts) {
+          if (!await consoleWrite("/api/resolve", settleQuery(a.observation, a.tier, a.kind, "Undid " + said), "Undone - the claim is " + tierName(a.tier) + " again")) break;
+        }
+        await poll();
+      },
+    };
+  };
+  demoteAsk = null;
+  const body = await consoleWrite("/api/resolve", settleQuery(o.id, "unverified", "claim_demotion", said), said, undo, away ? "In " + o.workspace + "." : null);
+  if (!body) { showObsCard(o); return; }
+  await poll();
+  // Read again by its id: the Log's kept row still has the tier it had.
+  try {
+    const r = await fetch("/api/observations?id=" + encodeURIComponent(o.id), { cache: "no-store" });
+    if (r.ok) { const l = await r.json(); if (Array.isArray(l) && l[0]) o = l[0]; }
+  } catch (_) { /* the card shows what it had */ }
+  if (!cardObs || cardObs.id !== o.id) return;
+  showObsCard(o);
+  const close = obscardEl.querySelector(".close");
+  if (close) close.focus();
+}
 function showObsCard(o) {
+  if (!cardObs || cardObs.id !== o.id) demoteAsk = demoteAsk && demoteAsk.id === o.id ? demoteAsk : null;
+  cardObs = o;
   obscardEl.innerHTML = html`${obsCardHtml(o)}`;
   obscardEl.className = "on";
   obscardEl.querySelector(".close").onclick = hideObsCard;
+  obscardEl.querySelectorAll("[data-demote]").forEach(b => {
+    b.onclick = ev => {
+      ev.stopPropagation();
+      const d = b.dataset.demote;
+      if (d === "open") openDemote(o); else if (d === "yes") castDemote(o); else closeDemote(o);
+    };
+  });
   // Every id leads somewhere: a parent observation opens its card, a proposal its Review item.
   obscardEl.querySelectorAll("[data-open-obs]").forEach(b => {
     b.onclick = async ev => { ev.stopPropagation(); const p = await observationById(b.dataset.openObs); if (p) showObsCard(p); else toast("bad", "That observation is not here", "It may be in a workspace this view cannot read."); };
@@ -3801,7 +3920,7 @@ async function readPreview(acts) {
 }
 // The entities whose ring an act moves, the belief's own entity aside, each once - grouped by where
 // they land: "With it, Nightly export and Warehouse become Human confirmed."
-function ringMoves(diff, skip) {
+function ringMoves(diff, skip, down) {
   const moved = new Map();
   for (const r of (diff && diff.reach) || []) for (const e of r.entities || []) {
     if (e.from !== e.to && e.entity !== skip) moved.set(e.entity, e);
@@ -3811,7 +3930,8 @@ function ringMoves(diff, skip) {
   return [...byTo.entries()].map(([to, names]) => {
     const shown = nameList(names);
     const many = names.length > 1;
-    const verb = TIER_ORDER.indexOf(to) === 3 ? (many ? " become " : " becomes ") : (many ? " go back to " : " goes back to ");
+    const verb = down ? (many ? " drop to " : " drops to ")
+      : TIER_ORDER.indexOf(to) === 3 ? (many ? " become " : " becomes ") : (many ? " go back to " : " goes back to ");
     return shown + verb + tierName(to);
   });
 }
@@ -7041,7 +7161,7 @@ window.addEventListener("keydown", e => {
   // Esc closes the topmost thing: the observation card, then the view menu, then the inspector.
   else if (e.key === "Escape") {
     if (listOn) setList(false);   // List goes back to Map first, from the table or its tab (Section 29.11)
-    else if (obscardEl.classList.contains("on")) hideObsCard();
+    else if (obscardEl.classList.contains("on")) { if (demoteAsk && cardObs) closeDemote(cardObs); else hideObsCard(); }
     else if (viewPop.classList.contains("on")) setViewPop(false);
     else if (focus) clearSelection(true);   // and the camera goes back to before the walk (Section 29.4)
     else if (workSet) clearWorkSet();       // the working set ends last (Section 29.11)

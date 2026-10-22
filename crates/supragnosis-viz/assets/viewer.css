@@ -686,6 +686,17 @@
   .contested .cask .cfr input { margin-top:3px; }
   .contested .cacts { display:flex; gap:6px; justify-content:flex-end; }
   .contested .cacts .confirm[disabled] { opacity:0.5; cursor:not-allowed; }
+  /* The same question on a claim's card: Demote this claim to Unverified? (Section 29.26). */
+  #obscard .oc-act { margin:6px 0 2px; }
+  #obscard .cask { display:grid; gap:5px; margin:8px 0 4px; padding:8px 10px; border-radius:var(--r-control);
+                   background:var(--panel-2); color:var(--ink2); font-size:var(--text-body); }
+  #obscard .cask .cq { color:var(--ink); font-weight:600; }
+  #obscard .cask .cdef, #obscard .cask .cstate { color:var(--muted); font-size:var(--text-small); }
+  #obscard .cask .cchk { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:var(--text-small); }
+  #obscard .cask .cchk .i { width:14px; height:14px; color:var(--ok-ink); }
+  #obscard .cacts { display:flex; gap:6px; justify-content:flex-end; }
+  #obscard .cacts .confirm { padding:0 8px; min-height:24px; border-radius:var(--r-control); }
+  #obscard .cacts .confirm[disabled] { opacity:0.5; cursor:not-allowed; }
   .contested .neither { margin-top:6px; font-size:var(--text-body); color:var(--ink2); }
   .contested .neither summary { cursor:pointer; color:var(--muted); min-height:24px; padding-block:3px; box-sizing:border-box;
                                 list-style:none; display:flex; align-items:center; gap:4px; }

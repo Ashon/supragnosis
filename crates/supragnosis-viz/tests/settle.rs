@@ -151,7 +151,7 @@ fn a_confirmation_says_what_it_confirms() {
     assert!(settle.contains("Undo is not offered"), "an unreadable Undo is not said");
     assert!(
         function("consoleWrite")
-            .contains("if (typeof action === \"function\") action = await action();"),
+            .contains("if (typeof action === \"function\") action = await action(body || {});"),
         "the notice cannot wait for Undo's preview"
     );
     assert!(
@@ -172,4 +172,42 @@ fn a_confirmation_says_what_it_confirms() {
     ] {
         assert!(SCRIPT.contains(line), "the definition is not the spec's: {line}");
     }
+}
+
+/// design-system.md Section 29.26: a claim's card offers its demotion on the local console, asks
+/// first - what flips, whose ring drops, what else it states, what Unverified means and the ceiling,
+/// then the checks - and casts only then; its notice offers Undo from the act's own undo read, and
+/// Esc closes the question before the card.
+#[test]
+fn a_person_can_demote_a_claim() {
+    let card = function("obsCardHtml");
+    assert!(card.contains(
+        "surfaceKind === \"local\" && !o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0"
+    ));
+    assert!(card.contains(">Demote this claim</button>"));
+    let ask = function("demoteHtml");
+    for part in [
+        "\"Demote this claim to Unverified?\"",
+        " becomes contested and waits under Needs you.",
+        " and\" : \"\") + \" is no longer contested.\"",
+        "Every value it states stays; it is trusted less.",
+        "ringMoves(d, null, true)",
+        "No entity's ring moves.",
+        "Later claims do not raise it; a review that raises it does.",
+        "can ? \"\" : html` disabled aria-describedby=",
+    ] {
+        assert!(ask.contains(part), "the question does not say it: {part}");
+    }
+    assert!(function("openDemote").contains("kind: \"claim_demotion\""));
+    let cast = function("castDemote");
+    for part in [
+        "\"Demoted to Unverified: \"",
+        "/api/resolve/undo?proposal=",
+        "\"Undid \" + said",
+        "/api/observations?id=",
+    ] {
+        assert!(cast.contains(part), "the act does not: {part}");
+    }
+    assert!(function("ringMoves").contains("\" drops to \""));
+    assert!(SCRIPT.contains("if (demoteAsk && cardObs) closeDemote(cardObs); else hideObsCard();"));
 }
