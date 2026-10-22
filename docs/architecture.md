@@ -387,6 +387,8 @@ console. The remote surface lists none until digests are scoped to a principal's
 
 ### LLM-friendly response conventions (Principles 5/21)
 - Responses distinguish "not found (unknown)" from "false" (`{found:false}` vs an explicit negative assertion).
+- A refused or failed call is flagged as an MCP tool error (`isError`); a not-found answer is a
+  result, not an error (design-system.md Section 29.20).
 - Failure responses carry "why it failed and what to do differently" so the LLM can self-correct.
 - Query results must be able to be accompanied by provenance (source/trust tier).
 
