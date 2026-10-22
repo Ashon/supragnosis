@@ -92,7 +92,7 @@ would strip it (Section 1).
 |---|---|---|---|
 | 1 | The redb tables as v0.2.0 created them. | 1 | v0.2.0 - v0.4.3 |
 | 2 | Adds the `owed_projection` ledger. A format 1 writer appends without recording what it owes. | 2 | v0.4.4 onward |
-| 3 | Adds the `attestation_app` table: the app that wrote an attestation, by a key of its own (design-system.md Section 29.8). A format 2 writer ignores it and records no app for what it writes, which reads as no app. | 2 | the release after v0.8.2 onward |
+| 3 | Adds the `attestation_app` table: the app that wrote an attestation, by a key of its own (design-system.md Section 29.8). A format 2 writer ignores it and records no app for what it writes, which reads as no app. | 2 | v0.9.0 onward |
 
 Format 2 should have raised `min_reader` when it shipped. It could not, because there was nowhere to
 write it. The first release with the stamp writes format 2 and `min_reader` 2. That does not raise
