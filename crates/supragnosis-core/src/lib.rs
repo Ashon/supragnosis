@@ -267,6 +267,12 @@ pub fn is_canonical_public_key_hex(s: &str) -> bool {
     s.len() == 64 && hex_decode(s).is_some()
 }
 
+/// Whether 32 bytes are an ed25519 public key a signature can be checked against - a point on the
+/// curve, not merely the right length.
+pub fn is_verifying_key(bytes: &[u8; 32]) -> bool {
+    ed25519_dalek::VerifyingKey::from_bytes(bytes).is_ok()
+}
+
 /// Derives the immutable node_id from raw public-key bytes (federation.md Section 2).
 pub fn node_id_from_public_key(pubkey: &[u8]) -> String {
     blake3::hash(pubkey).to_hex().to_string()[..32].to_string()

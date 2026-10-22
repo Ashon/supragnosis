@@ -33,6 +33,9 @@ pub struct HubListener {
     /// The hub's invitations and the machines they admitted (docs/pairing.md Section 4.3).
     pub pairing: Arc<invite::Pairing>,
     running: Mutex<Option<(SocketAddr, tokio::task::JoinHandle<()>)>>,
+    /// Held across a whole `apply`: two at once would both see no listener and both bind, and the
+    /// one that lost would record a refusal while the other listened.
+    applying: tokio::sync::Mutex<()>,
     /// `{listening, address, why}`, read by `sync_status` and the Sync pane.
     state: Arc<RwLock<serde_json::Value>>,
 }
@@ -46,34 +49,57 @@ impl HubListener {
         pairing: Arc<invite::Pairing>,
         state: Arc<RwLock<serde_json::Value>>,
     ) -> Self {
-        Self { store, node, hooks, peers, pairing, running: Mutex::new(None), state }
+        Self {
+            store,
+            node,
+            hooks,
+            peers,
+            pairing,
+            running: Mutex::new(None),
+            applying: tokio::sync::Mutex::new(()),
+            state,
+        }
     }
 
     /// Re-reads `[server]` and applies it; with none, the listener closes.
     pub async fn refresh(&self) -> serde_json::Value {
         let path = self.pairing.config_path().to_path_buf();
-        match fed::load_at(&path) {
-            Ok(Some(fed::FileConfig { server: Some(srv), .. })) => self.apply(&srv).await,
-            Ok(_) => {
-                self.stop();
-                let state = serde_json::json!({"listening": false, "address": null, "why": "the config has no [server] section"});
-                if let Ok(mut s) = self.state.write() {
-                    *s = state.clone();
-                }
-                state
-            }
-            Err(e) => serde_json::json!({"error": format!("the config could not be read: {e:#}")}),
+        let why = match fed::load_at(&path) {
+            Ok(Some(fed::FileConfig { server: Some(srv), .. })) => return self.apply(&srv).await,
+            Ok(_) => "the config has no [server] section".to_string(),
+            Err(e) => format!("the config could not be read: {e:#}"),
+        };
+        let _applying = self.applying.lock().await;
+        self.stop();
+        let state = serde_json::json!({"listening": false, "address": null, "why": why});
+        if let Ok(mut s) = self.state.write() {
+            *s = state.clone();
         }
+        state
     }
 
     /// Follows the hub's invitations: one that opens or closes - made, used, denied, cancelled,
-    /// expired, ended - brings the listener to what the bind rule now allows.
+    /// ended - brings the listener to what the bind rule now allows, and so does the expiry of the
+    /// one open, which this loop waits for itself. An invitation left open by a daemon that
+    /// restarted still closes on time.
     pub fn follow(self: &Arc<Self>) {
         let hub = Arc::downgrade(self);
         let changed = self.pairing.changed.clone();
+        let pairing = self.pairing.clone();
         tokio::spawn(async move {
             loop {
-                changed.notified().await;
+                let next = {
+                    let pairing = pairing.clone();
+                    tokio::task::spawn_blocking(move || pairing.next_expiry()).await.ok().flatten()
+                };
+                let wait = next.map(|at| at.saturating_sub(invite::now()) + 1);
+                tokio::select! {
+                    _ = changed.notified() => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(wait.unwrap_or(0))), if wait.is_some() => {
+                        let pairing = pairing.clone();
+                        let _ = tokio::task::spawn_blocking(move || pairing.expire(invite::now())).await;
+                    }
+                }
                 let Some(hub) = hub.upgrade() else { return };
                 hub.refresh().await;
             }
@@ -83,12 +109,17 @@ impl HubListener {
     /// Brings the listener to what `srv` and the bind rule allow: opens it, keeps it, moves it or
     /// closes it, and records why it is down when it is. Never fails the daemon.
     pub async fn apply(&self, srv: &fed::ServerSection) -> serde_json::Value {
+        let _applying = self.applying.lock().await;
         self.peers.replace(srv.allowlist.clone());
-        let invitations = {
+        // An invitations file that cannot be read counts no invitation, and the refusal says why
+        // rather than that none is open (P5).
+        let (invitations, unread) = {
             let pairing = self.pairing.clone();
-            tokio::task::spawn_blocking(move || pairing.open_count(invite::now()))
-                .await
-                .unwrap_or(0)
+            match tokio::task::spawn_blocking(move || pairing.open_count(invite::now())).await {
+                Ok(Ok(n)) => (n, None),
+                Ok(Err(e)) => (0, Some(format!("{e:#}"))),
+                Err(e) => (0, Some(e.to_string())),
+            }
         };
         let admitted = self.peers.admitted().allowlist.len() + srv.principals.len() + invitations;
         let wanted = self.wanted(srv, admitted);
@@ -96,6 +127,10 @@ impl HubListener {
         let state = match wanted {
             Err(why) => {
                 self.stop();
+                let why = match unread {
+                    Some(e) => format!("{why}; the invitations could not be read: {e}"),
+                    None => why,
+                };
                 serde_json::json!({"listening": false, "address": srv.listen, "why": why})
             }
             Ok((addr, _)) if current == Some(addr) && !addr.port().eq(&0) => {
@@ -301,6 +336,7 @@ async fn make_invitation(
         invite::ensure_server(&p, &addresses)
     })
     .await??;
+    let born = hub.get().is_none();
     let hub = hub.hub().await?;
     let port = srv.listen.rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or(7420);
     let addresses = match ask.addresses.is_empty() {
@@ -328,17 +364,28 @@ async fn make_invitation(
         pairing.invite(workspaces, addresses, check, invite::now())
     })
     .await??;
+    // The listener's loop opens it for the invitation and closes it at the expiry (`follow`).
     let listener = hub.refresh().await;
-    let pairing = hub.pairing.clone();
-    let expires = made.expires;
-    tokio::spawn(async move {
-        let wait = expires.saturating_sub(invite::now()) + 1;
-        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-        let _ = tokio::task::spawn_blocking(move || pairing.expire(invite::now())).await;
-    });
+    let mut notes = invite::notes();
+    let loopback = srv.listen.parse::<std::net::SocketAddr>().is_ok_and(|a| a.ip().is_loopback());
+    if loopback {
+        notes.push(format!(
+            "This hub listens on {} only, which no other machine reaches. Set [server] listen to \
+             0.0.0.0:{port} in {} to let one join.",
+            srv.listen,
+            paths.config.display()
+        ));
+    }
+    if born {
+        notes.push(
+            "The Sync pane lists the machines this hub admits after Supragnosis restarts; \
+             `supragnosis peer list` lists them now."
+                .into(),
+        );
+    }
     let mut out = serde_json::to_value(&made)?;
     out["listener"] = listener;
-    out["notes"] = serde_json::json!(invite::notes());
+    out["notes"] = serde_json::json!(notes);
     Ok(out)
 }
 
@@ -362,8 +409,9 @@ pub fn router(
     let act_hub = hub.clone();
     let peers_paths = paths.clone();
     let remove_hub = hub;
-    // An act on the open invitation: the hub is built if there is one at all.
-    let act = move |state: Option<invite::State>| {
+    // An act on the open invitation, which exists only if the hub was built. Allow and Deny name
+    // the request the person was shown (PA11); cancel names none.
+    let act = move |state: Option<invite::State>, ask: Option<invite::Answering>| {
         let hub = act_hub.clone();
         async move {
             let Some(hub) = hub.get() else {
@@ -371,9 +419,10 @@ pub fn router(
             };
             let pairing = hub.pairing.clone();
             Json(
-                blocking(move || match state {
-                    None => pairing.allow(invite::now()),
-                    Some(s) => pairing.close(s, invite::now()),
+                blocking(move || match (state, ask) {
+                    (None, Some(ask)) => pairing.allow(&ask, invite::now()),
+                    (None, None) => anyhow::bail!("Allow names the request it answers"),
+                    (Some(s), ask) => pairing.close(s, ask.as_ref(), invite::now()),
                 })
                 .await,
             )
@@ -433,9 +482,15 @@ pub fn router(
                 }
             }),
         )
-        .route("/hub/allow", post(move || allow(None)))
-        .route("/hub/deny", post(move || deny(Some(invite::State::Denied))))
-        .route("/hub/cancel", post(move || cancel(Some(invite::State::Cancelled))))
+        .route(
+            "/hub/allow",
+            post(move |Json(ask): Json<invite::Answering>| allow(None, Some(ask))),
+        )
+        .route(
+            "/hub/deny",
+            post(move |Json(ask): Json<invite::Answering>| deny(Some(invite::State::Denied), Some(ask))),
+        )
+        .route("/hub/cancel", post(move || cancel(Some(invite::State::Cancelled), None)))
         .route(
             "/hub/peers",
             get(move || {
@@ -449,9 +504,10 @@ pub fn router(
                 let hub = remove_hub.clone();
                 async move {
                     let who = body.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string();
-                    let hub = match hub.hub().await {
-                        Ok(hub) => hub,
-                        Err(e) => return Json(refusal(e)),
+                    // A node no invitation made a hub has no machine to remove, and is not
+                    // made one by asking.
+                    let Some(hub) = hub.get() else {
+                        return Json(serde_json::json!({"error": format!("no machine named {who} joined this hub")}));
                     };
                     let pairing = hub.pairing.clone();
                     Json(blocking(move || pairing.remove(&who, invite::now())).await)
@@ -526,7 +582,11 @@ mod tests {
             "ws",
         ));
         let slot = Arc::new(HubSlot::new(|| anyhow::bail!("this test builds no hub")));
-        let paths = invite::Paths { hub: dir.join("hub"), config: dir.join("supragnosis.toml") };
+        let paths = invite::Paths {
+            hub: dir.join("hub"),
+            config: dir.join("supragnosis.toml"),
+            listen: "192.0.2.1:7420".into(),
+        };
         tokio::spawn(async move { axum::serve(listener, router(engine, None, slot, paths)).await });
         let call = |m: &'static str, p: &'static str| {
             let path = path.clone();
@@ -542,8 +602,29 @@ mod tests {
         assert_eq!(refresh["error"], "this node has no [server] section");
         let open = call("GET", "/hub/invite").await.unwrap().expect("answers").expect("a daemon");
         assert!(open["open"].is_null(), "{open}");
-        let allow = call("POST", "/hub/allow").await.unwrap().expect("answers").expect("a daemon");
+        let path_ = path.clone();
+        let allow = tokio::task::spawn_blocking(move || {
+            call_at(&path_, "POST", "/hub/allow", Some(&serde_json::json!({})))
+        })
+        .await
+        .unwrap()
+        .expect("answers")
+        .expect("a daemon");
         assert_eq!(allow["error"], "no invitation is open");
+        let remove = tokio::task::spawn_blocking({
+            let path = path.clone();
+            move || {
+                call_at(&path, "POST", "/hub/peer/remove", Some(&serde_json::json!({"name": "x"})))
+            }
+        })
+        .await
+        .unwrap()
+        .expect("answers")
+        .expect("a daemon");
+        assert_eq!(
+            remove["error"], "no machine named x joined this hub",
+            "and builds no hub to say so"
+        );
         let peers = call("GET", "/hub/peers").await.unwrap().expect("answers").expect("a daemon");
         assert_eq!(peers["joined"], serde_json::json!([]));
         let _ = std::fs::remove_dir_all(&dir);
@@ -551,5 +632,114 @@ mod tests {
             call_at(&path, "GET", "/sync", None).expect("no error").is_none(),
             "no daemon there now"
         );
+    }
+
+    /// A hub built for one test at `dir`: its pairing kept there, its `[server]`, once an invitation
+    /// makes one, at an address no interface holds - the bind rule passes and the bind then fails,
+    /// so no port opens to the network.
+    fn slot_at(dir: &Path) -> (Arc<HubSlot>, invite::Paths, Arc<RwLock<serde_json::Value>>) {
+        let paths = invite::Paths {
+            hub: dir.join("hub"),
+            config: dir.join("supragnosis.toml"),
+            listen: "192.0.2.1:7420".into(),
+        };
+        let state: Arc<RwLock<serde_json::Value>> = Default::default();
+        let (p, st) = (paths.clone(), state.clone());
+        let slot = Arc::new(HubSlot::new(move || {
+            let store: Arc<dyn AssertionStore> = Arc::new(supragnosis_store::InMemoryStore::new());
+            let node =
+                Arc::new(SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([5; 32])));
+            let peers =
+                Arc::new(PeerDirectory::new(Vec::new(), node.node_id(), &node.public_key_hex()));
+            let pairing = Arc::new(invite::Pairing::new(
+                p.clone(),
+                node.clone(),
+                store.clone(),
+                "hub".into(),
+            ));
+            let hub = Arc::new(HubListener::new(
+                store,
+                node,
+                Hooks::default(),
+                peers,
+                pairing,
+                st.clone(),
+            ));
+            hub.follow();
+            Ok(hub)
+        }));
+        (slot, paths, state)
+    }
+
+    /// docs/pairing.md Section 4.1: on a node with no `supragnosis.toml`, the first invitation
+    /// builds the hub, makes its certificate and `[server]`, and its listener's state - what
+    /// `sync_status` reads - says at once that the bind rule let it try; the invitation says the
+    /// Sync pane catches up at the next start.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_first_invitation_makes_a_hub_of_a_node_with_no_config() {
+        let dir = std::env::temp_dir().join(format!("sg-born-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (slot, paths, state) = slot_at(&dir);
+        assert!(slot.get().is_none());
+        let ask = InviteAsk {
+            workspaces: vec!["acme".into()],
+            addresses: vec!["hub.example.net".into()],
+        };
+        let made = make_invitation(&slot, &paths, ask).await.expect("invites");
+        assert!(slot.get().is_some(), "the invitation built the hub");
+        assert_eq!(made["addresses"], serde_json::json!(["hub.example.net:7420"]));
+        assert_eq!(made["check"], "fingerprint", "a certificate the hub made is pinned");
+        let srv = fed::load_at(&paths.config).unwrap().unwrap().server.unwrap();
+        assert_eq!(srv.listen, paths.listen);
+        let why = state.read().unwrap()["why"].as_str().unwrap_or_default().to_string();
+        assert!(why.contains("could not start"), "the bind rule counted the invitation: {why}");
+        assert!(made["notes"].to_string().contains("after Supragnosis restarts"), "{made}");
+        let again = make_invitation(
+            &slot,
+            &paths,
+            InviteAsk { workspaces: vec![], addresses: vec!["hub.example.net".into()] },
+        )
+        .await
+        .expect("invites again");
+        assert_eq!(again["replaced"], true);
+        assert!(!again["notes"].to_string().contains("restarts"), "the hub was there already");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// docs/pairing.md Section 4.1 and PA1: the listener's own loop closes it when an unused
+    /// invitation expires - nothing else is called.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_unused_invitation_closes_the_listener_at_its_expiry() {
+        let dir = std::env::temp_dir().join(format!("sg-expiry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (slot, paths, state) = slot_at(&dir);
+        invite::ensure_server(&paths, &[]).unwrap();
+        let hub = slot.hub().await.unwrap();
+        // Made as if nine minutes and fifty-eight seconds ago: two seconds left.
+        let pairing = hub.pairing.clone();
+        tokio::task::spawn_blocking(move || {
+            pairing.invite(
+                vec![],
+                vec!["hub.local:7420".into()],
+                crate::pair::CertCheck::ByName,
+                invite::now() + 2 - invite::VALID_FOR,
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        hub.refresh().await;
+        let why = || state.read().unwrap()["why"].as_str().unwrap_or_default().to_string();
+        assert!(why().contains("could not start"), "open while invited: {}", why());
+        let mut closed = false;
+        for _ in 0..80 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if why().contains("no open invitation") {
+                closed = true;
+                break;
+            }
+        }
+        assert!(closed, "closed at the expiry by the loop alone: {}", why());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

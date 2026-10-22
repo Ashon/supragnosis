@@ -3110,11 +3110,12 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
-    let (code, expires, keep) = match &made {
+    let (code, expires, keep, id) = match &made {
         Some(m) => (
             m["code"].as_str().map(str::to_string),
             m["expires"].as_u64(),
             m["workspaces"].clone(),
+            m["id"].as_str().unwrap_or_default().to_string(),
         ),
         None => {
             let st = admin("GET", "/hub/invite", None)?;
@@ -3130,6 +3131,7 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
                 open["code"].as_str().map(str::to_string),
                 open["expires"].as_u64(),
                 open["workspaces"].clone(),
+                open["id"].as_str().unwrap_or_default().to_string(),
             )
         }
     };
@@ -3181,16 +3183,33 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
             }
             return Ok(());
         }
+        if open["id"].as_str() != Some(id.as_str()) {
+            println!(
+                "A newer invitation replaced this one; `supragnosis invite --show` follows it."
+            );
+            return Ok(());
+        }
         let request = &open["request"];
-        let (Some(name), Some(words)) = (request["name"].as_str(), request["words"].as_array())
-        else {
+        let (Some(name), Some(node), Some(words)) = (
+            request["name"].as_str(),
+            request["node_id"].as_str(),
+            request["words"].as_array(),
+        ) else {
             continue;
         };
-        let words: Vec<&str> = words.iter().filter_map(|w| w.as_str()).collect();
+        let words: Vec<String> =
+            words.iter().filter_map(|w| w.as_str().map(str::to_string)).collect();
+        // The words on a line of their own, apart from the name the joining machine chose.
         println!();
-        println!("{name} asks to join. Its words: {}", words.join(" "));
-        if ask_yes(&format!("Are they the words {name} shows? Allow it?"))? {
-            let joined = admin("POST", "/hub/allow", None)?;
+        println!("A machine named \"{name}\" asks to join. Its words:");
+        println!();
+        println!("    {}", words.join("   "));
+        println!();
+        // What the person answers is this request and these words: the hub refuses the answer
+        // if the request has changed since (PA11).
+        let answering = serde_json::json!({"invitation": id, "node_id": node, "words": words});
+        if ask_yes("Are they the words the other machine shows? Allow it?")? {
+            let joined = admin("POST", "/hub/allow", Some(&answering))?;
             let keep: Vec<&str> = joined["joined"]["workspaces"]
                 .as_array()
                 .into_iter()
@@ -3205,7 +3224,7 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
                 }
             );
         } else {
-            admin("POST", "/hub/deny", None)?;
+            admin("POST", "/hub/deny", Some(&answering))?;
             println!("Denied. The invitation is closed; make a new code to try again.");
         }
         return Ok(());
@@ -5834,7 +5853,24 @@ mod fed {
                 crate::connect::write_replacing(path, &edited)
                     .with_context(|| format!("writing {}", path.display()))?;
             } else {
-                super::write_secret(path, edited.as_bytes())?;
+                // Made owner-only from its first byte, without touching the directory it lands
+                // in, which SUPRAGNOSIS_CONFIG may put anywhere.
+                use std::io::Write;
+                let tmp = path.with_file_name(format!(".{name}.supragnosis-new"));
+                let _ = std::fs::remove_file(&tmp);
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                let mut f =
+                    options.open(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+                f.write_all(edited.as_bytes())?;
+                f.sync_all()?;
+                std::fs::rename(&tmp, path)
+                    .with_context(|| format!("installing {}", path.display()))?;
             }
         }
         Ok(out)
@@ -6941,7 +6977,11 @@ mod link_transport {
             &node.public_key_hex(),
         ));
         let dir = std::env::temp_dir().join(format!("sg-listener-{}", std::process::id()));
-        let paths = invite::Paths { hub: dir.join("hub"), config: dir.join("supragnosis.toml") };
+        let paths = invite::Paths {
+            hub: dir.join("hub"),
+            config: dir.join("supragnosis.toml"),
+            listen: "192.0.2.1:7420".into(),
+        };
         let pairing = Arc::new(invite::Pairing::new(
             paths.clone(),
             node.clone(),

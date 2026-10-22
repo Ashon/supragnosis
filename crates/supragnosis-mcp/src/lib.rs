@@ -2707,8 +2707,6 @@ mod agent_answers {
         );
     }
 
-    /// design-system.md Section 29.22: a kind with no commit effect yet says so when it is opened and
-    /// listed, and a merge of it is refused with why.
     /// docs/pairing.md Section 4.1: a node with no sync that an invitation made a hub says what its
     /// listener is doing, rather than that sync is not configured.
     #[tokio::test]
@@ -2727,6 +2725,8 @@ mod agent_answers {
         assert!(after.get("error").is_none());
     }
 
+    /// design-system.md Section 29.22: a kind with no commit effect yet says so when it is opened and
+    /// listed, and a merge of it is refused with why.
     #[tokio::test]
     async fn what_has_no_effect_says_so() {
         let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));

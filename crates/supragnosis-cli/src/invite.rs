@@ -153,17 +153,33 @@ pub struct JoinRequest {
     pub nonce: Option<String>,
 }
 
-/// Where pairing keeps its records, and the configuration it edits.
+/// What the person answered on the hub, and to which request (PA11): the invitation, the machine
+/// and the words they were shown. Allow and Deny act only when all three are still the request's.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Answering {
+    pub invitation: String,
+    pub node_id: String,
+    pub words: Vec<String>,
+}
+
+/// Where pairing keeps its records, the configuration it edits, and where a `[server]` the first
+/// invitation makes listens.
 #[derive(Debug, Clone)]
 pub struct Paths {
     /// `~/.supragnosis/hub`
     pub hub: PathBuf,
     pub config: PathBuf,
+    pub listen: String,
 }
 
 impl Paths {
     pub fn default_paths() -> Paths {
-        Paths { hub: crate::fed::fed_base_dir().join("hub"), config: crate::fed::config_path() }
+        Paths {
+            hub: crate::fed::fed_base_dir().join("hub"),
+            config: crate::fed::config_path(),
+            listen: "0.0.0.0:7420".into(),
+        }
     }
 
     fn invites(&self) -> PathBuf {
@@ -191,6 +207,8 @@ pub struct Pairing {
 /// What `invite` answers (Section 4.2).
 #[derive(Debug, Clone, Serialize)]
 pub struct Made {
+    /// The invitation's id - its secret's hash - which Allow and Deny name.
+    pub id: String,
     pub code: String,
     pub expires: u64,
     pub workspaces: Vec<String>,
@@ -213,13 +231,22 @@ fn write_toml<T: Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
     crate::write_secret(path, text.as_bytes())
 }
 
+/// A joining machine's name as the hub shows it: letters, digits, spaces and a little punctuation,
+/// 64 characters at most. Everything else - controls, bidi and zero-width marks, line separators -
+/// goes, so a name cannot reorder or pad the line it is shown on, beside the words.
 fn clean_name(s: &str) -> String {
-    let n: String = s.chars().filter(|c| !c.is_control()).collect();
-    let n: String = n.trim().chars().take(64).collect();
-    if n.is_empty() {
-        "a machine".into()
-    } else {
-        n
+    let kept: String = s
+        .chars()
+        .map(|c| match c.is_alphanumeric() || " -_.,'()&+\u{2019}".contains(c) {
+            true => c,
+            false => ' ',
+        })
+        .collect();
+    let n: String =
+        kept.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(64).collect();
+    match n.is_empty() {
+        true => "a machine".into(),
+        false => n,
     }
 }
 
@@ -277,11 +304,17 @@ impl Pairing {
     }
 
     /// How many invitations are open now - what the bind rule counts (D5).
-    pub fn open_count(&self, now: u64) -> usize {
+    pub fn open_count(&self, now: u64) -> Result<usize> {
         let _g = self.guard();
-        read_toml::<Invites>(&self.paths.invites())
-            .map(|b| b.invite.iter().filter(|i| i.state == State::Open && i.expires > now).count())
-            .unwrap_or(0)
+        let book: Invites = read_toml(&self.paths.invites())?;
+        Ok(book.invite.iter().filter(|i| i.state == State::Open && i.expires > now).count())
+    }
+
+    /// When the open invitation expires, for the listener's loop to close it then.
+    pub fn next_expiry(&self) -> Option<u64> {
+        let _g = self.guard();
+        let book: Invites = read_toml(&self.paths.invites()).ok()?;
+        book.invite.iter().filter(|i| i.state == State::Open).map(|i| i.expires).min()
     }
 
     fn admits_none(&self, fc: &crate::fed::FileConfig) -> Result<()> {
@@ -326,10 +359,11 @@ impl Pairing {
             answer: None,
         });
         self.save(&book)?;
-        *live = Some((hash, code.clone()));
+        *live = Some((hash.clone(), code.clone()));
         drop(live);
         self.changed.notify_one();
         Ok(Made {
+            id: hash.clone(),
             code,
             expires,
             workspaces,
@@ -351,6 +385,7 @@ impl Pairing {
         let open = book.invite.iter().find(|i| i.state == State::Open);
         Ok(json!({
             "open": open.map(|i| json!({
+                "id": i.secret_hash,
                 "expires": i.expires,
                 "workspaces": i.workspaces,
                 "code": live.as_ref().filter(|(h, _)| *h == i.secret_hash).map(|(_, c)| c),
@@ -369,7 +404,7 @@ impl Pairing {
     }
 
     fn position(book: &Invites, secret: &[u8; 32]) -> Option<usize> {
-        let hash = *blake3::hash(secret).as_bytes();
+        let hash = pair::secret_hash_bytes(secret);
         book.invite.iter().position(|i| digest_matches(&i.secret_hash, &hash))
     }
 
@@ -415,7 +450,7 @@ impl Pairing {
             |s: &str, what: &str| hex32(s).with_context(|| format!("{what} is not 32 hex bytes"));
         let secret = parse(&req.secret, "the secret")?;
         let node_key = parse(&req.node_key, "the node key")?;
-        parse(&req.onetime_key, "the one-time key")?;
+        let onetime_key = parse(&req.onetime_key, "the one-time key")?;
         parse(&req.commitment, "the commitment")?;
         let nonce = req.nonce.as_deref().map(|n| parse(n, "the nonce")).transpose()?;
         let node_id = supragnosis_core::node_id_from_public_key(&node_key);
@@ -432,10 +467,11 @@ impl Pairing {
                 && r.onetime_key == req.onetime_key
                 && r.commitment == req.commitment
         };
-        // Allowed: the answer, to the request it answers and no other.
+        // Allowed: the answer, to the request it answers - its keys, commitment and nonce - and
+        // no other.
         if invite.state == State::Used {
             if let (Some(r), Some(answer)) = (&invite.request, &invite.answer) {
-                if same(r) {
+                if same(r) && r.nonce.is_some() && r.nonce == req.nonce {
                     return Ok(json!({"state": "allowed", "answer": answer}));
                 }
             }
@@ -448,40 +484,7 @@ impl Pairing {
             }
             return Ok(said);
         }
-        // Who may join (PA8, PA9). These refusals leave the invitation open: the hub shows no
-        // request it could never admit.
-        if node_id == self.node.node_id() {
-            return Ok(Self::refused(
-                "This machine has the hub's own identity: a machine cannot join itself.",
-            ));
-        }
-        if let Some(fc) = crate::fed::load_at(&self.paths.config)? {
-            if fc
-                .server
-                .as_ref()
-                .is_some_and(|s| s.allowlist.iter().any(|e| e.node_id == node_id))
-            {
-                return Ok(Self::refused("This machine is already admitted to this hub."));
-            }
-            if let Err(e) = self.admits_none(&fc) {
-                return Ok(Self::refused(e));
-            }
-        }
         let answer = match &mut invite.request {
-            None => {
-                let hub_nonce = hex(&pair::random32()?);
-                invite.request = Some(Request {
-                    node_key: req.node_key.clone(),
-                    name: clean_name(&req.name),
-                    onetime_key: req.onetime_key.clone(),
-                    commitment: req.commitment.clone(),
-                    hub_nonce: hub_nonce.clone(),
-                    nonce: None,
-                    words: Vec::new(),
-                });
-                tracing::info!(node = %node_id, "a machine asks to join with an open invitation");
-                json!({"state": "pending", "hub_nonce": hub_nonce})
-            }
             Some(r) if !same(r) => {
                 invite.state = State::Ended;
                 tracing::warn!(node = %node_id, "a second request came with the same code; the invitation ended");
@@ -513,6 +516,52 @@ impl Pairing {
                     json!({"state": "pending", "hub_nonce": r.hub_nonce})
                 }
             }
+            None => {
+                // The first request: who may join (PA8, PA9), with keys of a usable form. A refusal
+                // leaves the invitation open, since the hub shows no request it could never admit;
+                // a second request, by then, ends it whatever its keys.
+                let refusal = if node_id == self.node.node_id() {
+                    Some("This machine has the hub's own identity: a machine cannot join itself.")
+                } else if !supragnosis_core::is_verifying_key(&node_key)
+                    || !pair::usable_onetime_key(&onetime_key)
+                {
+                    Some("The request's keys are not keys this hub can use.")
+                } else {
+                    match crate::fed::load_at(&self.paths.config)? {
+                        Some(fc)
+                            if fc.server.as_ref().is_some_and(|s| {
+                                s.allowlist.iter().any(|e| e.node_id == node_id)
+                            }) =>
+                        {
+                            Some("This machine is already admitted to this hub.")
+                        }
+                        Some(fc) if self.admits_none(&fc).is_err() => Some(
+                            "This hub already syncs with another machine. In this version a hub \
+                             syncs with one other.",
+                        ),
+                        _ => None,
+                    }
+                };
+                if let Some(why) = refusal {
+                    if closed {
+                        self.save(&book)?;
+                        self.changed.notify_one();
+                    }
+                    return Ok(Self::refused(why));
+                }
+                let hub_nonce = hex(&pair::random32()?);
+                invite.request = Some(Request {
+                    node_key: req.node_key.clone(),
+                    name: clean_name(&req.name),
+                    onetime_key: req.onetime_key.clone(),
+                    commitment: req.commitment.clone(),
+                    hub_nonce: hub_nonce.clone(),
+                    nonce: None,
+                    words: Vec::new(),
+                });
+                tracing::info!(node = %node_id, "a machine asks to join with an open invitation");
+                json!({"state": "pending", "hub_nonce": hub_nonce})
+            }
         };
         let ended = invite.state != State::Open;
         self.save(&book)?;
@@ -523,67 +572,66 @@ impl Pairing {
         Ok(answer)
     }
 
-    /// The open invitation with a request whose words are shown, or why there is none to answer.
-    fn answerable(book: &mut Invites) -> Result<&mut Invite> {
-        let invite = book
+    /// The open invitation whose request the person answered: the one, with the words, that was
+    /// shown to them (PA11). Anything else - no request, words not shown yet, another invitation or
+    /// another request since - is refused, and the person looks again.
+    fn answerable(book: &Invites, ask: &Answering) -> Result<usize> {
+        let at = book
             .invite
-            .iter_mut()
-            .find(|i| i.state == State::Open)
+            .iter()
+            .position(|i| i.state == State::Open)
             .context("no invitation is open")?;
+        let invite = &book.invite[at];
         let request = invite.request.as_ref().context("no machine has asked to join yet")?;
         anyhow::ensure!(
             !request.words.is_empty(),
             "the request has not finished asking - wait for its words"
         );
-        Ok(invite)
+        anyhow::ensure!(
+            invite.secret_hash == ask.invitation
+                && request.node_id() == ask.node_id
+                && request.words == ask.words,
+            "the request on the hub is not the one shown - look at it again before answering"
+        );
+        Ok(at)
     }
 
-    /// Allow (Section 4.3): admits the machine that asked and keeps the signed, sealed answer.
-    pub fn allow(&self, now: u64) -> Result<serde_json::Value> {
+    /// Who may still be admitted, as the configuration stands (PA8, PA9): not a node already
+    /// admitted, not while another is, and not by a hub that has since joined one itself.
+    fn may_admit(&self, fc: &crate::fed::FileConfig, node_id: &str) -> Result<()> {
+        if let Some(link) = fc.sync.links().0.first() {
+            anyhow::bail!(
+                "This machine now syncs with {}, and a machine that joins a hub does not admit one.",
+                link.url
+            );
+        }
+        if fc
+            .server
+            .as_ref()
+            .is_some_and(|s| s.allowlist.iter().any(|e| e.node_id == node_id))
+        {
+            anyhow::bail!("This machine is already admitted to this hub.");
+        }
+        self.admits_none(fc)
+    }
+
+    /// Allow (Section 4.3): admits the machine that asked and keeps the signed, sealed answer. The
+    /// answer is made first and the files written last, so an act that fails leaves nothing
+    /// admitted that no one could use.
+    pub fn allow(&self, ask: &Answering, now: u64) -> Result<serde_json::Value> {
         let live = self.guard();
         let (mut book, _) = self.invites(now)?;
-        let invite = Self::answerable(&mut book)?;
+        let at = Self::answerable(&book, ask)?;
+        let invite = book.invite[at].clone();
         let request = invite.request.clone().context("no request")?;
         let node_id = request.node_id();
+        if let Some(fc) = crate::fed::load_at(&self.paths.config)? {
+            self.may_admit(&fc, &node_id)?;
+        }
         let onetime = hex32(&request.onetime_key).context("the one-time key")?;
         let credential = crate::principal::new_credential()?;
         let workspaces = invite.workspaces.clone();
-        // The allowlist entry, under the configuration's lock: a hand-written entry is never
-        // touched, and one already present for this node, or for any node, refuses (PA8, PA9).
-        crate::fed::edit_config_at(&self.paths.config, |text| {
-            let fc: crate::fed::FileConfig =
-                toml::from_str(text).context("parsing supragnosis.toml")?;
-            self.admits_none(&fc)?;
-            let mut doc: toml_edit::DocumentMut =
-                text.parse().context("parsing supragnosis.toml")?;
-            let server = doc
-                .get_mut("server")
-                .and_then(|s| s.as_table_mut())
-                .context("this hub has no [server] section")?;
-            let list = server
-                .entry("allowlist")
-                .or_insert(toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()))
-                .as_array_of_tables_mut()
-                .context("[server] allowlist is not an array of tables")?;
-            let mut t = toml_edit::Table::new();
-            t["node_id"] = toml_edit::value(node_id.as_str());
-            t["public_key_hex"] = toml_edit::value(request.node_key.as_str());
-            t["bearer_hash"] = toml_edit::value(supragnosis_sync::http::bearer_hash(&credential));
-            let mut arr = toml_edit::Array::new();
-            workspaces.iter().for_each(|w| arr.push(w.as_str()));
-            t["shared_workspaces"] = toml_edit::value(arr);
-            list.push(t);
-            Ok((doc.to_string(), ()))
-        })?;
         let mut peers = self.peers()?;
-        peers.joined.push(Joined {
-            name: request.name.clone(),
-            node_id: node_id.clone(),
-            public_key: request.node_key.clone(),
-            workspaces: workspaces.clone(),
-            joined_at: now,
-        });
-        write_toml(&self.paths.peers(), &peers)?;
         let vouched = peers
             .removed
             .iter()
@@ -619,8 +667,43 @@ impl Pairing {
             credential: pair::seal(&onetime, credential.as_bytes())?,
         };
         let answer = pair::sign_answer(|c, m| self.node.sign_message(c, m), &body)?;
-        invite.state = State::Used;
-        invite.answer = Some(answer);
+        // The allowlist entry, under the configuration's lock and checked again there: a
+        // hand-written entry is never touched (PA6).
+        crate::fed::edit_config_at(&self.paths.config, |text| {
+            let fc: crate::fed::FileConfig =
+                toml::from_str(text).context("parsing supragnosis.toml")?;
+            self.may_admit(&fc, &node_id)?;
+            let mut doc: toml_edit::DocumentMut =
+                text.parse().context("parsing supragnosis.toml")?;
+            let server = doc
+                .get_mut("server")
+                .and_then(|s| s.as_table_mut())
+                .context("this hub has no [server] section")?;
+            let list = server
+                .entry("allowlist")
+                .or_insert(toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()))
+                .as_array_of_tables_mut()
+                .context("[server] allowlist is not an array of tables")?;
+            let mut t = toml_edit::Table::new();
+            t["node_id"] = toml_edit::value(node_id.as_str());
+            t["public_key_hex"] = toml_edit::value(request.node_key.as_str());
+            t["bearer_hash"] = toml_edit::value(supragnosis_sync::http::bearer_hash(&credential));
+            let mut arr = toml_edit::Array::new();
+            workspaces.iter().for_each(|w| arr.push(w.as_str()));
+            t["shared_workspaces"] = toml_edit::value(arr);
+            list.push(t);
+            Ok((doc.to_string(), ()))
+        })?;
+        peers.joined.push(Joined {
+            name: request.name.clone(),
+            node_id: node_id.clone(),
+            public_key: request.node_key.clone(),
+            workspaces: workspaces.clone(),
+            joined_at: now,
+        });
+        write_toml(&self.paths.peers(), &peers)?;
+        book.invite[at].state = State::Used;
+        book.invite[at].answer = Some(answer);
         self.save(&book)?;
         drop(live);
         self.changed.notify_one();
@@ -636,18 +719,26 @@ impl Pairing {
         std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))
     }
 
-    /// Deny (Section 4.3) or cancel (Section 4.2): the open invitation becomes a tombstone.
-    pub fn close(&self, state: State, now: u64) -> Result<serde_json::Value> {
+    /// Deny (Section 4.3), for the request the person was shown, or cancel (Section 4.2): the open
+    /// invitation becomes a tombstone.
+    pub fn close(
+        &self,
+        state: State,
+        ask: Option<&Answering>,
+        now: u64,
+    ) -> Result<serde_json::Value> {
         let live = self.guard();
         let (mut book, _) = self.invites(now)?;
-        let invite = book
-            .invite
-            .iter_mut()
-            .find(|i| i.state == State::Open)
-            .context("no invitation is open")?;
-        if state == State::Denied {
-            invite.request.as_ref().context("no machine has asked to join yet")?;
-        }
+        let at = match (state, ask) {
+            (State::Denied, Some(ask)) => Self::answerable(&book, ask)?,
+            (State::Denied, None) => anyhow::bail!("Deny names the request it answers"),
+            _ => book
+                .invite
+                .iter()
+                .position(|i| i.state == State::Open)
+                .context("no invitation is open")?,
+        };
+        let invite = &mut book.invite[at];
         invite.state = state;
         self.save(&book)?;
         drop(live);
@@ -886,7 +977,8 @@ pub fn ensure_server(paths: &Paths, addresses: &[String]) -> Result<crate::fed::
             out.push_str(if out.ends_with('\n') { "\n" } else { "\n\n" });
         }
         out.push_str(&format!(
-            "[server]\nlisten = \"0.0.0.0:7420\"\ntls_cert = {}\ntls_key = {}\n",
+            "[server]\nlisten = {}\ntls_cert = {}\ntls_key = {}\n",
+            quote(&paths.listen),
             quote(&cert),
             quote(&key)
         ));
@@ -1060,7 +1152,13 @@ mod tests_support {
         pub fn new(name: &str) -> Hub {
             let dir = std::env::temp_dir().join(format!("sg-pair-{}-{name}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
-            let paths = Paths { hub: dir.join("hub"), config: dir.join("supragnosis.toml") };
+            // An address no interface holds, for a [server] an invitation makes: the bind rule
+            // passes and the bind itself fails, so no test opens a port to the network.
+            let paths = Paths {
+                hub: dir.join("hub"),
+                config: dir.join("supragnosis.toml"),
+                listen: "192.0.2.1:7420".into(),
+            };
             let (cert, key) =
                 make_certificate(&paths.hub, &["hub.local".into(), "localhost".into()], now())
                     .expect("certificate");
@@ -1089,6 +1187,22 @@ mod tests_support {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    /// What the person answers: the request the hub shows now, with its words.
+    pub fn shown(p: &Pairing, at: u64) -> Answering {
+        let st = p.status(at).unwrap();
+        let open = &st["open"];
+        Answering {
+            invitation: open["id"].as_str().unwrap_or_default().to_string(),
+            node_id: open["request"]["node_id"].as_str().unwrap_or_default().to_string(),
+            words: serde_json::from_value(open["request"]["words"].clone()).unwrap_or_default(),
+        }
+    }
+
+    /// Allow, as the person gives it, for the request shown.
+    pub fn allow(p: &Pairing, at: u64) -> Result<serde_json::Value> {
+        p.allow(&shown(p, at), at)
     }
 
     pub fn invite(p: &Pairing, at: u64) -> Code {
@@ -1174,7 +1288,7 @@ mod tests {
         let p = hub.pairing();
         let t = now();
         let code = invite(&p, t);
-        assert_eq!(p.open_count(t), 1, "an open invitation counts toward the bind rule");
+        assert_eq!(p.open_count(t).unwrap(), 1, "an open invitation counts toward the bind rule");
         let preview = p.preview(&hex(&code.secret), t).unwrap();
         assert_eq!(preview["hub_name"], "Mac mini");
         assert_eq!(preview["workspaces"], serde_json::json!(["acme"]));
@@ -1186,7 +1300,7 @@ mod tests {
             p.status(t).unwrap()["open"]["request"]["words"].is_null(),
             "no words before the reveal"
         );
-        assert!(p.allow(t).is_err(), "no Allow before the words are shown");
+        assert!(allow(&p, t).is_err(), "no Allow before the words are shown");
         let again = p.join(&j.ask(&code, true), t).unwrap();
         assert_eq!(again["hub_nonce"], hub_nonce.as_str(), "the hub's nonce is fixed");
         let status = p.status(t).unwrap();
@@ -1194,7 +1308,7 @@ mod tests {
             serde_json::from_value(status["open"]["request"]["words"].clone()).unwrap();
         assert_eq!(shown, j.words(&code, &hub_nonce), "both screens show the same words");
         assert_eq!(status["open"]["request"]["name"], "MacBook", "a name is shown as text");
-        let joined = p.allow(t).unwrap();
+        let joined = allow(&p, t).unwrap();
         assert_eq!(joined["joined"]["workspaces"], serde_json::json!(["acme"]));
         let answered = p.join(&j.ask(&code, true), t).unwrap();
         assert_eq!(state(&answered), "allowed", "{answered}");
@@ -1219,11 +1333,24 @@ mod tests {
         assert_eq!(entry.bearer_hash, supragnosis_sync::http::bearer_hash(&credential));
         assert_eq!(entry.shared_workspaces, vec!["acme".to_string()]);
         assert!(hub.config().starts_with("# the person's own line\n"), "{}", hub.config());
+        // Only keys a release before pairing reads (PA6, D15).
+        let doc: toml_edit::DocumentMut = hub.config().parse().unwrap();
+        let server: Vec<&str> = doc["server"].as_table().unwrap().iter().map(|(k, _)| k).collect();
+        assert_eq!(server, ["listen", "tls_cert", "tls_key", "allowlist"]);
+        let entry_keys: Vec<&str> = doc["server"]["allowlist"]
+            .as_array_of_tables()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .iter()
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(entry_keys, ["node_id", "public_key_hex", "bearer_hash", "shared_workspaces"]);
         assert!(!hub.config().contains(&credential), "the hub keeps only the hash");
         assert!(!std::fs::read_to_string(hub.paths.invites())
             .unwrap()
             .contains(&hex(&code.secret)));
-        assert_eq!(p.open_count(t), 0, "a used invitation admits nothing");
+        assert_eq!(p.open_count(t).unwrap(), 0, "a used invitation admits nothing");
         let peers = peers_json(&hub.paths).unwrap();
         assert_eq!(peers["joined"][0]["name"], "MacBook");
     }
@@ -1265,7 +1392,7 @@ mod tests {
         let code = invite(&p, t);
         p.join(&a.ask(&code, false), t).unwrap();
         p.join(&a.ask(&code, true), t).unwrap();
-        assert_eq!(p.close(State::Denied, t).unwrap()["state"], "denied");
+        assert_eq!(p.close(State::Denied, Some(&shown(&p, t)), t).unwrap()["state"], "denied");
         assert_eq!(state(&p.join(&a.ask(&code, true), t).unwrap()), "denied");
 
         let code = invite(&p, t);
@@ -1275,13 +1402,13 @@ mod tests {
             "cancelled",
             "a new code cancels the open one"
         );
-        p.close(State::Cancelled, t).unwrap();
+        p.close(State::Cancelled, None, t).unwrap();
         assert_eq!(state(&p.preview(&hex(&replaced.secret), t).unwrap()), "cancelled");
 
         let code = invite(&p, t);
         p.join(&a.ask(&code, false), t).unwrap();
         p.join(&a.ask(&code, true), t).unwrap();
-        p.allow(t).unwrap();
+        allow(&p, t).unwrap();
         let reused = p.join(&b.ask(&code, false), t).unwrap();
         assert_eq!(state(&reused), "used", "a used code is said as used: {reused}");
         assert_eq!(reused["said"], State::Used.said());
@@ -1303,10 +1430,35 @@ mod tests {
         let me = Joiner { id: NodeIdentity::from_secret_bytes(HUB_SECRET), ..Joiner::new(9) };
         let own = p.join(&me.ask(&code, false), t).unwrap();
         assert_eq!(state(&own), "refused", "{own}");
+        assert_eq!(
+            state(&p.preview(&hex(&code.secret), t).unwrap()),
+            "open",
+            "a refusal leaves it open"
+        );
+        // A machine already admitted - here by an entry written after the invitation - is refused.
         let a = Joiner::new(9);
+        let entry = format!(
+            "\n[[server.allowlist]]\nnode_id = \"{}\"\npublic_key_hex = \"{}\"\nbearer_hash = \"00\"\nshared_workspaces = []\n",
+            a.id.node_id(),
+            a.id.public_key_hex()
+        );
+        let before = hub.config();
+        std::fs::write(&hub.paths.config, format!("{before}{entry}")).unwrap();
+        let admitted = p.join(&a.ask(&code, false), t).unwrap();
+        assert_eq!(admitted["said"], "This machine is already admitted to this hub.", "{admitted}");
+        std::fs::write(&hub.paths.config, before).unwrap();
+        // Keys that are not usable keys are refused before the hub shows anything.
+        let mut bent = a.ask(&code, false);
+        bent.onetime_key = hex(&[0; 32]);
+        assert_eq!(state(&p.join(&bent, t).unwrap()), "refused");
+        p.join(&a.ask(&code, false), t).unwrap();
+        // Once a request is held, another - even one with the hub's own key - ends the invitation.
+        let second = p.join(&me.ask(&code, false), t).unwrap();
+        assert_eq!(state(&second), "ended", "{second}");
+        let code = invite(&p, t);
         p.join(&a.ask(&code, false), t).unwrap();
         p.join(&a.ask(&code, true), t).unwrap();
-        p.allow(t).unwrap();
+        allow(&p, t).unwrap();
         let refused = p.invite(vec![], vec!["hub.local:7420".into()], CertCheck::ByName, t);
         assert!(
             refused.unwrap_err().to_string().contains("already syncs with MacBook"),
@@ -1338,6 +1490,47 @@ mod tests {
         );
     }
 
+    /// Allow and Deny answer the request the person was shown (PA11): a stale answer - another
+    /// invitation since, or other words - is refused and admits no one.
+    #[test]
+    fn an_answer_counts_only_for_the_request_shown() {
+        let hub = Hub::new("answer");
+        let p = hub.pairing();
+        let t = now();
+        let a = Joiner::new(9);
+        let code = invite(&p, t);
+        p.join(&a.ask(&code, false), t).unwrap();
+        p.join(&a.ask(&code, true), t).unwrap();
+        let seen = shown(&p, t);
+        let other_words =
+            Answering { words: vec!["x".into(), "y".into(), "z".into()], ..seen.clone() };
+        assert!(p.allow(&other_words, t).is_err());
+        assert!(p.close(State::Denied, Some(&other_words), t).is_err());
+        assert!(p.close(State::Denied, None, t).is_err(), "Deny names its request");
+        let replaced = invite(&p, t);
+        let b = Joiner::new(10);
+        p.join(&b.ask(&replaced, false), t).unwrap();
+        p.join(&b.ask(&replaced, true), t).unwrap();
+        let e = p.allow(&seen, t).unwrap_err().to_string();
+        assert!(
+            e.contains("not the one shown"),
+            "the answer to the old invitation admits no one: {e}"
+        );
+        assert!(crate::fed::load_at(&hub.paths.config)
+            .unwrap()
+            .unwrap()
+            .server
+            .unwrap()
+            .allowlist
+            .is_empty());
+        assert_eq!(
+            clean_name("Mac\u{202e}Book\u{200b}\n(oven rose)\u{2028}x"),
+            "Mac Book (oven rose) x"
+        );
+        assert_eq!(clean_name("ashon\u{2019}s MacBook Pro"), "ashon\u{2019}s MacBook Pro");
+        assert_eq!(clean_name("\u{7}\u{200b}"), "a machine");
+    }
+
     /// The hub fixes a request at its first `join` and keeps it, and the answer after Allow, in its
     /// file: a restart mid-join or after Allow loses nothing the joining machine waits for.
     #[test]
@@ -1352,7 +1545,7 @@ mod tests {
         let status = hub.pairing().status(t).unwrap();
         assert!(status["open"]["code"].is_null(), "the code itself is not kept");
         assert!(status["open"]["request"]["words"].is_array());
-        hub.pairing().allow(t).unwrap();
+        allow(&hub.pairing(), t).unwrap();
         let answered = hub.pairing().join(&a.ask(&code, true), t).unwrap();
         assert_eq!(state(&answered), "allowed", "{answered}");
     }
@@ -1368,7 +1561,7 @@ mod tests {
         let code = invite(&p, t);
         let first = p.join(&a.ask(&code, false), t).unwrap();
         p.join(&a.ask(&code, true), t).unwrap();
-        p.allow(t).unwrap();
+        allow(&p, t).unwrap();
         let signed: pair::SignedAnswer =
             serde_json::from_value(p.join(&a.ask(&code, true), t).unwrap()["answer"].clone())
                 .unwrap();
@@ -1396,7 +1589,7 @@ mod tests {
         let code = invite(&p, t);
         p.join(&a.ask(&code, false), t).unwrap();
         p.join(&a.ask(&code, true), t).unwrap();
-        p.allow(t).unwrap();
+        allow(&p, t).unwrap();
         let signed: pair::SignedAnswer =
             serde_json::from_value(p.join(&a.ask(&code, true), t).unwrap()["answer"].clone())
                 .unwrap();
@@ -1439,7 +1632,7 @@ mod tests {
         let hub = Hub::new("first");
         std::fs::write(&hub.paths.config, "# mine\n").unwrap();
         let srv = ensure_server(&hub.paths, &["hub.example.net:7420".into()]).unwrap();
-        assert_eq!(srv.listen, "0.0.0.0:7420");
+        assert_eq!(srv.listen, hub.paths.listen);
         assert!(srv.tls_cert.as_deref().unwrap().starts_with(hub.paths.hub.to_str().unwrap()));
         assert!(hub.config().starts_with("# mine\n"), "{}", hub.config());
         let again = ensure_server(&hub.paths, &[]).unwrap();
@@ -1518,7 +1711,7 @@ mod over_the_network {
         let pending = post("/pair/join", serde_json::to_value(j.ask(&code, false)).unwrap()).await;
         assert_eq!(pending["state"], "pending", "{pending}");
         post("/pair/join", serde_json::to_value(j.ask(&code, true)).unwrap()).await;
-        pairing.allow(t).unwrap();
+        allow(&pairing, t).unwrap();
         let allowed = post("/pair/join", serde_json::to_value(j.ask(&code, true)).unwrap()).await;
         let signed: pair::SignedAnswer = serde_json::from_value(allowed["answer"].clone()).unwrap();
         let body: pair::AnswerBody = serde_json::from_str(&signed.body).unwrap();
