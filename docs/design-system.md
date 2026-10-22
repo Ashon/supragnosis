@@ -35,7 +35,8 @@
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
-> demote a claim, is built. Step 61, the band says what it held back, is built.
+> demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
+> ladder says what it held back, is specified.
 
 ## 1. Why this exists
 
@@ -2025,6 +2026,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 61. **The band says what it held back** [built] (Section 29.27; resolution-identity.md Section 3 and
    unmerge.md Section 5 repaid): `merge_band` counts the near pairs it left out, and an empty band
    says whether none are near or the near pairs it found are all answered.
+62. **The ladder says what it held back** (Section 29.28; Section 29.27's owed row repaid): the
+   name-variant ladder counts the pairs it left out because they are answered, and Suggestions says
+   by name, as it does by meaning, whether none are alike or the ones it found are all answered.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5932,7 +5936,7 @@ caller is not granted.
 | Section 29.23 | The band's report of what it held back is owed | repays |
 | P16 and resolution-identity.md Section 3 | The band is a node-local retrieval aid; the suppressed set is read off the log | agrees - the count depends on this node's vectors, as the band's pairs do |
 | compatibility.md Section 7 | Answer changes are listed | agrees - Section 7 gains `merge_band.held_back`, an added field of the curation report the `curate` prompt's digest carries, and the prompt says what it means |
-| The name-variant ladder | An empty list does not stand for absence | owed - the ladder reports no count of what it leaves out; its groups still list every member, and its empty list is said by the queue, not by a coverage line |
+| The name-variant ladder | An empty list does not stand for absence | owed - the ladder reports no count of what it leaves out; its groups still list every member, and its empty list is said by the queue, not by a coverage line *(repaid by step 62, Section 29.28)* |
 
 No row needs a principle changed.
 
@@ -5952,7 +5956,7 @@ No row needs a principle changed.
   near pairs are already answered, not that none exist.
 
 **What this step does not do.** It does not count what the name-variant ladder leaves out, the owed
-row above.
+row above. *(Step 62 does, Section 29.28.)*
 
 **Guarded by** `the_band_counts_what_it_held_back` in the engine's unit tests (three near pairs, one
 put in flight: two listed and one held back, counted once though reached from both ends), the review
@@ -5960,3 +5964,64 @@ tests' `the_console_says_what_a_repeat_found` (each line of the empty band, the 
 its absence), and the MCP prompts test (the `curate` sentence). A browser check on a scenario daemon,
 whose embedder finds no near pair among four names, reads `held_back: 0` and the line "none - no
 embedding-near pairs": a count of zero is said as a known none.
+
+### 29.28 Step 62: the ladder says what it held back
+
+**What was found.** Step 61 left it owed (Section 29.27): the name-variant ladder, the
+deterministic sibling of the merge band, leaves out a pair that a waiting merge names, that a split
+pulled apart, or that the person rejected, and nothing reports it. An empty ladder therefore reads
+two ways - no names alike, or names alike that are all answered - and Suggestions says neither: its
+line speaks for the band alone ("By meaning: ..."), and the empty queue says only "No suggestions
+here."
+
+**Decisions.** None is open: the ladder counts what it held back, as the band does, and the line
+says by name what it says by meaning. The report gains `name_ladder`, a `{held_back}` object right
+after `name_variants`, always present, since the ladder needs no embedder and always runs; it has no
+`available` field, and the report's `stats` do not change. The count keeps the name `held_back`, as
+the band's does.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 29.27 | The ladder reports no count of what it leaves out | repays |
+| P5 | An empty list does not stand for absence | repays - the report gains `name_ladder.held_back`, and Suggestions says by name whether none are alike or all are answered |
+| unmerge.md Section 5 and resolution-identity.md Section 3 | A pair withheld because a human separated it is a third state, reported in the band's coverage | agrees - both are written of the band; the ladder is its sibling on the other axis and reads the same held-back set |
+| P5's answer alphabet | Unavailable, uncomputable, withheld and truncated stay distinct | agrees - the ladder needs no embedder, so it is always computed, and the count says what the list left out without a new value; it is not named "withheld" |
+| P16 and P19 | The ladder is deterministic and belongs to the core | agrees - the count is a pure fold over the entities and the held-back set read off the log |
+| compatibility.md Section 7 | Answer changes are listed | agrees - it gains `name_ladder.held_back`, an added field of the curation report the `curate` prompt's digest carries, and the prompt says what it means |
+| architecture.md, Principle 5's section | "The other curation signals are deterministic and need no such caveat" | revised - deterministic, and still owing a count of what they leave out; the same sentence on `MergeBandCoverage` is revised with it |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The count.** Taken after all three rungs, as a set: of the pairs the ladder reached - two
+  entities of one workspace, neither merged away, whose names or aliases meet at a rung under a
+  non-empty key - those held back (a waiting merge names them, a split pulled them apart, or the
+  person's reject holds them back), less the pairs of every group it lists. A pair reached at
+  several rungs counts once; a pair a listed group shows - a group of three that stays listed for
+  another of its pairs - is not counted, since its members are in front of the person. When the
+  ladder lists nothing, every pair it reached is held back, and the count is all of them. A waiting
+  merge of three entities holds back three pairs, as it does in the band's count.
+- **The line.** Over Suggestions, a sentence by name whenever the ladder lists nothing, after the
+  "By meaning" sentence when there is one:
+  - with nothing held back: "By name: none - no two names match once case, spaces and symbols are
+    dropped, a trailing -s or -ies is folded, or an alias is counted.";
+  - with some held back: "By name: none waiting - 3 alike-named pairs are already proposed, split
+    apart or held back by your reject." (one pair: "1 alike-named pair is ...");
+  - a report without the count says nothing by name, as before this step.
+  The two counts are separate, never a total: a pair both near in meaning and alike in name is in
+  each. The empty queue still says "No suggestions here." below the line.
+- **Everywhere.** The read tier answers the same report, and a union over workspaces (`*`) adds the
+  counts, which is exact, since a ladder pair never spans workspaces.
+- **The agent.** The `curate` prompt says that a nonzero `name_ladder.held_back` beside an empty
+  `name_variants` means those pairs are already answered, not that none exist, and that it is
+  counted apart from `merge_band.held_back`.
+
+**What this step does not do.** It changes no grouping: the ladder lists what it listed, and a
+group's chips still name every member.
+
+**Guarded by** an engine unit test (one pair reached at two rungs counted once; a listed group of
+three keeping its held-back pair uncounted; an empty ladder counting every pair it reached), the
+review tests (each line by name, the count read apart from its absence, the order after "By
+meaning"), and the MCP prompts test (the `curate` sentence).
