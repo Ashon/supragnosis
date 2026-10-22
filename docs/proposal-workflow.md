@@ -60,7 +60,7 @@ a direct consequence of a principle.
 | I13 | **The fold recomputes blocking checks.** Whether the blocking gate for merge validity passes is recomputed by the fold rather than trusting the `check_reported` event (I8 guarantees reproducibility). `check_reported` is merely a UX cache/advisory; a forged "pass" cannot promote contamination. | 18, 19 |
 | I14 | **Merge effects are idempotent.** Duplicate loading of the same effect is harmless, and entity-merge canonicalizes by canonical id order so concurrent duplicate proposals do not diverge. | 3 |
 | I15 | **The fold re-validates the routing conditions of an automatic verdict.** A policy executor's (automatic) verdict is valid only when the fold recomputes its routing premises (zero new contradictions, impact radius at or below the threshold) at the merge-time state and they pass - even if a contaminated/buggy executor auto-merges a high-impact proposal, the fold invalidates it. This does not apply to human verdicts. | 16, 18, 19 |
-| I16 | **Finality is monotonic in the verdicts, and reached at causal stability.** Merged is the absorbing element of the decision rule: once a valid merge is among the verdicts, no further verdict, reject or revise can cancel it (I3, I12). Whether a verdict is valid (7.1) is read off the log before it, so an event authored concurrently - without seeing the verdict (I11) - can still revise that until the verdict is causally stable (federation.md 7a, F16); from then on, no event's arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). *(Revised by design-system.md step 51a: one exception, once. A proposal an earlier build took although it named something outside its own workspace - a merge across workspaces, a gate act on another workspace's observation, a split filed away from its merge - reads Blocked from then on, since referential integrity now reads the proposal's own workspace (Section 6). The author's store held none.)* | 16, 3 |
+| I16 | **Finality is monotonic in the verdicts, and reached at causal stability.** Merged is the absorbing element of the decision rule: once a valid merge is among the verdicts, no further verdict, reject or revise can cancel it (I3, I12). Whether a verdict is valid (7.1) is read off the log before it, so an event authored concurrently - without seeing the verdict (I11) - can still revise that until the verdict is causally stable (federation.md 7a, F16); from then on, no event's arrival can cancel the promotion. A reject conclusion is a provisional state meaning "absence of a valid merge" (a late-arriving valid merge is promoted to Merged), and a reversal of a promotion is always expressed as a new proposal (claim-demotion, etc.). Since derived knowledge accumulates only on top of Merged, making Merged the absorbing state is the only arrangement that prevents retroactive invalidation (a reject-absorbing choice would make Merged provisional and tear derivations down again). *(Revised by design-system.md step 51a: one exception, once. A proposal an earlier build took although it named something outside its own workspace - a merge across workspaces, a gate act on another workspace's observation, a split filed away from its merge - reads Blocked from then on, since referential integrity now reads the proposal's own workspace (Section 6). The author's store held none.)* *(Revised by design-system.md step 56: a second exception, once. A merge of a `tbox_change` or a `recall`, kinds with no commit effect, is not valid (7.1 (f)), so a proposal an earlier build merged that way reads open, or rejected if a reject was cast, from then on. It had changed nothing. The author's store held none.)* | 16, 3 |
 | I18 | **Consolidation generates, never commits.** A consolidation/curation pass (Principle 7) may only emit read-only curation signals and candidate proposals; it never loads a `verdict_cast` or a merge effect directly. The sole commit path to canon is the proposal verdict (I1/I3/I6), so "generate != commit" is mechanical rather than a discipline. A human-facing curation console (the viewer, or an agent via elicitation) casts its accept as a `verdict_cast` observation - it does not write the projection/log - and a recall acceptance stays a human's direct act (I17). | 7, 19, 23 |
 
 ---
@@ -204,7 +204,8 @@ genuinely concurrent case in merge's favor, the sequential case should be invali
 registry, owed to M4 Phase 5 together with the quorum/revise rules of Section 13.
 I17's fold half IS in: a merge verdict on a `recall` counts only when it carries the
 engine-stamped console marker (resolution.md Section 6) and is otherwise demoted to a comment,
-whichever path it arrived by; the agent surface refuses to cast one and says where to decide.
+whichever path it arrived by; the agent surface refuses to cast one. Until recall has its commit
+effect, 7.1 (f) demotes every recall merge before this rule is read (design-system.md step 56).
 The principal-signed act that replaces marker trust (federation.md F20) is the Phase 5 half.
 
 ---
@@ -308,7 +309,12 @@ can cast opposing verdicts without knowing about each other.
   self-approval, I9), (b) the fold recomputes the blocking checks and they pass (I13),
   (c) the base the verdict referenced matches the current base (I12), (d) the proposal was
   in the Open state, (e) if the verdict-casting party is automatic, the fold recomputes the
-  routing premises and they pass (I15). (d) decides which verdicts can make a proposal Merged: a
+  routing premises and they pass (I15), (f) the proposal's kind has its commit effect, and once
+  it has, the merge carries the engine's stamp that it was cast with it. (f) is the one the fold
+  enforces for every merge (design-system.md step 56): a merge of a kind with no effect yet - a
+  `tbox_change` or a `recall` - is demoted to a comment, since it has no diff and a merge without
+  a diff is a merge without review (Principle 23). The stamp is built with each effect, so a merge
+  cast before a kind had its effect never fires. (d) decides which verdicts can make a proposal Merged: a
   merge cast after it merged changes no state, and counts only toward a gate grant's ceiling
   (resolution.md Section 6) - confirming a merged promotion more strongly is not a second
   decision. (b) reads the fixed base (Section 6's monotonicity note);
@@ -572,7 +578,11 @@ between M3 and M4 (pre-value in solo/hub environments).
   resolution policy consumes - and the **human-direct surface ceiling** caps what an agent-cast
   verdict may grant (HumanConfirmed only from the human console; an I17-family mechanism).
 - M4+: quorum policy, the entity-merge/tbox-change/recall kinds, the auto-merge policy
-  executor.
+  executor. [impl] Until tbox-change and recall have their commit effects, the fold counts no
+  merge of either and every write surface refuses one (design-system.md step 56, 7.1 (f)): a merge
+  without its effect has no diff, and a merge without a diff is a merge without review (Principle
+  23). The step that builds each effect counts only merges stamped as cast once the kind had it, so
+  an old merge never fires.
 - M6 (consolidation, Principle 7) feeds this workflow: the consolidation pass emits candidate
   proposals (I18). The read-only **curation signals** (duplicate/grab-bag/orphan/contradiction) ship
   earlier as a pure projection with no gate (a safe first increment), and the belief-diff **curation

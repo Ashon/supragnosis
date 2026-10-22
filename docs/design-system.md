@@ -32,7 +32,8 @@
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
-> surface says where, and step 55, the person finds what waits.
+> surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
+> is specified.
 
 ## 1. Why this exists
 
@@ -824,7 +825,10 @@ Accept and Discard, as dreaming.md Section 8 names them, also as P, A and D. The
 except Reject all blocked (Section 29.21). *(Revised by step 55.)* A key decides only
 once the item's diff and checks are on screen, so stepping fast through the list cannot cast a verdict
 on an item not yet shown. A recall asks for a second, explicit act: its effect is the strongest the
-console casts, and one keystroke should not carry it.
+console casts, and one keystroke should not carry it. A kind with no commit effect yet - a type
+change or a recall - offers no Accept, and its item says why (Section 29.22); a recall asks twice
+once it has its effect. *(Revised by step 56: both kinds offered Accept while a merge of them changed
+nothing.)*
 
 **Keys act where the person is** (U19). A, R, J and K act only while focus is in the list or the
 item; anywhere else they are letters (WCAG 2.1.4). Opening the page puts focus on the selected row,
@@ -2000,6 +2004,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
 55. **The person finds what waits** [built] (Section 29.21; Sections 6 and 7 and U4 revised): the page opens
    on All unless the default holds most of the knowledge, Review and its pill say what waits in other
    workspaces, and the Blocked items can be rejected together.
+56. **No merge without an effect** (Section 29.22; Sections 7 and 29.3 revised): a type change and a
+   recall, which have no commit effect yet, cannot be merged until they have one - the fold counts
+   no merge of either and every surface refuses one - and Review, the agent's answers and tool
+   descriptions, and the prompts say so.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -3497,8 +3505,11 @@ D11 and D12 decided both.
     names who cast the demotion, since undoing it can raise a source someone lowered on purpose.
   - The two acts of a "Confirm instead" are two Decided items, each with its own reverse; undoing
     one alone moves only its own source, and its note says what that moves back, from the diff.
-  - A split, a type change and a recall offer none, and say what undoing them takes: "Merging them
-    again takes a new proposal."
+  - A split offers none, and says what undoing it takes: "Merging them again takes a new proposal."
+    A type change or a recall merged before step 56, which changed nothing, says "Nothing changed,
+    so there is nothing to undo." (Section 29.22). *(Revised by step 56: this line gave all three
+    the split's sentence, and the console said "Undoing this takes a new proposal" for the other
+    two.)*
 - **The notice right after names the item.**
   - "Accepted: Merge PostgreSQL into Postgres" offers Un-merge.
   - A confirmation's notice offers Undo, with step 41's note. After "Confirm instead" it stays, since
@@ -5450,3 +5461,120 @@ out recalls and items no longer blocked, and a partial failure said); browser ch
 with one entity beside a workspace of five and two Blocked merges, and measure the page opening on
 All, the pill and the line in a scoped Review, the dialog's list and its focus, and both items
 Rejected.
+
+### 29.22 Step 56: no merge without an effect
+
+**What was found.** By the audit of 2026-10-22, and by reading the code:
+- **An accept that changes nothing is reported like one that does.** Two of the six proposal kinds,
+  a type change (`tbox_change`) and a recall, have no commit effect yet (architecture.md Section 14):
+  the fold merges them and nothing in canon moves. Nothing reads a merged one - not the types, the
+  gate grants, id forwarding or the belief. In Review the item offers Accept as for any kind, and
+  where the diff would be it prints the engine's note, a sentence written for an engineer: "no diff
+  - tbox_change has no commit effect yet, so there is no difference to compute - an empty diff here
+  would mean 'not computable', never 'changes nothing' (architecture.md Section 14)". The hint says
+  "Accept casts your verdict; nothing is deleted", the notice says "Accepted: Change a type ...", and
+  Decided says "Undoing this takes a new proposal", as if something had been done.
+- **A recall asks twice for an effect it does not have.** Section 7 gives the reason: "its effect is
+  the strongest the console casts".
+- **The agent surface says what the kinds will do, not what they do.** `propose` describes a type
+  change as adding or revising "a type in the workspace's vocabulary" and a recall as "bulk
+  retraction of everything derived from a contamination source". `review` accepts a merge of a type
+  change from any agent, and `list_proposals` then reads `merged`. The `review-proposal` prompt asks
+  the model to "explain in plain terms what merging would change", and the `brief` prompt asks, of
+  each open proposal, "what merging it would change".
+
+consolidation.md Section 6 already names the failure: a reviewer can merge one today and nothing
+happens, "which is worse than refusing the kind, because the gate reports a decision it did not
+carry out". There is a worse failure later. The v0.4.10 release note named it for recalls cast by an
+agent, which the fold has demoted to comments since: on the day a kind gets its effect, every merge
+of it already in a log would take effect at once. Nothing closes that for a recall merged at the
+console, or for a type change merged anywhere.
+
+**Decisions.** The author decided (2026-10-22) that a kind with no commit effect cannot be merged
+until it has one, which the audit's recommendation, "say that it has no effect yet", stopped short
+of. The fold is where a gate lives, since a replicated verdict never passes a write path
+(proposal-workflow.md Section 13, M3.5b), so:
+- **The fold counts no merge of either kind.** A merge verdict on a type change or a recall is a
+  comment: it stays in the log and decides nothing, as an agent's recall merge has been since
+  v0.4.10. This is a new validity condition, (f) in proposal-workflow.md Section 7.1. A proposal an
+  earlier build merged that way had changed nothing, and now reads open, or rejected if a reject was
+  cast. That is I16's second exception, made once. The author's store held none.
+- **Every write surface of this node refuses the merge and says why.** That is the courtesy the
+  write path already pays for a blocking check. Opening, comments, rejects and withdrawals are as
+  before, so a person can still drop one (Section 29.21). The dream already refuses to draft either
+  kind for the same reason (dreaming.md Section 4).
+- **When a kind gets its effect, a merge cast before then never fires.** The step that builds the
+  effect counts only merges the engine stamped as cast once the kind had it, as it stamps I17's
+  console marker. Every other merge stays a comment. The stamp is built with the effect; this step
+  fixes its direction.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P23, "no merge without a diff" | A merge's diff and checks are computed before it is cast | repays, for a kind with no commit effect - the fold counts no merge of one and no surface casts one; other merges whose diff cannot be computed, such as a gate act with no tier, are unchanged |
+| P23, "every kind the surface accepts has a commit effect" | Each kind the gate takes does what the kind promises | owed - unchanged (M4 Phase 5 for a type change, M6 step 5 for a recall); the surfaces still open both kinds, and now neither merges |
+| P23, no bidirectional gating | No proposal state blocks or delays an observe | agrees - observe and opening a proposal are untouched |
+| proposal-workflow.md Section 7.1 | What makes a verdict valid | revised - (f): the proposal's kind has its commit effect, and once it has, the merge carries the engine's stamp that it was cast with it |
+| proposal-workflow.md I16 | Merged is absorbing | revised - a second exception, once: a type change or a recall an earlier build merged reads open or rejected; it had changed nothing |
+| proposal-workflow.md I17 | A recall verdict is a person's direct act | agrees - the agent surface still refuses a recall merge with I17's reason, and the fold's console marker rule is unchanged; it decides again once recall has its effect, and its reading of the marker off every attestation is pinned on its own |
+| P23, merges cast before an effect | When a kind gets its effect, no merge cast before it fires | owed, with its direction fixed - the step that builds an effect counts only merges stamped as cast once the kind had it |
+| consolidation.md Section 6 | The gate does not report a decision it did not carry out | repays - the gate does not take the decision |
+| consolidation.md C6 and C12 | A merged recall retracts; a partial effect is not shipped | agrees - no recall reads merged, and nothing of the effect ships |
+| P5 | "Not computable" is not "nothing" | agrees - the diff stays not computable, and the item says in words that the kind has no effect yet |
+| Section 7 | A proposal offers Accept, Reject and Skip; a recall asks twice | revised - a kind with no effect yet offers no Accept; a recall asks twice once it has one |
+| Section 29.3 | "A split, a type change and a recall offer none, and say what undoing them takes" | revised - a type change and a recall are never merged while they have no effect, so only a split says what undoing it takes |
+| Section 29.21 | Reject all blocked takes the Blocked items, a recall left out | agrees - a type change can no longer be Blocked, since Blocked needs a merge |
+| U4 | A decision decides one item with its diff and checks on screen | agrees - Accept never appears without a diff, and Reject waits for the checks as before |
+| U1 and U17 | An act reports its outcome, or that nothing changed; a state is said as its outcome | agrees - nothing reads Accepted while it changed nothing |
+| U20 | The pill counts what waits under Needs you | agrees - an open type change or recall still waits for a person, who can reject it, so it counts |
+| P11 and federation.md F18 | `define_type` is the solo exception; in a shared workspace a T-Box change passes the gate | agrees - unchanged: `define_type` stays the only T-Box write, so deployment stays single-principal, and nothing new points an agent at it |
+| P22, P21 and prompts.md Section 5 | The tool descriptions and prompts carry what an agent must know | repays - `propose`, `review`, `list_proposals` and `get_proposal` say which kinds have no effect yet, and every prompt's rules say what to tell the person about them |
+| Section 29.20 and compatibility.md Section 7 | Answers name where they wrote; a refusal is a listed change | agrees - `propose` keeps its id and `workspace` and gains a `note` for these two kinds; a proposal view gains `no_effect_yet`; `review` refuses one more merge, listed with the release |
+| dreaming.md Section 4 | The dream drafts neither kind | agrees - unchanged, and now the rule of every surface |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The engine says which kinds have an effect.** One function answers it for every caller.
+  - The fold reads a merge verdict on a kind without one as a comment, before I17's rule.
+  - A proposal view of a type change or a recall carries `no_effect_yet: true` in `list_proposals`,
+    `get_proposal` and the console's reads.
+  - Its diff stays not computable. The note says so in words an agent can repeat: "tbox_change has
+    no commit effect yet, so it cannot be merged until it has one, and there is no difference to
+    compute".
+  - `review_proposal` refuses a merge of either kind on every surface: "tbox_change has no commit
+    effect yet, so it cannot be merged until it has one - a merge without a diff is a merge without
+    review (Principle 23). A comment or a withdrawal is accepted, and the person can reject it in the
+    Review panel". On the agent surface a recall merge keeps I17's refusal, which adds that no
+    surface merges a recall until it has its effect.
+- **Review offers no Accept.** Where the diff would be, under "What changes", the item reads "Nothing
+  yet: a type change has no effect in this version, so it cannot be accepted until it has one." For a
+  recall it reads "Nothing yet: a recall has no effect in this version, so it cannot be accepted until
+  it has one."
+  - Its controls are Reject, Skip and Show on the map, and A does nothing: the decision itself checks
+    the mark, as it checks the blocking checks.
+  - The hint reads "Reject sets it aside, and the log keeps it. It can still be accepted once type
+    changes have an effect." For a recall, "once recalls have an effect".
+  - Under Needs you its row carries "No effect yet".
+  - Its map preview reads "Preview: Change a type ... (no effect yet)", since the map shows what it
+    names, not a change.
+  - Its Reject notice says "Rejected: Change a type ..." and nothing more, since there is no Accept
+    after all to point at.
+  - A rejected one offers no Accept after all. Its hint reads "A reject is provisional: it can still
+    be accepted once type changes have an effect." For a recall, "once recalls have an effect".
+- **The agent hears it.**
+  - The descriptions of `propose`'s kinds and of `propose`, `review`, `list_proposals` and
+    `get_proposal` say that the two kinds have no effect yet and cannot be merged until they do.
+    The `recall` kind no longer sends the agent to the Review panel to decide; there the person can
+    only reject it.
+  - `propose` adds `note` when it opens one: "tbox_change has no commit effect yet: it can be
+    commented on, rejected or withdrawn, and cannot be merged until it has one".
+  - The rules every prompt keeps gain one line: a proposal marked `no_effect_yet` changes nothing and
+    cannot be accepted yet; say so, and never describe the effect it would have.
+  - The `brief` digest's open proposals carry the mark.
+
+**What this step does not do.**
+- It does not build the stamp that lets a kind's merges count once it has its effect.
+- It does not refuse to open either kind. Ingest is free (P23), and an opened one waits for its
+  effect or a person's reject.
