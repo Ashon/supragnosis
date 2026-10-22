@@ -33,7 +33,7 @@
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
-> is built.
+> is built. Step 57, a repeat says what it found, is specified.
 
 ## 1. Why this exists
 
@@ -2008,6 +2008,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    recall, which have no commit effect yet, cannot be merged until they have one - the fold counts
    no merge of either and every surface refuses one - and Review, the agent's answers and tool
    descriptions, and the prompts say so.
+57. **A repeat says what it found** (Section 29.23; Section 29.17, unmerge.md Section 5 and
+   resolution-identity.md Section 3 revised): a person's act at the console asks again when the
+   answer it would land on no longer holds, an act that finds its answer waiting or in force says so,
+   the agent's `propose` says what it found, and suggestions follow the person's no.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5590,3 +5594,120 @@ in the viewer's review tests (the sentence, no Accept, the row, the hints, the R
 preview, and A checked in the decision itself). Browser checks seed a type change and a recall, and
 read both items, the rows, A pressed with no request sent, the preview bar, the Reject notice and the
 Decided item; the agent's merge is refused with why.
+
+### 29.23 Step 57: a repeat says what it found
+
+**What was found.** By the audit of 2026-10-22, by its two reviews, and by a case run against the
+engine:
+- **A proposal is its content, and the console's acts have fixed words.** The id hashes the
+  workspace, the kind, the targets in order, `into`, the tier, `affected_types` and the reason. The
+  console writes its own reasons: "merge-band suggestion (embedding-near names)" for Propose, "two
+  entities named as one from a search" for Same as..., the notice's own sentence for Confirm and Undo.
+  So the same act on the same items lands on the proposal it opened before, and the answer names
+  that id alone.
+- **Confirm, Undo, Confirm changes nothing the third time.** The second Confirm is the first one,
+  already accepted, so its verdict is the first verdict and no grant comes after the Undo. A case
+  confirms it: the source stays at the Undo's tier, while the notice says "Confirmed ..." and the
+  preview showed the tier moving. A second Undo after that lands on the first Undo the same way.
+- **Propose and Un-merge say a proposal waits when it is decided.** Suggestions leave out a pair an
+  open merge names, and one a split pulled apart (unmerge.md S5). They offer a pair whose merge is
+  Blocked, or that the person rejected, every time the person looks. Propose then lands on that
+  merge, and the notice says "Merge proposed - it waits under Needs you for a verdict" while it sits
+  under Decided. Un-merge does the same when a split of that merge was rejected or withdrawn. Keep
+  ... instead does it when the reverse merge was withdrawn: it lands on that one, rejects the
+  original, and leaves both closed.
+- **The agent cannot tell either.** `propose` answers the id and the workspace whether it opened a
+  proposal or found one.
+
+**Decisions.** By rules already written:
+- **A person's act at the console asks again when the answer no longer holds.** When the proposal
+  it would open is already in the log, the console reads what that proposal still does:
+  - It no longer holds when it was rejected or withdrawn, when it is a gate act no source is still
+    gated by, or when it is a merge a split reversed. The console then opens it again with ", again"
+    added to its reason, ", again (3)" the third time, and so on, which makes it a new proposal, as
+    unmerge.md S10 does for a merge after its un-merges. S10's count comes first in the reason.
+  - It still holds when it is open, Blocked, or accepted and still in force. The console then writes
+    nothing, so an agent's proposal never gains the console's mark (Section 29.17), and says what it
+    found.
+  - `/api/resolve` opens and accepts in one act. When it finds its gate act open it casts the
+    verdict, since that is the act. When it finds it Blocked it refuses and names the check, so a
+    Confirm instead stops at its first act. When it finds it in force it changes nothing and says
+    so. It keeps opening without the console's mark, as today.
+- **An agent's act stays its content.** `propose` lands on the proposal its content names, as P14
+  says, and an identical one is absorbed as before (P3). Its answer says what it found, so the agent
+  can give a different reason if it means a different act.
+- **Suggestions follow the person's no.** dreaming.md Section 5.5 already says what a person's no is
+  and how long it stands: a reject cast at the console, until new knowledge about one of the
+  targets arrives. Suggestions leave out:
+  - a pair a merge names while that merge waits, open or Blocked;
+  - a pair a split pulled apart (S5);
+  - a pair a merge names whose reject carries the console's mark, until an observation that is not a
+    proposal event, ordered after that reject's console attestation by HLC, asserts one of the
+    merge's targets as named. A merge of three or more holds back every pair it names.
+
+  Two departures from 5.5 keep the rule a function of the log (P16): a console reject counts
+  whichever node it was cast on, and a withdrawal holds nothing back, since the console has no
+  withdrawal and every withdrawal today is an agent's. A reject only an agent cast holds nothing
+  back either. The suppression stays of the suggestion, never of the possibility.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U1 | Every console write reports its outcome, or that nothing changed | repays - a Confirm after an Undo confirms, and an Undo after that undoes; an act that finds its proposal waiting or in force says so, rather than that it opened one |
+| P14, P3 and proposal-workflow.md I1 | A proposal is its content; the same content is absorbed | agrees - a console act that asks again carries a different reason, so it is a different proposal; an agent's identical content is the same proposal, absorbed and said |
+| unmerge.md S10 | A re-merge must be a distinguishable proposal | agrees - ", again" is S10's rule for every console act whose answer no longer holds; S10's own count stays first |
+| unmerge.md S5 and S3 | A split suppresses the suggestion permanently, never the possibility | agrees - unchanged; the suggestions also wait on a merge in flight and on the person's no |
+| unmerge.md Section 5 and resolution-identity.md Section 3 | The band leaves out pairs "already covered by an open entity_merge proposal" | revised - and a Blocked one, a split's pair, and the person's rejected one until the knowledge changes |
+| dreaming.md Section 5.5 | The person's no stands until the knowledge changes; a reject from a peer or an agent is not it | agrees, with two departures named above - any node's console reject counts, so equal logs suppress equally (P16), and a withdrawal holds nothing back |
+| P5 and IR2 | A generator proposes, a verdict commits; a withheld pair is not "no pair" | owed - the band's report of the pairs it withholds stays owed (unmerge.md Section 5), and now withholds more; the empty band's line no longer says that none are near |
+| proposal-workflow.md I5 and I16 | A reject is provisional; merged is absorbing | agrees - no state changes; a rejected merge can still be accepted after all, and a new act comes after the ones before it |
+| resolution.md Section 5 | Gate acts apply in order, each from where the last left | agrees - the new Confirm applies after the Undo, as the person meant |
+| Section 29.22 | No merge without an effect | agrees - no act is opened again to merge a kind without one; a type change or a recall is never accepted, so it is opened again only when rejected or withdrawn |
+| Section 29.17 | Keep ... instead says what it found when the reverse merge exists | revised - Keep reads the state it gets back: a reverse merge withdrawn or reversed by a split is opened again, and a Blocked one is said as Blocked |
+| P22, P21 and Section 29.20 | The agent's answers say what was done and where | repays - `propose` answers `state` and `found`, and a `note` when it found one |
+| compatibility.md Section 7 | Answer changes are listed | agrees - `propose` gains `state` and `found`, added fields |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The engine.**
+  - One function opens a console act. Under the write lock it computes the act's id. While that id
+    names a proposal that no longer holds, it adds ", again" or ", again (n)" to the reason and
+    computes again.
+  - Every open reports `{id, state, found}`. `found` is true when the id was in the log before the
+    call; `state` says the rest.
+  - The suggestions read one set of held-back pairs, as above. A name-variant group of three or more
+    stays listed while any of its pairs is neither held back nor already listed at an earlier rung,
+    and its chips still name every member.
+- **The console.**
+  - `/api/propose_merge`, `/api/propose_split` and `/api/resolve` go through that function. The first
+    two answer `{"proposal_id", "state", "found"}`.
+  - A found merge that waits says "A merge of these two already waits under Needs you.", the sentence
+    Same as... now uses too; a found un-merge says "An un-merge of this merge already waits under
+    Needs you."; the item opens. A found merge in force says "These two are already merged." and a
+    found un-merge in force "This merge is already un-merged.".
+  - A found Confirm or Undo in force says "Nothing changed: this is already so." A found Blocked one
+    is refused with its check.
+  - Keep ... instead reads the state it gets back. A Blocked reverse merge reads "Rejected. The merge
+    into X waits under Needs you, but a check holds it back."
+  - The empty band says "none waiting - no near pairs that are not already proposed, split apart or
+    held back by your reject" in place of "none - no embedding-near pairs".
+- **The agent.** `propose` answers `state` and `found` beside its id and workspace. When it found a
+  proposal it adds a `note` naming the state:
+  - open: "an identical proposal is already open - a proposal is its content, so this is that one";
+  - Blocked: "an identical proposal was accepted but a check holds it back - get_proposal names the
+    check";
+  - rejected: "an identical proposal was rejected - a reject is provisional, and a different
+    rationale opens a new one";
+  - accepted: "an identical proposal was already accepted - if a later act has superseded it, a
+    different rationale opens a new one";
+  - withdrawn: "an identical proposal was withdrawn - a different rationale opens a new one".
+  - Section 29.22's note, when it applies, comes first. An identical merge a split reversed is
+    refused before any note, as today (S10).
+
+**What this step does not do.**
+- It does not report the withheld pairs in the band's coverage report, which unmerge.md Section 5
+  owes.
+- It does not change what an agent's identical content means: the same proposal.
+- It does not give `/api/resolve`'s opening the console's mark.

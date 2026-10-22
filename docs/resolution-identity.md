@@ -61,7 +61,9 @@ Embedding similarity **generates candidates; only the gate commits.**
 - **Candidate generation** (deterministic given the node's index - a retrieval aid, P16-exempt but
   guarded): for each entity, nearest entities by embedding similarity above a **candidate floor**
   (`SIM_CANDIDATE`, initial 0.85) that are not already the same id, not already merged, and not
-  already covered by an open entity_merge proposal. Emitted as a new curation-report section
+  already covered by an open entity_merge proposal. *(Revised by design-system.md step 57: nor by a
+  Blocked one, a split's pair (unmerge.md S5), or a merge the person rejected, until new knowledge
+  about one of the pair arrives (dreaming.md Section 5.5).)* Emitted as a new curation-report section
   (`merge_suggestions`: pair + similarity + shared-neighbor count), read-only (I18).
 - **No auto-merge in M3b.** The confident band ("top band automatic") requires the M4+ policy
   executor whose routing premises the fold re-validates (I15). Until then every suggestion is a
