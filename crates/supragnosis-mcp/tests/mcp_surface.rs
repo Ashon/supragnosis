@@ -501,11 +501,47 @@ async fn mcp_resource_graph_surface() {
         "said as unknown, not as absent: {missing}"
     );
 
+    // --- 5c) so is a proposal id, read where it lives, as get_proposal answers it -------------------
+    assert!(
+        templates.iter().any(|t| t.uri_template == "supragnosis://proposal/{id}"),
+        "must expose the proposal resource template"
+    );
+    let other = supragnosis_core::Entity::make_id("ws", "rmcp");
+    let opened = client
+        .call_tool(CallToolRequestParams::new("propose").with_arguments(args(json!({
+            "workspace": "ws", "kind": "entity_merge", "targets": [entity_id, other],
+            "into": entity_id, "rationale": "a resource test"
+        }))))
+        .await
+        .expect("propose");
+    let proposal_id = tool_json(&opened)["proposal_id"].as_str().expect("an id").to_string();
+    let read = client
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://proposal/{proposal_id}"
+        )))
+        .await
+        .expect("read proposal resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let proposal: Value = serde_json::from_str(&text).expect("proposal resource is JSON");
+    assert_eq!(proposal["id"].as_str(), Some(proposal_id.as_str()), "{proposal}");
+    assert_eq!(proposal["kind"].as_str(), Some("entity_merge"), "{proposal}");
+    let missing = client
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://proposal/{}",
+            "0".repeat(64)
+        )))
+        .await
+        .expect_err("an unknown proposal id is not_found");
+    assert!(missing.to_string().contains("absence is not a negation"), "{missing}");
+
     // --- 6) unknown URI: absence surfaces as an error (with a Principle 5 self-correction hint) ------------------
     let bad = client.read_resource(ReadResourceRequestParams::new("supragnosis://nope")).await;
     assert!(bad.is_err(), "an unknown resource URI must be an error");
     assert!(
-        bad.unwrap_err().to_string().contains("supragnosis://entity/{id}"),
+        bad.unwrap_err().to_string().contains("supragnosis://proposal/{id}"),
         "the hint names every form"
     );
 

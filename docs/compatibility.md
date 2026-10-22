@@ -402,6 +402,10 @@ one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing
 `~/.supragnosis/hub/`, so a release before pairing still
 starts on a paired node and syncs without the receive list's cap or the vouched keys.
 
+**A proposal id is a resource** (architecture.md Section 7, Principle 14). `resources/templates/list`
+gains `supragnosis://proposal/{id}`, read where the proposal lives as `get_proposal` answers it under
+`workspace: "*"`; unknown and, on the hub's agent surface, outside the reader's grants read alike.
+
 **An entity id is a resource** (architecture.md Section 7, Principle 14). `resources/templates/list`
 gains `supragnosis://entity/{id}`, and `resources/read` answers it as `get_entity` does; an unknown id
 is `resource_not_found`, and on the hub's agent surface an id outside the reader's grants reads as an
