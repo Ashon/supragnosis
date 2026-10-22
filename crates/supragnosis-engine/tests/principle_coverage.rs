@@ -134,6 +134,7 @@ const PRINCIPLES_DOC: &str = include_str!("../../../docs/principles.md");
 /// guarded by tests nobody had connected to them (F10 by `bind_guard_enforces_f10`), which is the
 /// shape of the debt: not unenforced, unmapped.
 const FEDERATION_DOC: &str = include_str!("../../../docs/federation.md");
+const PAIRING_DOC: &str = include_str!("../../../docs/pairing.md");
 
 /// One row per `F` invariant of federation.md Section 8, in document order.
 ///
@@ -243,6 +244,13 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             // that does start actually speaks TLS.
             "tls_listener_serves_https_and_refuses_plaintext",
         ]),
+    ), c(
+        "an open invitation counts as an admission, and a listener that cannot bind leaves the rest \
+         of the node serving",
+        Evidence::Deferred(
+            "today the bind rule counts nodes and principals, and a refused bind stops the daemon. \
+             Revisit when docs/pairing.md Section 10 step 2 lands",
+        ),
     )]),
     // A round grew past one small delta exchange in 00aae4e (batched pushes, paged pulls), which
     // was this row's trigger; the two demands it bundles stand apart now.
@@ -1018,6 +1026,94 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ],
     ),
+];
+
+// docs/pairing.md Section 8 - a second machine joins a hub (PA rows).
+const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "the hub's listener opens only with TLS and an admitted node, principal or open invitation, an invitation admits only its holder's preview and join, and a listener that cannot open leaves the node serving and says why",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 2 lands",
+        ),
+    )]),
+    (2, &[c(
+        "an invitation is used at most once and not after its expiry, the hub keeps only its secret's hash, and a used, denied or expired one is said as such",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (3, &[c(
+        "the joining machine accepts only the certificate the code names - by fingerprint, or by the built-in roots and the code's DNS names - during the join and after it",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (4, &[c(
+        "the bearer credential a join mints is never displayed: it travels sealed to a 0600 file and the hub keeps only its hash",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (5, &[c(
+        "a join grants exactly the invitation's workspaces, the joining machine sends only the ones it ticked, and none chosen shares nothing",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (6, &[c(
+        "every edit of supragnosis.toml keeps every line the person wrote, runs under one lock, adds only what the act chose, removes only what pairing recorded, and writes no key an earlier release refuses",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (7, &[c(
+        "removing a machine refuses its next request, takes back nothing it holds, and says so before it acts",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (8, &[c(
+        "the hub derives a joining machine's node id from its key and refuses its own and one already admitted",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (9, &[c(
+        "a hub admits one joined machine, a hub or a machine admitting a node by hand does not join, and a joined machine does not invite, in this version",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (10, &[c(
+        "no MCP tool and no page reaches a hub act: they are calls on a 0600 admin socket",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 2 lands",
+        ),
+    )]),
+    (11, &[c(
+        "a join completes only on the hub's Allow for the keys whose request it showed, and a request from other keys ends the invitation",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (12, &[c(
+        "a joined machine pulls only the workspaces recorded at the join",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (13, &[c(
+        "a vouched key is accepted only for the node id derived from it, never for the joining machine's own, verifies only up to its bound, and admits nothing",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
+    (14, &[c(
+        "the joining machine acts on a join's answer only if it is signed by the node key the code names and its credential is sealed to the one-time key it sent",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
+        ),
+    )]),
 ];
 
 // docs/e2e.md Section 7 - the end-to-end scenarios (J rows).
@@ -2637,6 +2733,12 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
             // principals-only hub off loopback died at startup while the daemon counted nodes alone.
             "a_principals_only_hub_passes_the_bind_guard",
           ])),
+        c("an open invitation is an admission too, and a listener that cannot start leaves the rest \
+           of the daemon serving",
+          Evidence::Deferred(
+            "today the daemon exits when its listener may not start. Revisit when docs/pairing.md \
+             Section 10 step 2 lands",
+          )),
     ]),
     (2, &[c(
         "every remote request is authenticated as exactly one admitted principal; none is anonymous",
@@ -2833,6 +2935,7 @@ const FAMILIES: &[Family] = &[
         prefix: "F",
         rows: FEDERATION_REGISTRY,
     },
+    Family { doc: "docs/pairing.md", text: PAIRING_DOC, prefix: "PA", rows: PAIRING_REGISTRY },
     Family {
         doc: "docs/inspector.md",
         text: include_str!("../../../docs/inspector.md"),

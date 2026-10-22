@@ -238,7 +238,8 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 ### 6a. Transport authentication and network bind (P2, P18)
 
 - Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the hub listener ONLY, and ONLY when TLS
-  is enabled and something is admitted - a node on the allowlist or a principal. The MCP loopback
+  is enabled and something is admitted - a node on the allowlist, a principal, or an open invitation
+  ([pairing.md](pairing.md) D5). A listener that may not bind leaves the rest of the node serving. The MCP loopback
   bind guard is unchanged - it is NOT relaxed - and the viewer does not bind TCP at all (it serves
   over a local unix socket); federation adds a separately-guarded surface. **Revision (specified in
   [remote-server.md](remote-server.md)):** the local daemon's guard stays exactly as stated, and this
@@ -271,7 +272,8 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
   set is a legitimate narrowing meaning "admitted, may read nothing". The asymmetry is the safety
   argument for having the surface at all: the act can only move the way P17 already prefers, so a
   mistake - or a console left open - can only share less. Widening stays in the file, where it is a
-  deliberate act with full context. Adding or removing a peer is Section 11's deferred workflow.
+  deliberate act with full context. Adding or removing a peer is Section 11's deferred workflow,
+  except a person's own second machine, which [pairing.md](pairing.md) admits and removes.
 - **Key distribution (three anchors)** - who verifies what with which key, incl. events the hub merely
   relays: (1) the hub's transport allowlist (above) decides who may connect and push; (2) the **origin
   public keys** a spoke needs to verify a relayed event (authored by another spoke) travel in the
@@ -279,7 +281,11 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
   side channel; (3) the policy observations themselves are verified against the workspace **admin's anchor
   key**, which every node carries in its local config (Section 9) - the single out-of-band trust root.
   Bootstrapping a fresh spoke = configure hub URL + bearer + anchor key; pull; verify the policy against
-  the anchor; verify everything else against the policy.
+  the anchor; verify everything else against the policy. Until anchor (2) is built, a spoke's
+  `origin_keys` stand in for it, and [pairing.md](pairing.md) D11 adds an interim fourth: at a join
+  the hub vouches, in an answer signed by the node key the code names, for keys it has verified,
+  each bounded by the last sequence it stored from that origin. A removed peer's key is kept for
+  that bound alone, so no event it sends later verifies anywhere.
 
 ### 6b. Inbound write defense - the accept gate commits, trust only generates (P18, P7, P19, I18)
 
@@ -632,8 +638,9 @@ changing the canon policy without a central admin - is out of scope.
 - **F9** Only whitelisted workspaces cross the sync boundary (opt-in, default nothing, P17); the server
   enforces per-node access, filtering before the boundary. Any remote read surface obeys the same whitelist
   (P17 second-door rule).
-- **F10** The hub listener binds non-loopback ONLY with TLS enabled and at least one admitted node or
-  principal (remote-server.md R1). The local daemon's MCP stays loopback-only (its bind guard
+- **F10** The hub listener binds non-loopback ONLY with TLS enabled and at least one admitted node,
+  principal or open invitation (remote-server.md R1, pairing.md PA1); one that may not bind leaves
+  the rest of the node serving. *(Revised by pairing.md: the invitation, and no exit at start.)* The local daemon's MCP stays loopback-only (its bind guard
   unchanged); the local viewer has no TCP bind (local unix socket only).
 - **F11** Sync is a non-blocking, pollable task (P21). It never blocks tool handlers; store calls offload
   via `spawn_blocking`.
@@ -692,7 +699,8 @@ changing the canon policy without a central admin - is out of scope.
   verdict over the set would hide the unmet ones (the B.1 discipline of principles.md): (1)
   **entitlement-scoped** - `ping` reports the authenticated caller's own grants, never the host's
   inventory; (2) **narrowing-only** - a peer's answer may reduce what this node asks of that peer and
-  may never extend its local `share_workspaces`; (3) **log-external** - the answer is never written to
+  may never extend its local `share_workspaces`, nor, where a join recorded a receive list, what it
+  pulls (pairing.md PA12); (3) **log-external** - the answer is never written to
   the observation log; (4) **three-valued** - an unreachable peer yields *unknown*, never an empty
   grant set; (5) **response-labelled** - a response the map narrowed states which hosts it consulted
   and which it skipped as not-admitted; (6) **non-monotonic** - a grant may be narrowed at any time, so
@@ -763,7 +771,9 @@ input, not nondeterminism - F16).
   is most expensive, since it decides who may connect and what they may read (P17/P18). `[node] role` was superseded: roles are implied by which sections are present
   (architecture.md Section 10).
 - CLI: `supragnosis sync` (a one-shot round against the configured servers; the daemon separately
-  pings its hubs on a slow interval for status - the Section 5 `ping`); the server role is started
+  pings its hubs on a slow interval for status - the Section 5 `ping`; *since
+  [pairing.md](pairing.md) the daemon also runs rounds on its own, and `supragnosis sync` runs
+  one through it*); the server role is started
   alongside `serve`/`start`.
 - MCP tools (administrative): `sync_status`, `sync_pull`, `sync_push`. Specified as P21 pollable
   tasks; shipped as ordinary awaited calls. The caller waits out the round, which is many exchanges
@@ -843,7 +853,9 @@ input, not nondeterminism - F16).
 - Peer-to-peer mesh, NAT traversal, discovery.
 - gRPC transport (JSON/HTTPS first).
 - Key rotation / revocation workflow. Narrowing an admitted peer's workspaces is operable from the
-  console (6a); **admitting and removing peers is not**. What remains for it is mostly semantics
+  console (6a); **admitting and removing peers is not**, except a person's own second Mac, which
+  [pairing.md](pairing.md) admits by a one-time code and removes, one per hub; a team's admission,
+  key rotation and a hub vouching for keys stay here. What remains for it is mostly semantics
   rather than mechanism: removing a peer stops future reads but does not take back what has already
   synced (P17 filters at the boundary, it is not a takeback), and a surface that offers the act has to
   say so plainly or it will be read as one. Admission additionally needs the peer's key and bearer

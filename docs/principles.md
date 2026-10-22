@@ -841,8 +841,11 @@ something wrong - knowledge silently absent, or a surface open without authentic
     that is wrong rather than absent: a store this build cannot read must not come up empty beside it,
     because "no knowledge" and "knowledge unavailable" are different answers (Principle 5). And
     opening a surface the configuration did not authorize: a non-loopback bind without TLS, or with
-    nothing admitted - no node and no principal - refuses, because degrading there would serve in
-    the open. And running a configuration other than the one written: a key this build does not
+    nothing admitted - no node, no principal and no open invitation - refuses, because degrading
+    there would serve in the open. The listener refuses, not the node: what else it serves stays up
+    and says why the listener is down. *(Revised 2026-10-22 by the author for pairing.md D5: an
+    invitation the person has just made admits its holder's preview and join, and nothing
+    else.)* And running a configuration other than the one written: a key this build does not
     know refuses, because a misspelled key parses clean and does nothing, and where it sits in an
     allowlist entry that silence decides who may connect (negotiated-surface.md N8).
   - **Narrow without asking only in the direction the safety principle already prefers.** A
