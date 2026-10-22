@@ -223,6 +223,10 @@ the distinction by **surface**:
   surface ever reading a marker off a non-verdict observation. Sync apply is deliberately not
   guarded: a replicated verdict legitimately carries its marker (that is how the ceiling
   converges), and honoring it stays the single-principal premise below.
+  Since design-system.md step 51c the console's server also asks the engine to stamp the console
+  marker on the merges and splits it opens, so who asked reads as the person. The mark on an
+  opening event grants nothing: the ceiling and the I17 recall check read verdict events only.
+  *(Revised by design-system.md step 51c.)*
 - **Ceiling rule (fold-side, deterministic)**: the tier a merged promotion may grant is capped
   by the highest ceiling among its merge verdicts' surface markers - `Console` grants up to
   `HumanConfirmed`; `Agent`, an absent marker, and any unknown marker cap at `HostSigned`. A

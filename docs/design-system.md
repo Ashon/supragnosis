@@ -30,7 +30,8 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
-> Step 51a, All as a view, is built, and so is step 51b, the same name.
+> Step 51a, All as a view, is built, and so is step 51b, the same name; step 51c, Same as... and
+> Keep ... instead, is specified.
 
 ## 1. Why this exists
 
@@ -808,8 +809,9 @@ the reason in words and the act that fixes it where there is one; the evidence, 
 who said it and when; and the preview on the map that the console draws today.
 
 **The decision controls sit beside that and act on that one item** (U4). For a proposal: Accept,
-Reject and Skip, also as A, R and J, with K to step back. For a draft: Publish, Accept and Discard,
-as dreaming.md Section 8 names them, also as P, A and D. There is no decide-all. A key decides only
+Reject and Skip, also as A, R and J, with K to step back; an open merge of two entities also offers
+Keep ... instead, which has no key (Section 29.17). *(Revised by step 51c.)* For a draft: Publish,
+Accept and Discard, as dreaming.md Section 8 names them, also as P, A and D. There is no decide-all. A key decides only
 once the item's diff and checks are on screen, so stepping fast through the list cannot cast a verdict
 on an item not yet shown. A recall asks for a second, explicit act: its effect is the strongest the
 console casts, and one keystroke should not carry it.
@@ -829,7 +831,9 @@ one is selected. Its reverse is on its Decided item (Section 29.3):
   two consequences: the separated pair is never suggested again (unmerge.md S5), and merging them
   later needs a proposal distinguishable from this one (unmerge.md S10).
 - A rejected proposal stays listed among the decided and offers "Accept after all", also as A,
-  since a reject is provisional and a later accept still merges it (proposal-workflow.md Section 8).
+  since a reject is provisional and a later accept still merges it (proposal-workflow.md Section 8),
+  except while its reverse merge is accepted, when no Accept is offered (Section 29.17). *(Revised by
+  step 51c.)*
 - A merged claim promotion or demotion offers its Undo, with the reverse acts' diff.
 
 The notice right after a decision names the item and offers the same act where the act decides
@@ -1967,6 +1971,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 3.2 revised): on the local console the sheet says when another workspace
    uses the entity's name, All lights the drawn namesakes with what is pointed at or selected, and
    the Suggestions row for a shared name says what it is and which workspace each entity is in.
+51c. **Same as..., and Keep ... instead** (Section 29.17; D10, D19; Sections 7 and 29.7,
+   proposal-workflow.md Section 14.3 and resolution.md Section 6 revised): a person may say two entities of one workspace are
+   the same, a merge on Review offers to keep the other name, and what the console opens says it
+   was opened at the console.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -4008,6 +4016,8 @@ No row needs a principle changed.
   - "for alex" when that attestation names a principal: "Agent - this Mac, for alex - 11:27 AM".
   - A verdict cast at this console and written here (`surface:console`) is "Agent - you at this
     console - 11:38 AM": the row's tier is the verdict's own, and its sentence says what it granted.
+    A merge or split opened at this console reads the same way (Section 29.17). *(Revised by step
+    51c.)*
     One cast at another machine's console is "Agent - a person at 4a1b2c3d - ...".
   - Where two values of one contested field were written in the same minute, both their who-lines
     show seconds; the Log keeps its time once per minute (Section 9).
@@ -5027,3 +5037,90 @@ cases (workspace order, a merged-away namesake left out, an unknown id unknown);
 `the_console_reads_the_same_name_in_other_workspaces` over the viewer's socket (one `in` per
 workspace, a comma inside a name, the unknown entity unspelled, the read tier's refusal); and
 `the_same_name_is_said_on_the_local_console` in the viewer's review tests.
+
+### 29.17 Step 51c: Same as..., and Keep ... instead
+
+**What was found.** Measured on the Graph and Review pages:
+- **A person cannot say two entities are one.** The console opens a merge only from a Suggestions
+  row, so "these are the same thing" is possible only where a detector already thought so;
+  otherwise the person has to ask an agent.
+- **A merge cannot keep the other name.** "Merge PostgreSQL into Postgres" can be accepted or
+  rejected; keeping PostgreSQL takes a reject and a new proposal from an agent.
+- **What the console opens reads as an agent's.** Who asked on a merge proposed from Suggestions or
+  an un-merge reads "Agent - this machine", because only a verdict carries the console's mark.
+
+**Decisions.** The author approved D10 - a person may open a merge from the console, its reason
+fixed - and D19 - Review's merge offers "Keep PostgreSQL instead", which ends the merge and opens
+the reverse one. Since step 51a both are inside one workspace.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P23 and proposal-workflow.md Section 14.3 | The console writes only through the gate - a verdict, a proposal opened, an observation ingested - and a decision acts on one item with its diff on screen | agrees - Same as... opens a proposal, which decides nothing, and Review shows its diff and checks before anything is decided. Keep ... instead is a reject of the item on screen, once its diff and checks are on screen, and a proposal opened |
+| P23's solo exception and proposal-workflow.md Section 10 | Self-approval is permitted alone, and marked | agrees - accepting a merge the person opened at the console is the solo exception, and the verdict is self-attested as every console verdict is |
+| P2 and P18 | Provenance is true and not shaped by the client | repays - a merge or split the console opens carries the console's mark, stamped by the engine as a verdict's is, so it reads as the person's; its reason, which says why and not who, comes from the console's fixed list. A confirmation's reason stays its notice sentence (Section 29.3) |
+| resolution.md R8 and Section 6 | The surface marker on a verdict is engine-stamped, never client-supplied | revised - the console's own server also asks the engine to stamp it on the merges and splits it opens; a client-supplied source naming it is still refused, and the mark on an opening event grants nothing, since the ceiling and the recall check read verdicts only |
+| P24 | Refuse only when proceeding is worse; a half-done act is worse | agrees - Keep ... instead opens nothing and rejects nothing until it knows the reverse's state, and rejects only once the reverse is there |
+| Principle 14 and unmerge.md S10 | A proposal is its content, so a re-merge after an un-merge must differ from the merge reversed | agrees - the console's re-merge reason says how many un-merges came before, which the server counts from the log, so a merge, un-merge and merge again work from the console |
+| P6 | Contradictory merges are surfaced, never silent | agrees - the console offers no Accept of any kind on a merge whose reverse is accepted, so it opens no cycle itself; one an agent makes still shows in Health as a merge cycle |
+| Section 29.15 | A merge joins entities of one workspace | agrees - Same as... searches only the entity's own workspace |
+| U15 | A search names its scope, chooses nothing before the person moves, and offers the wider scope when nothing matches | revised - the picker names its scope and chooses nothing unmoved, but offers no wider scope, since a merge stays in one workspace |
+| U19 | A dialog holds focus; every act is a control; a disabled control says why | agrees - the picker holds focus, its two merges are buttons, and Keep ... instead is disabled with why beside it until the diff and checks are on screen |
+| U4 and U25 | A decision acts on one item once its diff is on screen; what an act does is said once on screen | agrees - a line under the acts says what Keep ... instead does |
+| Section 7 | Proposal controls and their keys; the next item is selected; a rejected proposal offers Accept after all | revised - Keep ... instead joins the controls with no key; after it the reverse is selected; Accept after all is not offered while the reverse is accepted |
+| Section 29.7 | Who asked reads a console verdict as "you at this console" | revised - a merge or split opened at the console reads so too; Who asked is the first opener's, so an identical merge an agent opened first stays the agent's, and proposals opened before this step keep reading as the machine (P3) |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Same as...** On the local console, the sheet of an entity offers "Same as...", after Show
+  related.
+  - It opens a dialog with a search of the entity's own workspace, "Search infra", listing its
+    entity hits as the search list groups them, leaving out the entity itself. The arrow keys move
+    between rows and Enter chooses the row moved to; Enter with no row moved to does nothing. With
+    nothing else in the workspace it says "Nothing else is in infra yet"; with no match, "No entity
+    in infra matches", and offers no wider scope.
+  - Choosing a row offers two buttons, "Merge Postgres into PostgreSQL" and "Merge PostgreSQL into
+    Postgres". Either opens the merge through `/api/propose_merge` with `src=picked`, closes the
+    dialog and selects the merge on Review in the scope on screen, where its diff and checks show
+    before any decision. If a merge of the two is already open, in either direction, it opens
+    nothing and selects that one: "A merge of these two is already open." If the server refuses,
+    the notice says "Not opened:" and why.
+  - Esc closes the dialog from anywhere in it and changes nothing; focus returns to Same as....
+- **Keep ... instead.** On the local console, an open merge of two entities on Review offers "Keep
+  PostgreSQL instead", naming the one the merge would fold away, after Reject. It has no key. Until
+  the diff and checks are on screen it is disabled, with "Waiting for the checks" beside it. A line
+  says "Keep PostgreSQL instead rejects this merge and makes PostgreSQL the one kept; the merge into
+  it then waits for your verdict."
+  - The reverse is any merge of the same workspace with the same two entities and PostgreSQL kept,
+    whatever its reason, read from the proposals the page holds before anything is written.
+  - With no reverse, it opens one through `/api/propose_merge` with `src=reverse`, `a` the entity
+    this merge would keep and `b` PostgreSQL, and only once it is open rejects this one, selecting
+    the reverse: "Kept PostgreSQL: the merge into it waits for your verdict."
+  - With an open reverse, it rejects this one and selects the reverse, with the same notice.
+  - With an accepted reverse, it rejects this one: "Kept PostgreSQL: it was already merged into
+    it."
+  - With a rejected reverse, it rejects this one and selects the reverse on Decided, where Accept
+    after all is: "Rejected. The merge into PostgreSQL was rejected before; accept it after all
+    there." A withdrawn reverse counts as none.
+  - If the reverse cannot be opened, nothing is rejected: "Not changed: the merge into PostgreSQL
+    could not be opened:" and why. If it opened and the reject failed: "Opened the merge into
+    PostgreSQL; this one was not rejected:" and why.
+- **No cycle from the console.** A merge whose reverse is accepted offers no Accept and no Accept
+  after all; its item says "Its reverse is accepted", and focus stays where it was.
+- **Reasons.** `/api/propose_merge` takes `src=picked`, "two entities named as one from a search",
+  and `src=reverse`, "the other name kept, instead of a merge the other way". When the log holds
+  un-merges of the same two entities in the same direction, the server adds ", again after 1
+  un-merge" or ", after 2 un-merges", so the re-merge is a different proposal (unmerge.md S10). An
+  unknown `src` is refused, an absent one is the merge band, as before.
+- **The console's mark.** A merge or split the console opens - from Same as..., Keep ... instead,
+  Suggestions or Un-merge - carries the console's mark, so Who asked reads "Agent - you at this
+  console", the tier first as every who-line has it, and "a person at" its machine elsewhere.
+
+**What this step does not do.**
+- It does not merge across workspaces (Section 29.15).
+- It does not preview a merge's diff before it is opened; Review shows it once it is.
+- It does not offer Keep ... instead on a blocked merge, or on a merge of three or more entities.
+- It does not mark a confirmation's proposal: its reason is its notice sentence, and Who asked on it
+  reads as before.
