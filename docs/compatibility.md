@@ -334,6 +334,11 @@ answers did:
 - Merge suggestions and name variants also leave out a pair under a Blocked merge, and a pair whose
   merge the person rejected at the console, until new knowledge about one of the pair arrives.
 
+**The band says what it held back** (design-system.md step 61). The curation report's `merge_band`
+gains `held_back`, an added field: the near pairs the band left out because a merge names them, a
+split pulled them apart or the person's reject holds them back. The `curate` prompt, whose digest
+carries the report, says what a nonzero count beside an empty list means.
+
 **Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.

@@ -123,7 +123,8 @@ This is the whole of the risk in this feature, and the rule that answers it is:
 Silence about a suppressed pair is a reporting question, not a correctness one, but Principle 5
 applies: an empty `merge_suggestions` already distinguishes "no near pairs" from "this node cannot
 run the band". A pair withheld because a human separated it is a third state and belongs in the
-band's coverage report rather than vanishing.
+band's coverage report rather than vanishing. *(Repaid by design-system.md step 61: `merge_band`
+counts the pairs it held back, and an empty band says which state it is.)*
 
 ## 6. Aliases come apart, and IR1 is untouched
 

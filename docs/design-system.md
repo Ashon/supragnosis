@@ -35,7 +35,7 @@
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
-> demote a claim, is built.
+> demote a claim, is built. Step 61, the band says what it held back, is specified.
 
 ## 1. Why this exists
 
@@ -2022,6 +2022,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
 60. **A person can demote a claim** [built] (Section 29.26; Section 2, U18 and proposal-workflow.md Section 14.3
    revised): the observation card offers a demotion to Unverified, with what it overturns, its
    reach, its ceiling and its checks before the act, and Undo after it.
+61. **The band says what it held back** (Section 29.27; resolution-identity.md Section 3 and
+   unmerge.md Section 5 repaid): `merge_band` counts the near pairs it left out, and an empty band
+   says whether none are near or the near pairs it found are all answered.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5904,3 +5907,49 @@ its card, and reads the question ("Ledger's type becomes View and is no longer c
 Billing drops to Unverified.", "It also states 1 relation."), Esc closing only the question with focus
 back on the offer, the notice with its Undo note, the card's "Lowered to Unverified by you at this
 console", focus on Close, and the contradiction settled on the map.
+
+### 29.27 Step 61: the band says what it held back
+
+**What was found.** Step 57 left it owed (Section 29.23), as unmerge.md Section 5 already had: the
+merge band leaves out a pair that a waiting merge names, that a split pulled apart, or that the
+person rejected, and its report says nothing of them. An empty band therefore reads two ways - no
+near pairs, or the near pairs it found all already answered - and step 57's line, "none waiting - no
+near pairs that are not already proposed, split apart or held back by your reject", covers both
+without saying which. unmerge.md Section 5: "A pair withheld because a human separated it is a third
+state and belongs in the band's coverage report rather than vanishing."
+
+**Decisions.** None is open: the report counts what it held back, and the line says which state it
+is. The count is named `held_back`, since P5 already gives "withheld" its own meaning, a scope the
+caller is not granted.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| unmerge.md Section 5 | A withheld pair is a third state, reported in the band's coverage | repays |
+| P5 and resolution-identity.md Section 3 | An empty list does not stand for absence; `merge_band` says why it is empty | repays - `merge_band` gains `held_back` beside `available`, `embedded` and `examined` |
+| P5's answer alphabet | Unavailable, uncomputable, withheld and truncated stay distinct | agrees - the count says what the list left out, as truncated does, and adds no new value; it is not named "withheld" |
+| Section 29.23 | The band's report of what it held back is owed | repays |
+| P16 and resolution-identity.md Section 3 | The band is a node-local retrieval aid; the suppressed set is read off the log | agrees - the count depends on this node's vectors, as the band's pairs do |
+| compatibility.md Section 7 | Answer changes are listed | agrees - Section 7 gains `merge_band.held_back`, an added field of the curation report the `curate` prompt's digest carries, and the prompt says what it means |
+| The name-variant ladder | An empty list does not stand for absence | owed - the ladder reports no count of what it leaves out; its groups still list every member, and its empty list is said by the queue, not by a coverage line |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The count.** `merge_band.held_back` counts the pairs the band reached - among each entity's
+  `MERGE_BAND_K` nearest, above the floor, inside one workspace, neither merged away - that it left out
+  because a waiting merge names them, a split pulled them apart, or the person's reject holds them
+  back. A pair is counted the first time it is reached, as it is listed, so each counts once.
+- **The line.** When the band is empty:
+  - over every entity, with nothing held back: "none - no embedding-near pairs", as before step 57;
+  - over every entity, with some held back: "none waiting - 3 near pairs are already proposed, split
+    apart or held back by your reject" (one pair: "1 near pair is ...");
+  - over part of the entities, the coverage line as before, and with some held back it adds "- 3
+    near pairs are already proposed, split apart or held back by your reject";
+  - a report without the count reads as step 57's line.
+- **The agent.** The `curate` prompt says that a nonzero `held_back` beside an empty list means the
+  near pairs are already answered, not that none exist.
+
+**What this step does not do.** It does not count what the name-variant ladder leaves out, the owed
+row above.
