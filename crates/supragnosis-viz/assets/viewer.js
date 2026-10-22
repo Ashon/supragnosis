@@ -2693,7 +2693,9 @@ async function proposeSplit(p) {
   const sq = "?merge=" + encodeURIComponent(p.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
   const o = await consoleWrite("/api/propose_split", sq, b => foundSaid(b, "un-merge") || "Un-merge proposed - it waits under Needs you for a verdict");
   await refreshProposals();
-  if (o && o.found) openReviewItem(o.proposal_id);
+  // Opened or found, the split opens under Needs you, as Same as... and Keep ... instead open theirs
+  // (Section 29.25); accepting it is the person's next act.
+  if (o && o.proposal_id) openReviewItem(o.proposal_id);
 }
 // One decision on one item (U4). It runs only when the item's view - its diff and checks - is the
 // one on screen, never for a blocked merge, and a recall asks twice; there is no decide-all.

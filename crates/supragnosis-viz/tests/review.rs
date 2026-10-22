@@ -496,7 +496,10 @@ fn the_console_says_what_a_repeat_found() {
         write.contains("body.found && body.state === \"merged\" && typeof said !== \"function\"")
     );
     assert!(write.contains("\"Nothing changed: this is already so.\""));
-    assert!(function("proposeSplit").contains("if (o && o.found) openReviewItem(o.proposal_id);"));
+    // Section 29.25: Un-merge opens the split it proposed, found or new.
+    assert!(
+        function("proposeSplit").contains("if (o && o.proposal_id) openReviewItem(o.proposal_id);")
+    );
     assert!(SCRIPT.contains(
         "b => foundSaid(b, \"merge\") || \"Merge proposed - it waits under Needs you for a verdict\""
     ));
