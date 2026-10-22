@@ -564,6 +564,17 @@ impl SupragnosisServer {
                 }
                 _ => return Ok(()), // absent or unreadable: the normal path answers that
             },
+            Some(ResourceUri::Proposal(id)) => match self.engine.proposal_workspace(id) {
+                Ok(Some(ws)) => {
+                    if !p.can_read(&ws) {
+                        // Outside the grants answers exactly as an unknown proposal would.
+                        return Err(unknown_proposal_resource(id, true));
+                    }
+                    return (surface.servable)(&ws)
+                        .map_err(|why| ErrorData::resource_not_found(why, None));
+                }
+                _ => return Ok(()), // absent or unreadable: the normal path answers that
+            },
             _ => return Ok(()),
         };
         if !p.can_read(&ws) {
@@ -1853,8 +1864,9 @@ impl ServerHandler for SupragnosisServer {
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
                  observation back-reference (raw content + provenance + lineage - use it to \
-                 confirm the basis of a search hit), and supragnosis://entity/{id} is an entity \
-                 as get_entity answers it.",
+                 confirm the basis of a search hit), supragnosis://entity/{id} is an entity as \
+                 get_entity answers it, and supragnosis://proposal/{id} is a proposal as \
+                 get_proposal answers it.",
         )
     }
 
@@ -2117,6 +2129,14 @@ impl ServerHandler for SupragnosisServer {
             )
             .with_mime_type("application/json");
         // An entity by its id (Principle 14): what get_entity answers, dereferenceable as a URI.
+        // A proposal by its id (Principle 14), read where it lives, as get_proposal answers it.
+        let proposal = ResourceTemplate::new("supragnosis://proposal/{id}", "proposal")
+            .with_title("Proposal (targets, verdicts, state, belief diff, checks)")
+            .with_description(
+                "By proposal id (from propose or list_proposals), query the proposal where it lives, \
+                 as get_proposal answers it under workspace '*'.",
+            )
+            .with_mime_type("application/json");
         let entity = ResourceTemplate::new("supragnosis://entity/{id}", "entity")
             .with_title("Entity (canonical name, type, attestations)")
             .with_description(
@@ -2133,6 +2153,7 @@ impl ServerHandler for SupragnosisServer {
             types,
             observation,
             entity,
+            proposal,
         ])
         .with_ttl_ms(0)
         .with_cache_scope(CacheScope::Private)))
@@ -2261,6 +2282,17 @@ fn read_uri(
             )),
         },
         // An entity by its id (Principle 14), as get_entity answers it.
+        // A proposal by its id (Principle 14), read where it lives.
+        Some(ResourceUri::Proposal(id)) => match engine.get_proposal(None, id) {
+            Ok(Some(view)) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&view), uri)]))
+            }
+            Ok(None) => Err(unknown_proposal_resource(id, remote)),
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
         Some(ResourceUri::Entity(id)) => match engine.get_entity(id) {
             Ok(Some(view)) => {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&view), uri)]))
@@ -2275,7 +2307,8 @@ fn read_uri(
             format!(
                 "unknown resource URI: {uri} - the forms are supragnosis://workspaces, \
                  supragnosis://workspace/{{workspace}}/graph, .../hypergraph and .../types, \
-                 supragnosis://observation/{{id}} and supragnosis://entity/{{id}}"
+                 supragnosis://observation/{{id}}, supragnosis://entity/{{id}} and \
+                 supragnosis://proposal/{{id}}"
             ),
             None,
         )),
@@ -2296,6 +2329,8 @@ enum ResourceUri<'a> {
     Observation(&'a str),
     /// `supragnosis://entity/<id>` - an entity, as get_entity answers it (Principle 14).
     Entity(&'a str),
+    /// `supragnosis://proposal/<id>` - a proposal, read where it lives (Principle 14).
+    Proposal(&'a str),
 }
 
 /// Resource URI parser. Returns None on malformed input. A segment must not contain `/`.
@@ -2338,6 +2373,12 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
             return None;
         }
         return Some(ResourceUri::Entity(id));
+    }
+    if let Some(id) = uri.strip_prefix("supragnosis://proposal/") {
+        if id.is_empty() || id.contains('/') {
+            return None;
+        }
+        return Some(ResourceUri::Proposal(id));
     }
     None
 }
@@ -2480,6 +2521,23 @@ fn unknown_remote_start() -> String {
 
 /// An observation id that is not here - or, remotely, not in a workspace the principal may read,
 /// which must read the same.
+/// A proposal resource no proposal answers - or, remotely, one outside the reader's grants, said
+/// the same way (Principle 5, remote-viewer.md Section 3.4).
+fn unknown_proposal_resource(id: &str, remote: bool) -> ErrorData {
+    let msg = if remote {
+        format!(
+            "no proposal with id {id} in the workspaces you may read - absence is not a \
+             negation (open-world). Use an id from propose or list_proposals"
+        )
+    } else {
+        format!(
+            "proposal id not found: {id} - absence is not a negation (open-world). Use an id \
+             from propose or list_proposals"
+        )
+    };
+    ErrorData::resource_not_found(msg, None)
+}
+
 /// An entity resource no entity answers - or, remotely, one outside the reader's grants, said the
 /// same way (Principle 5, remote-viewer.md Section 3.4).
 fn unknown_entity_resource(id: &str, remote: bool) -> ErrorData {

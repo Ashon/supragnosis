@@ -812,6 +812,31 @@ mod tests {
         let team = supragnosis_core::Entity::make_id("team", "rust");
         let own = c.read(&format!("supragnosis://entity/{team}")).await;
         assert!(own.contains("canonical_name"), "an entity in a granted workspace reads: {own}");
+        // A proposal outside the grants reads as an unknown one too, and one inside reads.
+        let opened = |ws: &str, target: &str| {
+            engine
+                .propose(supragnosis_engine::ProposeInput {
+                    workspace: Some(ws.into()),
+                    kind: "claim_promotion".into(),
+                    targets: vec![target.into()],
+                    into: None,
+                    tier: Some("agent_extracted".into()),
+                    rationale: Some("a resource test".into()),
+                    affected_types: Vec::new(),
+                    source_ref: None,
+                    on_behalf_of: None,
+                })
+                .expect("propose")
+        };
+        let (hidden_p, team_p) = (opened("secret", &secret_obs), opened("team", &team_obs));
+        let a = c.read(&format!("supragnosis://proposal/{hidden_p}")).await;
+        let b = c.read(&format!("supragnosis://proposal/{nothing}")).await;
+        assert_eq!(a.replace(&hidden_p, "ID"), b.replace(&nothing, "ID"), "proposal resource");
+        let own = c.read(&format!("supragnosis://proposal/{team_p}")).await;
+        assert!(
+            own.contains("claim_promotion"),
+            "a proposal in a granted workspace reads: {own}"
+        );
 
         let promote = |target: &str| {
             serde_json::json!({"kind": "claim_promotion", "targets": [target],

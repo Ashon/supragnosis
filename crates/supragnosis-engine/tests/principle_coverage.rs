@@ -3975,11 +3975,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "an_id_outside_the_grants_reads_as_an_unknown_one",
           ])),
         c("a proposal id is a dereferenceable supragnosis:// URI as well",
-          Evidence::Deferred(
-            "a proposal id is dereferenceable through the get_proposal tool, and supragnosis://proposal/{id} \
-             is specified but not served (architecture.md Section 7). Revisit when the proposal resource \
-             lands, with the read tier's proposal view as its model",
-        )),
+          // Read where it lives, as get_proposal answers it; unknown and outside the grants alike.
+          Evidence::Scenario(&[
+            "mcp_resource_graph_surface",
+            "an_id_outside_the_grants_reads_as_an_unknown_one",
+          ])),
         // The mechanical-enforcement bullet, missing since the 2026-08 closure review.
         c("a field added to the identity, attestation-order, re-arrival-merge or signing functions \
            is a compile error until it is classified",
