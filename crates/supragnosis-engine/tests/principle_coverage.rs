@@ -1116,9 +1116,11 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (15, &[c(
         "a node with a hub runs a sync round on its own over its shared workspaces, one at a time whatever starts it, and says when the last ran, what it moved and why it failed",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 1 lands",
-        ),
+        Evidence::Scenario(&[
+            "a_round_carries_a_write_to_the_other_node_with_no_call",
+            "a_round_that_fails_says_why",
+            "a_round_waits_five_minutes_and_backs_off_to_an_hour",
+        ]),
     )]),
 ];
 
@@ -3481,6 +3483,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-sync/src/http.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
+    include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),

@@ -1138,6 +1138,9 @@ async fn run(cfg: Config) -> Result<()> {
     // console can be handed the admission handler this produces.
     let (sync_ctx, narrow) =
         build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone()).await?;
+    if let Some(ctx) = sync_ctx.as_ref().filter(|c| !c.servers.is_empty()) {
+        spawn_sync_rounds(engine.clone(), ctx.clone());
+    }
 
     if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
         spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
@@ -1353,9 +1356,44 @@ async fn build_sync_context(
             origin_keys,
             // Only a hub (server role) observes peers; a client-only node reports none.
             peer_registry: fc.server.is_some().then_some(peer_registry),
+            round: Default::default(),
+            last_round: Default::default(),
         })),
         narrow,
     ))
+}
+
+/// How long the daemon waits before its next sync round (docs/pairing.md Section 4.5): five minutes
+/// after one that worked, and twice the last wait after one that failed, up to an hour.
+fn next_round_wait(last: std::time::Duration, failed: bool) -> std::time::Duration {
+    const EVERY: std::time::Duration = std::time::Duration::from_secs(300);
+    const MOST: std::time::Duration = std::time::Duration::from_secs(3600);
+    if failed {
+        (last.max(EVERY) * 2).min(MOST)
+    } else {
+        EVERY
+    }
+}
+
+/// The daemon syncs on its own (docs/pairing.md Section 4.5): a round soon after it starts, then on
+/// `next_round_wait`'s timer. Each round is the `sync_*` tools' push and pull over the shared
+/// workspaces, under the same round lock, and `sync_status` reads what the last one did.
+fn spawn_sync_rounds(engine: Arc<Engine>, ctx: Arc<supragnosis_mcp::SyncContext>) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let mut wait = std::time::Duration::ZERO;
+        loop {
+            let round = supragnosis_mcp::sync_round(&engine, &ctx).await;
+            let failed = round.get("ok").and_then(|o| o.as_bool()) == Some(false);
+            if failed {
+                tracing::warn!(error = ?round.get("error"), "sync round failed");
+            } else {
+                tracing::info!(pushed = ?round.get("pushed"), applied = ?round.get("applied"), "sync round");
+            }
+            wait = next_round_wait(wait, failed);
+            tokio::time::sleep(wait).await;
+        }
+    });
 }
 
 /// The federation status loop (every 60s): pings each configured hub (an authenticated no-op that
@@ -5648,6 +5686,24 @@ mod fed {
         /// why it has no `[sync]` section - and a console that reformatted it would make operators
         /// stop trusting the console. Serializing the parsed struct back out would do exactly that,
         /// which is why this edits the document rather than the model.
+        #[test]
+        fn a_round_waits_five_minutes_and_backs_off_to_an_hour() {
+            use std::time::Duration;
+            let five = Duration::from_secs(300);
+            assert_eq!(crate::next_round_wait(Duration::ZERO, false), five);
+            assert_eq!(crate::next_round_wait(Duration::ZERO, true), Duration::from_secs(600));
+            let mut wait = Duration::ZERO;
+            for _ in 0..10 {
+                wait = crate::next_round_wait(wait, true);
+            }
+            assert_eq!(wait, Duration::from_secs(3600), "a failing hub is asked at most hourly");
+            assert_eq!(
+                crate::next_round_wait(wait, false),
+                five,
+                "one round that works resets the wait"
+            );
+        }
+
         #[test]
         fn narrowing_preserves_the_file_and_refuses_to_widen() {
             let dir = std::env::temp_dir().join(format!(

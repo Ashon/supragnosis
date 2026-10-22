@@ -334,6 +334,12 @@ answers did:
 - Merge suggestions and name variants also leave out a pair under a Blocked merge, and a pair whose
   merge the person rejected at the console, until new knowledge about one of the pair arrives.
 
+**A node with a hub syncs on its own** (pairing.md Section 4.5, step 1). A node whose `[sync]`
+names a server now runs a round - push, then pull, over `share_workspaces` - soon after it starts
+and every five minutes, backing off to an hour while it fails; before, nothing moved until a
+`sync_push` or `sync_pull` call or `supragnosis sync`. `sync_status` gains `last_round`, an added
+field. A node that should not sync on its own removes its servers from `[sync]`.
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md D15, specified). A joined machine's
 receive list, the hub's name and the vouched keys live in `~/.supragnosis/hubs/`, and a hub's
 invitations and pairing's peer records in `~/.supragnosis/hub/`, so a release before pairing still
