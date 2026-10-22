@@ -237,6 +237,18 @@
     <div id="sameActs"></div>
   </div>
 </dialog>
+<!-- Reject all blocked (design-system.md Section 29.21): each Blocked item with the check that holds it. -->
+<dialog id="blockedDlg" aria-labelledby="blockedTitle">
+  <form method="dialog" class="fchead">
+    <span class="ftitle" id="blockedTitle">Reject all blocked</span>
+    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+  </form>
+  <div class="sbody">
+    <p class="bwhy">If a check passes later, the accept it carries still merges it.</p>
+    <ul id="blockedList"></ul>
+    <div class="bacts"><button type="button" class="btn" id="blockedCancel">Cancel</button><button type="button" class="btn p" id="blockedGo">Reject all</button></div>
+  </div>
+</dialog>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
      inherits the button ink, so hover/active states color the glyph for free. -->
 <div id="hud">

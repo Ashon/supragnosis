@@ -399,3 +399,50 @@ fn same_as_and_keep_instead_hold_their_order() {
         "A accepts it anyway"
     );
 }
+
+/// Section 29.21: what waits elsewhere is read as the tray reads it and said beside the scope's one
+/// count; Reject all blocked lists each Blocked item but a recall with its check, rejects only what it
+/// listed and is still blocked, says a partial failure, and the page's keys wait while a dialog is open.
+#[test]
+fn the_person_finds_what_waits() {
+    let away = SCRIPT
+        .find("async function refreshElsewhere(force)")
+        .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
+        .expect("refreshElsewhere");
+    for part in [
+        "/api/proposals?workspace=*",
+        "/api/curation?workspace=*",
+        "document.hidden",
+        "Date.now() - waitAllAt < 30000",
+    ] {
+        assert!(
+            away.contains(part),
+            "what waits elsewhere is not read as the tray reads it: {part}"
+        );
+    }
+    let pill = function("updateReviewPill");
+    assert!(
+        pill.contains("away + \" wait elsewhere\""),
+        "the pill does not say what waits elsewhere"
+    );
+    let render = function("renderReview");
+    assert!(
+        render.contains(" more wait in other workspaces. ")
+            && render.contains("Show all workspaces")
+    );
+    assert!(function("blockedItems").contains("p.state === \"blocked\" && p.kind !== \"recall\""));
+    let go = &SCRIPT[SCRIPT
+        .find("document.getElementById(\"blockedGo\").onclick")
+        .expect("Reject all")..];
+    let go = &go[..go.find("\n};\n").expect("it closes")];
+    assert!(
+        go.contains("if (!now || now.state !== \"blocked\") continue;"),
+        "an item no longer blocked is rejected"
+    );
+    assert!(
+        go.contains("\" was\" : \" were\") + \" not:\""),
+        "a partial failure is not said"
+    );
+    assert!(PAGE.contains("<dialog id=\"blockedDlg\" aria-labelledby=\"blockedTitle\">"));
+    assert!(PAGE.contains("If a check passes later, the accept it carries still merges it."));
+}

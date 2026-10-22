@@ -1655,7 +1655,8 @@ async function loadWorkspaces() {
     const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk(defaultName(), "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
     const note = [];
     if (openedAll && (cur === "*" || cur === "all")) {
-      const n = document.createElement("div"); n.className = "wsnote"; n.textContent = "Showing all workspaces - " + defaultName() + " is empty";
+      const n = document.createElement("div"); n.className = "wsnote";
+      n.textContent = "Showing all workspaces - " + defaultName() + (openedHeld ? " holds " + openedHeld.d + " of " + openedHeld.t : " is empty");
       note.push(n);
     }
     chipBar.replaceChildren(lbl, ...chips, ...note);
@@ -1671,6 +1672,23 @@ let wsListed = null;     // the workspaces the node lists, as /api/workspaces la
 function wsUnlisted(cur) { return !!(wsListed && cur && cur !== "*" && cur !== "all" && !wsListed.includes(cur)); }
 let firstView = new URLSearchParams(location.search).get("workspace") === null;   // the address named no scope
 let openedAll = false;   // the page opened on All because the default was empty - said beside the chips
+let openedHeld = null;   // { d, t } when it opened on All because the default held at most half
+// The first view is where the knowledge is (Section 29.21): when the address names no scope, the page
+// decides once, before its first draw, from the node's entities by workspace - All when other
+// workspaces hold entities and the default holds at most half of them. Unread counts keep the default.
+async function decideFirstView() {
+  if (!firstView || currentWs() !== "") return;
+  try {
+    const r = await fetch("/api/graph?workspace=*", { cache: "no-store" });
+    if (!r.ok) return;
+    const nodesAll = (await r.json()).nodes || [];
+    const t = nodesAll.length, d = nodesAll.filter(n => n.workspace === defaultName()).length;
+    if (t > d && d * 2 <= t) {
+      firstView = false; openedAll = true; openedHeld = d ? { d, t } : null;
+      wsInput.value = "*"; renderChipsActive();
+    }
+  } catch (_) { /* unread counts keep the default */ }
+}
 async function anyEntry(ws) {
   const r = await fetch("/api/observations?limit=1" + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
   if (!r.ok) throw new Error("status " + r.status);
@@ -1894,6 +1912,7 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
     toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
     return null;
   }
+  waitAllAt = 0;   // what waits elsewhere is read again after an act (Section 29.21)
   // An action may be built once the write has landed - Undo reads its own preview (Section 29.2).
   if (typeof action === "function") action = await action();
   toast("ok", said, detail || null, action);
@@ -2243,6 +2262,32 @@ function decidedItems() {
 function segItems(seg = reviewSeg) {
   return seg === "needs" ? needsItems() : seg === "decided" ? decidedItems() : signalItems(seg);
 }
+// What waits in other workspaces (Section 29.21), on the local console: the reads the tray makes, at
+// most every 30 seconds while the page is seen and again after a console act; nothing is said about
+// elsewhere when the proposal read fails, and the proposals alone count when the curation read does.
+let waitAll = null, waitAllAt = 0;
+async function refreshElsewhere(force) {
+  if (surfaceKind !== "local" || document.hidden) return;
+  if (!force && Date.now() - waitAllAt < 30000) return;
+  waitAllAt = Date.now();
+  const cur = currentWs();
+  if (cur === "*" || cur === "all") { waitAll = null; updateReviewPill(); return; }
+  try {
+    const r = await fetch("/api/proposals?workspace=*", { cache: "no-store" });
+    if (!r.ok) { waitAll = null; updateReviewPill(); return; }
+    const list = await r.json();
+    let n = (Array.isArray(list) ? list : []).filter(p => p.state === "open" || p.state === "blocked").length;
+    try {
+      const c = await (await fetch("/api/curation?workspace=*", { cache: "no-store" })).json();
+      n += (c.secrets || []).length + (c.contradictions || []).filter(x => x.contested).length;
+    } catch (_) { /* the proposals alone count */ }
+    waitAll = n;
+  } catch (_) { waitAll = null; }
+  updateReviewPill();
+  if (reviewOpen()) renderReview();
+}
+// How many wait in the other workspaces, or 0 when unknown or none.
+function waitElsewhere() { return waitAll === null ? 0 : Math.max(0, waitAll - reviewCount()); }
 function reviewCount() {
   // Before the first curation read, the graph's own contested count stands in for the contested rows.
   return needsItems().length + (curation ? 0 : contestedCount);
@@ -2269,8 +2314,11 @@ function updateReviewPill() {
   // Always the way to Review on the local console (Section 6, U20), with one count: what waits under
   // Needs you, and how many of those are contested beliefs. Absent on a read tier (U8).
   pill.hidden = surfaceKind !== "local";
-  pill.className = "spill" + (n ? " warn" : "");
-  pill.textContent = n ? (n === 1 ? "1 needs you" : n + " need you") + (contested ? " (" + contested + " contested)" : "") : "Review";
+  const away = n ? 0 : waitElsewhere();
+  pill.className = "spill" + (n || away ? " warn" : "");
+  // One count, the scope's; with nothing here, what waits elsewhere (Section 29.21).
+  pill.textContent = n ? (n === 1 ? "1 needs you" : n + " need you") + (contested ? " (" + contested + " contested)" : "")
+    : away ? away + " wait elsewhere" : "Review";
 }
 let reviewSig = "";   // what the page last drew - a poll that changes nothing must not redraw it
 let reviewIndex = 0;  // where the selected item stood: when it leaves, the next one takes its place
@@ -2307,7 +2355,8 @@ function renderReview() {
   // Redraw only when what is shown changed: a redraw replaces the buttons under the pointer and the
   // keyboard focus, which every 2.5-second poll would otherwise take away. Each item's state is in
   // it, so a decided item leaves at the next read (Section 29.3).
-  const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(), items.map(itemSig),
+  // What waits elsewhere and the Blocked count draw lines of their own (Section 29.21).
+  const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(), items.map(itemSig), waitElsewhere(), blockedItems().length,
     ["needs", "decided", "suggestions", "health"].map(s => s === reviewSeg ? items.length : segItems(s).length),
     reviewView && [reviewView.id, (reviewView.checks || []).length], undoView && [undoView.id, undoView.state],
     reviewEvidence && [reviewEvidence.id, reviewEvidence.cols.map(c => c.list.length), !!reviewEvidence.opened]]);
@@ -2340,12 +2389,18 @@ function renderReview() {
   const hadFocus = reviewFocus || !!(document.activeElement && document.activeElement.closest
     && document.activeElement.closest("#rvList, #rvDetail [data-decide], #rvDetail [data-skip], #rvDetail [data-settle], #rvDetail [data-undo]"));
   const all = currentWs() === "*" || currentWs() === "all";
-  const empty = { needs: all ? "Nothing waits for you in any workspace." : "Nothing waits for you in this workspace.",
+  const away = all || reviewSeg !== "needs" ? 0 : waitElsewhere();
+  const empty = { needs: all ? "Nothing waits for you in any workspace." : "Nothing waits for you in this workspace." + (away ? " " + away + " wait in other workspaces." : ""),
     decided: "Nothing decided here yet.", suggestions: "No suggestions here.", health: "Nothing to report here." }[reviewSeg];
-  list.innerHTML = html`${signalHint(reviewSeg)}${items.length
+  const blocked = reviewSeg === "needs" && surfaceKind === "local" ? blockedItems() : [];
+  const head = html`${away && items.length ? html`<div class="rv-else">${away} more wait in other workspaces. <button type="button" class="linkish" data-allws="1">Show all workspaces</button></div>` : ""}${
+    blocked.length >= 2 ? html`<div class="rv-else">${blocked.length} were accepted, but a check holds each back. <button type="button" class="linkish" data-blocked="1">Reject all blocked</button></div>` : ""}`;
+  list.innerHTML = html`${signalHint(reviewSeg)}${head}${items.length
     ? items.map(it => html`<button type="button" class="rv-item${it.key === reviewSel ? " on" : ""}" data-key="${it.key}">${itemTag(it)}<span class="rv-t">${itemTitle(it)}</span></button>`)
-    : html`<div class="empty">${empty}</div>`}`;
+    : html`<div class="empty">${empty}${away ? html` <button type="button" class="linkish" data-allws="1">Show all workspaces</button>` : ""}</div>`}`;
   list.querySelectorAll(".rv-item").forEach(b => { b.onclick = () => { reviewSel = b.dataset.key; renderReview(); }; });
+  list.querySelectorAll("[data-allws]").forEach(b => { b.onclick = () => showAllForReview(); });
+  list.querySelectorAll("[data-blocked]").forEach(b => { b.onclick = () => openBlocked(); });
   // Kept until a row takes it: the first draw can come before the proposals have been read.
   if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) { on.focus(); reviewFocus = false; } }
   const it = items.find(x => x.key === reviewSel);
@@ -2611,6 +2666,58 @@ async function proposeSplit(p) {
 }
 // One decision on one item (U4). It runs only when the item's view - its diff and checks - is the
 // one on screen, never for a blocked merge, and a recall asks twice; there is no decide-all.
+// Show all workspaces from Review (Section 29.21): the scope turns to All, Review stays open, and focus
+// goes to the selected row.
+function showAllForReview() {
+  wsInput.value = "*"; beginWorkspaceTransition(); renderChipsActive(); syncUrlWorkspace(); poll();
+  reviewFocus = true; refreshProposals(); refreshCuration();
+}
+// The Blocked items Reject all blocked takes: accepted, held by a failing check; a recall is left out,
+// its verdict being a person's direct act on that one item (I17, Section 29.21).
+function blockedItems() { return proposals.filter(p => p.state === "blocked" && p.kind !== "recall"); }
+const blockedDlg = document.getElementById("blockedDlg");
+let blockedListed = [];
+async function openBlocked() {
+  blockedListed = blockedItems().map(p => ({ p, why: null, ok: false }));
+  const ul = document.getElementById("blockedList");
+  const draw = () => {
+    ul.innerHTML = html`${blockedListed.map(b => html`<li>${proposalTitle(b.p)}<span class="why">${b.why === null ? "reading its checks..." : b.why}</span></li>`)}`;
+    document.getElementById("blockedGo").textContent = "Reject all " + blockedListed.filter(b => b.ok).length;
+  };
+  draw();
+  if (!blockedDlg.open) blockedDlg.showModal();
+  document.getElementById("blockedCancel").focus();
+  for (const b of blockedListed) {
+    try {
+      const r = await fetch("/api/proposal?id=" + encodeURIComponent(b.p.id) + (b.p.workspace ? "&workspace=" + encodeURIComponent(b.p.workspace) : ""), { cache: "no-store" });
+      const v = r.ok ? await r.json() : null;
+      const failing = v && v.checks ? v.checks.filter(c => c.blocking && !c.passed) : null;
+      if (failing && failing.length) { b.why = failing.map(c => checkSaid(b.p, c)).join("; "); b.ok = true; }
+      else b.why = "its checks could not be read - left out";
+    } catch (_) { b.why = "its checks could not be read - left out"; }
+    draw();
+  }
+}
+document.getElementById("blockedCancel").onclick = () => blockedDlg.close();
+blockedDlg.addEventListener("close", () => { const b = document.querySelector("[data-blocked]"); if (b) b.focus(); });
+document.getElementById("blockedGo").onclick = async () => {
+  const take = blockedListed.filter(b => b.ok);
+  await refreshProposals();
+  let done = 0; const failed = [];
+  for (const b of take) {
+    const now = proposals.find(p => p.id === b.p.id);
+    if (!now || now.state !== "blocked") continue;   // its state changed meanwhile - left out
+    const w = now.workspace ? "&workspace=" + encodeURIComponent(now.workspace) : "";
+    const r = await consoleWrite("/api/review", "?proposal=" + encodeURIComponent(now.id) + "&decision=reject" + w, null, null, null, true);
+    if (r.ok) done++; else failed.push(r.why);
+  }
+  blockedDlg.close();
+  if (failed.length) toast("bad", "Rejected " + done + " of " + (done + failed.length) + ". " + failed.length + (failed.length === 1 ? " was" : " were") + " not:", failed[0]);
+  else toast("ok", "Rejected " + done + " blocked " + (done === 1 ? "item." : "items."));
+  reviewFocus = true;
+  await refreshProposals();
+  refreshElsewhere(true);
+};
 // Keep ... instead (Section 29.17): an entity merge of two, the one it would fold away, and its name.
 function keepPair(p) {
   if (!p || p.kind !== "entity_merge" || !p.into) return null;
@@ -2702,7 +2809,7 @@ function openReviewAt(ws) {
 // Opening the page puts focus on the selected row, so the keys act from the first press (U19).
 window.addEventListener("hashchange", () => { recallArmed = null; if (reviewOpen()) reviewFocus = true; renderPlace(); renderReview(); if (reviewOpen()) refreshCuration(); refreshStrip(); requestFrame(); });
 window.addEventListener("keydown", e => {
-  if (!reviewOpen()) return;
+  if (!reviewOpen() || dialogOpen()) return;   // a dialog over Review takes the keys (Section 29.21)
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape") { location.hash = ""; return; }   // Escape closes from anywhere
@@ -2901,6 +3008,7 @@ function selectProposal(p) {
 
 // Read on every poll, page open or not: the review count in the status bar is made of these.
 async function refreshProposals() {
+  refreshElsewhere(false);
   const ws = wsInput.value.trim();
   try {
     const r = await fetch("/api/proposals" + (ws ? "?workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
@@ -6997,6 +7105,6 @@ document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; loc
   const qws = new URLSearchParams(location.search).get("workspace");
   if (qws !== null) wsInput.value = qws;
 }
-resize(); syncSearchScope(); loadWorkspaces(); loadSurface().finally(poll); connectEvents(); detectServerMode();
+resize(); syncSearchScope(); loadWorkspaces(); loadSurface().then(decideFirstView).finally(poll); connectEvents(); detectServerMode();
 setInterval(poll, 2500); setInterval(loadWorkspaces, 5000); setInterval(refreshPeerRoster, 5000); draw();
 loadSurface().then(() => { refreshSyncPill(); renderReview(); syncSearchScope(); loadWorkspaces(); renderStats(); }); setInterval(refreshSyncPill, 5000);

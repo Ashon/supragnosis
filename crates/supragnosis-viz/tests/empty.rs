@@ -126,5 +126,8 @@ fn the_default_is_called_by_its_name() {
     assert!(function("syncSearchScope").contains("\"Search \" + defaultName()"));
     let chips = function("loadWorkspaces");
     assert!(chips.contains("mk(defaultName(), \"\")"));
-    assert!(chips.contains("\"Showing all workspaces - \" + defaultName() + \" is empty\""));
+    // By its name, saying how much it holds when it is not empty (Section 29.21).
+    assert!(chips.contains(
+        "\"Showing all workspaces - \" + defaultName() + (openedHeld ? \" holds \" + openedHeld.d + \" of \" + openedHeld.t : \" is empty\")"
+    ));
 }
