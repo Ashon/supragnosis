@@ -5601,20 +5601,20 @@ fn launchd_uninstall() -> Result<()> {
         wait_until_released(daemon_store_path(|k| std::env::var(k).ok()).as_deref());
         println!("stopped {}", lifecycle::CANONICAL_LABEL);
     }
-    match state {
-        "generated" => {
+    match lifecycle::uninstall_file_step(state) {
+        lifecycle::FileStep::Remove => {
             std::fs::remove_file(&plist)
                 .with_context(|| format!("failed to remove {}", plist.display()))?;
             println!("removed {} - the daemon no longer starts at login", plist.display());
         }
-        "hand_written" => {
+        lifecycle::FileStep::MoveAside => {
             let to = move_aside(&plist, lifecycle::CANONICAL_LABEL)?;
             println!(
                 "moved the hand-written plist aside ({}) - the daemon no longer starts at login",
                 to.display()
             );
         }
-        _ => println!("no canonical job is installed"),
+        lifecycle::FileStep::Nothing => println!("no canonical job is installed"),
     }
     let rest: Vec<String> = observed
         .jobs
@@ -5829,14 +5829,14 @@ fn systemd_uninstall() -> Result<()> {
         wait_until_released(daemon_store_path(|k| std::env::var(k).ok()).as_deref());
         println!("stopped and disabled {}", lifecycle::CANONICAL_UNIT);
     }
-    match state {
-        "generated" => {
+    match lifecycle::uninstall_file_step(state) {
+        lifecycle::FileStep::Remove => {
             std::fs::remove_file(&unit)
                 .with_context(|| format!("failed to remove {}", unit.display()))?;
             let _ = systemctl_user(&["daemon-reload"]);
             println!("removed {} - the daemon no longer starts at login", unit.display());
         }
-        "hand_written" => {
+        lifecycle::FileStep::MoveAside => {
             let to = move_file_aside(&unit, lifecycle::moved_aside_unit_path(&home, unix_secs()))?;
             let _ = systemctl_user(&["daemon-reload"]);
             println!(
@@ -5844,7 +5844,7 @@ fn systemd_uninstall() -> Result<()> {
                 to.display()
             );
         }
-        _ => println!("no canonical unit is installed"),
+        lifecycle::FileStep::Nothing => println!("no canonical unit is installed"),
     }
     let rest: Vec<String> = observed
         .units
@@ -6825,6 +6825,75 @@ mod legacy_store_guard_tests {
 /// must have the same keys at every level and the same kind of value wherever both hold one. A
 /// field this side renames or drops fails here; a field the app reads that the example lacks fails
 /// on the app's side.
+#[cfg(all(test, unix))]
+mod service_files {
+    use super::*;
+
+    /// L5: the operator's file is theirs - nothing deletes a plist or a unit the product did not
+    /// write. Uninstall removes only the file it generated and moves one a person wrote aside; the
+    /// move is a rename that keeps every byte at the timestamped path, under a directory it makes,
+    /// and one that cannot be made leaves the file where it was. Every service command's file step
+    /// goes through these: a removal appears only in uninstall's arm for the generated file.
+    #[test]
+    fn an_operators_file_is_moved_aside_never_deleted() {
+        use lifecycle::{uninstall_file_step, FileStep};
+        assert_eq!(uninstall_file_step("generated"), FileStep::Remove);
+        assert_eq!(uninstall_file_step("hand_written"), FileStep::MoveAside);
+        assert_eq!(uninstall_file_step("absent"), FileStep::Nothing);
+
+        let home = std::env::temp_dir().join(format!("sg-move-aside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let agents = home.join("Library/LaunchAgents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let plist = agents.join("com.supragnosis.daemon.plist");
+        std::fs::write(&plist, "<plist>the operator's own</plist>").unwrap();
+        let dst =
+            lifecycle::moved_aside_path(home.to_str().unwrap(), lifecycle::CANONICAL_LABEL, 7);
+        assert_eq!(move_file_aside(&plist, dst.clone()).unwrap(), dst);
+        assert!(!plist.exists(), "out of LaunchAgents, so launchd stops loading it");
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "<plist>the operator's own</plist>");
+
+        let unit = home.join(".config/systemd/user/supragnosis.service");
+        std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
+        std::fs::write(&unit, "[Service]\n").unwrap();
+        // The place for the copy is taken by a file, so its directory cannot be made.
+        std::fs::write(home.join(".supragnosis/systemd"), "").unwrap();
+        let blocked = lifecycle::moved_aside_unit_path(home.to_str().unwrap(), 7);
+        assert!(move_file_aside(&unit, blocked).is_err());
+        assert_eq!(std::fs::read_to_string(&unit).unwrap(), "[Service]\n", "left where it was");
+        let _ = std::fs::remove_dir_all(&home);
+
+        // Each function's working body, not a stub for another system: the real ones open with a
+        // `use` or take their arguments.
+        let main = include_str!("main.rs");
+        let body = |head: &str| {
+            let at = main.find(head).unwrap_or_else(|| panic!("no {head}"));
+            let rest = &main[at..];
+            &rest[..rest.find("\n}\n").expect("it closes")]
+        };
+        for uninstall in [
+            "fn launchd_uninstall() -> Result<()> {\n    use",
+            "fn systemd_uninstall() -> Result<()> {\n    use",
+        ] {
+            let b = body(uninstall);
+            let remove = b.find("FileStep::Remove =>").expect("the generated arm");
+            let aside = b.find("FileStep::MoveAside =>").expect("the hand-written arm");
+            assert_eq!(b.matches("remove_file(").count(), 1, "{uninstall}: one removal");
+            let removal = b.find("remove_file(").unwrap();
+            assert!(remove < removal && removal < aside, "{uninstall}: only of the generated file");
+            assert!(
+                b[aside..].contains("move_"),
+                "{uninstall}: the hand-written one is moved aside"
+            );
+        }
+        for install in ["fn launchd_install(args", "fn systemd_install(args"] {
+            let b = body(install);
+            assert!(b.contains("move_"), "{install} moves a hand-written file aside");
+            assert!(!b.contains("remove_file("), "{install} removes no file");
+        }
+    }
+}
+
 #[cfg(test)]
 mod json_contract {
     use super::*;
