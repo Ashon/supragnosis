@@ -2143,12 +2143,7 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
             "i16_merge_absorbs_over_conflicting_reject_in_any_order",
           ])),
         c("the rejected assertion keeps its original tier",
-          Evidence::Deferred(
-            "`gate_grants` skips every non-merge verdict, so a reject grants and demotes nothing, but \
-             no case reads a target's effective tier across a reject. Revisit when the reject path \
-             grows its first effect (the Section 13 resubmission cooldown), which is when a case can \
-             catch it doing more than recording",
-          )),
+          Evidence::Scenario(&["p23_a_rejected_tier_change_keeps_the_tier"])),
     ]),
     (6, &[
         c("a merge appends a verdict; the assertion is neither copied nor modified",
