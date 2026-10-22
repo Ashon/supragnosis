@@ -1117,6 +1117,16 @@ impl supragnosis_core::KnowledgeStore for InterposedStore {
     fn clear_owed(&self, ids: &[String]) -> Result<(), supragnosis_core::StoreError> {
         self.inner.clear_owed(ids)
     }
+    fn commit_projected(
+        &self,
+        obs: supragnosis_core::Observation,
+        entities: Vec<supragnosis_core::Entity>,
+        relations: Vec<supragnosis_core::Relation>,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        // A refusal fails the whole commit, as one transaction would.
+        self.refuse()?;
+        self.inner.commit_projected(obs, entities, relations)
+    }
     fn attach_observation_embeddings(
         &self,
         vectors: &[(String, Vec<f32>)],
@@ -4020,12 +4030,12 @@ fn an_append_whose_projection_never_ran_is_projected_at_the_next_open() {
     assert_eq!(reopened.last_recovery(), Some(recovery), "the recovery stays reportable (K5)");
 }
 
-/// guard (crash-recovery.md K2/K3): a projection write that fails leaves the entry for the next
-/// open. With the store refusing projection writes - a full disk - an observe's append still
-/// commits and the write returns the error; its ledger entry stays, as it does through a reproject
-/// that fails the same way. The next engine to open the healthy store repays it.
+/// guard (crash-recovery.md Section 3a, K4): an engine write whose commit fails leaves nothing
+/// written. With the store refusing writes - a full disk - an observe and a define_type each return
+/// the error, and the log, the graph and the ledger are as they were: there is nothing for the next
+/// open to repay, because nothing landed.
 #[test]
-fn a_projection_write_that_fails_leaves_its_entry() {
+fn an_engine_write_that_fails_leaves_nothing_written() {
     let inner = Arc::new(InMemoryStore::new());
     let store = Arc::new(InterposedStore { inner: inner.clone(), ..Default::default() });
     let engine = Engine::new(store.clone(), "host-a", WS);
@@ -4042,31 +4052,248 @@ fn a_projection_write_that_fails_leaves_its_entry() {
             kind: Some("Service".into()),
             description: None,
         }],
-        relations: vec![],
+        relations: vec![RelationInput {
+            from: "alpha".into(),
+            kind: "depends_on".into(),
+            to: "beta".into(),
+            description: None,
+            valid_from: None,
+            valid_to: None,
+        }],
     });
     let Err(failed) = failed else {
-        panic!("the projection write failed, and the observe says so")
+        panic!("the commit failed, and the observe says so")
     };
-    let said = failed.to_string();
-    assert!(said.contains("no space left on device"), "{said}");
+    assert!(failed.to_string().contains("no space left on device"), "{failed}");
+    let defined = engine.define_type(DefineTypeInput {
+        workspace: None,
+        defs: vec![TypeDefInput {
+            target: TypeTarget::Entity,
+            name: "Service".into(),
+            description: "a process that answers requests".into(),
+        }],
+        source_ref: None,
+        on_behalf_of: None,
+    });
+    assert!(defined.is_err(), "a define_type that cannot commit says so");
+
+    assert!(inner.all_observations(None).unwrap().is_empty(), "no row landed");
+    assert!(inner.all_entities(None).unwrap().is_empty(), "no entity landed");
+    assert!(inner.all_relations(None).unwrap().is_empty(), "no relation landed");
+    assert_eq!(engine.owed_count().unwrap(), 0, "and nothing is owed");
+}
+
+/// guard (crash-recovery.md K2/K4): a reproject whose write fails leaves the entry for the next
+/// open. An append projected after the fact - the way a sync apply writes, through the log alone -
+/// owes its projection; with the store refusing projection writes, the reproject that would repay it
+/// says it failed and clears nothing. The next engine to open the healthy store repays it.
+#[test]
+fn a_reproject_that_fails_leaves_its_entry() {
+    let inner = Arc::new(InMemoryStore::new());
+    let store = Arc::new(InterposedStore { inner: inner.clone(), ..Default::default() });
+    let engine = Engine::new(store.clone(), "host-a", WS);
+    engine
+        .store()
+        .add_observation(kind_obs("alpha", "Service", 100))
+        .expect("append");
+    assert_eq!(engine.owed_count().unwrap(), 1, "the append owes its projection");
+    store.failing.store(true, std::sync::atomic::Ordering::SeqCst);
+    let Err(failed) = engine.reproject(Some(WS)) else {
+        panic!("a reproject that cannot write says so")
+    };
+    assert!(failed.to_string().contains("no space left on device"), "{failed}");
     let alpha = Entity::make_id(WS, "alpha");
-    assert_eq!(inner.all_observations(Some(WS)).unwrap().len(), 1, "the append committed");
     assert!(inner.get_entity(&alpha).unwrap().is_none(), "nothing was projected");
     assert_eq!(engine.owed_count().unwrap(), 1, "the entry stays");
-    assert!(engine.reproject(Some(WS)).is_err(), "a reproject that cannot write says so");
-    assert_eq!(engine.owed_count().unwrap(), 1, "and leaves the entry too");
 
     store.failing.store(false, std::sync::atomic::Ordering::SeqCst);
     let reopened = Engine::new(inner.clone(), "host-a", WS);
-    reopened.repay_owed().expect("repay").expect("the failed write was owed");
+    reopened
+        .repay_owed()
+        .expect("repay")
+        .expect("the failed reproject left it owed");
     assert!(inner.get_entity(&alpha).unwrap().is_some(), "projected at the next open");
     assert_eq!(reopened.owed_count().unwrap(), 0);
 }
 
-/// guard (crash-recovery.md K2): every engine write that completes leaves nothing owed - observe
-/// once its projection is written, define_type, propose and review at once, since nothing
-/// materialized waits on them. That is what makes a non-zero ledger on a running node mean one
-/// thing: a projection that failed after its append.
+/// guard (crash-recovery.md Section 3a, K2): an engine write clears no entry, so a sync apply's
+/// re-arrival of the very observation an observe writes keeps its entry until a reproject repays
+/// it - the clear by id that once covered both is gone. The observe folds its projection from the
+/// row as the log holds it after the absorb, so the entity it writes carries both attestations and
+/// equals the row a fresh replay writes (IR3).
+#[test]
+fn an_engine_write_leaves_a_re_arrivals_entry() {
+    let input = || ObserveInput {
+        content: "alpha depends on beta".into(),
+        workspace: None,
+        source_ref: None,
+        confidence: None,
+        on_behalf_of: None,
+        derived_from: vec![],
+        entities: vec![EntityInput {
+            name: "alpha".into(),
+            kind: Some("Service".into()),
+            description: None,
+        }],
+        relations: vec![RelationInput {
+            from: "alpha".into(),
+            kind: "depends_on".into(),
+            to: "beta".into(),
+            description: None,
+            valid_from: None,
+            valid_to: None,
+        }],
+    };
+    // The same content observed on another node, delivered here as an apply delivers it.
+    let elsewhere = Engine::new(Arc::new(InMemoryStore::new()), "host-b", WS);
+    let id = elsewhere.observe(input()).expect("observe elsewhere").observation_id;
+    let row = elsewhere.store().get_observation(&id).unwrap().expect("the row");
+    let (store, engine) = engine();
+    engine.store().add_observation(row).expect("the apply");
+
+    let observed = engine.observe(input()).expect("observe here");
+    assert_eq!(observed.observation_id, id, "one content address");
+    assert_eq!(
+        store.owed_projections().unwrap(),
+        vec![(id.clone(), WS.to_string())],
+        "the apply's entry stays for the reproject that repays it"
+    );
+    let alpha = Entity::make_id(WS, "alpha");
+    let incremental = store.get_entity(&alpha).unwrap().expect("projected by the observe");
+    assert_eq!(
+        incremental.provenance.len(),
+        2,
+        "the row as the log holds it: both attestations"
+    );
+    let edge = &observed.relations[0];
+    let edge_row = |s: &InMemoryStore| {
+        s.all_relations(Some(WS))
+            .unwrap()
+            .into_iter()
+            .find(|r| &r.id == edge)
+            .expect("the edge")
+    };
+    assert_eq!(edge_row(&store).attestations.len(), 2, "the edge's support counts both");
+
+    let edge_before = serde_json::to_value(edge_row(&store)).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    assert_eq!(
+        serde_json::to_value(store.get_entity(&alpha).unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&incremental).unwrap(),
+        "the observe wrote the row a replay writes"
+    );
+    assert_eq!(serde_json::to_value(edge_row(&store)).unwrap(), edge_before);
+    assert_eq!(engine.owed_count().unwrap(), 0, "the reproject repaid it");
+}
+
+/// guard (crash-recovery.md Section 3a, IR3): an observe folds its projection from the whole log
+/// its commit leaves - the gates included. A console-merged promotion of the observation, synced in
+/// before the observation itself, is blocked until its target arrives; the observe that brings the
+/// target in must read it as merged, as a replay does, or the entity it writes takes a newer
+/// agent-tier kind over the promoted one, and with nothing owed the row stays wrong.
+#[test]
+fn an_observe_folds_the_gate_that_names_its_row() {
+    use supragnosis_core::{ProposalEventAssertion, ProposalEventKind, VERDICT_SURFACE_CONSOLE};
+    let (store, engine) = engine();
+    let attested = |host: &str, at: u64, source_ref: Option<&str>| Provenance {
+        host: host.into(),
+        on_behalf_of: None,
+        workspace: WS.into(),
+        source_ref: source_ref.map(String::from),
+        observed_at: at,
+        confidence: None,
+        trust_tier: TrustTier::default(),
+        sync: None,
+    };
+    let says = |kind: &str| Assertions {
+        entities: vec![EntityAssertion {
+            name: "alpha".into(),
+            kind: Some(kind.into()),
+            description: None,
+        }],
+        ..Default::default()
+    };
+    // A newer agent-tier kind, and a promotion of the row yet to arrive, merged at a console - all
+    // delivered the way an apply delivers them.
+    let newer = Observation::with_assertions(
+        "alpha is a library".into(),
+        attested("host-c", 9_999_999_999_999, None),
+        says("Library"),
+    );
+    store.add_observation(newer).unwrap();
+    let target =
+        supragnosis_core::observation_content_id(WS, "alpha is a service", &says("Service"));
+    let payload = serde_json::json!({
+        "kind": "claim_promotion", "targets": [target], "into": null,
+        "tier": "human_confirmed", "rationale": "the person checked it", "affected_types": [],
+    });
+    let opened = Observation::with_assertions(
+        "proposal(open)".into(),
+        attested("host-b", 1_000, None),
+        Assertions {
+            proposal_events: vec![ProposalEventAssertion {
+                proposal: String::new(),
+                event: ProposalEventKind::Opened,
+                payload: payload.to_string(),
+            }],
+            ..Default::default()
+        },
+    );
+    let proposal = opened.id.clone();
+    store.add_observation(opened).unwrap();
+    store
+        .add_observation(Observation::with_assertions(
+            format!("proposal(merge) {proposal}"),
+            attested("host-b", 2_000, Some(VERDICT_SURFACE_CONSOLE)),
+            Assertions {
+                proposal_events: vec![ProposalEventAssertion {
+                    proposal: proposal.clone(),
+                    event: ProposalEventKind::Verdict,
+                    payload: r#"{"decision":"merge"}"#.into(),
+                }],
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    engine.reproject(Some(WS)).unwrap();
+    assert_eq!(engine.get_proposal(None, &proposal).unwrap().unwrap().state, "blocked");
+
+    let observed = engine
+        .observe(ObserveInput {
+            content: "alpha is a service".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "alpha".into(),
+                kind: Some("Service".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe");
+    assert_eq!(observed.observation_id, target, "the promotion's target");
+    assert_eq!(engine.get_proposal(None, &proposal).unwrap().unwrap().state, "merged");
+    let alpha = Entity::make_id(WS, "alpha");
+    let incremental = store.get_entity(&alpha).unwrap().expect("projected by the observe");
+    assert_eq!(
+        incremental.kind, "Service",
+        "the promoted kind outranks the newer agent-tier one"
+    );
+    engine.reproject(Some(WS)).unwrap();
+    assert_eq!(
+        serde_json::to_value(store.get_entity(&alpha).unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&incremental).unwrap(),
+        "the observe wrote the row a replay writes"
+    );
+}
+
+/// guard (crash-recovery.md Section 3a, K2): every engine write that completes leaves nothing owed -
+/// observe, define_type, propose and review commit their row with its projection and record no
+/// entry. That is what makes a non-zero ledger on a running node mean one thing: an append projected
+/// after the fact that has not been re-materialized.
 #[test]
 fn a_completed_write_owes_nothing() {
     let (_store, engine) = engine();

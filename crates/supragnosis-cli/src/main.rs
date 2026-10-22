@@ -5258,7 +5258,7 @@ fn status(json: bool) -> Result<()> {
         let owed = h["owed_projections"].as_u64().unwrap_or(0);
         if owed > 0 {
             println!(
-                "  store   {owed} observation(s) not yet projected - a write failed after its append; the log has them, and `supragnosis restart` re-projects them"
+                "  store   {owed} observation(s) not yet projected - a sync, a backfill or a re-key has not re-materialized them; the log has them, and `supragnosis restart` re-projects them"
             );
         }
         if let Some(r) = h["last_recovery"].as_object() {

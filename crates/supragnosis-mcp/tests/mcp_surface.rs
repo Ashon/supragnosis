@@ -1866,6 +1866,14 @@ impl supragnosis_core::KnowledgeStore for SlowStore {
     fn clear_owed(&self, ids: &[String]) -> Result<(), supragnosis_core::StoreError> {
         self.inner.clear_owed(ids)
     }
+    fn commit_projected(
+        &self,
+        obs: supragnosis_core::Observation,
+        entities: Vec<supragnosis_core::Entity>,
+        relations: Vec<supragnosis_core::Relation>,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.commit_projected(obs, entities, relations)
+    }
     fn attach_observation_embeddings(
         &self,
         vectors: &[(String, Vec<f32>)],

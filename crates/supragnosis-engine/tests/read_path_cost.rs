@@ -181,6 +181,14 @@ impl KnowledgeStore for CountingStore {
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
         self.inner.clear_owed(ids)
     }
+    fn commit_projected(
+        &self,
+        obs: Observation,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError> {
+        self.inner.commit_projected(obs, entities, relations)
+    }
     fn record_attestation_app(&self, key: &str, app: &str) -> Result<(), StoreError> {
         self.inner.record_attestation_app(key, app)
     }
@@ -595,6 +603,14 @@ impl KnowledgeStore for ReversedStore {
     }
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
         self.0.clear_owed(ids)
+    }
+    fn commit_projected(
+        &self,
+        obs: Observation,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError> {
+        self.0.commit_projected(obs, entities, relations)
     }
     fn attach_observation_embeddings(
         &self,

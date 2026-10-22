@@ -1283,6 +1283,31 @@ struct ReadCtx {
     /// would answer a `Some("a")` read with rows loaded for `None`, which is not slower - it is
     /// wrong. No call path mixes scopes today; this is here so that adding one cannot be silent.
     observations: std::cell::OnceCell<(u64, Option<String>, Vec<Observation>)>,
+    /// A row a writer is about to commit, read as if the log held it (crash-recovery.md Section
+    /// 3a): it stands in for the stored row of its id, or joins the log. Every fold of the read sees
+    /// it - the entity fold, the gate grants that fold applies, the blocking checks those consult -
+    /// so none of them reads a log the commit will not leave. None for every other read.
+    overlay: Option<Observation>,
+}
+
+impl ReadCtx {
+    /// A read of the log as it will be once `row` - already absorbed onto any stored row of its id -
+    /// is committed.
+    fn over(row: Observation) -> Self {
+        Self { overlay: Some(row), ..Self::default() }
+    }
+
+    /// The row of `id` this read holds: the overlay when it is that row, else the store's.
+    fn held(
+        &self,
+        store: &dyn KnowledgeStore,
+        id: &str,
+    ) -> Result<Option<Observation>, StoreError> {
+        match self.overlay.as_ref().filter(|o| o.id == id) {
+            Some(row) => Ok(Some(row.clone())),
+            None => store.get_observation(id),
+        }
+    }
 }
 
 /// The result of [`Engine::belief_fold`]: per canonical entity id, the kind candidates and the
@@ -2026,14 +2051,11 @@ impl Engine {
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
-        self.store.add_observation(obs)?;
-        self.note_app(app_key.as_deref());
-        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        // Resolution write path (resolution-identity.md Section 4): the observation is in the log,
-        // so (re)project exactly the entities it touched - the same fold reproject runs, so the
-        // incremental row equals a fresh replay's (IR3). Relations then project directly (their id
-        // is deterministic and description/valid-interval are last-write, matching reproject).
+        // Resolution write path (resolution-identity.md Section 4): (re)project exactly the entities
+        // the observation touches - the same fold reproject runs, so the incremental row equals a
+        // fresh replay's (IR3). Relations project the same way (their id is deterministic and
+        // description/valid-interval are last-write, matching reproject).
         let entity_ids: Vec<String> =
             input.entities.iter().map(|e| Entity::make_id(&workspace, &e.name)).collect();
         let mut touched: HashSet<String> = entity_ids.iter().cloned().collect();
@@ -2041,12 +2063,6 @@ impl Engine {
             touched.insert(Entity::make_id(&workspace, &r.from));
             touched.insert(Entity::make_id(&workspace, &r.to));
         }
-        // Created here, after the append: a read context is a snapshot, so one taken before the
-        // write would hand the projection a log that does not contain the observation it is
-        // projecting. Scoping it to the read is what keeps that unrepresentable.
-        let cx = &ReadCtx::default();
-        self.project_entities(&workspace, Some(&touched), cx, &HashMap::new())?;
-
         // The edge ids this call asserted. Derived from the input rather than from the projection,
         // because the two answer different questions: this is "what did this observe name", while the
         // projection decides what each of those edges now looks like given the whole log.
@@ -2062,10 +2078,28 @@ impl Engine {
             })
             .collect();
         let touched_edges: HashSet<String> = relations.iter().cloned().collect();
-        self.project_relations(&workspace, Some(&touched_edges))?;
-        // K2: the projection this append owed is written. Not before - an error above returns with
-        // the entry still in the ledger, which is what lets the next open repay it.
-        self.repaid(&observation_id);
+
+        // The row and its projection commit in one transaction (crash-recovery.md Section 3a), so
+        // the projection is folded from the log as it will read with the row in it: the stored row
+        // of this id, absorbed with the new attestation, or the new row when there is none. The read
+        // context carries it to every fold, the gate grants included - a merged promotion of this
+        // very row, synced in before it, applies once the row is here, as a replay applies it.
+        let row = match self.store.get_observation(&obs.id)? {
+            Some(mut stored) => {
+                stored.absorb(obs.clone());
+                stored
+            }
+            None => obs.clone(),
+        };
+        let cx = &ReadCtx::over(row);
+        let entities =
+            self.materialize_entities(&workspace, Some(&touched), cx, &HashMap::new())?;
+        let edges = self.relation_rows(&workspace, Some(&touched_edges), cx.overlay.as_ref())?;
+        // Nothing is owed: the row lands with its projection or not at all (K1), and no entry the
+        // ledger already holds for this id - a sync apply of the same content - is cleared (K2).
+        self.store.commit_projected(obs, entities, edges)?;
+        self.note_app(app_key.as_deref());
+        self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         Ok(ObserveOutput { observation_id, entities: entity_ids, relations })
     }
@@ -2147,12 +2181,11 @@ impl Engine {
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
-        self.store.add_observation(obs)?;
+        // The glossary is a read-time fold; nothing materialized depends on this row, so it commits
+        // whole with no projection (crash-recovery.md Section 3a).
+        self.store.commit_projected(obs, Vec::new(), Vec::new())?;
         self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // The glossary is a read-time fold; nothing materialized depends on this row, so the append
-        // owes no projection beyond itself (K2).
-        self.repaid(&observation_id);
         Ok(observation_id)
     }
 
@@ -3053,11 +3086,11 @@ impl Engine {
         let found = found.is_some();
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
-        self.store.add_observation(obs)?;
+        // Proposal state is a read-time fold over the log; no materialized row waits on it, so the
+        // row commits whole with no projection (crash-recovery.md Section 3a).
+        self.store.commit_projected(obs, Vec::new(), Vec::new())?;
         self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
-        self.repaid(&id);
         Ok(Proposed { id, state, found })
     }
 
@@ -3278,7 +3311,7 @@ impl Engine {
                 .filter(|p| p.kind == "entity_merge" && carries_merge_verdict(p))
                 .map(|p| p.id.clone())
                 .collect();
-            let failures = self.blocking_failures(view, &asserted, &decided)?;
+            let failures = self.blocking_failures(view, &asserted, &decided, cx)?;
             if !failures.is_empty() {
                 return Err(ObserveError::Invalid(format!(
                     "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
@@ -3301,11 +3334,11 @@ impl Engine {
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
-        self.store.add_observation(obs)?;
+        // Proposal state is a read-time fold over the log; no materialized row waits on it, so the
+        // row commits whole with no projection (crash-recovery.md Section 3a).
+        self.store.commit_projected(obs, Vec::new(), Vec::new())?;
         self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // Proposal state is a read-time fold over the log; no materialized row waits on it (K2).
-        self.repaid(&id);
         Ok(id)
     }
 
@@ -3331,9 +3364,11 @@ impl Engine {
             // tested, and the panic would be the only thing anyone learned about the case. The
             // handling is the answer; the cost is one extra read, and the guard for it is
             // `a_read_context_reuses_rows_only_while_that_changes_nothing`.
-            return Ok(std::borrow::Cow::Owned(self.observations(workspace)?));
+            return Ok(std::borrow::Cow::Owned(
+                self.observations_over(workspace, cx.overlay.as_ref())?,
+            ));
         }
-        let loaded = self.observations(workspace)?;
+        let loaded = self.observations_over(workspace, cx.overlay.as_ref())?;
         let (_, _, rows) =
             cx.observations.get_or_init(|| (epoch, workspace.map(str::to_string), loaded));
         Ok(std::borrow::Cow::Borrowed(rows))
@@ -3368,7 +3403,25 @@ impl Engine {
     /// Nothing is deleted (Principle 3). The predecessor stays in the store and stays
     /// dereferenceable by its id; the successor's `derived_from` is the record of the re-keying.
     fn observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
-        let rows = self.store.all_observations(workspace)?;
+        self.observations_over(workspace, None)
+    }
+
+    /// [`Engine::observations`] as it will read once `overlay` is in the log: the row a writer is
+    /// about to commit stands in for the stored row of its id, or joins the log when there is none
+    /// (crash-recovery.md Section 3a). The overlay is the row as the store will hold it - already
+    /// absorbed onto the stored one - so the fold reads exactly the log the commit leaves.
+    fn observations_over(
+        &self,
+        workspace: Option<&str>,
+        overlay: Option<&Observation>,
+    ) -> Result<Vec<Observation>, StoreError> {
+        let mut rows = self.store.all_observations(workspace)?;
+        if let Some(row) = overlay.filter(|o| workspace.is_none_or(|ws| o.workspace() == ws)) {
+            match rows.iter_mut().find(|o| o.id == row.id) {
+                Some(stored) => *stored = row.clone(),
+                None => rows.push(row.clone()),
+            }
+        }
         let by_id: HashMap<&str, &Observation> = rows.iter().map(|o| (o.id.as_str(), o)).collect();
         let superseded: HashSet<String> = rows
             .iter()
@@ -3397,7 +3450,7 @@ impl Engine {
     ) -> Result<BTreeMap<String, ProposalView>, StoreError> {
         let obss = self.log(workspace, cx)?;
         if workspace.is_some() {
-            return self.fold_workspace(&obss.iter().collect::<Vec<_>>());
+            return self.fold_workspace(&obss.iter().collect::<Vec<_>>(), cx);
         }
         // All is a view, not a place (design-system.md Section 29.15): it is the union of each
         // workspace's fold, never a fold across them. A verdict therefore counts only where its
@@ -3410,7 +3463,7 @@ impl Engine {
         }
         let mut views = BTreeMap::new();
         for group in by_ws.values() {
-            views.extend(self.fold_workspace(group)?);
+            views.extend(self.fold_workspace(group, cx)?);
         }
         Ok(views)
     }
@@ -3419,6 +3472,7 @@ impl Engine {
     fn fold_workspace(
         &self,
         obss: &[&Observation],
+        cx: &ReadCtx,
     ) -> Result<BTreeMap<String, ProposalView>, StoreError> {
         let mut views: BTreeMap<String, ProposalView> = BTreeMap::new();
         let mut tally: HashMap<String, ProposalTally> = HashMap::new();
@@ -3543,7 +3597,7 @@ impl Engine {
                 .collect();
             for (id, view) in views.iter() {
                 if tally.get(id).is_some_and(|t| t.merge)
-                    && !self.blocking_failures(view, &asserted, &decided)?.is_empty()
+                    && !self.blocking_failures(view, &asserted, &decided, cx)?.is_empty()
                 {
                     blocked.insert(id.clone());
                 }
@@ -3725,6 +3779,7 @@ impl Engine {
             &view,
             &self.asserted_entity_ids(workspace, cx)?,
             &self.decided_merges(workspace, cx)?,
+            cx,
         )?;
         if let Some(profile) = self.trust_profile(workspace, &view, cx)? {
             view.checks.push(profile);
@@ -3846,7 +3901,7 @@ impl Engine {
                 belief_diff: None,
                 checks: Vec::new(),
             };
-            for c in self.blocking_checks(&view, &asserted, &decided)? {
+            for c in self.blocking_checks(&view, &asserted, &decided, cx)? {
                 if !checks
                     .iter()
                     .any(|k| k.name == c.name && k.passed == c.passed && k.detail == c.detail)
@@ -3941,12 +3996,14 @@ impl Engine {
     ///
     /// Pure in (proposal, base) (I8), and it reads the store directly rather than through any surface
     /// that folds proposals - both to stay a pure function of the log and to avoid re-entering the
-    /// fold that calls this.
+    /// fold that calls this. The one row it takes from the read instead is a writer's overlay, the
+    /// row about to be committed (crash-recovery.md Section 3a), which the store does not hold yet.
     fn blocking_checks(
         &self,
         view: &ProposalView,
         asserted: &HashSet<String>,
         decided_merges: &HashSet<String>,
+        cx: &ReadCtx,
     ) -> Result<Vec<CheckResult>, StoreError> {
         let mut out = Vec::new();
         let mut check = |name: &str, passed: bool, detail: String| {
@@ -3982,7 +4039,7 @@ impl Engine {
                 // target written to another workspace is as absent here as one never written.
                 let mut missing = Vec::new();
                 for t in &view.targets {
-                    let here = match self.store.get_observation(t)? {
+                    let here = match cx.held(self.store.as_ref(), t)? {
                         Some(o) => view.workspace.is_empty() || o.workspace() == view.workspace,
                         None => false,
                     };
@@ -4091,9 +4148,10 @@ impl Engine {
         view: &ProposalView,
         asserted: &HashSet<String>,
         decided_merges: &HashSet<String>,
+        cx: &ReadCtx,
     ) -> Result<Vec<String>, StoreError> {
         Ok(self
-            .blocking_checks(view, asserted, decided_merges)?
+            .blocking_checks(view, asserted, decided_merges, cx)?
             .into_iter()
             .filter(|c| c.blocking && !c.passed)
             .map(|c| format!("{}: {}", c.name, c.detail))
@@ -4960,7 +5018,25 @@ impl Engine {
         cx: &ReadCtx,
         prepared: &HashMap<String, Vec<f32>>,
     ) -> Result<usize, StoreError> {
-        let mut count = 0;
+        let rows = self.materialize_entities(ws, only, cx, prepared)?;
+        let count = rows.len();
+        for entity in rows {
+            self.store.put_entity(entity)?;
+        }
+        Ok(count)
+    }
+
+    /// The entity rows [`Engine::project_entities`] writes, ready to store: folded from the log `cx`
+    /// reads, each carrying the stored row's properties and a vector for its text. Writes nothing,
+    /// so a writer can commit them with its row (crash-recovery.md Section 3a).
+    fn materialize_entities(
+        &self,
+        ws: &str,
+        only: Option<&HashSet<String>>,
+        cx: &ReadCtx,
+        prepared: &HashMap<String, Vec<f32>>,
+    ) -> Result<Vec<Entity>, StoreError> {
+        let mut out = Vec::new();
         for mut entity in self.fold_entities(ws, only, cx)? {
             let text = entity_text(&entity);
             if let Some(existing) = self.store.get_entity(&entity.id)? {
@@ -4985,10 +5061,9 @@ impl Engine {
                     }
                 }
             }
-            self.store.put_entity(entity)?;
-            count += 1;
+            out.push(entity);
         }
-        Ok(count)
+        Ok(out)
     }
 
     /// The entity rows the log folds to (see [`Engine::project_entities`]), before anything is
@@ -5000,7 +5075,7 @@ impl Engine {
         cx: &ReadCtx,
     ) -> Result<Vec<Entity>, StoreError> {
         let gates = self.gate_grants(Some(ws), cx)?;
-        let mut obss = self.observations(Some(ws))?;
+        let mut obss = self.observations_over(Some(ws), cx.overlay.as_ref())?;
         obss.sort_by(|a, b| {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
         });
@@ -5139,7 +5214,24 @@ impl Engine {
         ws: &str,
         only: Option<&HashSet<String>>,
     ) -> Result<usize, StoreError> {
-        let mut obss = self.observations(Some(ws))?;
+        let rows = self.relation_rows(ws, only, None)?;
+        let written = rows.len();
+        for r in rows {
+            self.store.add_relation(r)?;
+        }
+        Ok(written)
+    }
+
+    /// The relation rows [`Engine::project_relations`] writes, folded from the log as it reads with
+    /// `overlay` in it. Writes nothing, so a writer can commit them with its row (crash-recovery.md
+    /// Section 3a).
+    fn relation_rows(
+        &self,
+        ws: &str,
+        only: Option<&HashSet<String>>,
+        overlay: Option<&Observation>,
+    ) -> Result<Vec<Relation>, StoreError> {
+        let mut obss = self.observations_over(Some(ws), overlay)?;
         obss.sort_by(|a, b| {
             (ordering_hlc(a), a.id.as_str()).cmp(&(ordering_hlc(b), b.id.as_str()))
         });
@@ -5188,12 +5280,13 @@ impl Engine {
                 );
             }
         }
-        let written = rels.len();
-        for (id, mut r) in rels {
-            r.attestations = support.remove(&id).unwrap_or_default();
-            self.store.add_relation(r)?;
-        }
-        Ok(written)
+        Ok(rels
+            .into_iter()
+            .map(|(id, mut r)| {
+                r.attestations = support.remove(&id).unwrap_or_default();
+                r
+            })
+            .collect())
     }
 
     /// Re-create a workspace's knowledge under another workspace name, provenance intact.
@@ -5526,19 +5619,12 @@ impl Engine {
         self.backfill_embeddings(batch)
     }
 
-    /// How many log rows still owe their projection right now. Non-zero on a running node means a
-    /// projection failed after its append: the fact is in the log, and the next open repays it.
+    /// How many log rows still owe their projection right now. The engine's own writers never leave
+    /// one (crash-recovery.md Section 3a), so non-zero on a running node means an append projected
+    /// after the fact - a sync apply, a stamping backfill, a re-key - has not been re-materialized,
+    /// or its re-materialization failed: the fact is in the log, and the next open repays it.
     pub fn owed_count(&self) -> Result<usize, StoreError> {
         Ok(self.store.owed_projections()?.len())
-    }
-
-    /// Clears this writer's own ledger entry once its projection is written (K2). A failed clear
-    /// is not the caller's failure - the write and its projection both landed - so it is logged and
-    /// left for the next open, whose only cost is a needless reproject.
-    fn repaid(&self, observation_id: &str) {
-        if let Err(e) = self.store.clear_owed(&[observation_id.to_string()]) {
-            tracing::warn!(observation_id, error = %e, "could not clear the owed-projection entry - the next open re-projects its workspace");
-        }
     }
 
     /// The nodes whose attestations a workspace's log holds, by origin id (docs/remote-server.md

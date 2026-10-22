@@ -39,6 +39,17 @@ impl InMemoryStore {
     }
 }
 
+/// A re-arrival at the same content address is absorbed as a monotonic union, not an overwrite
+/// (Principle 3: log immutability - provenance/lineage is not destroyed).
+fn absorb_into(log: &mut HashMap<String, Observation>, obs: Observation) {
+    match log.entry(obs.id.clone()) {
+        Entry::Occupied(mut e) => e.get_mut().absorb(obs),
+        Entry::Vacant(v) => {
+            v.insert(obs);
+        }
+    }
+}
+
 impl AssertionStore for InMemoryStore {
     fn get_observation(&self, id: &str) -> Result<Option<Observation>, StoreError> {
         Ok(self.observations.read().unwrap().get(id).cloned())
@@ -49,14 +60,7 @@ impl AssertionStore for InMemoryStore {
         // Under the log's write lock, so the row and its ledger entry appear together (K1).
         let mut log = self.observations.write().unwrap();
         self.owed.write().unwrap().insert(obs.id.clone(), obs.workspace().to_string());
-        // A re-arrival at the same content address is absorbed as a monotonic union, not an overwrite
-        // (Principle 3: log immutability - provenance/lineage is not destroyed).
-        match log.entry(obs.id.clone()) {
-            Entry::Occupied(mut e) => e.get_mut().absorb(obs),
-            Entry::Vacant(v) => {
-                v.insert(obs);
-            }
-        }
+        absorb_into(&mut log, obs);
         Ok(())
     }
 
@@ -320,6 +324,29 @@ impl KnowledgeStore for InMemoryStore {
 
     fn owed_projections(&self) -> Result<Vec<(String, String)>, StoreError> {
         Ok(self.owed.read().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+    }
+
+    fn commit_projected(
+        &self,
+        obs: Observation,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError> {
+        obs.check_attested().map_err(StoreError::Backend)?;
+        // Every table locked before any is written, so a reader sees the row and its projection
+        // together or neither; the ledger is not touched (crash-recovery.md Section 3a). Relations
+        // before entities, the order `traverse` holds them in, so the two cannot wait on each other.
+        let mut log = self.observations.write().unwrap();
+        let mut rels = self.relations.write().unwrap();
+        let mut ents = self.entities.write().unwrap();
+        absorb_into(&mut log, obs);
+        for e in entities {
+            ents.insert(e.id.clone(), e);
+        }
+        for r in relations {
+            rels.insert(r.id.clone(), r);
+        }
+        Ok(())
     }
 
     fn clear_owed(&self, ids: &[String]) -> Result<(), StoreError> {
