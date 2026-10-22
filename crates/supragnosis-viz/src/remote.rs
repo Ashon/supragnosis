@@ -556,8 +556,10 @@ mod tests {
         let page = route(&engine, &reader, &servable, "GET", "/", "");
         assert_eq!(page.status, 200);
         let mut scripts = 0;
-        for part in page.body.split("<script src=\"").skip(1) {
-            let path = &part[..part.find('"').expect("a closed attribute")];
+        // The release build minifies the page, so an attribute may stand unquoted.
+        for part in page.body.split("<script src=").skip(1) {
+            let part = part.trim_start_matches('"');
+            let path = &part[..part.find(['"', '>', ' ']).expect("a closed tag")];
             let answer = route(&engine, &reader, &servable, "GET", path, "");
             assert_eq!(answer.status, 200, "{path} is not served on the read tier");
             assert!(answer.content_type.starts_with("text/javascript"), "{path}");
