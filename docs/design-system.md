@@ -34,7 +34,7 @@
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
-> the camera, is built.
+> the camera, is built, and step 59, Un-merge opens what it proposed, is specified.
 
 ## 1. Why this exists
 
@@ -2016,6 +2016,8 @@ and it fails when one of them appears in the viewer's source other than as an ar
 58. **A panel on a tablet ends above the camera** [built] (Section 29.24; Section 29.18's owed overlap repaid):
    from 760 to 1200 pixels a floating panel ends above the camera toolbar under a finger as with a
    mouse.
+59. **Un-merge opens what it proposed** (Section 29.25): the split Un-merge proposes opens under Needs
+   you, as Same as... and Keep ... instead open theirs.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5785,3 +5787,29 @@ minimap, the View popover and the strip reading them; no mouse-only sum left). B
 Chromium measure the toolbar against the inspector, both docks, the View popover and the strip at
 1024 by 768, 1180 by 820, 820 by 1180 and 844 by 390 under touch, and at 1024 by 768 with a mouse at
 100% and 200% text: nothing overlaps, and the band's inspector ends 8 pixels above the toolbar.
+
+### 29.25 Step 59: Un-merge opens what it proposed
+
+**What was found.** By the usability audit of 2026-10-22: Un-merge opens a proposal to separate two
+entities and says "Un-merge proposed - it waits under Needs you for a verdict", and the person then
+has to find that proposal under Needs you and accept it. Same as... and Keep ... instead open the
+merge they propose (Section 29.17), and since step 57 an Un-merge that finds its split waiting opens
+it; an Un-merge that opens a new one does not.
+
+**Decisions.** None is open: Un-merge does what its siblings do.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| unmerge.md Section 8 | An un-merge goes through the proposal gate, like every change to canon | agrees - opening the item decides nothing; the split still waits for its verdict |
+| U4 | A decision decides one item with its diff and checks on screen | agrees - the person sees the split's diff and checks before Accept, as for any item |
+| Section 29.17 and Section 29.23 | Same as..., Keep ... instead and a found act open the item | agrees - Un-merge joins them |
+| Section 29.3 | Every reverse is on its Decided item | agrees - unchanged; Un-merge is still on the accepted merge |
+
+No row needs a principle changed.
+
+**Behaviour.** Un-merge, from the accepted merge's Decided item or from the notice after its Accept,
+opens the split it proposed under Needs you, selected and focused, with its notice as before.
+
+**What this step does not do.** It does not accept the split: that stays the person's next act.
