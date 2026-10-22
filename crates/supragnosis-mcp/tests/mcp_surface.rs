@@ -1179,15 +1179,28 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
 
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
     let note = "[sync] lists 1 server(s) but no auth_token - federation is OFF".to_string();
+    // One host answered at a known time; the other has not answered since the daemon started.
+    let link = |url: &str| supragnosis_sync::ServerLink {
+        url: url.into(),
+        auth_token: "t".into(),
+        ca_pem: None,
+    };
+    let surfaces: supragnosis_sync::NegotiatedSurfaces = Default::default();
+    supragnosis_sync::record_ping(
+        &surfaces,
+        "https://hub.example",
+        Some(vec!["ws".into(), "theirs".into()]),
+        1_792_000_000_000,
+    );
     let sync = Arc::new(supragnosis_mcp::SyncContext {
         node: Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([4u8; 32]))),
-        share_workspaces: vec!["ws".into()],
+        share_workspaces: vec!["ws".into(), "mine".into()],
         receive: None,
         vouched: Default::default(),
         serve_workspaces: Vec::new(),
         config_notes: vec![note.clone()],
-        servers: Vec::new(),
-        surfaces: Default::default(),
+        servers: vec![link("https://hub.example"), link("https://quiet.example")],
+        surfaces,
         origin_keys: Default::default(),
         peer_registry: None,
         round: Default::default(),
@@ -1216,6 +1229,34 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
         .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
         .unwrap_or_else(|| panic!("sync_status carries no `config_notes`: {v}"));
     assert_eq!(notes, [note.as_str()], "the workaround must be readable here, not only at boot");
+
+    // federation.md 6e and N6: what each host admits, as three buckets with their time - never the
+    // intersection, and never an empty grant set for a host that has not answered.
+    let negotiated = v["negotiated"].as_array().expect("sync_status carries `negotiated`");
+    assert_eq!(negotiated.len(), 2, "{v}");
+    let answered = &negotiated[0];
+    assert_eq!(answered["server"], "https://hub.example");
+    assert_eq!(answered["state"], "negotiated");
+    assert_eq!(answered["negotiated_at"], 1_792_000_000_000u64, "the answer carries its time");
+    assert_eq!(answered["both"], json!(["ws"]));
+    assert_eq!(answered["local_only"], json!(["mine"]));
+    assert_eq!(answered["peer_only"], json!(["theirs"]));
+    let quiet = &negotiated[1];
+    assert_eq!(quiet["state"], "unknown", "not an empty grant set: {quiet}");
+    assert!(quiet.get("both").is_none() && quiet.get("negotiated_at").is_none(), "{quiet}");
+
+    // The viewer's federation blob carries the same buckets and time, from its own ping.
+    let viewer = include_str!("../../supragnosis-cli/src/main.rs");
+    let blob = &viewer[viewer.find("servers_json.push(serde_json::json!({").expect("the blob")..];
+    let blob = &blob[..blob.find("}));").expect("it closes")];
+    for key in [
+        "\"workspaces\": ws_json",
+        "\"local_only\": diff.local_only",
+        "\"peer_only\": diff.peer_only",
+        "\"negotiated_at\": negotiated_at",
+    ] {
+        assert!(blob.contains(key), "the viewer's blob carries {key}");
+    }
 
     client.cancel().await.ok();
     server.abort();
