@@ -5664,13 +5664,21 @@ engine:
   - a pair a merge names while that merge waits, open or Blocked;
   - a pair a split pulled apart (S5);
   - a pair a merge names whose reject carries the console's mark, until an observation that is not a
-    proposal event, ordered after that reject's console attestation by HLC, asserts one of the
-    merge's targets as named. A merge of three or more holds back every pair it names.
+    proposal event, authored in a later millisecond than that reject's console attestation (the
+    wall of each HLC), asserts one of the merge's targets as named. A merge of three or more holds
+    back every pair it names.
 
-  Two departures from 5.5 keep the rule a function of the log (P16): a console reject counts
-  whichever node it was cast on, and a withdrawal holds nothing back, since the console has no
-  withdrawal and every withdrawal today is an agent's. A reject only an agent cast holds nothing
-  back either. The suppression stays of the suggestion, never of the possibility.
+  A tie keeps the no. A stamp is made at export and carries the authoring time (sync-correctness.md
+  Section 3), so the counter and node that break a tie of walls say which content id or node id sorts
+  first, not which act came first. A no lifted by them could be lifted by the very observation that
+  named the pair, and on the node that cast it only once that node stamps its log.
+
+  Three departures from 5.5 keep the rule a function of the log (P16): a console reject counts
+  whichever node it was cast on; a withdrawal holds nothing back, since the console has no
+  withdrawal and every withdrawal today is an agent's; and knowledge counts as new by when it was
+  authored, not when it arrived, so a peer's older knowledge that arrives after the no does not lift
+  it. A reject only an agent cast holds nothing back either. The suppression stays of the
+  suggestion, never of the possibility.
 
 **The check.**
 
@@ -5681,7 +5689,8 @@ engine:
 | unmerge.md S10 | A re-merge must be a distinguishable proposal | agrees - ", again" is S10's rule for every console act whose answer no longer holds; S10's own count stays first |
 | unmerge.md S5 and S3 | A split suppresses the suggestion permanently, never the possibility | agrees - unchanged; the suggestions also wait on a merge in flight and on the person's no |
 | unmerge.md Section 5 and resolution-identity.md Section 3 | The band leaves out pairs "already covered by an open entity_merge proposal" | revised - and a Blocked one, a split's pair, and the person's rejected one until the knowledge changes |
-| dreaming.md Section 5.5 | The person's no stands until the knowledge changes; a reject from a peer or an agent is not it | agrees, with two departures named above - any node's console reject counts, so equal logs suppress equally (P16), and a withdrawal holds nothing back |
+| dreaming.md Section 5.5 | The person's no stands until the knowledge changes; a reject from a peer or an agent is not it | agrees, with three departures named above - any node's console reject counts, so equal logs suppress equally (P16), a withdrawal holds nothing back, and knowledge is new by its authoring time rather than its arrival |
+| sync-correctness.md Section 3 | A stamp carries the authoring time, and the order it gives is total, not causal | agrees - the hold reads the walls alone, so a tie, which nothing here can order, keeps the no, and stamping changes nothing the hold shows |
 | P5 and IR2 | A generator proposes, a verdict commits; a withheld pair is not "no pair" | owed - the band's report of the pairs it withholds stays owed (unmerge.md Section 5), and now withholds more; the empty band's line no longer says that none are near |
 | proposal-workflow.md I5 and I16 | A reject is provisional; merged is absorbing | agrees - no state changes; a rejected merge can still be accepted after all, and a new act comes after the ones before it |
 | resolution.md Section 5 | Gate acts apply in order, each from where the last left | agrees - the new Confirm applies after the Undo, as the person meant |
@@ -5739,6 +5748,10 @@ confirms with ", again" in its reason, and the Undo after it undoes; a Confirm i
 that waits are found with nothing written; a rejected merge is asked again; an agent's identical
 content is the rejected proposal, found) and `p19_suggestions_follow_the_persons_no` (a merge in
 flight, an agent's reject, the person's reject, and new knowledge that lifts it);
+`p16_equal_logs_suppress_suggestions_equally` in the engine's scenarios (a split pair, the person's
+no cast on either of two nodes and a no tied with knowledge held back, and a no that later knowledge
+lifted offered again, alike on the author before and after it stamps and on nodes given one log in
+four orders);
 `a_repeat_says_what_it_found` in the MCP crate's unit tests (state, found and each note, Section
 29.22's note first) and the golden tool list; `a_console_repeat_says_what_it_found` in the viewer's
 HTTP tests (the console's merge found and asked again, and Confirm, Undo, Confirm through
