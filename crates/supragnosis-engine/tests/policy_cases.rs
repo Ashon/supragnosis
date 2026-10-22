@@ -547,6 +547,124 @@ fn p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty() {
     assert!(diff.overturned.is_empty() && diff.tier_changes.is_empty());
 }
 
+/// GIVEN a type change, a kind with no commit effect yet, WHEN anyone tries to merge it, THEN no
+/// surface takes the merge and the fold counts none - one replicated from a node that predates the
+/// rule included - so it reads open, says why, and stays rejectable (design-system.md Section 29.22,
+/// proposal-workflow.md 7.1 (f)). A merge without its effect has no diff, and a merge without a diff
+/// is a merge without review (P23).
+#[test]
+fn p23_no_merge_without_an_effect() {
+    let (store, engine) = engine();
+    observe(&engine, "a subject", &["Thing"]);
+    let open = |kind: &str, target: &str| {
+        engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: kind.into(),
+                targets: vec![target.into()],
+                into: None,
+                tier: None,
+                rationale: Some(format!("a {kind}")),
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: Some("ashon".into()),
+            })
+            .expect("open")
+    };
+    let change = open("tbox_change", "Thing");
+    let view = engine.get_proposal(None, &change).expect("get").expect("proposal");
+    assert!(view.no_effect_yet, "the view says the kind has no effect yet");
+    let json = serde_json::to_value(&view).expect("json");
+    assert_eq!(json["no_effect_yet"], true);
+    let note = view.belief_diff.and_then(|d| d.note).unwrap_or_default();
+    assert!(note.contains("cannot be merged until it has one"), "{note}");
+    let case = Case::new("Principle 23", "no merge without an effect");
+
+    let before = snapshot(store.as_ref());
+    for surface in [VerdictSurface::Console, VerdictSurface::Agent] {
+        let refused = engine
+            .review_proposal(None, change.clone(), "merge".into(), None, None, surface)
+            .expect_err("no surface merges a kind without its effect");
+        assert!(
+            refused.to_string().contains("no commit effect yet")
+                && refused.to_string().contains("reject it in the Review panel"),
+            "the refusal says why and what is left: {refused}"
+        );
+    }
+    case.changed_nothing(&before, &snapshot(store.as_ref()));
+
+    // A merge that reached the log anyway - from an earlier build, or replicated, console-marked or
+    // not - is a comment: the proposal reads open and nothing was counted.
+    for (source_ref, at) in [(Some(VERDICT_SURFACE_CONSOLE), 9_000), (None, 9_001)] {
+        store
+            .add_observation(Observation::with_assertions(
+                format!("proposal(merge) {change} at {at}"),
+                Provenance {
+                    host: "older-node".into(),
+                    on_behalf_of: None,
+                    workspace: WS.into(),
+                    source_ref: source_ref.map(String::from),
+                    observed_at: at,
+                    confidence: None,
+                    trust_tier: TrustTier::default(),
+                    sync: None,
+                },
+                Assertions {
+                    proposal_events: vec![ProposalEventAssertion {
+                        proposal: change.clone(),
+                        event: ProposalEventKind::Verdict,
+                        payload: r#"{"decision":"merge"}"#.into(),
+                    }],
+                    ..Default::default()
+                },
+            ))
+            .expect("plant a merge");
+    }
+    let view = engine.get_proposal(None, &change).expect("get").expect("proposal");
+    assert_eq!(view.state, "open", "a merge of a kind without its effect decides nothing");
+    assert_eq!(view.verdicts, 0, "it is a comment, not a verdict");
+
+    // What is left works: a comment, and the person's reject.
+    engine
+        .review_proposal(
+            None,
+            change.clone(),
+            "comment".into(),
+            Some("later".into()),
+            None,
+            VerdictSurface::Agent,
+        )
+        .expect("a comment is accepted");
+    engine
+        .review_proposal(None, change.clone(), "reject".into(), None, None, VerdictSurface::Console)
+        .expect("the person can reject it");
+    let view = engine.get_proposal(None, &change).expect("get").expect("proposal");
+    assert_eq!(view.state, "rejected");
+
+    // A recall says the same at the console; an entity merge carries no mark.
+    let recall = open("recall", "Thing");
+    let refused = engine
+        .review_proposal(None, recall.clone(), "merge".into(), None, None, VerdictSurface::Console)
+        .expect_err("the console merges no recall before it has its effect");
+    assert!(refused.to_string().contains("recall has no commit effect yet"), "{refused}");
+    observe(&engine, "a second subject", &["Other"]);
+    let merge = engine
+        .propose(ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec!["Thing".into(), "Other".into()],
+            into: Some("Thing".into()),
+            tier: None,
+            rationale: Some("one thing".into()),
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: Some("ashon".into()),
+        })
+        .expect("open a merge");
+    let view = engine.get_proposal(None, &merge).expect("get").expect("proposal");
+    assert!(serde_json::to_value(&view).expect("json").get("no_effect_yet").is_none());
+}
+
 /// GIVEN two entities that are duplicates AND connected to each other, WHEN an entity_merge is
 /// OPENED, THEN the canon has not moved and the proposal names every reference that would rewire -
 /// including the edge between them, which becomes a self-loop and therefore disappears from the graph.
@@ -1017,8 +1135,11 @@ fn i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged() {
 /// GIVEN a recall proposal and a merge verdict that reached the log WITHOUT the console marker -
 /// planted store-side, the shape of a verdict replicated from a peer or one that landed through MCP
 /// before the agent surface refused them - WHEN the state is folded, THEN it is not merged: the
-/// fold demotes the verdict to a comment (I17). A console merge then folds to merged, so the marker
-/// is the discriminator and not the kind. Read off the log, the rule gives one answer on every node.
+/// fold demotes the verdict to a comment (I17). Until recall has its commit effect a console-marked
+/// merge is demoted too (7.1 (f), design-system.md Section 29.22), so no recall merge fires on the
+/// day the effect lands; the marker's own reading is pinned by the engine's
+/// `the_console_marker_is_read_off_every_attestation`. Read off the log, the rule gives one answer
+/// on every node.
 #[test]
 fn i17_a_recall_merge_without_the_console_marker_never_folds_to_merged() {
     let (store, engine) = engine();
@@ -1089,8 +1210,9 @@ fn i17_a_recall_merge_without_the_console_marker_never_folds_to_merged() {
     );
     assert_eq!(view.verdicts, 0, "a demoted verdict is a comment, not a verdict");
 
-    // The console's own act is what the fold counts.
-    engine
+    // The console's act cannot be cast while recall has no effect, and one replicated from a node
+    // that predates that rule decides nothing either.
+    let refused = engine
         .review_proposal(
             None,
             proposal.clone(),
@@ -1099,94 +1221,12 @@ fn i17_a_recall_merge_without_the_console_marker_never_folds_to_merged() {
             None,
             VerdictSurface::Console,
         )
-        .expect("the console may merge a recall");
+        .expect_err("no surface merges a recall before it has its effect");
+    assert!(refused.to_string().contains("no commit effect yet"), "{refused}");
+    plant_merge(Some(VERDICT_SURFACE_CONSOLE), 9_002, "an older console");
     let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
-    assert_eq!(view.state, "merged", "the console marker is the discriminator");
-    assert_eq!(view.verdicts, 1, "only the console merge counts");
-    // Planting the console marker store-side is the replicated-console case, honored under the
-    // single-principal premise (resolution.md Section 6) - the same marker, the same answer.
-    let _ = VERDICT_SURFACE_CONSOLE;
-}
-
-/// GIVEN a recall proposal whose agent-marked merge reached the log - replicated, or from before the
-/// agent surface refused one - WHEN a person casts the same decision at the console, THEN the
-/// recall folds to merged. The two acts share one content address, so the console's is a second
-/// attestation on the agent's row (P3); the fold reads the marker off every attestation, as the gate
-/// ceiling does, so the person's act is not hidden behind the agent's authorship (I17).
-#[test]
-fn i17_a_console_act_on_an_agent_marked_recall_merge_counts() {
-    let (store, engine) = engine();
-    observe(&engine, "a contamination source", &["Source"]);
-    let source = store
-        .all_observations(Some(WS))
-        .expect("obs")
-        .into_iter()
-        .next()
-        .expect("one observation")
-        .id;
-    let proposal = engine
-        .propose(ProposeInput {
-            workspace: None,
-            kind: "recall".into(),
-            targets: vec![source],
-            into: None,
-            tier: None,
-            rationale: Some("retract the derived tree".into()),
-            affected_types: vec![],
-            source_ref: None,
-            on_behalf_of: Some("agent".into()),
-        })
-        .expect("propose");
-    // The exact row review_proposal writes for a merge with no note, under the agent's marker.
-    store
-        .add_observation(Observation::with_assertions(
-            format!("proposal(merge) {proposal}"),
-            Provenance {
-                host: "host-b".into(),
-                on_behalf_of: Some("agent".into()),
-                workspace: WS.into(),
-                source_ref: Some("surface:agent".into()),
-                observed_at: 9_000,
-                confidence: None,
-                trust_tier: TrustTier::default(),
-                sync: None,
-            },
-            Assertions {
-                proposal_events: vec![ProposalEventAssertion {
-                    proposal: proposal.clone(),
-                    event: ProposalEventKind::Verdict,
-                    payload: serde_json::json!({ "decision": "merge", "note": null }).to_string(),
-                }],
-                ..Default::default()
-            },
-        ))
-        .expect("plant the agent's verdict");
-    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
-    assert_eq!(view.state, "open", "the agent's recall merge alone decides nothing");
-
-    let case = Case::new(
-        "Principle 23 (I17)",
-        "a person's console act on an agent-marked recall merge is counted",
-    );
-    let before = snapshot(store.as_ref());
-    engine
-        .review_proposal(
-            None,
-            proposal.clone(),
-            "merge".into(),
-            None,
-            None,
-            VerdictSurface::Console,
-        )
-        .expect("the console may merge a recall");
-    let after = snapshot(store.as_ref());
-    case.log_appended(&before, &after, 0);
-    case.forgot_nothing(&before, &after);
-    let view = engine.get_proposal(None, &proposal).expect("get").expect("proposal");
-    assert_eq!(
-        view.state, "merged",
-        "the console's attestation on the shared row is the human's direct act"
-    );
+    assert_eq!(view.state, "open", "no recall merge counts before recall has its effect");
+    assert_eq!(view.verdicts, 0);
 }
 
 /// A merge verdict as sync delivers it: an observation carrying the event, which never passes

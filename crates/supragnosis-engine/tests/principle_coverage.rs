@@ -1615,8 +1615,10 @@ const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
            selection and floors their weight",
           Evidence::Deferred(
             "M6 step 5 (consolidation.md Section 6), which the P23 row files under M4 Phase 5 / M5: \
-             `recall` folds correctly and changes nothing, and no case merges one, so the gap is \
-             neither enforced nor pinned - the gate reports a decision it did not carry out")),
+             `recall` has no effect, so no merge of one is valid until it does: the fold reads a \
+             recall merge as a comment and every surface refuses one (design-system.md Section \
+             29.22, p23_no_merge_without_an_effect), and the gate no longer reports a decision it \
+             did not carry out")),
         c("a merged `recall` deletes nothing - the observations stay readable",
           Evidence::Structural(
             "the store port has no delete: `AssertionStore` appends through `add_observation` (an \
@@ -2085,8 +2087,9 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
           Evidence::Scenario(&[
             "i17_a_recall_merge_without_the_console_marker_never_folds_to_merged",
             "i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged",
-            // The console's act counts even as a second attestation on an agent-marked row.
-            "i17_a_console_act_on_an_agent_marked_recall_merge_counts",
+            // The console's act counts even as a second attestation on an agent-marked row: pinned
+            // on the marker's reading, since no recall merge counts before recall has its effect.
+            "the_console_marker_is_read_off_every_attestation",
           ])),
         c("the human's direct act is a principal-signed act, not a surface marker",
           Evidence::Deferred(
@@ -4060,6 +4063,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
             "p23_an_open_gate_proposal_carries_a_diff_without_moving_the_canon",
             "p23_a_merge_proposal_names_the_references_it_would_rewire",
+            // A kind whose diff cannot be computed, having no effect, is not merged at all.
+            "p23_no_merge_without_an_effect",
         ])),
         // The fold is the enforcement point on purpose: a replicated verdict arrives as an
         // observation and never passes through review_proposal, so a gate living there is no gate.
@@ -4093,8 +4098,9 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["p23_demotion_overrides_below_base"])),
         c("every proposal kind the surface accepts has a commit effect",
           Evidence::Deferred(
-            "M4 Phase 5 / M5 - tbox_change and recall fold correctly and change nothing, which is \
-             assigned rather than accidental (proposal-workflow.md Section 13). What a merged \
+            "M4 Phase 5 / M5 - tbox_change and recall have no effect, which is assigned rather than \
+             accidental (proposal-workflow.md Section 13); until each has one the surfaces open it \
+             and no merge of it counts (design-system.md Section 29.22). What a merged \
              recall must then do is specified in \
              [consolidation.md](../../../docs/consolidation.md) Section 6 - retract and floor, \
              never delete, which is what separates it from excision",

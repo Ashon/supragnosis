@@ -33,7 +33,7 @@
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
 > surface says where, and step 55, the person finds what waits. Step 56, no merge without an effect,
-> is specified.
+> is built.
 
 ## 1. Why this exists
 
@@ -2004,7 +2004,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 55. **The person finds what waits** [built] (Section 29.21; Sections 6 and 7 and U4 revised): the page opens
    on All unless the default holds most of the knowledge, Review and its pill say what waits in other
    workspaces, and the Blocked items can be rejected together.
-56. **No merge without an effect** (Section 29.22; Sections 7 and 29.3 revised): a type change and a
+56. **No merge without an effect** [built] (Section 29.22; Sections 7 and 29.3 revised): a type change and a
    recall, which have no commit effect yet, cannot be merged until they have one - the fold counts
    no merge of either and every surface refuses one - and Review, the agent's answers and tool
    descriptions, and the prompts say so.
@@ -5578,3 +5578,15 @@ No row needs a principle changed.
 - It does not build the stamp that lets a kind's merges count once it has its effect.
 - It does not refuse to open either kind. Ingest is free (P23), and an opened one waits for its
   effect or a person's reject.
+
+**Guarded by** `p23_no_merge_without_an_effect` in the engine's policy cases (the view's mark, the
+diff note, the refusal on both surfaces, a replicated merge console-marked or not read as a comment,
+and the reject that is left), `i17_a_recall_merge_without_the_console_marker_never_folds_to_merged`
+(no recall merge counts, a console-marked one included) and the engine's
+`the_console_marker_is_read_off_every_attestation` (I17's marker reading and the one function);
+`what_has_no_effect_says_so` in the MCP crate's unit tests (the note on `propose`, the refused merge,
+the listed mark), the golden tool list and the prompts test; and `the_console_says_what_has_no_effect`
+in the viewer's review tests (the sentence, no Accept, the row, the hints, the Reject notice, the
+preview, and A checked in the decision itself). Browser checks seed a type change and a recall, and
+read both items, the rows, A pressed with no request sent, the preview bar, the Reject notice and the
+Decided item; the agent's merge is refused with why.

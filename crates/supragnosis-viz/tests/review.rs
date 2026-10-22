@@ -86,7 +86,9 @@ fn every_reverse_is_on_its_decided_item() {
     let decide = function("reviewDecide");
     assert!(decide.contains("\"Accepted: \" + title"));
     assert!(decide.contains("{ label: \"Un-merge\", decided: true, run: () => proposeSplit(p) }"));
-    assert!(decide.contains("\"Rejected: \" + title, null, \"Accept after all is under Decided.\""));
+    assert!(decide.contains(
+        "\"Rejected: \" + title, null, p.no_effect_yet ? null : \"Accept after all is under Decided.\""
+    ));
     // A confirmation's Undo is on its Decided item, except after Confirm instead.
     assert!(function("settleValue").contains("decided: !a.instead,"));
     // The console's acts keep the sentence their notice says as their rationale.
@@ -445,4 +447,32 @@ fn the_person_finds_what_waits() {
     );
     assert!(PAGE.contains("<dialog id=\"blockedDlg\" aria-labelledby=\"blockedTitle\">"));
     assert!(PAGE.contains("If a check passes later, the accept it carries still merges it."));
+}
+
+/// design-system.md Section 29.22: a kind with no commit effect yet offers no Accept, says why where
+/// the diff would be, and its row, hints, Reject notice and map preview say so too; the decision
+/// itself checks the mark, so A does nothing.
+#[test]
+fn the_console_says_what_has_no_effect() {
+    assert!(SCRIPT.contains(
+        "const NO_EFFECT_SAID = { tbox_change: [\"a type change\", \"type changes\"], recall: [\"a recall\", \"recalls\"] };"
+    ));
+    let render = function("renderReview");
+    let detail = function("itemDetail");
+    let body = format!("{render}{detail}");
+    for part in [
+        "Nothing yet: ${none[0]} has no effect in this version, so it cannot be accepted until it has one.",
+        "&& !revAccepted && !none;",
+        "Reject sets it aside, and the log keeps it. It can still be accepted once ${none[1]} have an effect.",
+        "A reject is provisional: it can still be accepted once ${none[1]} have an effect.",
+    ] {
+        assert!(body.contains(part), "the item does not say it: {part}");
+    }
+    assert!(function("itemTag").contains("<span class=\"rv-st\">No effect yet</span>"));
+    let decide = function("reviewDecide");
+    assert!(
+        decide.contains("if (p.no_effect_yet) return;"),
+        "A would cast a merge the fold reads as a comment"
+    );
+    assert!(function("previewOnMap").contains("\" (no effect yet)\""));
 }

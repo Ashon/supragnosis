@@ -219,6 +219,7 @@ fn brief_digest(
             json!({
                 "id": p.id, "kind": p.kind, "targets": p.targets, "into": p.into, "tier": p.tier,
                 "rationale": p.rationale, "opened_at": p.opened_at, "proposer": p.proposer,
+                "no_effect_yet": p.no_effect_yet,
             })
         })
         .collect();
@@ -385,6 +386,8 @@ get_entity, traverse, workspace_map, list_proposals, get_proposal) for the rest.
 last, draft a proposal with `propose` for the person to review.
 - Never cast a merge verdict with `review`. The person decides in the Review panel of the \
 Supragnosis app or viewer. You may record a comment.
+- A proposal marked no_effect_yet changes nothing and cannot be accepted until its kind has an \
+effect: say so, and never describe the effect it would have.
 - Answer in the language the person writes in.";
 
 const BRIEF: &str = "\n\nCover, in order, citing evidence throughout:
