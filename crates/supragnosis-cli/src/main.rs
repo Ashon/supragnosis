@@ -4961,38 +4961,47 @@ fn restart(cfg: Config) -> Result<()> {
 #[cfg(unix)]
 fn await_daemon(label: &str) -> Result<()> {
     let here = env!("CARGO_PKG_VERSION");
-    let tick = std::time::Duration::from_millis(250);
-    let mut failing_for = 0u32;
-    for _ in 0..120 {
-        std::thread::sleep(tick);
-        if let Some(v) = running_version() {
-            match lifecycle::drift(Some(&v), here) {
-                lifecycle::Drift::Differs { running, here } => println!(
-                    "  now serving {running}, but this binary is {here} - the job runs a different binary than this one"
-                ),
-                _ => println!("  now serving {v}"),
+    let mut watch = lifecycle::StartWatch::default();
+    loop {
+        std::thread::sleep(lifecycle::START_TICK);
+        let serving = running_version();
+        let job = if serving.is_some() {
+            None
+        } else {
+            launchd_jobs().into_iter().chain(systemd_units()).find(|j| j.label == label)
+        };
+        let look = lifecycle::StartLook {
+            serving,
+            pid: job.as_ref().and_then(|j| j.pid),
+            last_exit: job.as_ref().and_then(|j| j.last_exit),
+        };
+        match watch.see(look) {
+            None => {}
+            Some(lifecycle::Start::Serving(v)) => {
+                match lifecycle::drift(Some(&v), here) {
+                    lifecycle::Drift::Differs { running, here } => println!(
+                        "  now serving {running}, but this binary is {here} - the job runs a different binary than this one"
+                    ),
+                    _ => println!("  now serving {v}"),
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
-        let job = launchd_jobs().into_iter().chain(systemd_units()).find(|j| j.label == label);
-        let failing = job
-            .as_ref()
-            .is_some_and(|j| j.pid.is_none() && j.last_exit.is_some_and(|c| c != 0));
-        failing_for = if failing { failing_for + 1 } else { 0 };
-        if failing_for >= 12 {
-            let code = job.and_then(|j| j.last_exit).unwrap_or_default();
-            let (manager, log) = if cfg!(target_os = "linux") {
-                ("systemd", format!("`journalctl --user -u {label}`"))
-            } else {
-                ("launchd", log_dir().join("supragnosis.err.log").display().to_string())
-            };
-            anyhow::bail!(
-                "{label} is loaded but not running - it exited with status {code} and {manager} is retrying it. The reason is in {log}"
-            );
+            Some(lifecycle::Start::Failed(code)) => {
+                let (manager, log) = if cfg!(target_os = "linux") {
+                    ("systemd", format!("`journalctl --user -u {label}`"))
+                } else {
+                    ("launchd", log_dir().join("supragnosis.err.log").display().to_string())
+                };
+                anyhow::bail!(
+                    "{label} is loaded but not running - it exited with status {code} and {manager} is retrying it. The reason is in {log}"
+                );
+            }
+            Some(lifecycle::Start::Slow) => {
+                println!("  still starting - `supragnosis status` shows the version once the daemon answers");
+                return Ok(());
+            }
         }
     }
-    println!("  still starting - `supragnosis status` shows the version once the daemon answers");
-    Ok(())
 }
 
 /// Everything `status --json` reports, already gathered. [`status_document`] only shapes it, so a

@@ -1521,12 +1521,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a job install loaded that does not come up is a non-zero exit naming the error log, and a slow start is reported as slow",
-            Evidence::Deferred(
-                "the rule - three seconds with no process and a non-zero last exit - sits in `await_daemon` between \
-                 sleeps and launchctl calls, and Section 11 records it was not exercised against a failing job. \
-                 Revisit when the decision is lifted into lifecycle.rs as a function over a sequence of launchctl \
-                 observations",
-            ),
+            Evidence::Scenario(&["a_start_fails_only_after_three_seconds_of_failing"]),
         ),
         c(
             "the app's restart waits for the socket and then says what it came to: a refusal that left the same process says why, one launchd settled is a restart, a daemon that never answered is a failure, and a failed state whose socket answers is attached to again",
