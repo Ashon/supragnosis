@@ -173,6 +173,9 @@ D1 is guarded by `inspector_never_folds_a_contested_belief`, a source-level trip
 `crates/supragnosis-viz/tests/http.rs` written in the style of the escaping guard beside it: the
 contested branch is the first decision the block makes and returns before any fold is built, the
 silence rule never reaches it, and the panel renders it outside any condition of its own.
+D4's scope half is guarded the same way by `the_silence_baseline_reads_the_whole_response`: `nodes`
+is set only from the graph response, mapped whole, and `scopeBaseline` makes one pass over it and
+names none of the legend's filters, the working set, or a helper that applies them.
 
 ## 9. Invariants
 
