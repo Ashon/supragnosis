@@ -2709,13 +2709,7 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
             "redb_owed_projections_survive_a_reopen",
           ])),
         c("the repayment runs before the process serves a read or accepts a write",
-          Evidence::Deferred(
-            "`build_engine` repays before handing the engine to every daemon and CLI entry that \
-             binds, but that is call order inside one function; no case starts a daemon over a \
-             seeded ledger and probes its socket, and the SIGKILL check in crash-recovery.md \
-             Section 7 was run by hand. Revisit when the lifecycle suite can start a daemon over a \
-             scratch store",
-          )),
+          Evidence::Scenario(&["a_daemon_repays_what_it_owes_before_it_serves"])),
     ]),
     (4, &[
         c("a process ending between append and projection leaves an entry the next open repays",
