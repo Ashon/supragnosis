@@ -2565,12 +2565,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("the difference is three buckets, never the intersection",
           Evidence::Scenario(&["the_surface_difference_reports_both_directions_of_disagreement"])),
         c("sync_status and the viewer's federation blob carry the buckets with their time",
-          Evidence::Deferred(
-            "both surfaces call `surface_diff` but no case reads `negotiated` back from either; the \
-             one sync_status case checks config_notes only. Revisit when sync_status's federation blob next changes - seed a map in \
-             a_configuration_workaround_reaches_the_operator_surface and assert the three buckets \
-             and negotiated_at",
-          )),
+          Evidence::Scenario(&["a_configuration_workaround_reaches_the_operator_surface"])),
     ]),
     (7, &[
         c("an answer carries the time it was negotiated, and only an answer does",
