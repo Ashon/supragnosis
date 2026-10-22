@@ -1008,6 +1008,191 @@ fn p16_partitioned_and_duplicated_delivery_converges() {
     );
 }
 
+// --- P3 / P24: a re-materialization does not interleave with a write ----------------------------
+
+/// A view of a store whose next projection write, once armed, first runs a write on another thread
+/// and waits up to a moment for it - the window between a re-materialization reading the log and
+/// writing what it computed from it.
+struct PausingStore {
+    inner: Arc<InMemoryStore>,
+    armed: std::sync::Mutex<Option<ConcurrentWrite>>,
+}
+
+/// Starts a write on another thread; the receiver hears when it has finished.
+type ConcurrentWrite = Box<dyn FnOnce() -> std::sync::mpsc::Receiver<()> + Send>;
+
+impl supragnosis_core::AssertionStore for PausingStore {
+    fn all_observations(
+        &self,
+        ws: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Observation>, supragnosis_core::StoreError> {
+        self.inner.all_observations(ws)
+    }
+    fn all_entities(
+        &self,
+        ws: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+        self.inner.all_entities(ws)
+    }
+    fn all_relations(
+        &self,
+        ws: Option<&str>,
+    ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+        self.inner.all_relations(ws)
+    }
+    fn add_observation(
+        &self,
+        o: supragnosis_core::Observation,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.add_observation(o)
+    }
+    fn get_observation(
+        &self,
+        id: &str,
+    ) -> Result<Option<supragnosis_core::Observation>, supragnosis_core::StoreError> {
+        self.inner.get_observation(id)
+    }
+    fn get_entity(
+        &self,
+        id: &str,
+    ) -> Result<Option<supragnosis_core::Entity>, supragnosis_core::StoreError> {
+        self.inner.get_entity(id)
+    }
+    fn relations_of(
+        &self,
+        id: &str,
+    ) -> Result<Vec<supragnosis_core::Relation>, supragnosis_core::StoreError> {
+        self.inner.relations_of(id)
+    }
+    fn search(
+        &self,
+        q: &str,
+        ws: Option<&str>,
+        n: usize,
+    ) -> Result<Vec<supragnosis_core::SearchHit>, supragnosis_core::StoreError> {
+        self.inner.search(q, ws, n)
+    }
+    fn traverse(
+        &self,
+        id: &str,
+        d: usize,
+        n: usize,
+    ) -> Result<Vec<supragnosis_core::TraverseHit>, supragnosis_core::StoreError> {
+        self.inner.traverse(id, d, n)
+    }
+}
+
+impl supragnosis_core::KnowledgeStore for PausingStore {
+    fn put_entity(&self, e: supragnosis_core::Entity) -> Result<(), supragnosis_core::StoreError> {
+        let armed = self.armed.lock().unwrap().take();
+        if let Some(write) = armed {
+            let done = write();
+            let _ = done.recv_timeout(std::time::Duration::from_millis(300));
+        }
+        self.inner.put_entity(e)
+    }
+    fn add_relation(
+        &self,
+        r: supragnosis_core::Relation,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.add_relation(r)
+    }
+    fn owed_projections(&self) -> Result<Vec<(String, String)>, supragnosis_core::StoreError> {
+        self.inner.owed_projections()
+    }
+    fn clear_owed(&self, ids: &[String]) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.clear_owed(ids)
+    }
+    fn attach_observation_embeddings(
+        &self,
+        vectors: &[(String, Vec<f32>)],
+    ) -> Result<usize, supragnosis_core::StoreError> {
+        self.inner.attach_observation_embeddings(vectors)
+    }
+    fn record_attestation_app(
+        &self,
+        key: &str,
+        app: &str,
+    ) -> Result<(), supragnosis_core::StoreError> {
+        self.inner.record_attestation_app(key, app)
+    }
+    fn attestation_apps(
+        &self,
+        keys: &[String],
+    ) -> Result<BTreeMap<String, String>, supragnosis_core::StoreError> {
+        self.inner.attestation_apps(keys)
+    }
+}
+
+/// guard (P3, P24; architecture.md Section 14): a re-materialization concurrent with an observe
+/// cannot interleave. The store pauses `reproject` after it has read the log and before it writes
+/// the first projected row, and in that window another thread observes the same entity again on
+/// the same engine. Unserialized, the observe would finish inside the window and the reproject would write
+/// its earlier snapshot over it - the graph behind its log with nothing owed. Serialized, the
+/// observe waits for the reproject and lands after it. Either way the graph must equal a fresh
+/// re-materialization of the same log, and nothing must be owed.
+#[test]
+fn p3_a_reproject_and_an_observe_do_not_interleave() {
+    let inner = Arc::new(InMemoryStore::new());
+    let store = Arc::new(PausingStore { inner: inner.clone(), armed: Default::default() });
+    let engine = Arc::new(Engine::new(store.clone(), "host-a", WS));
+    observe(&engine, "kernel, as first said", &["kernel"], vec![]);
+
+    let writer = engine.clone();
+    let handle: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>> = Arc::default();
+    let joined = handle.clone();
+    *store.armed.lock().unwrap() = Some(Box::new(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        *joined.lock().unwrap() = Some(std::thread::spawn(move || {
+            observe(
+                &writer,
+                "kernel, said again by another agent",
+                &["kernel", "driver"],
+                vec![RelationInput {
+                    from: "driver".into(),
+                    kind: "depends_on".into(),
+                    to: "kernel".into(),
+                    description: Some("loads into it".into()),
+                    valid_from: None,
+                    valid_to: None,
+                }],
+            );
+            let _ = tx.send(());
+        }));
+        rx
+    }));
+    engine.reproject(Some(WS)).expect("reproject");
+    handle.lock().unwrap().take().expect("the write ran").join().expect("observe");
+
+    // Read what this engine's projection holds before anything else writes to it.
+    let sources = |e: &Engine| {
+        e.graph(Some(WS))
+            .unwrap()
+            .nodes
+            .iter()
+            .find(|n| n.name == "kernel")
+            .map(|n| n.sources)
+    };
+    let (held, held_shape) = (sources(&engine), graph_shape(&engine));
+    // A fresh re-materialization of the same log, on a store of its own so it repairs nothing here.
+    let copy = Arc::new(InMemoryStore::new());
+    for o in inner.all_observations(None).unwrap() {
+        copy.add_observation(o).unwrap();
+    }
+    let fresh = Engine::new(copy, "host-b", WS);
+    fresh.reproject(Some(WS)).expect("fresh");
+    assert_eq!(sources(&fresh), Some(2), "the log holds both sayings");
+    assert_eq!(held, sources(&fresh), "the projection lost the concurrent observe");
+    assert_eq!(
+        held_shape,
+        graph_shape(&fresh),
+        "and its relation, which a second log read projects"
+    );
+    assert_eq!(held_shape.1.len(), 1, "the relation the concurrent observe asserted is there");
+    use supragnosis_core::KnowledgeStore;
+    assert!(inner.owed_projections().unwrap().is_empty(), "nothing owed");
+}
+
 // --- P16 (4th revision): read-path reproducibility with ties -----------------------------------
 
 /// guard (principles.md P16 "query responses must be deterministic too"): keyword hits that tie

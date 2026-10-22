@@ -3658,13 +3658,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "p19_a_split_pair_is_never_suggested_again",
         ])),
         c("a re-materialization concurrent with an observe cannot interleave",
-          Evidence::Deferred(
-            "Revisit with a store-level atomic upsert - `reproject` does not take `write_guard`, so \
-             a replay concurrent with an observe can interleave (architecture.md Section 14). What \
-             keeps it harmless today is a deployment fact (replay runs with the daemon stopped, or \
-             from the post-apply sync hook), which is the class of argument that ledger exists to \
-             retire. M3's write path was supposed to repay it and shipped without it",
-        )),
+          Evidence::Scenario(&["p3_a_reproject_and_an_observe_do_not_interleave"])),
     ]),
     (4, "Bi-Temporality", &[
         // Capture is the half that cannot be added retroactively, so it is the half that must be

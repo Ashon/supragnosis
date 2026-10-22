@@ -58,7 +58,7 @@
             <div class="grp" data-n="7">
               <a class="col" href="#p1" data-p="1" aria-label="P1, 5 clauses: 4 tested, 1 by construction"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span></a>
               <a class="col" href="#p2" data-p="2" aria-label="P2, 5 clauses: 5 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
-              <a class="col" href="#p3" data-p="3" aria-label="P3, 6 clauses: 3 tested, 3 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p3" data-p="3" aria-label="P3, 6 clauses: 4 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
               <a class="col" href="#p4" data-p="4" aria-label="P4, 2 clauses: 1 tested, 1 owed"><span class="cell t"></span><span class="cell o"></span></a>
               <a class="col" href="#p5" data-p="5" aria-label="P5, 5 clauses: 4 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
               <a class="col" href="#p6" data-p="6" aria-label="P6, 3 clauses: 2 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
@@ -109,7 +109,7 @@
             <div class="grp" data-n="1"><span>6</span></div>
           </div>
         </div>
-        <p class="count"><b>111</b> clauses across <b>24</b> principles: <b>77</b> tested by name, <b>6</b> hold by construction, <b>28</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
+        <p class="count"><b>111</b> clauses across <b>24</b> principles: <b>78</b> tested by name, <b>6</b> hold by construction, <b>27</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
         <ul class="legend"><li><i class="cell t"></i>Tested by name</li><li><i class="cell s"></i>Holds by construction</li><li><i class="cell p"></i>Owed, today's behavior pinned</li><li><i class="cell o"></i>Owed</li></ul>
         <!-- /registry:ledger -->
         <dl class="gloss">
@@ -145,7 +145,7 @@
           <p class="thesis">Claims rather than facts: who said them, when, and what is believed because of them.</p>
         </div>
         <!-- registry:chapter:1 -->
-        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
         <!-- /registry:chapter:1 -->
       </header>
       <div class="prs">
@@ -219,14 +219,14 @@
           </figure>
           <!-- registry:clauses:3 -->
           <details class="clauses">
-            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">6 clauses: 3 tested, 3 owed</span></summary>
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">6 clauses: 4 tested, 2 owed</span></summary>
             <ul class="cl">
               <li><i class="cell t"></i><span>a re-arrival merges monotonically and drops nothing, in any order<span class="st">tested by 6 named tests</span></span></li>
               <li><i class="cell t"></i><span>every encoding the log has ever used stays readable<span class="st">tested by 3 named tests</span></span></li>
               <li><i class="cell t"></i><span>entity merge preserves history, so un-merge is possible<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a re-materialization concurrent with an observe cannot interleave<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell o"></i><span>a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest<span class="st">owed</span></span></li>
               <li><i class="cell o"></i><span>a relation accumulates attestations the way an entity and an observation do<span class="st">owed</span></span></li>
-              <li><i class="cell o"></i><span>a re-materialization concurrent with an observe cannot interleave<span class="st">owed</span></span></li>
             </ul>
           </details>
           <!-- /registry:clauses:3 -->
