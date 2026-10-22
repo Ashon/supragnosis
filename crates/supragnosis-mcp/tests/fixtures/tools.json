@@ -89,7 +89,7 @@
     },
     {
       "name": "get_proposal",
-      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in.",
+      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "list_proposals",
-      "description": "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in. A verdict counts only in its proposal's workspace.",
+      "description": "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -131,7 +131,7 @@
     },
     {
       "name": "observe",
-      "description": "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id and the linked entity/relation ids.",
+      "description": "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id, the linked entity/relation ids and the workspace written to; a write that makes a new workspace adds a note naming the ones that hold knowledge.",
       "inputSchema": {
         "$defs": {
           "EntityInput": {
@@ -382,7 +382,7 @@
     },
     {
       "name": "review",
-      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id.",
+      "description": "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17): decide it in the Review panel; comment is accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {

@@ -2193,3 +2193,111 @@ fn p16_an_entity_is_last_said_at_its_latest_attestation() {
         .expect("merge");
     assert_eq!(time(&b), (Some(5_000), Some(5_000)), "the merged-away row's time counts");
 }
+
+/// GIVEN a source a person confirmed, WHEN an agent merges a claim demotion of it to human_confirmed,
+/// THEN the source keeps human_confirmed - a demotion needs no ceiling, so it lowers to the tier it
+/// asks for and no further (resolution.md Section 6, design-system.md Section 29.20).
+#[test]
+fn p18_a_demotion_lowers_to_the_tier_it_asks_for() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let obs = infra
+        .observe(ObserveInput {
+            content: "Ledger is a Table".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Ledger".into(),
+                kind: Some("Table".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let decide = |id: String, surface| {
+        infra
+            .review_proposal(Some("infra".into()), id, "merge".into(), None, None, surface)
+            .expect("merge");
+    };
+    let up =
+        propose_in(&infra, "infra", "claim_promotion", vec![obs.clone()], None).expect("promote");
+    decide(up, VerdictSurface::Console);
+    let tier = || {
+        infra
+            .graph(Some("infra"))
+            .expect("graph")
+            .nodes
+            .into_iter()
+            .find(|n| n.name == "Ledger")
+            .map(|n| n.trust_tier)
+    };
+    assert_eq!(tier(), Some(TrustTier::HumanConfirmed));
+    let down = propose_in(&infra, "infra", "claim_demotion", vec![obs], None).expect("demote");
+    decide(down, VerdictSurface::Agent);
+    assert_eq!(tier(), Some(TrustTier::HumanConfirmed), "the agent's surface capped a demotion");
+}
+
+/// GIVEN a claim promotion to human_confirmed, WHEN an agent merges it and then a person does,
+/// THEN its granted tier is host_signed, the agent surface's ceiling, and then human_confirmed, the
+/// highest surface among its merge verdicts (design-system.md Section 29.20).
+#[test]
+fn p18_a_merged_promotion_says_what_it_granted() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let obs = infra
+        .observe(ObserveInput {
+            content: "Ledger is a Table".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Ledger".into(),
+                kind: Some("Table".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let up = propose_in(&infra, "infra", "claim_promotion", vec![obs], None).expect("promote");
+    let granted = |id: &str| {
+        let listed = infra
+            .list_proposals(Some("infra"))
+            .expect("list")
+            .into_iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.granted_tier);
+        let got = infra.get_proposal(Some("infra"), id).expect("get").and_then(|p| p.granted_tier);
+        assert_eq!(listed, got, "list and get disagree");
+        got
+    };
+    assert_eq!(granted(&up), None, "an open promotion grants nothing");
+    infra
+        .review_proposal(
+            Some("infra".into()),
+            up.clone(),
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Agent,
+        )
+        .expect("agent merge");
+    assert_eq!(granted(&up), Some(TrustTier::HostSigned));
+    infra
+        .review_proposal(
+            Some("infra".into()),
+            up.clone(),
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Console,
+        )
+        .expect("console merge");
+    assert_eq!(granted(&up), Some(TrustTier::HumanConfirmed));
+}

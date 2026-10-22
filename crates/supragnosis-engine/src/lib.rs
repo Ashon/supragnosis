@@ -977,6 +977,10 @@ pub struct ProposalView {
     /// For claim_promotion/claim_demotion: the requested tier (resolution.md Section 5).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tier: Option<TrustTier>,
+    /// For a merged claim_promotion: the tier it granted - the one asked for, capped by the highest
+    /// surface among its merge verdicts (resolution.md Section 6, design-system.md Section 29.20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted_tier: Option<TrustTier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// For tbox_change: the T-Box types this proposal defines/changes - the viewer's highlight hint.
@@ -2931,6 +2935,11 @@ impl Engine {
         Ok(Some(out))
     }
 
+    /// Whether `workspace` holds any observation yet (design-system.md Section 29.20).
+    pub fn holds_observations(&self, workspace: &str) -> Result<bool, StoreError> {
+        self.store.holds_observations(workspace)
+    }
+
     /// The workspace a proposal lives in: the one its opening observation was written to. `None` when
     /// this node holds no proposal by that id. The local surfaces use it to file a verdict cast under
     /// All where its proposal lives (design-system.md Section 29.15).
@@ -3193,6 +3202,7 @@ impl Engine {
                     tier,
                     rationale,
                     affected_types,
+                    granted_tier: None,
                     workspace: obs.workspace().to_string(),
                     state: "open".into(),
                     verdicts: 0,
@@ -3306,9 +3316,32 @@ impl Engine {
         let cx = &ReadCtx::default();
         let mut all = self.fold_proposals(workspace, cx)?;
         self.label_proposals(&mut all)?;
+        self.fill_granted(workspace, &mut all, cx)?;
         let mut v: Vec<ProposalView> = all.into_values().collect();
         v.sort_by(|a, b| b.opened_at.cmp(&a.opened_at).then_with(|| a.id.cmp(&b.id)));
         Ok(v)
+    }
+
+    /// Fills each merged promotion's `granted_tier` from the same reading of its verdicts the fold
+    /// applies (design-system.md Section 29.20).
+    fn fill_granted(
+        &self,
+        workspace: Option<&str>,
+        views: &mut BTreeMap<String, ProposalView>,
+        cx: &ReadCtx,
+    ) -> Result<(), StoreError> {
+        if !views.values().any(|v| v.kind == "claim_promotion" && v.state == "merged") {
+            return Ok(());
+        }
+        let (_, rep_merge) = self.gate_verdicts(workspace, cx)?;
+        for v in views.values_mut() {
+            if v.kind == "claim_promotion" && v.state == "merged" {
+                if let (Some(asked), Some((_, _, ceiling))) = (v.tier, rep_merge.get(&v.id)) {
+                    v.granted_tier = Some(asked.min(*ceiling));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Fills each view's `labels` and `into_label` (design-system.md Section 29.3). Point reads
@@ -3417,6 +3450,7 @@ impl Engine {
         }
         let cx = &ReadCtx::default();
         let mut all = self.fold_proposals(workspace, cx)?;
+        self.fill_granted(workspace, &mut all, cx)?;
         let Some(mut view) = all.remove(id) else {
             return Ok(None);
         };
@@ -3507,7 +3541,14 @@ impl Engine {
         let events: Vec<(&[String], TrustTier, bool)> = acts
             .iter()
             .filter(|a| GATE_KINDS.contains(&a.kind.as_str()))
-            .map(|a| (a.targets.as_slice(), a.tier.min(ceiling), a.kind == "claim_promotion"))
+            .map(|a| {
+                let promotion = a.kind == "claim_promotion";
+                (
+                    a.targets.as_slice(),
+                    if promotion { a.tier.min(ceiling) } else { a.tier },
+                    promotion,
+                )
+            })
             .collect();
         let belief_diff = if events.len() == acts.len() && !acts.is_empty() {
             self.gate_diff(workspace, &events, cx)?
@@ -3526,6 +3567,7 @@ impl Engine {
                 tier: Some(act.tier),
                 rationale: None,
                 affected_types: Vec::new(),
+                granted_tier: None,
                 workspace: workspace.unwrap_or_default().to_string(),
                 state: "open".into(),
                 verdicts: 0,
@@ -4348,18 +4390,23 @@ impl Engine {
         Ok(self.gate_fold(workspace, cx, extra, without)?.0)
     }
 
-    /// [`Engine::gate_tiers`], with each target's last moving event beside its tier: observation id
-    /// -> (proposal id, its representative merge verdict's observation id, promotion). An event that
-    /// left the tier where it was moves nothing.
+    /// The gate proposals of this read and their merge verdicts: proposal id -> (targets, requested
+    /// tier, is a promotion), and proposal id -> (its representative merge verdict's ordering hlc and
+    /// observation id, the highest surface ceiling among its merge verdicts filed where it lives). The
+    /// one reading of the verdicts' markers, shared by the fold that applies them and the answer that
+    /// says what a promotion granted (design-system.md Section 29.20).
     #[allow(clippy::type_complexity)]
-    fn gate_fold(
+    fn gate_verdicts(
         &self,
         workspace: Option<&str>,
         cx: &ReadCtx,
-        extra: &[(&[String], TrustTier, bool)],
-        without: Option<&str>,
-    ) -> Result<(HashMap<String, TrustTier>, HashMap<String, (String, String, bool)>), StoreError>
-    {
+    ) -> Result<
+        (
+            HashMap<String, (Vec<String>, TrustTier, bool)>,
+            HashMap<String, (Hlc, String, TrustTier)>,
+        ),
+        StoreError,
+    > {
         // proposal id -> (targets, requested tier, is a promotion); from opened gate-kind events.
         let mut opened: HashMap<String, (Vec<String>, TrustTier, bool)> = HashMap::new();
         // proposal id -> (representative merge verdict's ordering hlc and obs id, the highest
@@ -4436,6 +4483,22 @@ impl Engine {
                 })
                 .or_insert((okey, id, ceiling));
         }
+        Ok((opened, rep_merge))
+    }
+
+    /// [`Engine::gate_tiers`], with each target's last moving event beside its tier: observation id
+    /// -> (proposal id, its representative merge verdict's observation id, promotion). An event that
+    /// left the tier where it was moves nothing.
+    #[allow(clippy::type_complexity)]
+    fn gate_fold(
+        &self,
+        workspace: Option<&str>,
+        cx: &ReadCtx,
+        extra: &[(&[String], TrustTier, bool)],
+        without: Option<&str>,
+    ) -> Result<(HashMap<String, TrustTier>, HashMap<String, (String, String, bool)>), StoreError>
+    {
+        let (opened, rep_merge) = self.gate_verdicts(workspace, cx)?;
         // The state fold is the single answer to "did this merge commit" (I13): consult it rather
         // than re-deriving blocking here, so the two can never drift apart again. Shares the
         // ReadCtx-cached log, so this adds no store enumeration.
@@ -4456,7 +4519,9 @@ impl Engine {
             if states.get(proposal_id).is_none_or(|p| p.state != "merged") {
                 continue; // the fold says this merge did not commit (blocked) - no effect (I13)
             }
-            let granted = (*requested).min(*ceiling);
+            // A promotion is capped by its surface; a demotion needs no ceiling (resolution.md
+            // Section 6), so it lowers to the tier it asked for, whoever merged it.
+            let granted = if *promotion { (*requested).min(*ceiling) } else { *requested };
             for target in targets {
                 events.entry(target.clone()).or_default().push((
                     verdict_hlc.clone(),

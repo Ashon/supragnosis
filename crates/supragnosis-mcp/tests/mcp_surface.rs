@@ -1784,3 +1784,46 @@ async fn a_slow_resource_read_holds_no_other_request() {
     client.cancel().await.ok();
     server.abort();
 }
+
+/// design-system.md Section 29.20: a failed call is flagged as a tool error and a not-found answer
+/// stays a result (P5), and the server's instructions ask for the workspace to be named after the
+/// project.
+#[tokio::test]
+async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let server = tokio::spawn(async move {
+        let running =
+            SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client handshake");
+    let instructions = client
+        .peer_info()
+        .and_then(|i| i.instructions.clone())
+        .expect("the server's instructions");
+    assert!(
+        instructions.contains("the repository's top-level directory name"),
+        "the instructions do not say how to name a workspace"
+    );
+    let failed = client
+        .call_tool(
+            CallToolRequestParams::new("review".to_string())
+                .with_arguments(args(json!({ "proposal": "nope", "decision": "reject" }))),
+        )
+        .await
+        .expect("the call answers");
+    assert_eq!(failed.is_error, Some(true), "a refused call reads as a result");
+    assert!(tool_json(&failed)["error"].is_string());
+    let unknown = client
+        .call_tool(
+            CallToolRequestParams::new("get_entity".to_string())
+                .with_arguments(args(json!({ "id": "ab".repeat(32) }))),
+        )
+        .await
+        .expect("the call answers");
+    assert_ne!(unknown.is_error, Some(true), "a not-found answer is flagged as a failure");
+    assert_eq!(tool_json(&unknown)["found"], false);
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+}
