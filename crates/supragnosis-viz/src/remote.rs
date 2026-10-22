@@ -64,6 +64,9 @@ pub const POLICY: &[(&str, Policy)] = &[
     ("/", Policy::Served),
     ("/viewer.css", Policy::Served),
     ("/viewer.js", Policy::Served),
+    // The map's layout worker and its renderer (design-system.md Sections 27.5 and 27.9).
+    ("/viewer-sim.js", Policy::Served),
+    ("/viewer-gl.js", Policy::Served),
     ("/api/about", Policy::Served),
     ("/api/surface", Policy::Served),
     ("/api/workspaces", Policy::Read),
@@ -541,5 +544,25 @@ mod tests {
         assert_eq!(m["stats"]["type_counts"], serde_json::json!({"T": 3, "U": 1}));
         assert_eq!(m["merge_band"]["available"], true);
         assert!(m["workspace"].is_null(), "two names describe neither workspace");
+    }
+
+    /// Every script the page loads is served here as the local console serves it, or the remote
+    /// reader's map does not draw (remote-viewer.md Section 3.2).
+    #[test]
+    fn the_page_and_every_script_it_loads_are_served() {
+        let engine = Engine::new(Arc::new(supragnosis_store::InMemoryStore::new()), "h", "ws");
+        let reader = Reader { name: "r".into(), readable: BTreeSet::from(["ws".to_string()]) };
+        let servable: Servable = Arc::new(|_: &str| Ok(()));
+        let page = route(&engine, &reader, &servable, "GET", "/", "");
+        assert_eq!(page.status, 200);
+        let mut scripts = 0;
+        for part in page.body.split("<script src=\"").skip(1) {
+            let path = &part[..part.find('"').expect("a closed attribute")];
+            let answer = route(&engine, &reader, &servable, "GET", path, "");
+            assert_eq!(answer.status, 200, "{path} is not served on the read tier");
+            assert!(answer.content_type.starts_with("text/javascript"), "{path}");
+            scripts += 1;
+        }
+        assert!(scripts >= 3, "the page loads its scripts: {scripts}");
     }
 }
