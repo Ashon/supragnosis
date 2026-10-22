@@ -363,6 +363,10 @@ Guarded by:
 - `a_pidfile_naming_anything_else_is_stale` - L9: `lifecycle::pidfile_state` with a stand-in process
   reader; a pid that is gone or another program's is stale and cleared, and the only pid the
   lifecycle commands observe, and so signal, is a live supragnosis one.
+- `a_conflict_is_acted_on_by_nothing` - L1: `lifecycle::stop_or_refuse` and `restart_or_refuse`
+  refuse a conflict and an unrecognized holder and act on the one manager otherwise, and
+  `lifecycle::released` lets install go on only once the address and the store went quiet; the
+  source keeps the order retire, re-check, then the canonical file on both platforms.
 - `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
 
 Checked on this machine without changing it:

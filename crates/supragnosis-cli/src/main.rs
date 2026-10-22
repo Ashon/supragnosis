@@ -4904,57 +4904,47 @@ fn stop_pidfile(pid: i32) -> Result<()> {
 
 #[cfg(unix)]
 fn stop() -> Result<()> {
-    use lifecycle::{Manager, Situation};
+    use lifecycle::Manager;
     clear_stale_pidfile();
-    match lifecycle::classify(&observe()) {
-        Situation::Stopped => {
+    let situation = lifecycle::classify(&observe());
+    match lifecycle::stop_or_refuse(&situation, &status_http_addr()).map_err(anyhow::Error::msg)? {
+        None => {
             println!("not running.");
             Ok(())
         }
-        Situation::One(Manager::Pidfile { pid }) => stop_pidfile(pid as i32),
-        Situation::One(Manager::Launchd(job)) => launchd_bootout(&job),
-        Situation::One(Manager::Systemd(job)) => systemd_stop(&job),
-        Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
-        Situation::Unrecognized => anyhow::bail!(
-            "a daemon is responding on {} but no known manager runs it (no pidfile, no known launchd label or systemd unit) - stop it via its own supervisor.",
-            status_http_addr()
-        ),
+        Some(Manager::Pidfile { pid }) => stop_pidfile(pid as i32),
+        Some(Manager::Launchd(job)) => launchd_bootout(&job),
+        Some(Manager::Systemd(job)) => systemd_stop(&job),
     }
 }
 
 #[cfg(unix)]
 fn restart(cfg: Config) -> Result<()> {
-    use lifecycle::{Manager, Situation};
+    use lifecycle::{Manager, Restart};
     clear_stale_pidfile();
-    match lifecycle::classify(&observe()) {
-        // Stopped, but the canonical job is installed (a `stop` unloaded it): reload THAT job. Starting
-        // a pidfile daemon here would leave the login item installed beside it - two owners again
-        // at the next login (L1).
-        Situation::Stopped if canonical_service_state() != "absent" => {
+    let situation = lifecycle::classify(&observe());
+    let installed = || canonical_service_state() != "absent";
+    match lifecycle::restart_or_refuse(&situation, installed, &status_http_addr())
+        .map_err(anyhow::Error::msg)?
+    {
+        Restart::LoadCanonical => {
             if cfg!(target_os = "linux") {
                 systemd_start_canonical()
             } else {
                 launchd_bootstrap_canonical()
             }
         }
-        // Nothing installed and nothing running - start a fresh self-managed daemon.
-        Situation::Stopped => start(cfg),
-        Situation::One(Manager::Pidfile { pid }) => {
+        Restart::StartFresh => start(cfg),
+        Restart::Bounce(Manager::Pidfile { pid }) => {
             stop_pidfile(pid as i32)?;
             std::thread::sleep(std::time::Duration::from_millis(400)); // wait for the port to release
             start(cfg)
         }
-        Situation::One(Manager::Launchd(job)) => {
+        Restart::Bounce(Manager::Launchd(job)) => {
             launchd_kickstart(&job)?;
             await_daemon(job.label)
         }
-        Situation::One(Manager::Systemd(job)) => systemd_restart(&job),
-        Situation::Conflict(managers) => anyhow::bail!(lifecycle::conflict_message(&managers)),
-        Situation::Unrecognized => anyhow::bail!(
-            "something no known manager runs is serving {} or holding the store (no pidfile, no known launchd label or systemd unit) - cannot restart it from here.\n{}",
-            status_http_addr(),
-            lifecycle::UNRECOGNIZED_HOLDER
-        ),
+        Restart::Bounce(Manager::Systemd(job)) => systemd_restart(&job),
     }
 }
 
@@ -5419,13 +5409,16 @@ fn launchctl_quiet(args: &[&str]) -> bool {
 /// ten seconds.
 #[cfg(unix)]
 fn wait_until_released(store: Option<&std::path::Path>) -> bool {
-    for _ in 0..100 {
-        if !port_open(&status_http_addr()) && !store.is_some_and(supragnosis_store::redb_in_use) {
-            return true;
+    let mut first = true;
+    lifecycle::released(std::iter::from_fn(|| {
+        if !first {
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    false
+        first = false;
+        // The store is probed only once the address went quiet, as before.
+        let answering = port_open(&status_http_addr());
+        Some((answering, !answering && store.is_some_and(supragnosis_store::redb_in_use)))
+    }))
 }
 
 /// A Homebrew job is retired by Homebrew: the plist or the unit is its file, and only `brew services

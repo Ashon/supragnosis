@@ -213,6 +213,66 @@ pub fn refuse_exposure(
     ))
 }
 
+/// What `stop` acts on, or why it refuses (L1): the one manager, `None` when nothing runs, and a
+/// refusal - acting on nothing - in a conflict or for a holder no manager names. `addr` is the
+/// daemon's address, for the refusal.
+pub fn stop_or_refuse(s: &Situation, addr: &str) -> Result<Option<Manager>, String> {
+    match s {
+        Situation::Stopped => Ok(None),
+        Situation::One(m) => Ok(Some(m.clone())),
+        Situation::Conflict(managers) => Err(conflict_message(managers)),
+        Situation::Unrecognized => Err(format!(
+            "a daemon is responding on {addr} but no known manager runs it (no pidfile, no known launchd label or systemd unit) - stop it via its own supervisor."
+        )),
+    }
+}
+
+/// What `restart` does (Section 3, L1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Restart {
+    /// Stopped, but the canonical job is installed (a `stop` unloaded it): load that job. Starting a
+    /// pidfile daemon here would leave the login item installed beside it - two owners again at the
+    /// next login.
+    LoadCanonical,
+    /// Nothing installed and nothing running: a fresh self-managed daemon.
+    StartFresh,
+    /// Restart the one manager.
+    Bounce(Manager),
+}
+
+/// What `restart` does, or why it refuses, acting on nothing (L1). `canonical_installed` is asked
+/// only when nothing runs.
+pub fn restart_or_refuse(
+    s: &Situation,
+    canonical_installed: impl FnOnce() -> bool,
+    addr: &str,
+) -> Result<Restart, String> {
+    match s {
+        Situation::Stopped if canonical_installed() => Ok(Restart::LoadCanonical),
+        Situation::Stopped => Ok(Restart::StartFresh),
+        Situation::One(m) => Ok(Restart::Bounce(m.clone())),
+        Situation::Conflict(managers) => Err(conflict_message(managers)),
+        Situation::Unrecognized => Err(format!(
+            "something no known manager runs is serving {addr} or holding the store (no pidfile, no known launchd label or systemd unit) - cannot restart it from here.\n{UNRECOGNIZED_HOLDER}"
+        )),
+    }
+}
+
+/// Looks `service install` and `uninstall` take, one every 100 ms, for the address and the store to
+/// go quiet after a job is booted out or the other managers are retired: ten seconds.
+pub const RELEASE_LOOKS: usize = 100;
+
+/// Whether the address and the store went quiet within [`RELEASE_LOOKS`] looks, each look being
+/// whether something still answers at the address and whether the store is still held. The plan saw
+/// a manager for whatever answered; this checks that retiring them freed both, since a holder that
+/// outlives them is one the plan could not see.
+pub fn released(looks: impl IntoIterator<Item = (bool, bool)>) -> bool {
+    looks
+        .into_iter()
+        .take(RELEASE_LOOKS)
+        .any(|(answering, held)| !answering && !held)
+}
+
 /// What `service install` retires before installing the canonical job, or why it refuses (Section 4,
 /// L1, L5). `hand_written` is the refusal for the canonical file when it exists without the
 /// generator's marker - [`HAND_WRITTEN_PLIST`] or [`HAND_WRITTEN_UNIT`] - and `None` otherwise.
@@ -1122,6 +1182,124 @@ mod tests {
         assert!(msg.contains("com.supragnosis.daemon (canonical), pid 2292"));
         assert!(msg.contains("sh.brew.supragnosis-server (brew services supragnosis-server), not running, last exit 1"));
         assert!(msg.contains("service install --take-over"));
+    }
+
+    /// L1: restart and stop act on nothing in a conflict or for a holder no manager names - each is
+    /// a refusal naming why - and act on the one manager otherwise. Restart loads the canonical job a
+    /// stop unloaded rather than starting a second owner, and asks whether it is installed only when
+    /// nothing runs. After retiring the others, install goes on only once the address and the store
+    /// both went quiet, within a hundred looks; and the source keeps that order - retire, re-check,
+    /// then touch the canonical file - on both platforms.
+    #[test]
+    fn a_conflict_is_acted_on_by_nothing() {
+        let canonical =
+            Manager::Launchd(job(CANONICAL_LABEL, LabelKind::Canonical, Some(2292), None));
+        let brew = Manager::Launchd(job(
+            "sh.brew.supragnosis-server",
+            LabelKind::Homebrew("supragnosis-server"),
+            None,
+            Some(1),
+        ));
+        let conflict = Situation::Conflict(vec![canonical.clone(), brew.clone()]);
+        let addr = "127.0.0.1:7373";
+        let asked = std::cell::Cell::new(0);
+        let installed = |answer: bool| {
+            let asked = &asked;
+            move || {
+                asked.set(asked.get() + 1);
+                answer
+            }
+        };
+
+        assert_eq!(stop_or_refuse(&Situation::Stopped, addr), Ok(None));
+        assert_eq!(stop_or_refuse(&Situation::One(brew.clone()), addr), Ok(Some(brew.clone())));
+        assert_eq!(
+            stop_or_refuse(&conflict, addr),
+            Err(conflict_message(&[canonical.clone(), brew.clone()]))
+        );
+        let unrecognized = stop_or_refuse(&Situation::Unrecognized, addr).unwrap_err();
+        assert!(
+            unrecognized.contains(addr) && unrecognized.contains("no known manager"),
+            "{unrecognized}"
+        );
+
+        assert_eq!(
+            restart_or_refuse(&Situation::Stopped, installed(true), addr),
+            Ok(Restart::LoadCanonical)
+        );
+        assert_eq!(
+            restart_or_refuse(&Situation::Stopped, installed(false), addr),
+            Ok(Restart::StartFresh)
+        );
+        assert_eq!(asked.get(), 2);
+        assert_eq!(
+            restart_or_refuse(&Situation::One(canonical.clone()), installed(true), addr),
+            Ok(Restart::Bounce(canonical.clone()))
+        );
+        assert_eq!(
+            restart_or_refuse(&conflict, installed(true), addr),
+            Err(conflict_message(&[canonical.clone(), brew.clone()]))
+        );
+        let unrecognized =
+            restart_or_refuse(&Situation::Unrecognized, installed(true), addr).unwrap_err();
+        assert!(
+            unrecognized.contains(addr) && unrecognized.contains(UNRECOGNIZED_HOLDER),
+            "{unrecognized}"
+        );
+        assert_eq!(asked.get(), 2, "whether the job is installed is asked only when nothing runs");
+
+        let taken = std::cell::Cell::new(0);
+        let looks = |quiet_at: usize| {
+            let taken = &taken;
+            (1..).map(move |i| {
+                taken.set(i);
+                // Still answering until the store lets go a look later.
+                (i < quiet_at.saturating_sub(1), i < quiet_at)
+            })
+        };
+        assert!(released(looks(3)));
+        assert_eq!(taken.get(), 3, "the first quiet look ends the wait");
+        assert!(released(looks(RELEASE_LOOKS)));
+        assert!(!released(looks(RELEASE_LOOKS + 1)), "ten seconds and no longer");
+        assert_eq!(taken.get(), RELEASE_LOOKS);
+        assert!(!released(std::iter::repeat((false, true))), "a store still held is not quiet");
+        assert!(!released(std::iter::repeat((true, false))), "nor an address still answering");
+
+        let main = include_str!("main.rs");
+        for (install, touch) in [
+            ("fn launchd_install(args", "if state == \"hand_written\" {"),
+            ("fn systemd_install(args", "let moved = if state == \"hand_written\" {"),
+        ] {
+            let body = &main[main.find(install).expect(install)..];
+            let body = &body[..body.find("\n}\n").expect("it closes")];
+            let retire = body.find("for m in &others {").expect("retires the others");
+            let recheck = body.find("if !wait_until_released(").expect("re-checks");
+            let file = body.find(touch).expect("touches the canonical file");
+            assert!(
+                retire < recheck && recheck < file,
+                "{install}: retire, re-check, then the file"
+            );
+            assert!(
+                body[recheck..file].contains("anyhow::bail!("),
+                "{install}: a held store refuses"
+            );
+        }
+        for (command, through) in
+            [("fn stop()", "stop_or_refuse("), ("fn restart(cfg", "restart_or_refuse(")]
+        {
+            let body = &main[main.find(command).expect(command)..];
+            let body = &body[..body.find("\n}\n").expect("it closes")];
+            assert!(body.contains(through), "{command}");
+            assert!(
+                !body.contains("Situation::Conflict") && !body.contains("Situation::Unrecognized")
+            );
+        }
+        let wait = &main[main.find("fn wait_until_released(").expect("the wait")..];
+        let wait = &wait[..wait.find("\n}\n").expect("it closes")];
+        assert!(
+            wait.contains("lifecycle::released(") && wait.contains("from_millis(100)"),
+            "the wait is released's looks, one every 100 ms: {wait}"
+        );
     }
 
     /// Section 4, "On Linux": what `systemctl --user show` says decides whether a unit manages the
