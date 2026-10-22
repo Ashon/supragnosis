@@ -32,7 +32,7 @@
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
 > and Keep ... instead, step 52, the map on a phone, step 53, time on the map, and step 54, the agent
-> surface says where.
+> surface says where. Step 55, the person finds what waits, is specified.
 
 ## 1. Why this exists
 
@@ -683,7 +683,9 @@ On the Graph page:
   only beliefs that tie on trust (resolution.md Section 4.1), so those are the loaded scope's
   contested nodes, which U3 asks the bar to count whatever the legend hides, and its contested type
   definitions; before the curation read answers, the graph's count stands in. A conflict that trust
-  settled is listed under Health, so a confirmation takes its item off the count. It is a button, the
+  settled is listed under Health, so a confirmation takes its item off the count. With nothing waiting
+  here and something in other workspaces it reads "3 wait elsewhere" (Section 29.21). *(Revised by
+  step 55.)* It is a button, the
   Graph page's way to Review wherever Cmd+2 does not reach, and it is not in the title bar, which
   holds no navigation but the way back. *(Revised by step 42: it read "2 to review (1 contested)"
   while the segment read "Needs you 2", and type definitions were not counted; Section 29.3.)*
@@ -691,9 +693,11 @@ On the Graph page:
   contested count alone as a pill ("1 contested").
 
 **The first view is where the knowledge is.** The viewer opens on the scope the address names, or
-else on the node default. When the default holds nothing while other workspaces hold knowledge, it
-opens on All and says so beside the chips: "Showing all workspaces - default is empty" *(revised by
-step 48: the default by its own name, Section 29.10)*. The scope in
+else on the node default. When the default holds at most half of the node's entities while other
+workspaces hold the rest, it opens on All and says so beside the chips: "Showing all workspaces -
+default holds 2 of 40", or "default is empty" *(revised by step 48: the default by its own name,
+Section 29.10; revised by step 55: it opened on All only when the default held nothing, Section
+29.21)*. The scope in
 use is always a selected chip, All among them, and it is called All, never "(all)" or "*". An empty
 default means the wrong scope, not an absence of knowledge (P5).
 
@@ -816,7 +820,8 @@ who said it and when; and the preview on the map that the console draws today.
 **The decision controls sit beside that and act on that one item** (U4). For a proposal: Accept,
 Reject and Skip, also as A, R and J, with K to step back; an open merge of two entities also offers
 Keep ... instead, which has no key (Section 29.17). *(Revised by step 51c.)* For a draft: Publish,
-Accept and Discard, as dreaming.md Section 8 names them, also as P, A and D. There is no decide-all. A key decides only
+Accept and Discard, as dreaming.md Section 8 names them, also as P, A and D. There is no decide-all,
+except Reject all blocked (Section 29.21). *(Revised by step 55.)* A key decides only
 once the item's diff and checks are on screen, so stepping fast through the list cannot cast a verdict
 on an item not yet shown. A recall asks for a second, explicit act: its effect is the strongest the
 console casts, and one keystroke should not carry it.
@@ -1535,7 +1540,7 @@ social image.
 | **U1** | Every console write - each path the read tier refuses as a verdict or a write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed (P24). |
 | **U2** | The map draws a node's trust from its effective tier, the value the inspector's baseline reads, never a claimed tier; the legend states what the ring reads, and a scope of one tier draws no rings and states the tier (P18, inspector.md D3, D4). |
 | **U3** | A contested node is marked wherever it is drawn, at every zoom, label and focus state, and the status bar counts the contested nodes of the loaded scope whatever the legend hides (P6). |
-| **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision. Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
+| **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision, except one act that rejects every Blocked item at once, each listed with the check that blocks it before the act is cast (Section 29.21; the author's decision of 2026-10-22, that what the system cannot process may be dropped). Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
 | **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking, each group of Section 8 in that order, and its mode label, over a path whose read-tier policy is `Read`: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, and entity hits are canonical. It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
 | **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 and APCA Lc 60 on every surface token, and `--ink2` Lc 75; a signal drawn as text takes its `-ink` token and gold `--gold-ink`, the brand gold `--accent` in both appearances with the mark drawn in it, and text on a pill's tint meets the same floor over it. |
@@ -1992,6 +1997,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 7 revised): every write's answer names its workspace and says when it made a new one,
    search hits name their entity, a name passed as an id is said to be one, a failed call is flagged
    as failed, a merged promotion says what it granted, and a merged demotion is no longer capped.
+55. **The person finds what waits** (Section 29.21; Sections 6 and 7 and U4 revised): the page opens
+   on All unless the default holds most of the knowledge, Review and its pill say what waits in other
+   workspaces, and the Blocked items can be rejected together.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -5367,3 +5375,70 @@ No row needs a principle changed.
 each write, the note and its nearest-first order, a known workspace saying nothing, named hits, and
 the name hint by shape); and `a_failure_is_flagged_and_a_not_found_is_a_result` over the protocol
 (the error flag, a not-found answer left a result, and the instructions' naming).
+
+### 29.21 Step 55: the person finds what waits
+
+**What was found.** By the usability audit of 2026-10-22, on a seeded store:
+- **One stray entry pins the person to the default.** With one entry in the node default and the rest
+  in acme-api, the page opens on the default's two entities, since it opens on All only when the
+  default is empty.
+- **Review says nothing waits while things wait.** In that scope Review says "Nothing waits for you in
+  this workspace" while two proposals and a contested belief wait in acme-api, and the status bar's
+  pill says only "Review", though the tray counts them.
+- **What cannot pass waits for ever, one by one.** A Blocked item - accepted, but held by a check that
+  fails - stays under Needs you until someone rejects it, one at a time. On the author's store 38 such
+  merges, made before the store's ids changed, had to be rejected one by one.
+
+**Decisions.** The author decided (2026-10-22) that what the system cannot process may be dropped.
+Read here as a person's act: one reject for every Blocked item, which the log keeps. A Blocked item
+carries its accept already, so if its check passes later that accept still merges it
+(proposal-workflow.md Sections 7.1 and 8). The rest are the audit's recommendations, with the pill
+keeping its one count of the scope (U3, U20) and saying what waits elsewhere only beside it.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| U4 and Section 7 | A decision decides one item with its diff and checks on screen; there is no decide-all | revised, by the author's decision - one act rejects the Blocked items under Needs you in the scope on screen, each listed with the check that blocks it before the act is cast; a recall is left out, as its verdict is a person's direct act on that item (I17) |
+| P23 and proposal-workflow.md Sections 7.1 and 8 | Canon changes only through a verdict; a reject is provisional | agrees - a reject changes no canon, and a Blocked item reaches none until its check passes, when the accept it carries still merges it |
+| dreaming.md Section 5.5 | A person's reject of a published dream proposal is their no | agrees - each item rejected together is that person's no, as one rejected alone is |
+| P5 | An empty answer in one scope is not absence | repays - a scoped Needs you says what waits in the other workspaces |
+| U3 and U20 | The status bar counts the loaded scope's contested nodes; the pill's one count is the items under Needs you | agrees - the pill keeps its one count of the scope; it says what waits elsewhere only when the scope has none |
+| Section 6 | The page opens where the knowledge is; the pill reads Review when nothing waits | revised - the page opens on All unless the default holds most of the knowledge, and a pill with nothing here says what waits elsewhere |
+| Section 29.15 | All is a view | agrees - the counts read All, and every act is still filed where its item lives |
+| U19 and U42 | A dialog holds focus; a notice that reports a failure stays | agrees - the dialog holds focus with Cancel first, and a partly failed act's notice stays |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The first view.** When the address names no scope, the page decides once, before its first
+  draw, from the node's counts of entities by workspace: it opens on All when other workspaces hold
+  entities and the default holds at most half of them, saying beside the chips "Showing all
+  workspaces - default holds 2 of 40" (or, as before, "default is empty"). When the counts cannot be
+  read, or no workspace holds an entity, it stays on the default.
+- **What waits elsewhere.** On the local console the page reads what waits in every workspace - open
+  and Blocked proposals, suspected secrets and contested beliefs - from the reads the tray makes, at
+  most every 30 seconds while the page is seen, again after each console act, and from the scope's
+  own reads when the scope is All. When the curation read fails, it counts the proposals alone; when
+  the proposal read fails, it says nothing about elsewhere.
+  - **The pill** keeps its one count of the scope. When the scope has nothing waiting and other
+    workspaces do, it reads "3 wait elsewhere" and opens Review.
+  - **Needs you**, in one workspace, opens with "3 more wait in other workspaces." and Show all
+    workspaces whenever others hold any; with nothing here it reads "Nothing waits for you in this
+    workspace. 3 wait in other workspaces." Show all workspaces turns the scope to All, keeps Review
+    open and puts focus on the selected row.
+- **Reject all blocked.** When Needs you holds two or more Blocked items other than recalls, its list
+  opens with "4 were accepted, but a check holds each back." and Reject all blocked. That opens a
+  dialog listing each with the check that blocks it, read for each, and the line "If a check passes
+  later, the accept it carries still merges it." Cancel, first, and Esc close the dialog and change
+  nothing, with focus back on Reject all blocked; while it is open the page's keys do nothing. Reject
+  all rejects exactly the items listed, each where it lives, leaving out any whose state changed
+  meanwhile or whose checks could not be read, and says "Rejected 4 blocked items."; when some fail it
+  says "Rejected 3 of 4. 1 was not:" and why, and stays. Focus then goes to the selected row, or to
+  the list when none is left. One Blocked item is rejected as before, on its own.
+
+**What this step does not do.**
+- It does not reject an open item whose check fails before any accept; its Accept is idle, and
+  Reject decides it.
+- It does not drop anything without a person's act: the system rejects nothing on its own.
+- It does not count dream drafts, which the tray does not count either.
