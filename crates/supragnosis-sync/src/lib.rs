@@ -251,6 +251,12 @@ impl SyncNode {
         &self.node_id
     }
 
+    /// Signs a message that is not an attestation with this node's key, under `context`
+    /// ([`NodeIdentity::sign_message`]): a hub's answer to a join (docs/pairing.md Section 4.3.2).
+    pub fn sign_message(&self, context: &str, message: &[u8]) -> String {
+        self.identity.sign_message(context, message)
+    }
+
     pub fn public_key_hex(&self) -> String {
         self.identity.public_key_hex()
     }

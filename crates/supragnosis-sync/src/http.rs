@@ -93,6 +93,49 @@ pub fn tls_trusting(ca_pem: &[u8]) -> Result<rustls::ClientConfig, TransportErro
         .with_no_client_auth())
 }
 
+/// The DER of the first certificate in `pem` - what a pairing code's fingerprint is taken over
+/// (docs/pairing.md Section 4.2).
+pub fn certificate_der(pem: &[u8]) -> Result<Vec<u8>, TransportError> {
+    use rustls::pki_types::{pem::PemObject, CertificateDer};
+    CertificateDer::pem_slice_iter(pem)
+        .next()
+        .ok_or_else(|| TransportError::Tls("the PEM holds no certificate".into()))?
+        .map(|c| c.as_ref().to_vec())
+        .map_err(|e| TransportError::Tls(format!("the certificate is not PEM: {e}")))
+}
+
+/// Whether the certificate chain in `chain_pem` verifies, now, against the root bundle built into
+/// supragnosis for every one of `names` - so a joining machine can check the hub by name and a
+/// renewal breaks nothing (docs/pairing.md Section 3a, D13). An IP address is never checked by
+/// name, and an empty list verifies nothing.
+pub fn verifies_by_name(chain_pem: &[u8], names: &[String]) -> bool {
+    use rustls::client::danger::ServerCertVerifier;
+    use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName, UnixTime};
+    let Ok(chain) = CertificateDer::pem_slice_iter(chain_pem).collect::<Result<Vec<_>, _>>() else {
+        return false;
+    };
+    let Some((leaf, intermediates)) = chain.split_first() else {
+        return false;
+    };
+    let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let Ok(verifier) =
+        rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider)
+            .build()
+    else {
+        return false;
+    };
+    !names.is_empty()
+        && names.iter().all(|n| {
+            n.parse::<std::net::IpAddr>().is_err()
+                && ServerName::try_from(n.as_str()).is_ok_and(|name| {
+                    verifier
+                        .verify_server_cert(leaf, intermediates, &name, &[], UnixTime::now())
+                        .is_ok()
+                })
+        })
+}
+
 #[derive(Debug)]
 struct NamedCertificates {
     pinned: Vec<rustls::pki_types::CertificateDer<'static>>,
@@ -218,7 +261,8 @@ pub fn validate_bind(
     if allowlist_len == 0 {
         return Err(TransportError::Bind {
             addr: *addr,
-            reason: "nothing is admitted (no allowlisted node, no principal)".into(),
+            reason: "nothing is admitted (no allowlisted node, no principal, no open invitation)"
+                .into(),
         });
     }
     Ok(())

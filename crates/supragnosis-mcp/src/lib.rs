@@ -390,6 +390,9 @@ pub struct SupragnosisServer {
     /// First contact, recorded on the local daemon's surface only (docs/onboarding.md Section 5).
     clients: Option<Arc<ClientLog>>,
     sync: Option<Arc<SyncContext>>,
+    /// The hub's listener state, there from the daemon's start, so a node with no sync that an
+    /// invitation made a hub still says what its listener is doing (docs/pairing.md Section 4.1).
+    listener: Option<Arc<std::sync::RwLock<serde_json::Value>>>,
     /// Set when this server serves principals over the network (docs/remote-server.md Section 4):
     /// every call is then admitted per principal, and one with no principal is refused (R2).
     remote: Option<remote::Surface>,
@@ -402,6 +405,7 @@ impl SupragnosisServer {
             engine,
             clients: None,
             sync: None,
+            listener: None,
             remote: None,
             tool_router: Self::tool_router(),
         }
@@ -595,6 +599,12 @@ impl SupragnosisServer {
     /// Attaches the federation sync wiring (M4 Phase 4) - enables the `sync_*` tools.
     pub fn with_sync(mut self, sync: Arc<SyncContext>) -> Self {
         self.sync = Some(sync);
+        self
+    }
+
+    /// The hub's listener state, for `sync_status` on a node with no sync of its own.
+    pub fn with_listener(mut self, listener: Arc<std::sync::RwLock<serde_json::Value>>) -> Self {
+        self.listener = Some(listener);
         self
     }
 }
@@ -1346,7 +1356,21 @@ impl SupragnosisServer {
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
         let Some(ctx) = &self.sync else {
-            return sync_unconfigured();
+            // A node that syncs with no hub may still be one: an invitation made its listener
+            // while it ran, and the listener's state is said rather than "not configured".
+            let listener = self
+                .listener
+                .as_ref()
+                .and_then(|l| l.read().ok().map(|v| v.clone()))
+                .filter(|v| v.get("listening").is_some());
+            return match listener {
+                Some(listener) => serde_json::json!({
+                    "sync": "this node syncs with no hub; it is a hub, and its listener is as below",
+                    "listener": listener,
+                })
+                .to_string(),
+                None => sync_unconfigured(),
+            };
         };
         let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
         let store = self.engine.store();
@@ -2685,6 +2709,24 @@ mod agent_answers {
 
     /// design-system.md Section 29.22: a kind with no commit effect yet says so when it is opened and
     /// listed, and a merge of it is refused with why.
+    /// docs/pairing.md Section 4.1: a node with no sync that an invitation made a hub says what its
+    /// listener is doing, rather than that sync is not configured.
+    #[tokio::test]
+    async fn a_hub_with_no_sync_says_what_its_listener_does() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
+        let s = SupragnosisServer::new(engine).with_listener(state.clone());
+        let before = json(&s.sync_status(req(serde_json::json!({}))).await);
+        assert!(
+            before["error"].as_str().is_some_and(|e| e.contains("not configured")),
+            "{before}"
+        );
+        *state.write().unwrap() = serde_json::json!({"listening": false, "address": "0.0.0.0:7420", "why": "nothing is admitted"});
+        let after = json(&s.sync_status(req(serde_json::json!({}))).await);
+        assert_eq!(after["listener"]["why"], "nothing is admitted", "{after}");
+        assert!(after.get("error").is_none());
+    }
+
     #[tokio::test]
     async fn what_has_no_effect_says_so() {
         let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));

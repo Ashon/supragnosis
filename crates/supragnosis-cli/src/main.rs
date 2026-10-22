@@ -86,6 +86,14 @@ enum Cmd {
         #[command(subcommand)]
         cmd: PrincipalCmd,
     },
+    /// Let another machine join this one: prints a one-time code, then each request's words and
+    /// asks to allow it (docs/pairing.md Section 3a)
+    Invite(InviteArgs),
+    /// The machines that joined this hub: list them, or remove one (docs/pairing.md Section 4.6)
+    Peer {
+        #[command(subcommand)]
+        cmd: PeerCmd,
+    },
     /// The always-on daemon as a login item (the LaunchAgent com.supragnosis.daemon on macOS, the systemd user unit supragnosis.service on Linux)
     Service {
         #[command(subcommand)]
@@ -160,6 +168,43 @@ enum PrincipalCmd {
     Remove { name: String },
     /// List the principals and their grants (never their credentials)
     List,
+}
+
+#[derive(Args, Default)]
+struct InviteArgs {
+    /// Workspaces the two machines keep in step, comma-separated; none shares nothing yet
+    #[arg(long)]
+    keep: Option<String>,
+    /// How the joining machine reaches this one - a DNS, Tailscale or VPN name, or an address;
+    /// repeatable. Without it the code carries the .local name and the IPv4 address
+    #[arg(long)]
+    address: Vec<String>,
+    /// Print the open invitation and any waiting request, and ask again
+    #[arg(long)]
+    show: bool,
+    /// End the open invitation
+    #[arg(long)]
+    cancel: bool,
+    /// Print the invitation as JSON and return at once, without waiting (the desktop app reads this)
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum PeerCmd {
+    /// The machines that joined this hub, and those removed
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a joined machine: it stops syncing with this one now, and keeps what it received
+    Remove {
+        /// The name it joined with, or its node id
+        name: String,
+        /// Do not ask first
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -322,8 +367,10 @@ mod bridge;
 mod connect;
 mod hook;
 mod hub;
+mod invite;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
+mod pair;
 mod principal;
 mod profile;
 mod setup;
@@ -344,6 +391,8 @@ fn main() -> Result<()> {
         Cmd::Hook(a) => hook_cmd(a),
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
+        Cmd::Invite(a) => invite_cmd(a),
+        Cmd::Peer { cmd } => peer_cmd(cmd),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
         Cmd::Identity(a) => identity_cmd(a),
@@ -1111,11 +1160,10 @@ async fn run(cfg: Config) -> Result<()> {
     // Federation config first: a hub serves the viewer's read tier to its principals
     // (docs/remote-viewer.md), and that tier's event stream needs the channel the engine emits into.
     let fedcfg = fed::load()?;
-    // Create the event channel only when something subscribes to it - the local viewer, or a hub's
-    // read tier. The engine sink and the SSE subscriptions share it.
-    let hub = fedcfg.as_ref().is_some_and(|c| c.server.is_some());
-    let events =
-        (cfg.viz.is_some() || hub).then(|| tokio::sync::broadcast::channel::<String>(256).0);
+    // The event channel the engine emits into, for the local viewer and a hub's read tier. Made
+    // whether or not this node is a hub yet: an invitation can make it one while it runs
+    // (docs/pairing.md Section 4.1), and a channel no one subscribes to costs a failed send.
+    let events = Some(tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
     // What was written before the model gets its vectors once the model is there
     // (semantic-retrieval.md Section 12): a thread of its own, since it embeds and waits, and only
@@ -1137,14 +1185,23 @@ async fn run(cfg: Config) -> Result<()> {
     // Absent = standalone node (no behavior change); present-but-broken = fail loud (P5). Built
     // before the viewer so a misconfigured federation dies before any socket is bound, and so the
     // console can be handed the admission handler this produces.
-    let (sync_ctx, narrow, hub_listener) =
-        build_sync_context(&engine, fedcfg, fed_status.clone(), events.clone()).await?;
+    // The hub's listener state: there from the start, so a hub an invitation makes says what its
+    // listener is doing at once, in `sync_status` too (docs/pairing.md Section 4.1).
+    let listener_state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
+    let (sync_ctx, narrow, hub_slot) = build_sync_context(
+        &engine,
+        fedcfg,
+        fed_status.clone(),
+        events.clone(),
+        listener_state.clone(),
+    )
+    .await?;
     if let Some(ctx) = sync_ctx.as_ref().filter(|c| !c.servers.is_empty()) {
         spawn_sync_rounds(engine.clone(), ctx.clone());
     }
-    // This user's processes reach the running daemon here: Sync now, and the hub re-reading its
-    // admissions (docs/pairing.md Section 4).
-    hub::spawn_admin(engine.clone(), sync_ctx.clone(), hub_listener).await;
+    // This user's processes reach the running daemon here: Sync now, the hub re-reading its
+    // admissions, and pairing's acts (docs/pairing.md Section 4).
+    hub::spawn_admin(engine.clone(), sync_ctx.clone(), hub_slot).await;
 
     if let (Some(sock), Some(tx)) = (cfg.viz.as_ref(), events.as_ref()) {
         spawn_viz(&engine, sock, tx.clone(), fed_status, narrow).await;
@@ -1154,7 +1211,7 @@ async fn run(cfg: Config) -> Result<()> {
         Some(http) => {
             serve_http_daemon(
                 engine,
-                sync_ctx,
+                SyncSurface { ctx: sync_ctx, listener: listener_state },
                 http,
                 cfg.mcp_auth,
                 &cfg.host,
@@ -1165,7 +1222,7 @@ async fn run(cfg: Config) -> Result<()> {
         }
         None => {
             tracing::info!(host = %cfg.host, workspace = %cfg.workspace, session = %cfg.session, "supragnosis / starting stdio MCP server");
-            let mut server = SupragnosisServer::new(engine);
+            let mut server = SupragnosisServer::new(engine).with_listener(listener_state);
             if let Some(ctx) = sync_ctx {
                 server = server.with_sync(ctx);
             }
@@ -1176,24 +1233,29 @@ async fn run(cfg: Config) -> Result<()> {
     }
 }
 
-/// Builds the MCP sync context from supragnosis.toml (and starts the sync API server when a
-/// `[server]` section is present). Returns None on a standalone node.
 /// What `build_sync_context` wires: the sync tools' context, the viewer's narrowing act, and the
-/// hub's listener when the node has a `[server]` section.
+/// hub's wiring - built now when the node has a `[server]` section, and by its first invitation
+/// when it does not.
 type SyncWiring = (
     Option<Arc<supragnosis_mcp::SyncContext>>,
     Option<supragnosis_viz::NarrowShare>,
-    Option<Arc<hub::HubListener>>,
+    Arc<hub::HubSlot>,
 );
 
+/// Builds the MCP sync context from supragnosis.toml, and the hub's listener when a `[server]`
+/// section is present. No sync context on a standalone node.
 async fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
     events: Option<tokio::sync::broadcast::Sender<String>>,
+    listener_state: Arc<std::sync::RwLock<serde_json::Value>>,
 ) -> Result<SyncWiring> {
+    // Runtime peer observability (hub role): who actually checked in, when, how much.
+    let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
     let Some(fc) = fedcfg else {
-        return Ok((None, None, None));
+        let slot = hub_slot(engine.clone(), None, events, peer_registry, listener_state);
+        return Ok((None, None, slot));
     };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
     // clock and the per-workspace seq counters (two live counters over one store would collide).
@@ -1215,108 +1277,21 @@ async fn build_sync_context(
     // where both sides are wired, and typed in the sync crate so neither adapter has to depend on
     // the other to see it (negotiated-surface.md Section 2).
     let surfaces: supragnosis_sync::NegotiatedSurfaces = Default::default();
-    // Runtime peer observability (hub role): who actually checked in, when, how much.
     // Set on a hub: the live admission directory, published so the console can show who is in.
     let mut admitted: Option<Arc<supragnosis_sync::http::PeerDirectory>> = None;
-    let mut hub_listener: Option<Arc<hub::HubListener>> = None;
-    let listener_state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
-    let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
+    let slot = hub_slot(
+        engine.clone(),
+        Some(node.clone()),
+        events,
+        peer_registry.clone(),
+        listener_state.clone(),
+    );
     if let Some(srv) = &fc.server {
-        // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
-        let hook_engine = engine.clone();
-        let on_applied: supragnosis_sync::http::OnApplied = Arc::new(move |ws: &str| {
-            match hook_engine.reproject(Some(ws)) {
-                Ok(r) => tracing::info!(
-                    workspace = ws,
-                    entities = r.entities,
-                    relations = r.relations,
-                    "re-materialized after inbound sync"
-                ),
-                Err(e) => {
-                    tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed")
-                }
-            }
-        });
-        // Live observability: stream sync hits into the viewer's event feed (SSE activity log).
-        let act_engine = engine.clone();
-        let on_activity: supragnosis_sync::http::OnActivity =
-            Arc::new(move |a: supragnosis_sync::http::SyncActivity| {
-                act_engine.emit(Event::Sync {
-                    direction: a.direction.to_string(),
-                    peer: a.peer,
-                    workspace: a.workspace,
-                    count: a.count,
-                });
-            });
-        // Federated retrieval: remote peers search THIS node's full retrieval surface (hybrid when the
-        // embedder is present), not just the store's keyword path.
-        let search_engine = engine.clone();
-        let on_search: supragnosis_sync::http::OnSearch = Arc::new(move |ws, q, lim| {
-            search_engine
-                .search(q, Some(ws), lim)
-                .map(|o| {
-                    let mode = match o.mode {
-                        SearchMode::Hybrid => "hybrid",
-                        SearchMode::Keyword => "keyword",
-                    };
-                    (o.hits, mode.to_string())
-                })
-                .map_err(|e| e.to_string())
-        });
-        // The agent surface (docs/remote-server.md Section 4): MCP for principals on this listener.
-        // Mounted whenever there is a listener - principals added later are admitted without a
-        // restart - and counted toward the bind rule. Knowledge another node originated is served
-        // only with its consent (R5), which nodes give on their sync rounds and the book keeps.
-        let book =
-            Arc::new(principal::ConsentBook::open(fed::fed_base_dir().join("served-consent.json")));
-        let reader = book.clone();
-        let consented: principal::Consented = Arc::new(move |ws| reader.consented(ws));
-        let recorder = book.clone();
-        let on_consent: supragnosis_sync::http::OnConsent =
-            Arc::new(move |node, ws, serve| recorder.record(node, ws, serve));
-        let extra = supragnosis_sync::http::ExtraSurface {
-            router: principal::router(
-                engine.clone(),
-                Arc::new(principal::Directory::new(fed::config_path())),
-                principal::servable(engine.clone(), node.node_id().to_string(), consented, {
-                    let peers = peer_registry.clone();
-                    Arc::new(move |n: &str| peers.release_of(n))
-                }),
-                events,
-            ),
-            admitted: srv.principals.len(),
-        };
-        if !srv.principals.is_empty() {
-            tracing::info!(
-                principals = srv.principals.len(),
-                "agent surface: MCP for principals at /mcp on the sync listener"
-            );
-        }
-        let hooks = supragnosis_sync::http::Hooks {
-            on_applied: Some(on_applied),
-            on_activity: Some(on_activity),
-            on_search: Some(on_search),
-            peer_registry: Some(peer_registry.clone()),
-            extra: Some(extra),
-            on_consent: Some(on_consent),
-        };
         // The listener is up only while the bind rule allows it, and a listener that cannot open
         // leaves the node serving and says why (docs/pairing.md Section 4.1, Principle 24).
-        let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
-            srv.allowlist.clone(),
-            node.node_id(),
-            &node.public_key_hex(),
-        ));
-        let listener = Arc::new(hub::HubListener::new(
-            engine.store(),
-            node.clone(),
-            hooks,
-            peers.clone(),
-            listener_state.clone(),
-        ));
-        listener.apply(srv).await;
-        admitted = Some(peers);
-        hub_listener = Some(listener);
+        let hub = slot.hub().await?;
+        hub.apply(srv).await;
+        admitted = Some(hub.peers.clone());
     }
     let mut origin_keys = trusted_origin_keys(&fc.sync);
     origin_keys.insert(node.node_id().to_string(), node.public_key_hex());
@@ -1391,8 +1366,128 @@ async fn build_sync_context(
             listener: listener_state.clone(),
         })),
         narrow,
-        hub_listener,
+        slot,
     ))
+}
+
+/// The hub's wiring, made when it is first needed: at start for a node with a `[server]` section,
+/// or by its first invitation (docs/pairing.md Section 4.1). `node` is the sync tools' own, when the
+/// node has one - one identity and one SyncNode per process, since the two share the HLC clock and
+/// the seq counters; without one, the node key is loaded, or made once, here.
+fn hub_slot(
+    engine: Arc<Engine>,
+    node: Option<Arc<supragnosis_sync::SyncNode>>,
+    events: Option<tokio::sync::broadcast::Sender<String>>,
+    peer_registry: Arc<supragnosis_sync::http::PeerRegistry>,
+    listener_state: Arc<std::sync::RwLock<serde_json::Value>>,
+) -> Arc<hub::HubSlot> {
+    Arc::new(hub::HubSlot::new(move || {
+        let node = match &node {
+            Some(node) => node.clone(),
+            None => {
+                let identity = fed::load_or_create_identity()?;
+                Arc::new(
+                    supragnosis_sync::SyncNode::new(identity)
+                        .with_seq_mark(fed::fed_base_dir().join("node.seq")),
+                )
+            }
+        };
+        // Post-apply hook: re-materialize the workspace after inbound pushes (Prop C).
+        let hook_engine = engine.clone();
+        let on_applied: supragnosis_sync::http::OnApplied = Arc::new(move |ws: &str| {
+            match hook_engine.reproject(Some(ws)) {
+                Ok(r) => tracing::info!(
+                    workspace = ws,
+                    entities = r.entities,
+                    relations = r.relations,
+                    "re-materialized after inbound sync"
+                ),
+                Err(e) => {
+                    tracing::error!(workspace = ws, error = %e, "re-materialization after inbound sync failed")
+                }
+            }
+        });
+        // Live observability: stream sync hits into the viewer's event feed (SSE activity log).
+        let act_engine = engine.clone();
+        let on_activity: supragnosis_sync::http::OnActivity =
+            Arc::new(move |a: supragnosis_sync::http::SyncActivity| {
+                act_engine.emit(Event::Sync {
+                    direction: a.direction.to_string(),
+                    peer: a.peer,
+                    workspace: a.workspace,
+                    count: a.count,
+                });
+            });
+        // Federated retrieval: remote peers search THIS node's full retrieval surface (hybrid when
+        // the embedder is present), not just the store's keyword path.
+        let search_engine = engine.clone();
+        let on_search: supragnosis_sync::http::OnSearch = Arc::new(move |ws, q, lim| {
+            search_engine
+                .search(q, Some(ws), lim)
+                .map(|o| {
+                    let mode = match o.mode {
+                        SearchMode::Hybrid => "hybrid",
+                        SearchMode::Keyword => "keyword",
+                    };
+                    (o.hits, mode.to_string())
+                })
+                .map_err(|e| e.to_string())
+        });
+        // The agent surface (docs/remote-server.md Section 4): MCP for principals on this
+        // listener. Mounted whenever there is a listener - principals added later are admitted
+        // without a restart - and counted toward the bind rule when `apply` opens it. Knowledge
+        // another node originated is served only with its consent (R5), which nodes give on their
+        // sync rounds and the book keeps.
+        let book =
+            Arc::new(principal::ConsentBook::open(fed::fed_base_dir().join("served-consent.json")));
+        let reader = book.clone();
+        let consented: principal::Consented = Arc::new(move |ws| reader.consented(ws));
+        let recorder = book.clone();
+        let on_consent: supragnosis_sync::http::OnConsent =
+            Arc::new(move |node, ws, serve| recorder.record(node, ws, serve));
+        let extra = supragnosis_sync::http::ExtraSurface {
+            router: principal::router(
+                engine.clone(),
+                Arc::new(principal::Directory::new(fed::config_path())),
+                principal::servable(engine.clone(), node.node_id().to_string(), consented, {
+                    let peers = peer_registry.clone();
+                    Arc::new(move |n: &str| peers.release_of(n))
+                }),
+                events.clone(),
+            ),
+            admitted: 0,
+        };
+        let hooks = supragnosis_sync::http::Hooks {
+            on_applied: Some(on_applied),
+            on_activity: Some(on_activity),
+            on_search: Some(on_search),
+            peer_registry: Some(peer_registry.clone()),
+            extra: Some(extra),
+            on_consent: Some(on_consent),
+        };
+        let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
+            Vec::new(),
+            node.node_id(),
+            &node.public_key_hex(),
+        ));
+        let paths = invite::Paths::default_paths();
+        let pairing = Arc::new(invite::Pairing::new(
+            paths.clone(),
+            node.clone(),
+            engine.store(),
+            invite::hub_name(&paths.config),
+        ));
+        let hub = Arc::new(hub::HubListener::new(
+            engine.store(),
+            node,
+            hooks,
+            peers,
+            pairing,
+            listener_state.clone(),
+        ));
+        hub.follow();
+        Ok(hub)
+    }))
 }
 
 /// How long the daemon waits before its next sync round (docs/pairing.md Section 4.5): five minutes
@@ -2954,6 +3049,213 @@ fn server_cmd(a: ServerArgs) -> Result<()> {
 
 /// Tells a running daemon the hub's admissions changed, so its listener opens or closes as the bind
 /// rule now allows (docs/pairing.md Section 4.1). With no daemon running there is nothing to tell.
+/// What the admin calls answer when no daemon runs here.
+fn no_daemon() -> anyhow::Error {
+    anyhow::anyhow!(
+        "No supragnosis daemon answers on this machine. Start it - `supragnosis start`, or open the \
+         app - and try again."
+    )
+}
+
+/// An admin call's answer, or its refusal as an error.
+fn admin(method: &str, path: &str, body: Option<&serde_json::Value>) -> Result<serde_json::Value> {
+    let answer = match body {
+        Some(b) => hub::call_with(method, path, b)?,
+        None => hub::call(method, path)?,
+    }
+    .ok_or_else(no_daemon)?;
+    if let Some(e) = answer.get("error").and_then(|e| e.as_str()) {
+        anyhow::bail!("{e}");
+    }
+    Ok(answer)
+}
+
+fn ask_yes(question: &str) -> Result<bool> {
+    use std::io::{BufRead, Write};
+    print!("{question} [y/N] ");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+}
+
+/// `supragnosis invite` (docs/pairing.md Section 3a): asks the daemon for an invitation, prints the
+/// code, and waits for a request - its words and Allow in this terminal. Leaving it leaves the
+/// invitation open until it expires; `--show` comes back to it.
+fn invite_cmd(a: InviteArgs) -> Result<()> {
+    if a.cancel {
+        admin("POST", "/hub/cancel", None)?;
+        println!("Cancelled the open invitation.");
+        return Ok(());
+    }
+    let made = match a.show {
+        true => None,
+        false => {
+            let keep = a
+                .keep
+                .as_deref()
+                .map(|k| {
+                    k.split(',').map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect()
+                })
+                .unwrap_or_default();
+            let ask = hub::InviteAsk { workspaces: keep, addresses: a.address.clone() };
+            Some(admin("POST", "/hub/invite", Some(&serde_json::to_value(ask)?))?)
+        }
+    };
+    if a.json {
+        let out = match &made {
+            Some(m) => m.clone(),
+            None => admin("GET", "/hub/invite", None)?,
+        };
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+    let (code, expires, keep) = match &made {
+        Some(m) => (
+            m["code"].as_str().map(str::to_string),
+            m["expires"].as_u64(),
+            m["workspaces"].clone(),
+        ),
+        None => {
+            let st = admin("GET", "/hub/invite", None)?;
+            let open = &st["open"];
+            if open.is_null() {
+                match st["last"]["said"].as_str() {
+                    Some(said) => println!("No invitation is open. The last one: {said}"),
+                    None => println!("No invitation is open. `supragnosis invite --keep <workspaces>` makes one."),
+                }
+                return Ok(());
+            }
+            (
+                open["code"].as_str().map(str::to_string),
+                open["expires"].as_u64(),
+                open["workspaces"].clone(),
+            )
+        }
+    };
+    let left = expires.unwrap_or(0).saturating_sub(invite::now()).div_ceil(60);
+    let keep: Vec<&str> =
+        keep.as_array().into_iter().flatten().filter_map(|w| w.as_str()).collect();
+    if let Some(m) = &made {
+        if m["replaced"] == true {
+            println!("The invitation that was open is cancelled.");
+        }
+        if m["listener"]["listening"] != true {
+            if let Some(why) = m["listener"]["why"].as_str() {
+                println!("The hub is not listening yet: {why}");
+            }
+        }
+        for note in m["notes"].as_array().into_iter().flatten().filter_map(|n| n.as_str()) {
+            println!("{note}");
+        }
+    }
+    match code {
+        Some(code) => {
+            println!("The code, good for one join and {left} more minute(s):");
+            println!();
+            println!("  {code}");
+            println!();
+        }
+        None => println!(
+            "The code can no longer be shown - the daemon restarted since it was made. It still \
+             works for {left} more minute(s), or make a new one."
+        ),
+    }
+    match keep.is_empty() {
+        true => println!("It shares no workspace yet."),
+        false => println!("The two machines will keep {} in step.", keep.join(", ")),
+    }
+    println!(
+        "On the other machine: Settings > Sync > Join another Mac, or `supragnosis join` and paste it."
+    );
+    println!("Waiting for it to ask. Leaving here leaves the invitation open; `supragnosis invite --show` comes back.");
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let st = admin("GET", "/hub/invite", None)?;
+        let open = &st["open"];
+        if open.is_null() {
+            let said = st["last"]["said"].as_str().unwrap_or("The invitation closed.");
+            match (st["last"]["state"].as_str(), st["last"]["name"].as_str()) {
+                (Some("used"), Some(name)) => println!("{name} joined."),
+                _ => println!("{said}"),
+            }
+            return Ok(());
+        }
+        let request = &open["request"];
+        let (Some(name), Some(words)) = (request["name"].as_str(), request["words"].as_array())
+        else {
+            continue;
+        };
+        let words: Vec<&str> = words.iter().filter_map(|w| w.as_str()).collect();
+        println!();
+        println!("{name} asks to join. Its words: {}", words.join(" "));
+        if ask_yes(&format!("Are they the words {name} shows? Allow it?"))? {
+            let joined = admin("POST", "/hub/allow", None)?;
+            let keep: Vec<&str> = joined["joined"]["workspaces"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|w| w.as_str())
+                .collect();
+            println!(
+                "{name} joined.{}",
+                match keep.is_empty() {
+                    true => " It shares no workspace yet.".to_string(),
+                    false => format!(" The two keep {} in step.", keep.join(", ")),
+                }
+            );
+        } else {
+            admin("POST", "/hub/deny", None)?;
+            println!("Denied. The invitation is closed; make a new code to try again.");
+        }
+        return Ok(());
+    }
+}
+
+/// `supragnosis peer` (docs/pairing.md Section 4.6).
+fn peer_cmd(cmd: PeerCmd) -> Result<()> {
+    match cmd {
+        PeerCmd::List { json } => {
+            let peers = invite::peers_json(&invite::Paths::default_paths())?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&peers)?);
+                return Ok(());
+            }
+            let joined = peers["joined"].as_array().cloned().unwrap_or_default();
+            if joined.is_empty() {
+                println!("No machine has joined this one. `supragnosis invite` lets one join.");
+            }
+            for j in &joined {
+                let keep: Vec<&str> = j["workspaces"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|w| w.as_str())
+                    .collect();
+                println!(
+                    "  {:<20} {}  keeps: {}",
+                    j["name"].as_str().unwrap_or("?"),
+                    j["node_id"].as_str().unwrap_or("?"),
+                    if keep.is_empty() { "nothing yet".to_string() } else { keep.join(", ") }
+                );
+            }
+            Ok(())
+        }
+        PeerCmd::Remove { name, yes } => {
+            println!(
+                "{name} stops syncing with this machine now. What it already received stays on it."
+            );
+            if !yes && !ask_yes(&format!("Remove {name}?"))? {
+                println!("Nothing changed.");
+                return Ok(());
+            }
+            let out = admin("POST", "/hub/peer/remove", Some(&serde_json::json!({"name": name})))?;
+            println!("Removed {}.", out["removed"].as_str().unwrap_or(&name));
+            Ok(())
+        }
+    }
+}
+
 fn refresh_hub() {
     match hub::call("POST", "/server/refresh") {
         Ok(Some(state)) if state["listening"] == true => {
@@ -2978,9 +3280,11 @@ fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
     })?;
     match cmd {
         PrincipalCmd::Add { name, read, write } => {
-            let (edited, credential) = principal::add(&text, &name, &read, &write)?;
-            connect::write_replacing(&path, &edited)
-                .with_context(|| format!("writing {}", path.display()))?;
+            // Under the configuration's lock, on the file as it is now (pairing.md Section 4.4).
+            let (edited, credential) = fed::edit_config(|now| {
+                let (edited, credential) = principal::add(now, &name, &read, &write)?;
+                Ok((edited.clone(), (edited, credential)))
+            })?;
             let listen = toml::from_str::<fed::FileConfig>(&edited)
                 .ok()
                 .and_then(|c| c.server)
@@ -3001,9 +3305,7 @@ fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
             Ok(())
         }
         PrincipalCmd::Remove { name } => {
-            let edited = principal::remove(&text, &name)?;
-            connect::write_replacing(&path, &edited)
-                .with_context(|| format!("writing {}", path.display()))?;
+            fed::edit_config(|now| Ok((principal::remove(now, &name)?, ())))?;
             println!("revoked {name} - its credential stops working at its next request");
             refresh_hub();
             Ok(())
@@ -3210,9 +3512,16 @@ async fn spawn_viz(
 /// which keeps the surface on this HOST. A bearer token ([`require_token`]) keeps it to this USER,
 /// which loopback never did - the sentence "loopback is the local trust surface, so no
 /// authentication is justified" stood here and was wrong on any multi-user machine.
+/// What the MCP surface reads about sync: the sync tools' context on a node with a hub, and the
+/// hub's listener state on every node (docs/pairing.md Section 4.1).
+struct SyncSurface {
+    ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
+    listener: Arc<std::sync::RwLock<serde_json::Value>>,
+}
+
 async fn serve_http_daemon(
     engine: Arc<Engine>,
-    sync_ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
+    sync: SyncSurface,
     http_addr: &str,
     auth: bool,
     host: &str,
@@ -3237,7 +3546,7 @@ async fn serve_http_daemon(
             None
         }
     };
-    let router = mcp_router(engine, sync_ctx, token);
+    let router = mcp_router(engine, sync.ctx, Some(sync.listener), token);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind MCP daemon at {addr}"))?;
@@ -3308,6 +3617,7 @@ fn client_log() -> Arc<supragnosis_mcp::ClientLog> {
 fn mcp_router(
     engine: Arc<Engine>,
     sync_ctx: Option<Arc<supragnosis_mcp::SyncContext>>,
+    listener: Option<Arc<std::sync::RwLock<serde_json::Value>>>,
     token: Option<String>,
 ) -> axum::Router {
     let service = StreamableHttpService::new(
@@ -3315,6 +3625,9 @@ fn mcp_router(
             let mut server = SupragnosisServer::new(engine.clone()).with_clients(client_log());
             if let Some(ctx) = &sync_ctx {
                 server = server.with_sync(ctx.clone());
+            }
+            if let Some(listener) = &listener {
+                server = server.with_listener(listener.clone());
             }
             Ok(server)
         },
@@ -5475,14 +5788,60 @@ mod fed {
     }
 
     pub fn load() -> Result<Option<FileConfig>> {
-        let path = config_path();
+        load_at(&config_path())
+    }
+
+    pub fn load_at(path: &std::path::Path) -> Result<Option<FileConfig>> {
         if !path.exists() {
             return Ok(None);
         }
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let cfg = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
         Ok(Some(cfg))
+    }
+
+    /// Edits `supragnosis.toml` in place under the lock file beside it (docs/pairing.md Section
+    /// 4.4). The file is re-read inside the lock, so two edits - pairing's, the narrowing act's,
+    /// `principal`'s - never lose each other's change; `edit` returns the new text, built with the
+    /// format-preserving editor so every line the person wrote stays; and the new text replaces the
+    /// old through a rename, so a reader never sees half of it. A file that does not exist yet is
+    /// read as empty and made owner-only.
+    pub fn edit_config_at<T>(
+        path: &std::path::Path,
+        edit: impl FnOnce(&str) -> Result<(String, T)>,
+    ) -> Result<T> {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("supragnosis.toml");
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        }
+        let lock_path = path.with_file_name(format!(".{name}.lock"));
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .with_context(|| format!("opening {}", lock_path.display()))?;
+        lock.lock().with_context(|| format!("locking {}", lock_path.display()))?;
+        let (text, existed) = match std::fs::read_to_string(path) {
+            Ok(t) => (t, true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
+            Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+        };
+        let (edited, out) = edit(&text)?;
+        if edited != text {
+            if existed {
+                crate::connect::write_replacing(path, &edited)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            } else {
+                super::write_secret(path, edited.as_bytes())?;
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn edit_config<T>(edit: impl FnOnce(&str) -> Result<(String, T)>) -> Result<T> {
+        edit_config_at(&config_path(), edit)
     }
 
     /// Narrows one peer's `shared_workspaces` in `supragnosis.toml`, preserving the file's comments
@@ -5502,8 +5861,15 @@ mod fed {
     /// workflow, federation.md Section 11).
     pub fn narrow_shared_workspaces(node_id: &str, keep: &[String]) -> Result<Vec<String>> {
         let path = config_path();
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        edit_config_at(&path, |text| narrow_text(&path, text, node_id, keep))
+    }
+
+    fn narrow_text(
+        path: &std::path::Path,
+        text: &str,
+        node_id: &str,
+        keep: &[String],
+    ) -> Result<(String, Vec<String>)> {
         let mut doc: toml_edit::DocumentMut =
             text.parse().with_context(|| format!("parsing {}", path.display()))?;
 
@@ -5551,11 +5917,10 @@ mod fed {
             }
             entry["shared_workspaces"] = toml_edit::value(arr);
         }
-        // Through a temp file and a rename: the file holds the node's sync credentials, and a
-        // reader - the daemon re-reads it right after this - must never see half of it.
-        crate::connect::write_replacing(&path, &doc.to_string())
-            .with_context(|| format!("writing {}", path.display()))?;
-        Ok(now)
+        // Written by `edit_config_at`, through a temp file and a rename: the file holds the node's
+        // sync credentials, and a reader - the daemon re-reads it right after this - must never
+        // see half of it.
+        Ok((doc.to_string(), now))
     }
 
     /// Loads (or generates exactly once) the node keypair at ~/.supragnosis/node.key - 32 raw
@@ -5746,6 +6111,38 @@ mod fed {
                 five,
                 "one round that works resets the wait"
             );
+        }
+
+        /// docs/pairing.md Section 4.4: edits made at once, from many threads, each re-read the file
+        /// inside the lock, so none loses another's change, and every line the person wrote stays.
+        #[test]
+        fn two_edits_never_lose_each_others_change() {
+            let dir = std::env::temp_dir().join(format!("sg-edit-lock-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("supragnosis.toml");
+            std::fs::write(&path, "# the person's line\nhost_label = \"hub\"\n").unwrap();
+            let edits: Vec<_> = (0..16)
+                .map(|i| {
+                    let path = path.clone();
+                    std::thread::spawn(move || {
+                        edit_config_at(&path, |text| {
+                            let mut doc: toml_edit::DocumentMut = text.parse()?;
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                            doc[&format!("k{i}")] = toml_edit::value(i as i64);
+                            Ok((doc.to_string(), ()))
+                        })
+                        .unwrap()
+                    })
+                })
+                .collect();
+            edits.into_iter().for_each(|e| e.join().unwrap());
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.starts_with("# the person's line\n"), "{text}");
+            for i in 0..16 {
+                assert!(text.contains(&format!("k{i} = {i}")), "edit {i} was lost: {text}");
+            }
+            let _ = std::fs::remove_dir_all(&dir);
         }
 
         #[test]
@@ -6527,8 +6924,9 @@ mod link_transport {
     use super::*;
 
     /// docs/pairing.md Section 4.1 and Principle 24: a `[server]` whose listener cannot open leaves
-    /// the node serving and says why, and the listener opens and closes as the bind rule allows. It
-    /// stopped the daemon before, and launchd restarted it into the same exit.
+    /// the node serving and says why, and the listener opens and closes as the bind rule allows -
+    /// an open invitation counting as an admission until it expires (D5). It stopped the daemon
+    /// before, and launchd restarted it into the same exit.
     #[tokio::test]
     async fn a_listener_that_cannot_open_leaves_the_node_serving() {
         let store: Arc<dyn supragnosis_core::AssertionStore> =
@@ -6542,29 +6940,40 @@ mod link_transport {
             node.node_id(),
             &node.public_key_hex(),
         ));
+        let dir = std::env::temp_dir().join(format!("sg-listener-{}", std::process::id()));
+        let paths = invite::Paths { hub: dir.join("hub"), config: dir.join("supragnosis.toml") };
+        let pairing = Arc::new(invite::Pairing::new(
+            paths.clone(),
+            node.clone(),
+            store.clone(),
+            "hub".into(),
+        ));
         let listener = hub::HubListener::new(
             store,
             node,
             supragnosis_sync::http::Hooks::default(),
             peers,
+            pairing.clone(),
             state.clone(),
         );
-        let srv = |listen: &str, cert: Option<&str>| fed::ServerSection {
+        let srv = |listen: &str, cert: Option<&str>, key: Option<&str>| fed::ServerSection {
             listen: listen.into(),
             tls_cert: cert.map(String::from),
-            tls_key: cert.map(|_| "/nonexistent/hub.key".to_string()),
+            tls_key: key.map(String::from),
             allowlist: Vec::new(),
             principals: Vec::new(),
         };
-        let unreadable = listener.apply(&srv("127.0.0.1:0", Some("/nonexistent/hub.crt"))).await;
+        let unreadable = listener
+            .apply(&srv("127.0.0.1:0", Some("/nonexistent/hub.crt"), Some("/nonexistent/hub.key")))
+            .await;
         assert_eq!(unreadable["listening"], false, "{unreadable}");
         assert!(
             unreadable["why"].as_str().is_some_and(|w| w.contains("could not start")),
             "{unreadable}"
         );
-        let loopback = listener.apply(&srv("127.0.0.1:0", None)).await;
+        let loopback = listener.apply(&srv("127.0.0.1:0", None, None)).await;
         assert_eq!(loopback["listening"], true, "loopback needs no admission: {loopback}");
-        let open = listener.apply(&srv("0.0.0.0:0", None)).await;
+        let open = listener.apply(&srv("0.0.0.0:0", None, None)).await;
         assert_eq!(open["listening"], false, "{open}");
         assert!(open["why"].as_str().is_some_and(|w| w.contains("TLS")), "{open}");
         assert_eq!(
@@ -6572,6 +6981,34 @@ mod link_transport {
             false,
             "sync_status reads the same state"
         );
+        // An address no interface holds: the bind rule is all that differs between the two applies.
+        // Nothing admitted refuses before binding; an open invitation passes the rule and the bind
+        // itself then fails - no listener opens on this machine during the test.
+        let (cert, key) =
+            invite::make_certificate(&paths.hub, &["hub.local".into()], invite::now())
+                .expect("cert");
+        let elsewhere = srv("192.0.2.1:7420", Some(&cert), Some(&key));
+        let closed = listener.apply(&elsewhere).await;
+        assert!(
+            closed["why"].as_str().is_some_and(|w| w.contains("no open invitation")),
+            "{closed}"
+        );
+        let t = invite::now();
+        pairing
+            .invite(vec![], vec!["hub.local:7420".into()], pair::CertCheck::ByName, t)
+            .expect("invites");
+        let invited = listener.apply(&elsewhere).await;
+        assert!(
+            invited["why"].as_str().is_some_and(|w| w.contains("could not start")),
+            "an open invitation counts as an admission: {invited}"
+        );
+        pairing.expire(t + invite::VALID_FOR).expect("expires");
+        let expired = listener.apply(&elsewhere).await;
+        assert!(
+            expired["why"].as_str().is_some_and(|w| w.contains("no open invitation")),
+            "and stops counting at its expiry: {expired}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn links_of(toml: &str) -> (Vec<supragnosis_sync::ServerLink>, Vec<String>) {

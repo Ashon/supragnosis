@@ -1,15 +1,16 @@
 //! The hub's listener and the daemon's admin socket (docs/pairing.md Sections 4 and 4.1).
 //!
 //! The listener is up only while the bind rule allows it (F10, Principle 24): TLS off loopback and
-//! something admitted. When it cannot open - nothing admitted, no TLS, the port taken, a certificate
-//! it cannot read - the node keeps serving everything else and says why, rather than exiting into
-//! launchd's restart of the same exit. `apply` is the one place that decides, at start and whenever
-//! the configuration changes.
+//! something admitted - a node, a principal or an open invitation (D5). When it cannot open -
+//! nothing admitted, no TLS, the port taken, a certificate it cannot read - the node keeps serving
+//! everything else and says why, rather than exiting into launchd's restart of the same exit.
+//! `apply` is the one place that decides, at start, whenever the configuration changes and whenever
+//! an invitation opens or closes.
 //!
 //! The admin socket is how this user's own processes change the running daemon: start a sync round,
-//! re-read the hub's admissions. It is a `0600` unix socket in the owner-only directory, so it needs
-//! no token and is open to no other account, no agent (it is not MCP) and no page (the app's proxy
-//! reaches only the viewer socket).
+//! re-read the hub's admissions, invite, allow, deny, remove. It is a `0600` unix socket in the
+//! owner-only directory, so it needs no token and is open to no other account, no agent (it is not
+//! MCP) and no page (the app's proxy reaches only the viewer socket).
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ use supragnosis_core::AssertionStore;
 use supragnosis_sync::http::{self as sync_http, Hooks, PeerDirectory};
 use supragnosis_sync::SyncNode;
 
-use crate::fed;
+use crate::{fed, invite};
 
 /// The hub's listener, opened and closed by the bind rule.
 pub struct HubListener {
@@ -29,6 +30,8 @@ pub struct HubListener {
     hooks: Hooks,
     /// Who may connect; the running server reads it per request, and `apply` swaps it.
     pub peers: Arc<PeerDirectory>,
+    /// The hub's invitations and the machines they admitted (docs/pairing.md Section 4.3).
+    pub pairing: Arc<invite::Pairing>,
     running: Mutex<Option<(SocketAddr, tokio::task::JoinHandle<()>)>>,
     /// `{listening, address, why}`, read by `sync_status` and the Sync pane.
     state: Arc<RwLock<serde_json::Value>>,
@@ -40,16 +43,54 @@ impl HubListener {
         node: Arc<SyncNode>,
         hooks: Hooks,
         peers: Arc<PeerDirectory>,
+        pairing: Arc<invite::Pairing>,
         state: Arc<RwLock<serde_json::Value>>,
     ) -> Self {
-        Self { store, node, hooks, peers, running: Mutex::new(None), state }
+        Self { store, node, hooks, peers, pairing, running: Mutex::new(None), state }
+    }
+
+    /// Re-reads `[server]` and applies it; with none, the listener closes.
+    pub async fn refresh(&self) -> serde_json::Value {
+        let path = self.pairing.config_path().to_path_buf();
+        match fed::load_at(&path) {
+            Ok(Some(fed::FileConfig { server: Some(srv), .. })) => self.apply(&srv).await,
+            Ok(_) => {
+                self.stop();
+                let state = serde_json::json!({"listening": false, "address": null, "why": "the config has no [server] section"});
+                if let Ok(mut s) = self.state.write() {
+                    *s = state.clone();
+                }
+                state
+            }
+            Err(e) => serde_json::json!({"error": format!("the config could not be read: {e:#}")}),
+        }
+    }
+
+    /// Follows the hub's invitations: one that opens or closes - made, used, denied, cancelled,
+    /// expired, ended - brings the listener to what the bind rule now allows.
+    pub fn follow(self: &Arc<Self>) {
+        let hub = Arc::downgrade(self);
+        let changed = self.pairing.changed.clone();
+        tokio::spawn(async move {
+            loop {
+                changed.notified().await;
+                let Some(hub) = hub.upgrade() else { return };
+                hub.refresh().await;
+            }
+        });
     }
 
     /// Brings the listener to what `srv` and the bind rule allow: opens it, keeps it, moves it or
     /// closes it, and records why it is down when it is. Never fails the daemon.
     pub async fn apply(&self, srv: &fed::ServerSection) -> serde_json::Value {
         self.peers.replace(srv.allowlist.clone());
-        let admitted = self.peers.admitted().allowlist.len() + srv.principals.len();
+        let invitations = {
+            let pairing = self.pairing.clone();
+            tokio::task::spawn_blocking(move || pairing.open_count(invite::now()))
+                .await
+                .unwrap_or(0)
+        };
+        let admitted = self.peers.admitted().allowlist.len() + srv.principals.len() + invitations;
         let wanted = self.wanted(srv, admitted);
         let current = self.running.lock().ok().and_then(|r| r.as_ref().map(|(a, _)| *a));
         let state = match wanted {
@@ -62,10 +103,19 @@ impl HubListener {
             }
             Ok((addr, tls)) => {
                 self.stop();
+                // Beside the sync API: the principals' surface, and the pairing calls an open
+                // invitation answers (D5). Both count toward the bind rule.
                 let mut hooks = self.hooks.clone();
-                if let Some(extra) = hooks.extra.as_mut() {
-                    extra.admitted = srv.principals.len();
-                }
+                let pairing = invite::router(self.pairing.clone());
+                let extra_admitted = srv.principals.len() + invitations;
+                hooks.extra = Some(match hooks.extra.take() {
+                    Some(mut extra) => {
+                        extra.router = extra.router.merge(pairing);
+                        extra.admitted = extra_admitted;
+                        extra
+                    }
+                    None => sync_http::ExtraSurface { router: pairing, admitted: extra_admitted },
+                });
                 match sync_http::bind(
                     self.store.clone(),
                     self.node.clone(),
@@ -136,6 +186,30 @@ impl HubListener {
     }
 }
 
+/// The hub's wiring, built at start when `[server]` exists and by the first invitation when it does
+/// not (docs/pairing.md Section 4.1), so that invitation needs no restart.
+pub struct HubSlot {
+    built: tokio::sync::OnceCell<Arc<HubListener>>,
+    make: Box<dyn Fn() -> Result<Arc<HubListener>> + Send + Sync>,
+}
+
+impl HubSlot {
+    pub fn new(make: impl Fn() -> Result<Arc<HubListener>> + Send + Sync + 'static) -> Self {
+        Self { built: tokio::sync::OnceCell::new(), make: Box::new(make) }
+    }
+
+    /// The hub, if it has been built.
+    pub fn get(&self) -> Option<Arc<HubListener>> {
+        self.built.get().cloned()
+    }
+
+    /// The hub, built now if it was not.
+    pub async fn hub(&self) -> Result<Arc<HubListener>> {
+        let hub = self.built.get_or_try_init(|| async { (self.make)() }).await?;
+        Ok(hub.clone())
+    }
+}
+
 /// Where this user's daemon answers its admin calls.
 pub fn admin_socket() -> PathBuf {
     fed::fed_base_dir().join("admin.sock")
@@ -147,12 +221,12 @@ pub fn admin_socket() -> PathBuf {
 pub async fn spawn_admin(
     engine: Arc<supragnosis_engine::Engine>,
     sync: Option<Arc<supragnosis_mcp::SyncContext>>,
-    hub: Option<Arc<HubListener>>,
+    hub: Arc<HubSlot>,
 ) {
     let path = admin_socket();
     match bind_admin(&path).await {
         Ok(listener) => {
-            let app = router(engine, sync, hub);
+            let app = router(engine, sync, hub, invite::Paths::default_paths());
             tokio::spawn(async move {
                 if let Err(e) = axum::serve(listener, app).await {
                     tracing::error!(error = %e, "admin socket stopped");
@@ -184,17 +258,128 @@ async fn bind_admin(path: &Path) -> Result<tokio::net::UnixListener> {
     Ok(listener)
 }
 
-/// The admin calls: `POST /sync` runs a round now, `GET /sync` says what the last did, and `POST
-/// /server/refresh` re-reads the hub's admissions and opens or closes its listener.
+/// What an admin call that could not do its act answers: the reason, as the CLI prints it.
+fn refusal(e: anyhow::Error) -> serde_json::Value {
+    serde_json::json!({"error": format!("{e:#}")})
+}
+
+/// Runs a pairing act off the async threads - each reads and writes its files under a lock.
+async fn blocking(
+    f: impl FnOnce() -> Result<serde_json::Value> + Send + 'static,
+) -> serde_json::Value {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => refusal(e),
+        Err(e) => refusal(e.into()),
+    }
+}
+
+/// What `invite` asks the daemon for.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct InviteAsk {
+    #[serde(default)]
+    pub workspaces: Vec<String>,
+    #[serde(default)]
+    pub addresses: Vec<String>,
+}
+
+/// Makes an invitation (docs/pairing.md Section 4.2): the hub's `[server]` and certificate when it
+/// has none, its wiring when it was not built, the code, the listener opened for it, and the
+/// timer that closes it at its expiry.
+async fn make_invitation(
+    hub: &HubSlot,
+    paths: &invite::Paths,
+    ask: InviteAsk,
+) -> Result<serde_json::Value> {
+    for w in &ask.workspaces {
+        crate::profile::valid_name(w)
+            .map_err(|e| anyhow::anyhow!(e.replace("profile", "workspace")))?;
+    }
+    let (p, addresses) = (paths.clone(), ask.addresses.clone());
+    let srv = tokio::task::spawn_blocking(move || {
+        invite::may_invite(&p)?;
+        invite::ensure_server(&p, &addresses)
+    })
+    .await??;
+    let hub = hub.hub().await?;
+    let port = srv.listen.rsplit(':').next().and_then(|p| p.parse().ok()).unwrap_or(7420);
+    let addresses = match ask.addresses.is_empty() {
+        true => invite::default_addresses(port),
+        false => ask
+            .addresses
+            .iter()
+            .map(|a| {
+                if a.contains(':') && !a.starts_with('[') {
+                    a.clone()
+                } else {
+                    format!("{a}:{port}")
+                }
+            })
+            .collect(),
+    };
+    anyhow::ensure!(
+        !addresses.is_empty(),
+        "this machine has no address to put in the code - name one with --address"
+    );
+    let check = invite::check_for(paths, &srv, &ask.addresses)?;
+    let pairing = hub.pairing.clone();
+    let workspaces = ask.workspaces;
+    let made = tokio::task::spawn_blocking(move || {
+        pairing.invite(workspaces, addresses, check, invite::now())
+    })
+    .await??;
+    let listener = hub.refresh().await;
+    let pairing = hub.pairing.clone();
+    let expires = made.expires;
+    tokio::spawn(async move {
+        let wait = expires.saturating_sub(invite::now()) + 1;
+        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+        let _ = tokio::task::spawn_blocking(move || pairing.expire(invite::now())).await;
+    });
+    let mut out = serde_json::to_value(&made)?;
+    out["listener"] = listener;
+    out["notes"] = serde_json::json!(invite::notes());
+    Ok(out)
+}
+
+/// The admin calls: `POST /sync` runs a round now, `GET /sync` says what the last did, `POST
+/// /server/refresh` re-reads the hub's admissions and opens or closes its listener, and the `/hub`
+/// calls invite, allow, deny, cancel, list and remove (docs/pairing.md Sections 4.2 to 4.6).
 pub fn router(
     engine: Arc<supragnosis_engine::Engine>,
     sync: Option<Arc<supragnosis_mcp::SyncContext>>,
-    hub: Option<Arc<HubListener>>,
+    hub: Arc<HubSlot>,
+    paths: invite::Paths,
 ) -> axum::Router {
     use axum::routing::{get, post};
     use axum::Json;
     let unsynced = || serde_json::json!({"error": "sync is not set up on this node"});
     let (run_engine, run_sync) = (engine, sync.clone());
+    let no_hub = || serde_json::json!({"error": "this node has no [server] section"});
+    let refresh_hub = hub.clone();
+    let invite_hub = (hub.clone(), paths.clone());
+    let status_hub = hub.clone();
+    let act_hub = hub.clone();
+    let peers_paths = paths.clone();
+    let remove_hub = hub;
+    // An act on the open invitation: the hub is built if there is one at all.
+    let act = move |state: Option<invite::State>| {
+        let hub = act_hub.clone();
+        async move {
+            let Some(hub) = hub.get() else {
+                return Json(serde_json::json!({"error": "no invitation is open"}));
+            };
+            let pairing = hub.pairing.clone();
+            Json(
+                blocking(move || match state {
+                    None => pairing.allow(invite::now()),
+                    Some(s) => pairing.close(s, invite::now()),
+                })
+                .await,
+            )
+        }
+    };
+    let (allow, deny, cancel) = (act.clone(), act.clone(), act);
     axum::Router::new()
         .route(
             "/sync",
@@ -220,22 +405,56 @@ pub fn router(
         .route(
             "/server/refresh",
             post(move || {
-                let hub = hub.clone();
+                let hub = refresh_hub.clone();
                 async move {
-                    let Some(hub) = hub else {
-                        return Json(serde_json::json!({"error": "this node has no [server] section"}));
-                    };
-                    let srv = match fed::load() {
-                        Ok(Some(fc)) => fc.server,
-                        Ok(None) => None,
-                        Err(e) => {
-                            return Json(serde_json::json!({"error": format!("the config could not be read: {e:#}")}))
-                        }
-                    };
-                    match srv {
-                        Some(srv) => Json(hub.apply(&srv).await),
-                        None => Json(serde_json::json!({"error": "the config no longer has a [server] section"})),
+                    match hub.get() {
+                        Some(hub) => Json(hub.refresh().await),
+                        None => Json(no_hub()),
                     }
+                }
+            }),
+        )
+        .route(
+            "/hub/invite",
+            post(move |Json(ask): Json<InviteAsk>| {
+                let (hub, paths) = invite_hub.clone();
+                async move {
+                    Json(make_invitation(&hub, &paths, ask).await.unwrap_or_else(refusal))
+                }
+            })
+            .get(move || {
+                let hub = status_hub.clone();
+                async move {
+                    let Some(hub) = hub.get() else {
+                        return Json(serde_json::json!({"open": null, "last": null}));
+                    };
+                    let pairing = hub.pairing.clone();
+                    Json(blocking(move || pairing.status(invite::now())).await)
+                }
+            }),
+        )
+        .route("/hub/allow", post(move || allow(None)))
+        .route("/hub/deny", post(move || deny(Some(invite::State::Denied))))
+        .route("/hub/cancel", post(move || cancel(Some(invite::State::Cancelled))))
+        .route(
+            "/hub/peers",
+            get(move || {
+                let paths = peers_paths.clone();
+                async move { Json(blocking(move || invite::peers_json(&paths)).await) }
+            }),
+        )
+        .route(
+            "/hub/peer/remove",
+            post(move |Json(body): Json<serde_json::Value>| {
+                let hub = remove_hub.clone();
+                async move {
+                    let who = body.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string();
+                    let hub = match hub.hub().await {
+                        Ok(hub) => hub,
+                        Err(e) => return Json(refusal(e)),
+                    };
+                    let pairing = hub.pairing.clone();
+                    Json(blocking(move || pairing.remove(&who, invite::now())).await)
                 }
             }),
         )
@@ -245,18 +464,35 @@ pub fn router(
 /// Calls this user's daemon on its admin socket and returns its JSON answer, or `None` when no
 /// daemon answers there.
 pub fn call(method: &str, path: &str) -> Result<Option<serde_json::Value>> {
-    call_at(&admin_socket(), method, path)
+    call_at(&admin_socket(), method, path, None)
 }
 
-pub fn call_at(socket: &Path, method: &str, path: &str) -> Result<Option<serde_json::Value>> {
+/// [`call`] with a JSON body.
+pub fn call_with(
+    method: &str,
+    path: &str,
+    body: &serde_json::Value,
+) -> Result<Option<serde_json::Value>> {
+    call_at(&admin_socket(), method, path, Some(body))
+}
+
+pub fn call_at(
+    socket: &Path,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<Option<serde_json::Value>> {
     use std::io::{Read, Write};
     let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket) else {
         return Ok(None);
     };
     stream.set_read_timeout(Some(std::time::Duration::from_secs(600)))?;
+    let body = body.map(|b| b.to_string()).unwrap_or_default();
+    let kind = if body.is_empty() { "" } else { "Content-Type: application/json\r\n" };
     write!(
         stream,
-        "{method} {path} HTTP/1.1\r\nHost: supragnosis\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: supragnosis\r\n{kind}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
     )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
@@ -289,10 +525,12 @@ mod tests {
             "h",
             "ws",
         ));
-        tokio::spawn(async move { axum::serve(listener, router(engine, None, None)).await });
+        let slot = Arc::new(HubSlot::new(|| anyhow::bail!("this test builds no hub")));
+        let paths = invite::Paths { hub: dir.join("hub"), config: dir.join("supragnosis.toml") };
+        tokio::spawn(async move { axum::serve(listener, router(engine, None, slot, paths)).await });
         let call = |m: &'static str, p: &'static str| {
             let path = path.clone();
-            tokio::task::spawn_blocking(move || call_at(&path, m, p))
+            tokio::task::spawn_blocking(move || call_at(&path, m, p, None))
         };
         let sync = call("POST", "/sync").await.unwrap().expect("answers").expect("a daemon");
         assert_eq!(sync["error"], "sync is not set up on this node");
@@ -302,9 +540,15 @@ mod tests {
             .expect("answers")
             .expect("a daemon");
         assert_eq!(refresh["error"], "this node has no [server] section");
+        let open = call("GET", "/hub/invite").await.unwrap().expect("answers").expect("a daemon");
+        assert!(open["open"].is_null(), "{open}");
+        let allow = call("POST", "/hub/allow").await.unwrap().expect("answers").expect("a daemon");
+        assert_eq!(allow["error"], "no invitation is open");
+        let peers = call("GET", "/hub/peers").await.unwrap().expect("answers").expect("a daemon");
+        assert_eq!(peers["joined"], serde_json::json!([]));
         let _ = std::fs::remove_dir_all(&dir);
         assert!(
-            call_at(&path, "GET", "/sync").expect("no error").is_none(),
+            call_at(&path, "GET", "/sync", None).expect("no error").is_none(),
             "no daemon there now"
         );
     }
