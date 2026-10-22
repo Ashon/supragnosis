@@ -128,7 +128,8 @@ the "why" disclosure already does.
 
 The three equal columns become two regions, relations and evidence. The `36vh` cap stays the default
 and the panel gains an expand control; the expanded height is tuning, not a decision this document
-makes.
+makes. On a phone the sheet is a third of the visible screen and four fifths once expanded
+(design-system.md Section 29.18). *(Revised by design-system.md step 52.)*
 
 ## 7. Evidence rows say what touched this node
 

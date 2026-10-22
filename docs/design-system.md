@@ -31,7 +31,7 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead.
+> and Keep ... instead. Step 52, the map on a phone, is specified.
 
 ## 1. Why this exists
 
@@ -633,8 +633,8 @@ On the Graph page:
 - **The right side shows one thing at a time**: the inspector as a sheet while a node is focused,
   otherwise the Log. The inspector moves there from the bottom, where it covered the part of the map
   being inspected. Its two regions, relations then evidence, stack in the sheet (inspector.md Section 6).
-- **Either panel closes from its toggle**, or with [ and ], and the choice is remembered; the edge
-  handles go. With both closed the map's window takes the frame. With the left panel closed and a
+- **Either panel closes from its toggle**, or with [ and ], and the choice is remembered, except on
+  a phone (Section 29.18) *(revised by step 52)*; the edge handles go. With both closed the map's window takes the frame. With the left panel closed and a
   scope of one tier, the status bar's scope line says the tier, as the Trust legend would (U2).
 - **The strip is the Log folded.** While the right side is empty - no Log, no sheet - a one-line
   strip at the window's lower left shows the scope's newest observation: its tier dot, who (the
@@ -717,7 +717,9 @@ tier's banner already says why.
 
 By width: from 1200 pixels the filters, the map's window and the right panel sit side by side; from
 760 the frame keeps its header and status bar and one panel at a time lies over the map, a surface
-with a shadow; below 760 the panel is a sheet from the bottom. Below 760 the status bar keeps the
+with a shadow; below 760 the panel is a sheet from the bottom, and a phone opens on the map with no
+panel open (Section 29.18). *(Revised by step 52: a phone opened both panels, as a wide window does
+by default.)* Below 760 the status bar keeps the
 scope's name, Review and the gear, and gives up the counts first, then the pills' words. The gear
 never leaves the screen, and nothing scrolls sideways at 320 pixels (WCAG 1.4.10).
 
@@ -1975,6 +1977,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    proposal-workflow.md Section 14.3 and resolution.md Section 6 revised): a person may say two entities of one workspace are
    the same, a merge on Review offers to keep the other name, and what the console opens says it
    was opened at the console.
+52. **The map on a phone** (Section 29.18; D16; Sections 6 and 29.12, Section 18's step 2 and
+   inspector.md Section 6 revised): one finger moves the map and two zoom it, the page opens on the
+   map, the inspector's sheet has two heights, and the camera buttons sit at the map's foot above the
+   sheet.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -2154,7 +2160,8 @@ Step 9 was read the same way before it was built, and thirteen findings changed 
 - **Step 2: notices moved to the top centre.** At the bottom they covered the inspector, where most
   of the acts they answer are made.
 - **Step 2: under 760 pixels the camera buttons moved to the top right**, out of the sheets' way, and
-  framing leaves out the sheet's height.
+  framing leaves out the sheet's height. *(Revised by step 52: at the top they covered the labels,
+  so they sit at the map's foot, above whatever sheet is open; framing leaves out their box there.)*
 - **Step 3: the moved rows read in plain words.** The Peers tab's "local +N / hub +N" and "surface
   unknown" became "this node +N, hub +N" and "what it shares: unknown - no answer yet", in the viewer's
   settings dialog and on the app's Settings > Sync alike, and the dialog's tab is called Sync.
@@ -4637,7 +4644,8 @@ No row needs a principle changed.
 - **Framing keeps the toolbar's box.** Every framing - Fit, the first view, the refit at rest, a
   search, a preview, Follow, a selection's neighbourhood and the working set - leaves out the camera
   toolbar's box: at the
-  window's foot from 760 pixels wide, and at its top, both rows, below it.
+  window's foot from 760 pixels wide, and at its top, both rows, below it. *(Revised by step 52: on a
+  phone the toolbar sits at the map's foot, above the open sheet, and framing leaves it out there.)*
 
 **What this step does not do.**
 - It does not add the View, Edit and Help menus, Setup..., the tray's lines and icon or Quit's words
@@ -5131,3 +5139,64 @@ No row needs a principle changed.
 reasons, the mark on a merge and an un-merge, and a re-merge after an un-merge); and
 `same_as_and_keep_instead_hold_their_order` in the viewer's review tests (the picker's scope, Keep's
 read, open and reject in that order, and no Accept while the reverse is accepted).
+
+### 29.18 Step 52: the map on a phone
+
+**What was found.** Measured at 390 by 844 with touch:
+- **A finger does not move the map.** One finger dragged 100 pixels leaves the camera where it was,
+  and two fingers spread zoom the whole page 3.85 times, not the map.
+- **The map gets a third of the screen.** On a first visit the Log opens as a sheet over 60 percent
+  of the map, because both panels open by default and a phone takes the default as a wide window
+  does.
+- **The camera buttons cover the labels.** At the top right since Section 18's step 2, wrapping onto
+  two rows since step 49, they sit over the names near the top of the map.
+
+**Decisions.** The author approved D16: a phone opens on the map, not on the panels a desktop
+would. A phone here is a window under 760 pixels wide, or a touch screen whose shorter side is under
+600 pixels, so a phone held sideways is one too.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| WCAG 2.5.1 | A multipoint gesture has a single-pointer alternative | agrees - pinch and two-finger pan have the zoom buttons, Fit and one-finger pan |
+| WCAG 2.5.7 | A drag has a single-pointer alternative | agrees - panning has the camera buttons and Fit; moving an entity arranges the drawing and is not one of the page's functions, and Reset layout undoes it |
+| WCAG 1.3.4 | Nothing locks the orientation | agrees - a phone held sideways is a phone too |
+| WCAG 1.4.4 and 1.4.10 | Text resizes and the page reflows | agrees - only the map takes the touches, and while the page is zoomed in the map leaves pinches to the browser, so the page can always be zoomed back out |
+| Section 6, by width and the right side | Below 760 the panel is a sheet from the bottom; a panel's choice is remembered | revised - a phone opens with no panel open, and a panel opened or closed on a phone is not remembered, so the same browser in a wider window keeps its choice |
+| Section 18's step 2 and Section 29.12 | Under 760 the camera buttons sit at the top right, framing leaving out their box at the top | revised - on a phone they sit at the map's foot above the open sheet, and framing leaves out their box there |
+| inspector.md Section 6 | A 36vh cap for the inspector, taller on request | revised - on a phone the sheet is a third of the visible screen, and taller it is four fifths, never more than the screen less the header, the status bar and the camera buttons; the panels' sheets stay as they are |
+| Section 10, reduced motion | Under reduced motion nothing slides | agrees - the camera buttons jump to their place, and a double tap's zoom jumps, as the buttons' does |
+| Section 29.9 | A hover lights what the pointer is over and shows its card | agrees - a finger has no hover, so a touch shows no card |
+| Section 29.4 | A click on an entity selects it; on the ground, clears the selection | agrees - a tap is a click |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Touch on the map.** A touch is read from pointer events of the touch kind, which the map takes
+  for itself so the browser sends no mouse events after them; the mouse keeps its own handling.
+  - One finger pans, on the ground or on an entity. Held still on an entity for half a second, it
+    picks the entity up and moves it. A finger reaches an entity within 22 pixels of its centre.
+  - A tap - a touch that moved less than 10 pixels - selects or clears as a click does.
+  - A double tap on the ground zooms in twice as close around it, easing as the buttons do; on an
+    entity it selects it once and does not clear it.
+  - Two fingers pinch to zoom around their midpoint and move together to pan, 1:1 under the
+    fingers; a second finger landing while an entity is being moved lets it go where it is. A third
+    finger is ignored, and a cancelled touch ends the gesture with nothing selected.
+  - While the page is zoomed in, pinches go to the browser.
+- **The map first.** A phone opens with both panels closed, whatever the default or a wider window
+  stored, and a panel opened or closed on a phone is not remembered. An address that names an entity
+  still opens its inspector, and one that names Review still opens Review.
+- **The sheet's two heights.** On a phone the inspector's sheet is a third of the visible screen, and
+  taller it is four fifths, but never more than the screen less the header, the status bar and the
+  camera buttons. Its Taller and Shorter control is drawn at the sheet's top centre as a handle, with
+  the same name and state; Close and the way back stay where they are.
+- **The camera buttons** sit at the map's bottom right on a phone, above the open sheet, the panel
+  or the strip, and wrap upward. They follow the sheet as it opens, grows or slides, and jump there
+  under reduced motion. The View popover opens above them. Framing leaves out their box there.
+
+**What this step does not do.**
+- It does not resize the sheet by dragging its handle: a tap toggles the two heights.
+- It does not carry a pan on after the finger lifts, or rotate the map.
+- It does not change the 760 to 1200 pixel band, where under a coarse pointer the camera buttons and
+  the inspector already overlap by a few pixels; that is owed to a later pass.
