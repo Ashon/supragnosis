@@ -49,8 +49,10 @@
     /* The status bar's height: 28 pixels at the default size, growing with its text (Section 10). */
     --bar:1.75rem;
     /* On a phone the page measures the open sheet's top (--foot) and the camera buttons' height
-       (--hud-h), which the buttons and the sheet's taller height read (Section 29.18). */
-    --foot:calc(var(--bar) + 8px); --hud-h:44px;
+       (--hud-h), which the buttons and the sheet's taller height read (Section 29.18). Elsewhere the
+       toolbar is --hud-h tall and --hud-w wide - 32-pixel buttons, 44 under a finger - and what
+       clears it reads them (Section 29.24). */
+    --foot:calc(var(--bar) + 8px); --hud-h:38px; --hud-w:230px;
     /* Six corners (Section 3, U22): a window, a surface that floats or groups, a control, an inset
        tag, a mark of data, and a capsule. An inner corner is the outer less the space between. */
     --r-window:16px; --r-surface:12px; --r-control:8px; --r-inset:4px; --r-mark:2px; --r-capsule:999px;
@@ -415,7 +417,7 @@
   #mapList { display:flex; }
   /* Follow on and waiting while the map is in use: its color, not its fill (Section 29.4). */
   #hud button.paused { color:var(--gold-ink); }
-  #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:7;
+  #minimap { position:fixed; inset:auto; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + var(--hud-h) + 24px); z-index:7;
              width:168px; height:154px; background:var(--panel); border-radius:var(--r-surface);
              box-shadow:0 8px 24px var(--shadow-soft); cursor:crosshair; display:none; }
   #minimap.on { display:block; }
@@ -563,10 +565,10 @@
   /* View options popover: preferences live off the primary panels, behind the HUD's view
      button (map-tool convention). Options render as compact monospace checkbox rows -
      "[x] labels" - because they are on/off view state, not actions. */
-  #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + 62px); z-index:9; display:none;
+  #viewpop { position:fixed; right:calc(var(--win-r) + 16px); bottom:calc(var(--bar) + var(--hud-h) + 24px); z-index:9; display:none;
              flex-direction:column; width:248px; background:var(--panel); border-radius:var(--r-surface);
              padding:10px 12px; box-shadow:0 18px 40px var(--shadow), 0 2px 8px var(--shadow-soft);
-             max-height:calc(100vh - var(--bar) - 130px); overflow-y:auto; }
+             max-height:calc(100vh - var(--bar) - var(--hud-h) - 92px); overflow-y:auto; }
   #viewpop.on { display:flex; }
   #viewpop .btns, #keysDlg .btns { display:flex; flex-direction:column; gap:1px; }
   /* A line under each of View's options that says what it shows (Section 4, U25). */
@@ -1048,7 +1050,7 @@
   /* The strip: the Log folded (Section 6). The newest observation of the scope, one line, at the
      window's lower left while the right side is empty; clicking it opens the Log. */
   #strip { position:fixed; left:calc(var(--win-l) + 16px); bottom:calc(var(--bar) + 16px); z-index:8; display:none;
-           align-items:center; gap:9px; max-width:min(640px, calc(100vw - var(--win-l) - var(--win-r) - 200px));
+           align-items:center; gap:9px; max-width:min(640px, calc(100vw - var(--win-l) - var(--win-r) - var(--hud-w) - 48px));
            padding:8px 14px; background:var(--panel); border-radius:var(--r-surface); box-shadow:0 8px 24px var(--shadow-soft);
            font:var(--text-body)/1.4 var(--sans); color:var(--ink2); text-align:left; }
   #strip.on { display:flex; }
@@ -1060,12 +1062,14 @@
      header and status bar, the window spans them, and a panel or the sheet floats as a surface. */
   @media (max-width: 1199px) {
     body.dl, body.dr, body.sheet { --win-l:0px; --win-r:0px; }
-    /* A floating panel ends above the camera toolbar (bottom 44 + 38 + 8), so neither covers the other. */
-    .dock { top:61px; bottom:auto; max-height:calc(100vh - 151px); border-radius:var(--r-surface);
+    /* A floating panel ends above the camera toolbar - the status bar, 16, the toolbar, 8 - so neither
+       covers the other, under a finger and at any text size (Section 29.24). */
+    .dock { top:61px; bottom:auto; max-height:calc(100vh - 61px - var(--bar) - var(--hud-h) - 24px);
+            max-height:calc(100dvh - 61px - var(--bar) - var(--hud-h) - 24px); border-radius:var(--r-surface);
             box-shadow:0 16px 40px var(--shadow); }
     #dockL { left:12px; }
     #dockR { right:12px; }
-    #detail { top:61px; right:12px; bottom:90px; border-radius:var(--r-surface); box-shadow:0 16px 40px var(--shadow); }
+    #detail { top:61px; right:12px; bottom:calc(var(--bar) + var(--hud-h) + 24px); border-radius:var(--r-surface); box-shadow:0 16px 40px var(--shadow); }
     /* A panel floats over the map's right side here, where the minimap sits: the minimap gives way. */
     body.dr #minimap, body.sheet #minimap { display:none !important; }
   }
@@ -1128,7 +1132,7 @@
   /* A finger (Section 10, U19): where the pointer is coarse every target is 44 pixels, and the
      status bar grows to hold them. */
   @media (pointer: coarse) {
-    :root { --bar:2.75rem; }
+    :root { --bar:2.75rem; --hud-h:50px; --hud-w:314px; }
     :where(button, summary, select, a[href]:not(p a, li a), [role="button"], [role="tab"], [role="switch"], [role="radio"]) {
       min-height:44px !important; min-width:44px !important; }
   }
