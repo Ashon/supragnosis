@@ -434,6 +434,11 @@ the formula with no version, and a `brew upgrade` can move one without the other
 cross that gap:
 
 - **The CLI's JSON** is covered by Section 6.
+- **The viewer's reads.** `/api/graph`, `/api/explain` and `/api/observations` each have an example
+  document at `crates/supragnosis-viz/tests/fixtures/api/`, answered over a fixed scenario. A viz
+  test requires the live answer to keep every field of its example with the same kind of value, so
+  a field removed or narrowed fails it (inspector.md D6). An added field passes, and
+  `SUPRAGNOSIS_WRITE_FIXTURES=1` rewrites the examples to carry it.
 - **The tray's reads.** The tray reads `/api/proposals` and `/api/curation` over the daemon's socket
   to count what waits (design-system.md Section 7). It reads a proposal's `state`, and the report's
   `secrets` and each contradiction's `contested`, and degrades to the count it could read when a
