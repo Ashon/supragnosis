@@ -661,7 +661,8 @@ their diffs + check results (`list_proposals` / `get_proposal`, Section 11) and 
 
 - **Accept is a verdict observation, not a write.** The console never mutates the projection or the
   log; it appends a `verdict_cast` observation and the fold derives the effect (I1/I6/I18). The
-  viewer's write paths are the gated verdict (review, and the confirm act of resolve), the gate open
+  viewer's write paths are the gated verdict (review, and the confirm, undo and demote acts of resolve,
+  each a proposal and its verdict; *revised by design-system.md step 60*), the gate open
   (propose_merge - an opened proposal, never a commit), and observe ingest (reify) - each an appended
   observation through the same engine surfaces every client uses. A path that writes the graph or the
   log directly from the UI is a violation (Principle 23: no bypass).
