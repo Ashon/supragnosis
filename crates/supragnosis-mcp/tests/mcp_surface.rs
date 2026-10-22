@@ -788,6 +788,7 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     });
 
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
@@ -875,6 +876,7 @@ async fn a_sync_round_waiting_on_a_host_blocks_no_other_tool() {
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     });
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
@@ -945,6 +947,7 @@ async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     });
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
     let server = tokio::spawn(async move {
@@ -1027,6 +1030,7 @@ async fn routing_on_the_negotiated_map_records_nothing() {
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     });
 
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
@@ -1110,6 +1114,7 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
         peer_registry: None,
         round: Default::default(),
         last_round: Default::default(),
+        listener: Default::default(),
     });
 
     let (server_io, client_io) = tokio::io::duplex(8 * 1024);
