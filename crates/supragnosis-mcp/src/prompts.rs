@@ -416,7 +416,9 @@ never draft a merge across workspaces, which is refused. File each proposal in t
 targets belong to, never `*`. `stray_verdicts`, when present, are verdicts filed away from their \
 proposal, which decide nothing: tell the person which proposals still wait. \
 A nonzero `merge_band.held_back` beside an empty `merge_suggestions` means the near pairs are \
-already answered - proposed, split apart or rejected by the person - not that none exist. \
+already answered - proposed, split apart or rejected by the person - not that none exist; a nonzero \
+`name_ladder.held_back` beside an empty `name_variants` means the same of alike-named pairs, \
+counted apart from the band's. \
 Never propose recall; that is the person's call alone. Skip ambiguous cases and list them as \
 questions for the person instead. Finish with the ids of the proposals you created, tell the person \
 to review them in the Review panel, and that the `brief` prompt shows the result once they decide.";

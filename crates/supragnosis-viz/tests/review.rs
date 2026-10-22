@@ -518,4 +518,22 @@ fn the_console_says_what_a_repeat_found() {
     ] {
         assert!(band.contains(part), "the empty band does not say: {part}");
     }
+    // Section 29.28: the ladder says what it held back, by name, after what the band says by meaning.
+    let ladder = function("ladderEmptyReason");
+    for part in [
+        "if (!ladder || ladder.held_back == null) return \"\";",
+        "alike-named pair${held === 1 ? \" is\" : \"s are\"} already proposed, split apart or held back by your reject",
+        "\"none - no two names match once case, spaces and symbols are dropped, a trailing -s or -ies is folded, or an alias is counted\"",
+    ] {
+        assert!(ladder.contains(part), "the empty ladder does not say: {part}");
+    }
+    let hint = function("signalHint");
+    let (meaning, name) = (
+        hint.find("${band}").expect("by meaning"),
+        hint.find("${name}").expect("by name"),
+    );
+    assert!(meaning < name, "by name follows by meaning");
+    assert!(hint.contains(
+        "!(curation.name_variants || []).length ? ladderEmptyReason(curation.name_ladder)"
+    ));
 }

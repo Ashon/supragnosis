@@ -398,6 +398,9 @@ pub struct CurationReport {
     /// catches, and unlike `merge_suggestions` this needs NO embedder, so it works on every node.
     /// Read-only candidates: acting on one opens an entity_merge through the gate (I18/IR2).
     pub name_variants: Vec<NameVariantGroup>,
+    /// What the ladder left out because it is already answered (design-system.md Section 29.28), so
+    /// an empty `name_variants` says whether no names are alike or all the alike ones are answered.
+    pub name_ladder: NameLadderCoverage,
     /// Observations already in the log whose text is credential-shaped (Principle 17,
     /// [excision.md](../../docs/excision.md) Section 8 step 2).
     ///
@@ -547,7 +550,8 @@ type CycleSet = (Vec<String>, Vec<String>);
 /// indistinguishable from "no embedder is configured" - exactly the absence-vs-unavailable
 /// conflation `search_knowledge` already refuses to make by labelling the `mode` it actually used
 /// (Principle 5; Principle 16 4th revision, the convergence surface vs the node-local retrieval aid).
-/// The other curation signals are deterministic and need no such caveat.
+/// The other curation signals are deterministic and always run; the name-variant ladder, which also
+/// leaves out what is answered, says how much in [`NameLadderCoverage`].
 #[derive(Serialize)]
 pub struct MergeBandCoverage {
     /// False when no embedder is configured: `merge_suggestions` is empty because the signal could
@@ -563,6 +567,17 @@ pub struct MergeBandCoverage {
     /// Near pairs the band reached and left out because they are already answered: a waiting merge
     /// names them, a split pulled them apart, or the person's reject holds them back. Each counts
     /// once (design-system.md Section 29.27). Not "withheld", which P5 keeps for an ungranted scope.
+    pub held_back: usize,
+}
+
+/// What the name-variant ladder held back (design-system.md Section 29.28). The ladder needs no
+/// embedder, so it always runs and there is no `available` to report - only what it left out.
+#[derive(Serialize, Default)]
+pub struct NameLadderCoverage {
+    /// Pairs the ladder reached and lists in no group because they are already answered: a waiting
+    /// merge names them, a split pulled them apart, or the person's reject holds them back. A set -
+    /// a pair reached at several rungs counts once, and a pair a listed group shows does not count.
+    /// Separate from [`MergeBandCoverage::held_back`]: a pair both near and alike is in each.
     pub held_back: usize,
 }
 
@@ -2621,7 +2636,7 @@ impl Engine {
             self.merge_band(workspace, &all_entities, &fwd, &relations, cx)?;
         // The deterministic name-variant ladder: the same intent as the band, on the axis that needs
         // no embedder - so a keyword-only node (the prebuilt binary) still has a dedup signal.
-        let name_variants = name_variant_groups(
+        let (name_variants, name_ladder) = name_variant_groups(
             &entities,
             &fwd,
             &relations,
@@ -2687,6 +2702,7 @@ impl Engine {
             merge_suggestions,
             merge_band,
             name_variants,
+            name_ladder,
             type_axis_collisions,
             secrets,
             demotion_candidates,
@@ -6896,7 +6912,7 @@ fn name_variant_groups(
     relations: &[Relation],
     open_pairs: &HashSet<(String, String)>,
     node: &dyn Fn(&Entity) -> CurationNode,
-) -> Vec<NameVariantGroup> {
+) -> (Vec<NameVariantGroup>, NameLadderCoverage) {
     // Canonicalized undirected adjacency - the same structural corroboration the merge band uses.
     let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
     let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
@@ -6917,6 +6933,10 @@ fn name_variant_groups(
     // open proposal, which gets in-flight suppression for free through the same rule: a group whose
     // every pair is already proposed contributes nothing new and drops out.
     let mut seen_pairs: HashSet<(String, String)> = open_pairs.clone();
+    // Every pair reached at any rung, and every pair a listed group shows: what was held back is
+    // the answered ones among the first, less the second (design-system.md Section 29.28).
+    let mut reached: HashSet<(String, String)> = HashSet::new();
+    let mut shown: HashSet<(String, String)> = HashSet::new();
 
     for rung in [VariantRung::Separator, VariantRung::Plural, VariantRung::Alias] {
         // Keyed by (workspace, normalization) so a group never spans workspaces.
@@ -6958,9 +6978,11 @@ fn name_variant_groups(
                     }
                 }
             }
+            reached.extend(pairs.iter().cloned());
             if pairs.iter().all(|p| seen_pairs.contains(p)) {
                 continue;
             }
+            shown.extend(pairs.iter().cloned());
             seen_pairs.extend(pairs);
             out.push(NameVariantGroup {
                 key,
@@ -6973,7 +6995,11 @@ fn name_variant_groups(
             });
         }
     }
-    out
+    let held_back = reached
+        .iter()
+        .filter(|p| open_pairs.contains(*p) && !shown.contains(*p))
+        .count();
+    (out, NameLadderCoverage { held_back })
 }
 
 /// Reciprocal Rank Fusion. Fuses rankings on different scales (keyword score vs cosine similarity) by rank alone,
@@ -8940,5 +8966,66 @@ mod tests {
             engine.curation(Some("ws1")).unwrap().name_variants.is_empty(),
             "the pair is in flight - re-offering it would invite a duplicate proposal"
         );
+    }
+
+    /// design-system.md Section 29.28: the ladder counts, as a set, the pairs it left out because
+    /// they are answered - a pair it reaches at every rung once, every pair of an empty ladder, and
+    /// never a pair a listed group still shows.
+    #[test]
+    fn the_ladder_counts_what_it_held_back() {
+        let engine = Engine::new(Arc::new(InMemoryStore::new()), "h", "ws1");
+        let say = |names: &[&str]| {
+            for name in names {
+                engine
+                    .observe(ObserveInput {
+                        content: format!("about {name}"),
+                        workspace: None,
+                        source_ref: None,
+                        confidence: None,
+                        on_behalf_of: None,
+                        derived_from: vec![],
+                        entities: vec![EntityInput {
+                            name: (*name).into(),
+                            kind: None,
+                            description: None,
+                        }],
+                        relations: vec![],
+                    })
+                    .expect("observe");
+            }
+        };
+        let merge = |a: &str, b: &str| {
+            let (a, b) = (Entity::make_id("ws1", a), Entity::make_id("ws1", b));
+            engine
+                .propose(ProposeInput {
+                    workspace: Some("ws1".into()),
+                    kind: "entity_merge".into(),
+                    targets: vec![a.clone(), b],
+                    into: Some(a),
+                    tier: None,
+                    rationale: Some("alike".into()),
+                    affected_types: Vec::new(),
+                    source_ref: None,
+                    on_behalf_of: None,
+                })
+                .expect("propose");
+        };
+        let report = || engine.curation(Some("ws1")).unwrap();
+        say(&["TrustTier", "Trust Tier"]);
+        assert_eq!(report().name_ladder.held_back, 0, "a listed pair is not held back");
+        // In flight: reached at the separator, plural and alias rungs alike, counted once.
+        merge("TrustTier", "Trust Tier");
+        let r = report();
+        assert!(r.name_variants.is_empty());
+        assert_eq!(r.name_ladder.held_back, 1, "an empty ladder counts each pair it reached once");
+        // A third spelling joins: the group of three is listed for its two new pairs, and the pair in
+        // flight, shown among its members, is not counted.
+        say(&["trust-tier"]);
+        let r = report();
+        assert_eq!(r.name_variants.len(), 1);
+        assert_eq!(r.name_variants[0].members.len(), 3);
+        assert_eq!(r.name_ladder.held_back, 0, "a pair a listed group shows is not held back");
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["name_ladder"], serde_json::json!({"held_back": 0}), "always present");
     }
 }

@@ -2004,6 +2004,17 @@ function bandEmptyReason(band) {
   return held ? "none waiting - " + answered : "none - no embedding-near pairs";
 }
 
+// Why the name-variant ladder came back empty (Section 29.28): it always runs, so its line says only
+// whether no names match or the ones it found are all answered. An older payload without the count
+// says nothing by name, as before.
+function ladderEmptyReason(ladder) {
+  if (!ladder || ladder.held_back == null) return "";
+  const held = ladder.held_back;
+  return held
+    ? `none waiting - ${held} alike-named pair${held === 1 ? " is" : "s are"} already proposed, split apart or held back by your reject`
+    : "none - no two names match once case, spaces and symbols are dropped, a trailing -s or -ies is folded, or an alias is counted";
+}
+
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
 // Clicking a node chip only focuses it - the panel commits nothing (no gate).
 // Suggestions and Health as queues (Section 7, Section 29.3): each signal one item in the list, its
@@ -2063,7 +2074,10 @@ function signalItems(seg) {
 function signalHint(seg) {
   if (seg === "suggestions") {
     const band = curation && !(curation.merge_suggestions || []).length ? " By meaning: " + bandEmptyReason(curation.merge_band) + "." : "";
-    return html`<div class="hint">Possible duplicates the store found, and names two workspaces share. Proposing a duplicate opens a merge that waits under Needs you.${band}</div>`;
+    // By name after by meaning: two counts, never a total - a pair both near and alike is in each.
+    const ladder = curation && !(curation.name_variants || []).length ? ladderEmptyReason(curation.name_ladder) : "";
+    const name = ladder ? " By name: " + ladder + "." : "";
+    return html`<div class="hint">Possible duplicates the store found, and names two workspaces share. Proposing a duplicate opens a merge that waits under Needs you.${band}${name}</div>`;
   }
   if (seg === "health") return html`<div class="hint">Signals about the shape of the knowledge. Nothing here needs deciding today.</div>`;
   return "";
