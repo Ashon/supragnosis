@@ -306,6 +306,10 @@ pub struct SyncContext {
     /// The shared workspaces this node lets a hub serve to its principals (docs/remote-server.md
     /// Section 4.5), said to the hub on every round.
     pub serve_workspaces: Vec<String>,
+    /// Keys a hub vouched for at a join, by origin, and the last sequence each verifies in each
+    /// workspace (docs/pairing.md Section 4.3.1): their keys are in `origin_keys`, and an event past
+    /// the bound - or in a workspace with none - is refused as from an unknown origin.
+    pub vouched: std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     /// What a join recorded this node receives (docs/pairing.md Section 4.5, PA12): the round and
     /// `sync_pull` pull these and the shared ones, and no others, whatever a hub admits. `None` on
     /// a node no join set up, which pulls what it is asked to.
@@ -1526,10 +1530,19 @@ pub async fn pull_workspace(
             .pull_all(&ws, mine, |events| {
                 let (store, node) = (engine.store(), ctx.node.clone());
                 let (keys, ws2) = (ctx.origin_keys.clone(), ws.clone());
+                let bounds = vouched_bounds(ctx, &ws);
                 async move {
                     tokio::task::spawn_blocking(move || {
                         let mut vv = supragnosis_sync::VersionVector::default();
-                        node.apply_wire(store.as_ref(), &ws2, events, &keys, None, &mut vv)
+                        node.apply_wire_bounded(
+                            store.as_ref(),
+                            &ws2,
+                            events,
+                            &keys,
+                            &bounds,
+                            None,
+                            &mut vv,
+                        )
                     })
                     .await
                     .map_err(|e| {
@@ -1748,6 +1761,18 @@ pub async fn sync_round(engine: &Arc<Engine>, ctx: &SyncContext) -> serde_json::
         *last = Some(record.clone());
     }
     record
+}
+
+/// The bounds of the keys a hub vouched for, in one workspace: each vouched origin's last sequence
+/// there, and none - nothing verifies - where it gave none (docs/pairing.md Section 4.3.1).
+pub fn vouched_bounds(
+    ctx: &SyncContext,
+    workspace: &str,
+) -> std::collections::BTreeMap<String, u64> {
+    ctx.vouched
+        .iter()
+        .map(|(origin, by_ws)| (origin.clone(), by_ws.get(workspace).copied().unwrap_or(0)))
+        .collect()
 }
 
 /// Guidance answer for the `sync_*` tools on a node with no sync configuration (P5).
@@ -2750,6 +2775,7 @@ mod agent_answers {
             )),
             share_workspaces: vec!["acme".into()],
             receive: Some(vec!["acme".into(), "docs".into()]),
+            vouched: Default::default(),
             serve_workspaces: Vec::new(),
             servers: Vec::new(),
             config_notes: Vec::new(),

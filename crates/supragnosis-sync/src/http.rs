@@ -1149,6 +1149,9 @@ pub struct SyncClient {
     /// The workspaces this node lets the hub serve to its principals (`[sync] serve_workspaces`).
     /// `None` sends no consent header at all, as an older node does.
     serve: Option<std::collections::BTreeSet<String>>,
+    /// Origins whose keys verify only up to a sequence in the workspace this client syncs: keys a
+    /// hub vouched for at a join (docs/pairing.md Section 4.3.1).
+    bounds: BTreeMap<String, u64>,
 }
 
 impl SyncClient {
@@ -1184,7 +1187,15 @@ impl SyncClient {
             token: token.into(),
             http,
             serve: None,
+            bounds: BTreeMap::new(),
         })
+    }
+
+    /// Verifies these origins' events in the workspace this client syncs only up to their sequence
+    /// (docs/pairing.md Section 4.3.1).
+    pub fn with_bounds(mut self, bounds: BTreeMap<String, u64>) -> Self {
+        self.bounds = bounds;
+        self
     }
 
     /// Says, on every workspace request, whether the hub may serve that workspace to its principals
@@ -1392,8 +1403,16 @@ impl SyncClient {
             .pull_all(workspace, mine, |events| {
                 let mut vv = VersionVector::default();
                 std::future::ready(
-                    node.apply_wire(store.as_ref(), workspace, events, origin_keys, None, &mut vv)
-                        .map_err(TransportError::from),
+                    node.apply_wire_bounded(
+                        store.as_ref(),
+                        workspace,
+                        events,
+                        origin_keys,
+                        &self.bounds,
+                        None,
+                        &mut vv,
+                    )
+                    .map_err(TransportError::from),
                 )
             })
             .await?;

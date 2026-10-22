@@ -9,7 +9,7 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified; steps 1, 2, 3a and 3b built** (Section 10). The author decided its choices on
+> Status: **specified; steps 1, 2 and 3a-3c built** (Section 10). The author decided its choices on
 > 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
@@ -532,7 +532,7 @@ as now (S6).
      and syncs a workspace each way with no call, and cases for a wrong certificate, a tampered
      answer, a changed hub nonce, `join` run again, a ticked workspace the answer does not name
      and a serve yes the answer does not allow, neither written, a chain and leaving.
-   - **3c. The vouched keys** on the joining machine: accepted only for the id derived from each,
+   - **3c. The vouched keys** [built] on the joining machine: accepted only for the id derived from each,
      its own skipped, an answer refused when one conflicts with a key written by hand, and each
      verifying events only up to its bound on the apply path. Guarded by those three refusals and
      a replaced machine receiving the removed one's events up to the bound and none after.

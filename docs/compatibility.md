@@ -382,6 +382,13 @@ received-only ones included, and `sync_pull` refuses a workspace that is neither
 recorded, as `supragnosis sync` does when no daemon runs - which then syncs all of them rather than
 the default workspace. A node no join set up pulls as before.
 
+**A joined machine verifies a removed one's events up to its bound** ([pairing.md](pairing.md),
+step 3c of its ordering). The keys a hub vouches for at a join, recorded in `hubs/<hub>.toml`, join
+`origin_keys` where the person wrote none for that origin, each verifying events only up to the
+sequence the hub gave per workspace; an event past it is refused as from an unknown origin, as one
+from an origin with no key is. The sync crate's apply gains `apply_wire_bounded`, and `SyncClient`
+`with_bounds`; `apply_wire` is the same with no bounds.
+
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
 receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
 one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in

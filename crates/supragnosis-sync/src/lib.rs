@@ -451,7 +451,7 @@ impl SyncNode {
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
         let inbound = events.into_iter().map(|e| Inbound::Decoded(Box::new(e))).collect();
-        self.apply_inbound(store, workspace, inbound, origin_keys, None, vv)
+        self.apply_inbound(store, workspace, inbound, origin_keys, &BTreeMap::new(), None, vv)
     }
 
     /// [`Self::apply`] over events as they came off the wire. Each is decoded on its own, so one
@@ -471,16 +471,36 @@ impl SyncNode {
         admit: Option<&std::collections::BTreeSet<String>>,
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
-        let inbound = events.into_iter().map(Inbound::decode).collect();
-        self.apply_inbound(store, workspace, inbound, origin_keys, admit, vv)
+        self.apply_wire_bounded(store, workspace, events, origin_keys, &BTreeMap::new(), admit, vv)
     }
 
+    /// [`Self::apply_wire`], with some origins' keys good only up to a sequence: an event from
+    /// such an origin past its bound is refused as from an unknown origin. A hub that vouches, at a
+    /// join, for a removed machine's key gives that key's bound (docs/pairing.md Section 4.3.1), so
+    /// the key verifies what that machine wrote and nothing it might send later.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_wire_bounded(
+        &self,
+        store: &dyn AssertionStore,
+        workspace: &str,
+        events: Vec<serde_json::Value>,
+        origin_keys: &BTreeMap<String, String>,
+        bounds: &BTreeMap<String, u64>,
+        admit: Option<&std::collections::BTreeSet<String>>,
+        vv: &mut VersionVector,
+    ) -> Result<ApplyReport, SyncError> {
+        let inbound = events.into_iter().map(Inbound::decode).collect();
+        self.apply_inbound(store, workspace, inbound, origin_keys, bounds, admit, vv)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn apply_inbound(
         &self,
         store: &dyn AssertionStore,
         workspace: &str,
         mut inbound: Vec<Inbound>,
         origin_keys: &BTreeMap<String, String>,
+        bounds: &BTreeMap<String, u64>,
         admit: Option<&std::collections::BTreeSet<String>>,
         vv: &mut VersionVector,
     ) -> Result<ApplyReport, SyncError> {
@@ -497,7 +517,9 @@ impl SyncNode {
             let not_admitted = admit.is_some_and(|a| {
                 origin_keys.contains_key(&origin_node) && !a.contains(&origin_node)
             });
+            let past_bound = bounds.get(&origin_node).is_some_and(|last| origin_seq > *last);
             let checked = match item {
+                Inbound::Decoded(_) if past_bound => Err(RejectReason::UnknownOrigin),
                 Inbound::Decoded(_) if not_admitted => Err(RejectReason::OriginNotAdmitted),
                 Inbound::Decoded(ev) => check_event(&ev, workspace, origin_keys).map(|o| (o, *ev)),
                 Inbound::Undecodable { error, .. } => Err(RejectReason::Undecodable(error)),
