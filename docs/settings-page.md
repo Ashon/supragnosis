@@ -328,6 +328,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   before reading, and the answer is its refusal. The page's script reads the field once and writes
   it once, to clear it, before the call, hands the value only to the shape check and the call, and
   neither it nor kit.js, the other script the page loads, logs anything.
+- **S3**: `every_setting_change_is_a_cli_call` - every command the page calls is placed by what it
+  is: a change runs the CLI and answers a refusal with what the CLI said, stopping a peer's sharing
+  goes to the daemon's endpoint and runs no CLI, and the rest read or act on the system. The
+  stand-in CLIs of the Feedback and S2 cases show a refusal reaching the page.
 - **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
   each control the tray gave up (`login_set`, `daemon_restart`, `server_use`, `server_add`,
   `server_remove`, `app_toggle`) by name, and each is one of the app's registered commands.
