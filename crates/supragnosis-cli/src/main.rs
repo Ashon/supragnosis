@@ -2318,17 +2318,23 @@ fn connect_document(env: &connect::Env, program: &str) -> serde_json::Value {
 }
 
 fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
+    print!("{}", connect_listing(env, program, json));
+    Ok(())
+}
+
+/// What `connect` without an app prints, built by reading and nothing else (C5).
+fn connect_listing(env: &connect::Env, program: &str, json: bool) -> String {
     use connect::{Entry, CLIENTS};
+    use std::fmt::Write as _;
+    if json {
+        return format!("{}\n", connect_document(env, program));
+    }
     let rows: Vec<_> = CLIENTS
         .iter()
         .map(|c| (*c, c.installed(env), if c.installed(env) { c.entry(env) } else { Entry::None }))
         .collect();
-    if json {
-        println!("{}", connect_document(env, program));
-        return Ok(());
-    }
-    println!(
-        "AI apps - connect one with `supragnosis connect <app>`, or from the Supragnosis menu"
+    let mut out = String::from(
+        "AI apps - connect one with `supragnosis connect <app>`, or from the Supragnosis menu\n",
     );
     for (c, installed, entry) in rows {
         let state = match (installed, entry) {
@@ -2349,9 +2355,9 @@ fn connect_list(env: &connect::Env, program: &str, json: bool) -> Result<()> {
             (true, Entry::Other) => "has another entry named supragnosis".to_string(),
             (true, Entry::Unknown) => format!("its config could not be read ({})", files_named(c, env)),
         };
-        println!("  {:<15} {:<15} {state}", c.id(), c.name());
+        let _ = writeln!(out, "  {:<15} {:<15} {state}", c.id(), c.name());
     }
-    Ok(())
+    out
 }
 
 /// What Claude Code's settings say about the capture hook, read and nothing else (C5).
@@ -7201,6 +7207,118 @@ mod json_contract {
             v["clients"].as_array().unwrap().iter().map(|c| c["id"].to_string()).collect()
         };
         assert_eq!(ids(&example("connect")), ids(&doc));
+    }
+
+    /// client-connect.md C5 and Section 4: `connect` without an app only reads. Every app the host
+    /// lets the fixture install looks installed and connected in a temp HOME - each config file holds
+    /// a bridge entry, and each app's CLI is a stand-in that leaves a mark beside itself if anything
+    /// runs it (with a shell builtin, since a client CLI runs under the fixture's PATH alone). Claude
+    /// Desktop counts as installed only where Claude.app exists, and on a Mac with Visual Studio Code
+    /// the bundled `code` is found instead of the stand-in. The listing, as text and as JSON, must
+    /// read the fixture - every app connected through the bridge - and leave every file, byte, mode,
+    /// inode and time where it was. A HOME that does not exist is not made.
+    #[test]
+    fn connect_without_an_app_only_reads() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let root = std::env::temp_dir().join(format!("sg-connect-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        for name in ["claude", "codex", "gemini", "opencode", "code"] {
+            let p = bin.join(name);
+            std::fs::write(&p, "#!/bin/sh\n: > \"$0.ran\"\n").unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let env = connect::Env {
+            home: root.join("home"),
+            path: vec![bin],
+            config_home: root.join("xdg"),
+        };
+        let bridge = serde_json::json!({"command": "/x/supragnosis", "args": ["bridge"]});
+        for c in connect::CLIENTS {
+            let (path, section) = c.config(&env);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let text = match c {
+                connect::Client::Codex => format!(
+                    "[{section}.supragnosis]\ncommand = \"/x/supragnosis\"\nargs = [\"bridge\"]\n"
+                ),
+                connect::Client::OpenCode => serde_json::json!({"mcp": {"servers": {
+                    "supragnosis": {"type": "local", "command": ["/x/supragnosis", "bridge"]}
+                }}})
+                .to_string(),
+                _ => serde_json::json!({ section: { "supragnosis": bridge } }).to_string(),
+            };
+            std::fs::write(&path, text).unwrap();
+        }
+        let settings = connect::claude_code_settings(&env);
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(&settings, "{\"theme\": \"dark\"}\n").unwrap();
+
+        fn tree(dir: &std::path::Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).unwrap() {
+                let p = e.unwrap().path();
+                let m = std::fs::symlink_metadata(&p).unwrap();
+                // FNV-1a, so a failure prints a line per file rather than every byte.
+                let sum = if m.is_dir() {
+                    0
+                } else {
+                    std::fs::read(&p).unwrap().iter().fold(0xcbf29ce484222325u64, |h, b| {
+                        (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+                    })
+                };
+                out.push(format!(
+                    "{} len={} sum={sum:x} mode={:o} ino={} mtime={}.{} ctime={}.{}",
+                    p.display(),
+                    m.len(),
+                    m.permissions().mode(),
+                    m.ino(),
+                    m.mtime(),
+                    m.mtime_nsec(),
+                    m.ctime(),
+                    m.ctime_nsec()
+                ));
+                if m.is_dir() {
+                    tree(&p, out);
+                }
+            }
+        }
+        let snapshot = || {
+            let mut v = Vec::new();
+            tree(&root, &mut v);
+            v.sort();
+            v
+        };
+        let before = snapshot();
+        let text = connect_listing(&env, "/x/supragnosis", false);
+        let doc: serde_json::Value =
+            serde_json::from_str(&connect_listing(&env, "/x/supragnosis", true)).unwrap();
+        assert_eq!(snapshot(), before, "the listing wrote, moved or ran nothing");
+
+        // It read the fixture: every app but Claude Desktop is installed on any host, and every
+        // installed one is connected through the bridge, as the text says too.
+        for c in doc["clients"].as_array().unwrap() {
+            let id = c["id"].as_str().unwrap();
+            if id != "claude-desktop" {
+                assert_eq!(c["installed"], true, "{id} is installed in the fixture");
+            }
+            if c["installed"] == true {
+                assert_eq!(c["entry"], "bridge", "{id} read from the fixture");
+                let line = text.lines().find(|l| l.trim_start().starts_with(id)).unwrap();
+                assert!(line.contains("connected (bridge)"), "{line}");
+            }
+        }
+        let claude = doc["clients"].as_array().unwrap().iter().find(|c| c["id"] == "claude-code");
+        assert_eq!(claude.unwrap()["capture"], "off", "the capture state read from the fixture");
+
+        let absent = connect::Env {
+            home: root.join("absent"),
+            path: Vec::new(),
+            config_home: root.join("absent/.config"),
+        };
+        connect_listing(&absent, "/x/supragnosis", false);
+        connect_listing(&absent, "/x/supragnosis", true);
+        assert!(!absent.home.exists(), "a HOME that does not exist is not made");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// client-connect.md Section 13.3: OpenCode reads two files, so `--remove` takes the entry out
