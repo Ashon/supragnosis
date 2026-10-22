@@ -1548,13 +1548,10 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             ),
         ),
         c(
-            "the Start at Login switch is the only way the app stops a daemon it did not spawn - off \
-             uninstalls, on takes over another manager's",
-            Evidence::Deferred(
-                "set_login runs `service uninstall` or `service install --take-over`, which boot a job out or \
-                 retire another manager's; that these are the only such paths is a reading of main.rs, not a test. \
-                 Revisit when the clause above is repaid, with the same harness",
-            ),
+            "the app stops a daemon it did not spawn only on a person's act that asks for it - the Start at \
+             Login switch, where off uninstalls and on takes over another manager's, and Setup's Set up \
+             and Take over - and Restart Daemon and Rebuild index stop it only to bring it back",
+            Evidence::Scenario(&["only_the_persons_act_stops_a_daemon_it_did_not_spawn"]),
         ),
     ]),
     (7, &[

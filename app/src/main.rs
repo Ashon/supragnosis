@@ -3908,6 +3908,60 @@ mod status_text_tests {
         }
     }
 
+    /// daemon-lifecycle.md L6: the app stops a daemon it did not spawn only on a person's act that
+    /// asks for it. Every CLI call that can stop a daemon is listed with the function it sits in -
+    /// the switch's `set_login`, Setup's `setup_run`, and `restart_daemon` and `rebuild_index`,
+    /// which bring it back - and each of those is reached from one command of the app's own pages,
+    /// which a click calls. A new call that stops a daemon fails this until it is added on purpose.
+    #[test]
+    fn only_the_persons_act_stops_a_daemon_it_did_not_spawn() {
+        let src = include_str!("main.rs");
+        let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
+        let within = |at: usize| -> &str {
+            let head = app[..at].rfind("\nfn ").max(app[..at].rfind("\nasync fn ")).unwrap();
+            let name = &app[head..];
+            let name = &name[name.find("fn ").unwrap() + 3..];
+            &name[..name.find('(').unwrap()]
+        };
+        let mut stops: Vec<(&str, &str)> = Vec::new();
+        for call in [
+            "\"service\", \"uninstall\"",
+            "\"--take-over\"",
+            "run_cli(&[\"restart\"",
+            "\"embed\", \"rebuild\"",
+            "\"--step\", \"server\"",
+            "&[\"stop\"",
+        ] {
+            for (at, _) in app.match_indices(call) {
+                stops.push((call, within(at)));
+            }
+        }
+        stops.sort();
+        let mut want = vec![
+            ("\"--step\", \"server\"", "setup_run"),
+            ("\"--take-over\"", "set_login"),
+            ("\"--take-over\"", "setup_run"),
+            ("\"embed\", \"rebuild\"", "rebuild_index"),
+            ("\"service\", \"uninstall\"", "set_login"),
+            ("run_cli(&[\"restart\"", "restart_daemon"),
+        ];
+        want.sort();
+        assert_eq!(stops, want, "every CLI call that can stop a daemon, where it sits");
+
+        // Each is reached only from the command a page's control calls.
+        for (helper, command) in [
+            ("set_login(&", "login_set"),
+            ("restart_daemon(&", "daemon_restart"),
+            ("rebuild_index(&", "search_rebuild"),
+        ] {
+            let callers: Vec<&str> = app.match_indices(helper).map(|(at, _)| within(at)).collect();
+            assert_eq!(callers, [command], "{helper} is called by {command} alone");
+        }
+        for command in ["login_set", "daemon_restart", "search_rebuild", "setup_run"] {
+            assert!(crate::APP_COMMANDS.contains(&command), "{command} is a page's command");
+        }
+    }
+
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
     /// tray's line, Settings' Server and This Mac panes, Setup's first card and the starting page.
     /// "Answering" is a remote server's word only.
