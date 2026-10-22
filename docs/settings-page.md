@@ -331,6 +331,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
   each control the tray gave up (`login_set`, `daemon_restart`, `server_use`, `server_add`,
   `server_remove`, `app_toggle`) by name, and each is one of the app's registered commands.
+- **A remote server in use**: `the_daemon_controls_refuse_while_a_remote_server_is_in_use` - the
+  switch, Restart, Rebuild index, a sync narrowing and Setup's install steps refuse with the reason
+  right after their caller check, and the page draws those controls disabled or not at all under
+  the line naming the server in use.
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
   init script that builds the navigation on every page, a policy in the page's head, no inline
   script.
