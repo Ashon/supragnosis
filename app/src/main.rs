@@ -49,6 +49,16 @@ enum Daemon {
     Failed(String),
 }
 
+/// What quitting the app stops (daemon-lifecycle.md L6): only a daemon this app spawned, which lives
+/// as long as the app does. One it attached to - a login job's, Homebrew's, a `supragnosis start` -
+/// keeps running, and nothing on the way out runs the CLI to stop it.
+fn reaped_on_exit(daemon: Daemon) -> Option<Child> {
+    match daemon {
+        Daemon::Spawned(child) => Some(child),
+        Daemon::Starting | Daemon::External | Daemon::Failed(_) => None,
+    }
+}
+
 impl Daemon {
     /// What the shell knows of the daemon by itself, in the state words every surface uses
     /// (docs/design-system.md Section 9, step 45).
@@ -3561,12 +3571,11 @@ fn main() {
             }
             RunEvent::Exit => {
                 keep_frame(app);
-                // Reap only a daemon WE spawned - an attached external daemon keeps running.
                 let prev = std::mem::replace(
                     &mut *app.state::<DaemonGuard>().0.lock().unwrap(),
                     Daemon::Starting,
                 );
-                if let Daemon::Spawned(mut child) = prev {
+                if let Some(mut child) = reaped_on_exit(prev) {
                     let _ = child.kill();
                     let _ = child.wait();
                 }
@@ -3959,6 +3968,28 @@ mod status_text_tests {
         }
         for command in ["login_set", "daemon_restart", "search_rebuild", "setup_run"] {
             assert!(crate::APP_COMMANDS.contains(&command), "{command} is a page's command");
+        }
+    }
+
+    /// daemon-lifecycle.md L6: quitting the app never stops a launchd-managed daemon. On exit the app
+    /// reaps only the child it spawned; an attached daemon, one still starting and one that failed
+    /// are left alone, and the exit path runs no CLI command - so nothing on the way out can stop a
+    /// login job, a Homebrew service or a `supragnosis start` daemon.
+    #[test]
+    fn quitting_leaves_a_daemon_it_did_not_spawn() {
+        assert!(super::reaped_on_exit(Daemon::External).is_none());
+        assert!(super::reaped_on_exit(Daemon::Starting).is_none());
+        assert!(super::reaped_on_exit(Daemon::Failed("x".into())).is_none());
+        let child = std::process::Command::new("true").spawn().unwrap();
+        let mut reaped = super::reaped_on_exit(Daemon::Spawned(child)).expect("its own child");
+        let _ = reaped.wait();
+
+        let src = include_str!("main.rs");
+        let exit = &src[src.find("RunEvent::Exit => {").expect("the exit arm")..];
+        let exit = &exit[..exit.find("\n            }\n").expect("it closes")];
+        assert!(exit.contains("reaped_on_exit(prev)"), "{exit}");
+        for acts in ["run_cli", "Command::new", "stop", "service"] {
+            assert!(!exit.contains(acts), "the exit path does not reach {acts}: {exit}");
         }
     }
 
