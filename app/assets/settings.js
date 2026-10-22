@@ -200,7 +200,7 @@ function renderServer() {
     const host = p.remote ? p.url : "this Mac's daemon";
     const end = [];
     if (p.active && status.text) end.push(h("span", { class: "pill " + status.kind }, h("span", { class: "dot" }), status.text));
-    if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label, after: forgetGraphLeft })));
+    if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label, failTitle: "Did not switch to " + p.label, after: forgetGraphLeft })));
     if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
     // A list, not a radio group: the active row says Active, every other row has Use, so arrowing down
     // the list cannot switch every AI app's server (design-system.md Section 6a).
@@ -321,7 +321,7 @@ function renderDaemon() {
     type: "checkbox", role: "switch", checked: d.login === true,
     disabled: remote || d.login === null || d.login === undefined || busy,
     "aria-label": "Start at Login",
-    on: { change: (e) => act("login", "login_set", { on: e.target.checked }, { title: e.target.checked ? "Starts at login" : "No longer starts at login" }) },
+    on: { change: (e) => act("login", "login_set", { on: e.target.checked }, { title: e.target.checked ? "Starts at login" : "No longer starts at login", failTitle: e.target.checked ? "Start at Login was not turned on" : "Start at Login was not turned off" }) },
   });
   out.push(h("div", { class: "group-title", text: "Startup" }),
     h("div", { class: "card" },
@@ -679,7 +679,7 @@ function confirmRemove(p) {
   const remove = h("button", { class: "btn danger solid" }, icon("trash"), "Remove");
   remove.addEventListener("click", async () => {
     closeDialog();
-    await act("remove:" + p.name, "server_remove", { name: p.name }, { title: "Removed " + p.label });
+    await act("remove:" + p.name, "server_remove", { name: p.name }, { title: "Removed " + p.label, failTitle: "Did not remove " + p.label });
   });
   openDialog([
     h("div", { class: "d-head" },
@@ -782,7 +782,7 @@ function openAddServer() {
       await invoke("server_add", { name: f.name, url: f.url, credential: f.credential, ca: f.ca });
       closeDialog();
       if (useNow.checked) {
-        await act("use:" + f.name, "server_use", { name: f.name }, { title: "Added and switched to " + f.name, after: forgetGraphLeft });
+        await act("use:" + f.name, "server_use", { name: f.name }, { title: "Added and switched to " + f.name, failTitle: "Added " + f.name + ", but did not switch to it", after: forgetGraphLeft });
       } else {
         toast("ok", "Added " + f.name, "Switch to it from the list when you are ready.");
         await load();

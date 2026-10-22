@@ -1485,23 +1485,35 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> 
 /// Makes a server profile the one AI apps here use. Switching to a remote server leaves any local
 /// daemon running (it is not this app's to stop); switching back to this Mac brings the local daemon
 /// up the usual way.
-async fn use_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> String {
+async fn use_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> Result<String, String> {
     let n = name.to_string();
     let out = tokio::task::spawn_blocking(move || run_cli(&["server", "use", &n]))
         .await
         .ok()
         .flatten();
     let label = if name == "local" { "this Mac".to_string() } else { name.to_string() };
-    let message = match out {
-        Some(o) if o.status.success() => {
-            format!("AI apps here use {label} from their next session")
-        }
-        Some(o) => format!("switching to {label} failed: {}", cli_outcome(&o).1),
-        None => "supragnosis CLI not found".to_string(),
-    };
+    let outcome =
+        cli_change(out.as_ref(), |_| format!("AI apps here use {label} from their next session"));
     bring_up(app.clone(), sock).await;
     reload_viewer(app);
-    message
+    outcome
+}
+
+/// What a CLI change the page asked for came to: `done` says a success in the page's words, and a
+/// refusal is an error carrying the CLI's reason, which the page keeps until it is read
+/// (settings-page.md Section 3) - never a success with the refusal tucked beneath it.
+fn cli_change(
+    out: Option<&std::process::Output>,
+    done: impl FnOnce(&std::process::Output) -> String,
+) -> Result<String, String> {
+    match out.map(|o| (o, cli_outcome(o))) {
+        Some((o, (true, _))) => Ok(done(o)),
+        Some((_, (false, why))) if why.is_empty() => {
+            Err("the supragnosis command failed".to_string())
+        }
+        Some((_, (false, why))) => Err(why),
+        None => Err("the supragnosis command was not found".to_string()),
+    }
 }
 
 /// The arguments of `server add`. The credential is not among them, and cannot be: it reaches the
@@ -1540,27 +1552,26 @@ fn add_server(name: &str, url: &str, credential: &str, ca: Option<&str>) -> Resu
 
 /// Removes a remote profile and its credential. Removing the active one sends AI apps back to this
 /// Mac, which the CLI says and the app then follows.
-async fn remove_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> String {
+async fn remove_server(
+    app: &tauri::AppHandle,
+    sock: PathBuf,
+    name: &str,
+) -> Result<String, String> {
     let n = name.to_string();
     let out = tokio::task::spawn_blocking(move || run_cli(&["server", "remove", &n]))
         .await
         .ok()
         .flatten();
-    let message = match out {
-        Some(o) if o.status.success() => {
-            let text = String::from_utf8_lossy(&o.stdout);
-            if text.contains("use local again") {
-                format!("removed {name} - AI apps here use this Mac again")
-            } else {
-                format!("removed {name}")
-            }
+    let outcome = cli_change(out.as_ref(), |o| {
+        if String::from_utf8_lossy(&o.stdout).contains("use local again") {
+            format!("removed {name} - AI apps here use this Mac again")
+        } else {
+            format!("removed {name}")
         }
-        Some(o) => format!("removing {name} failed: {}", cli_outcome(&o).1),
-        None => "supragnosis CLI not found".to_string(),
-    };
+    });
     bring_up(app.clone(), sock).await;
     reload_viewer(app);
-    message
+    outcome
 }
 
 /// Restart: bounce whatever we manage, then attach-or-spawn again. A spawned child is killed
@@ -1702,7 +1713,7 @@ async fn wait_for_socket(sock: &Path, limit: Duration) -> bool {
 /// Start at Login: install or uninstall the canonical LaunchAgent through the CLI
 /// (docs/daemon-lifecycle.md Section 6). Turning it on is the consent to take over from another
 /// manager; the answer says what happened.
-async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
+async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> Result<String, String> {
     let installed = tokio::task::spawn_blocking(cli_status)
         .await
         .ok()
@@ -1710,7 +1721,7 @@ async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
         .and_then(|v| v["service"]["state"].as_str().map(|s| s != "absent"))
         .unwrap_or(false);
     if installed == on {
-        return if on { "already starts at login" } else { "already off" }.to_string();
+        return Ok(if on { "already starts at login" } else { "already off" }.to_string());
     }
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
@@ -1728,17 +1739,19 @@ async fn set_login(app: &tauri::AppHandle, sock: PathBuf, on: bool) -> String {
         &["service", "install", "--take-over"]
     };
     let out = tokio::task::spawn_blocking(move || run_cli(args)).await.ok().flatten();
-    let message = match out.as_ref().map(cli_outcome) {
-        Some((true, _)) if installed => "no longer starts at login".to_string(),
-        Some((true, _)) => "starts at login".to_string(),
-        Some((false, why)) => format!("Start at Login failed: {why}"),
-        None => "Start at Login: the supragnosis command was not found".to_string(),
-    };
+    let outcome = login_outcome(installed, out.as_ref());
     if !installed {
         wait_for_socket(&sock, Duration::from_secs(10)).await;
     }
     bring_up(app.clone(), sock).await;
-    message
+    outcome
+}
+
+/// What a Start at Login change came to, from the CLI's exit status (daemon-lifecycle.md L4).
+fn login_outcome(installed: bool, out: Option<&std::process::Output>) -> Result<String, String> {
+    cli_change(out, |_| {
+        if installed { "no longer starts at login" } else { "starts at login" }.to_string()
+    })
 }
 
 // --- The settings page (docs/settings-page.md) ---------------------------------------------
@@ -2003,7 +2016,7 @@ async fn server_use(
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
-    Ok(use_server(&app, sock, &name).await)
+    use_server(&app, sock, &name).await
 }
 
 #[tauri::command]
@@ -2032,7 +2045,7 @@ async fn server_remove(
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
-    Ok(remove_server(&app, sock, &name).await)
+    remove_server(&app, sock, &name).await
 }
 
 #[tauri::command]
@@ -2100,7 +2113,7 @@ async fn login_set(
     p.login_off = !on;
     let _ = write_prefs(&app, p);
     let sock = app.state::<VizSock>().0.clone();
-    Ok(set_login(&app, sock, on).await)
+    set_login(&app, sock, on).await
 }
 
 /// Percent-encodes a query value: everything but the unreserved characters.
@@ -3630,7 +3643,10 @@ mod csp_tests {
 
 #[cfg(test)]
 mod status_text_tests {
-    use super::{app_row, cli_path, login_env_from_output, read_login_env, status_text, Daemon};
+    use super::{
+        app_row, cli_change, cli_outcome, cli_path, login_env_from_output, login_outcome,
+        read_login_env, status_text, Daemon,
+    };
     use std::time::Duration;
 
     /// An AI app's row in the settings window says its state and labels its one button with what a
@@ -3773,6 +3789,100 @@ mod status_text_tests {
             });
             assert!(called, "{setting}: settings.js no longer calls {cmd}");
             assert!(crate::APP_COMMANDS.contains(&cmd), "{cmd} is not one of the app's commands");
+        }
+    }
+
+    /// A failing `Output` with the CLI's reason on stderr after a blank line and `Error:`, as the CLI
+    /// writes one.
+    fn refused(why: &str) -> std::process::Output {
+        output(1, "", &format!("\nError: {why}\nhint\n"))
+    }
+
+    fn output(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    /// The body of `fn name(` in this file, to its closing brace at the start of a line.
+    fn source_of(name: &str) -> &'static str {
+        let src = include_str!("main.rs");
+        let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
+        let rest = &src[start..];
+        &rest[..rest.find("\n}\n").expect("it closes")]
+    }
+
+    /// daemon-lifecycle.md L4: the app never discards the CLI's exit status. `cli_outcome` reads the
+    /// status and the line that matters - the error on failure, past blank lines and the `Error:`
+    /// prefix - and a refused Start at Login change is an error carrying that reason all the way to
+    /// the page, whose switch shows it under a failure title of its own rather than under "Starts at
+    /// login".
+    #[test]
+    fn a_refused_login_change_says_why() {
+        let why = "another manager runs the daemon: sh.brew.supragnosis-server";
+        assert_eq!(cli_outcome(&refused(why)), (false, why.to_string()));
+        assert_eq!(cli_outcome(&output(0, "installed\n", "")), (true, "installed".to_string()));
+
+        assert_eq!(login_outcome(false, Some(&refused(why))), Err(why.to_string()));
+        assert_eq!(login_outcome(true, Some(&refused(why))), Err(why.to_string()));
+        assert_eq!(
+            login_outcome(false, Some(&output(1, "", ""))),
+            Err("the supragnosis command failed".to_string())
+        );
+        assert_eq!(
+            login_outcome(false, None),
+            Err("the supragnosis command was not found".to_string())
+        );
+        let ok = output(0, "", "");
+        assert_eq!(login_outcome(false, Some(&ok)), Ok("starts at login".to_string()));
+        assert_eq!(login_outcome(true, Some(&ok)), Ok("no longer starts at login".to_string()));
+
+        // The outcome reaches the page as it is: returned last, never re-wrapped as a success.
+        assert!(source_of("set_login").trim_end().ends_with("outcome"));
+        assert!(source_of("login_set").trim_end().ends_with("set_login(&app, sock, on).await"));
+        let js = include_str!("../assets/settings.js");
+        let switch = js.lines().find(|l| l.contains("\"login_set\"")).expect("the switch");
+        assert!(
+            switch.contains("failTitle: e.target.checked ? \"Start at Login was not turned on\" : \"Start at Login was not turned off\""),
+            "the switch names its own failure: {switch}"
+        );
+    }
+
+    /// settings-page.md Section 3: an error keeps until it is read. A refused `server use` or `server
+    /// remove` is an error carrying the CLI's reason, returned as it is, and each page call that makes
+    /// one names its own failure - so a refusal never shows as "Switched to" or "Removed" with the
+    /// refusal beneath, and the back link keeps the graph it named.
+    #[test]
+    fn a_refused_server_change_says_why() {
+        let why = "no server profile named work";
+        assert_eq!(cli_change(Some(&refused(why)), |_| "done".into()), Err(why.to_string()));
+        assert_eq!(
+            cli_change(Some(&output(0, "x", "")), |o| o.stdout.len().to_string()),
+            Ok("1".into())
+        );
+        for (helper, command) in [("use_server", "server_use"), ("remove_server", "server_remove")]
+        {
+            assert!(
+                source_of(helper).trim_end().ends_with("outcome"),
+                "{helper} returns its outcome"
+            );
+            let call = format!("{helper}(&app, sock, &name).await");
+            assert!(
+                source_of(command).trim_end().ends_with(&call),
+                "{command} answers as {helper} did"
+            );
+        }
+        let js = include_str!("../assets/settings.js");
+        for cmd in ["\"server_use\"", "\"server_remove\""] {
+            for line in js.lines().filter(|l| l.contains(cmd) && l.contains("act(")) {
+                assert!(
+                    line.contains("failTitle: "),
+                    "a refusal there needs its own title: {line}"
+                );
+            }
         }
     }
 
