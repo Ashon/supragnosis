@@ -3967,11 +3967,18 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "encodings_that_cross_versions_keep_their_known_answers",
             "the_format_2_store_v0_4_7_wrote_reads_whole",
         ])),
-        c("every identifier the system hands out is dereferenceable",
+        c("every entity and observation id the system hands out is a dereferenceable supragnosis:// URI",
+          // The entity resource answers what get_entity does, an unknown id is said as unknown, and
+          // on the agent surface an id outside the grants reads exactly as an unknown one.
+          Evidence::Scenario(&[
+            "mcp_resource_graph_surface",
+            "an_id_outside_the_grants_reads_as_an_unknown_one",
+          ])),
+        c("a proposal id is a dereferenceable supragnosis:// URI as well",
           Evidence::Deferred(
-            "Revisit when the MCP resource surface next grows a template - supragnosis://entity/{id} does not resolve \
-             (architecture.md Section 7). The ledger records this as a standing gap and assigns it \
-             to no milestone, so this is the registry's own unscheduled entry",
+            "a proposal id is dereferenceable through the get_proposal tool, and supragnosis://proposal/{id} \
+             is specified but not served (architecture.md Section 7). Revisit when the proposal resource \
+             lands, with the read tier's proposal view as its model",
         )),
         // The mechanical-enforcement bullet, missing since the 2026-08 closure review.
         c("a field added to the identity, attestation-order, re-arrival-merge or signing functions \
@@ -4402,7 +4409,7 @@ const BULLETS: &[(u8, &[&[u8]])] = &[
     (11, &[&[], &[4], &[6], &[4], &[3], &[5], &[2], &[1], &[2], &[7], &[1, 4]]),
     (12, &[&[], &[1], &[1]]),
     (13, &[&[], &[1], &[1]]),
-    (14, &[&[], &[1, 3], &[2], &[5], &[4, 6, 7]]),
+    (14, &[&[], &[1, 3], &[2], &[5, 6], &[4, 7, 8]]),
     (15, &[&[], &[2], &[1, 3, 4], &[1], &[5, 6]]),
     (16, &[&[], &[1], &[2], &[2, 3], &[1], &[4]]),
     (17, &[&[], &[1], &[1, 4], &[2, 3, 6], &[5]]),

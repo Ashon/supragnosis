@@ -473,9 +473,41 @@ async fn mcp_resource_graph_surface() {
         .await;
     assert!(missing.is_err(), "an unknown observation id must be a not_found error");
 
+    // --- 5b) an entity id is dereferenceable too (Principle 14): what get_entity answers ---------------
+    assert!(
+        templates.iter().any(|t| t.uri_template == "supragnosis://entity/{id}"),
+        "must expose the entity resource template"
+    );
+    let entity_id = supragnosis_core::Entity::make_id("ws", "supragnosis");
+    let read = client
+        .read_resource(ReadResourceRequestParams::new(format!("supragnosis://entity/{entity_id}")))
+        .await
+        .expect("read entity resource");
+    let text = match read.contents.first().expect("one content") {
+        ResourceContents::TextResourceContents { text, .. } => text.clone(),
+        other => panic!("expected text resource contents, got {other:?}"),
+    };
+    let entity: Value = serde_json::from_str(&text).expect("entity resource is JSON");
+    assert_eq!(entity["canonical_name"].as_str(), Some("supragnosis"), "{entity}");
+    let missing = client
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://entity/{}",
+            "0".repeat(64)
+        )))
+        .await
+        .expect_err("an unknown entity id is not_found");
+    assert!(
+        missing.to_string().contains("absence is not a negation"),
+        "said as unknown, not as absent: {missing}"
+    );
+
     // --- 6) unknown URI: absence surfaces as an error (with a Principle 5 self-correction hint) ------------------
     let bad = client.read_resource(ReadResourceRequestParams::new("supragnosis://nope")).await;
     assert!(bad.is_err(), "an unknown resource URI must be an error");
+    assert!(
+        bad.unwrap_err().to_string().contains("supragnosis://entity/{id}"),
+        "the hint names every form"
+    );
 
     client.cancel().await.expect("client shutdown");
     let _ = server.await;

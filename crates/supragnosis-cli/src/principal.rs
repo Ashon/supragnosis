@@ -805,6 +805,13 @@ mod tests {
         let b = c.read(&format!("supragnosis://observation/{nothing}")).await;
         assert!(!a.contains("friday"), "{a}");
         assert_eq!(a.replace(&secret_obs, "ID"), b.replace(&nothing, "ID"), "observation resource");
+        let a = c.read(&format!("supragnosis://entity/{hidden}")).await;
+        let b = c.read(&format!("supragnosis://entity/{unknown}")).await;
+        assert!(!a.contains("launch"), "{a}");
+        assert_eq!(a.replace(&hidden, "ID"), b.replace(&unknown, "ID"), "entity resource");
+        let team = supragnosis_core::Entity::make_id("team", "rust");
+        let own = c.read(&format!("supragnosis://entity/{team}")).await;
+        assert!(own.contains("canonical_name"), "an entity in a granted workspace reads: {own}");
 
         let promote = |target: &str| {
             serde_json::json!({"kind": "claim_promotion", "targets": [target],
