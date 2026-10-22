@@ -3466,6 +3466,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards are source tripwires in the viz crate, the kind
     // inspector.md's D1 guard set, plus a token test that reads the three stylesheets.
     ("docs/design-system.md", include_str!("../../../docs/design-system.md")),
+    // Listed when its step 3 was split: other documents now name its sections (compatibility.md
+    // names the join's wire), and those names are read against it rather than as their own.
+    ("docs/pairing.md", PAIRING_DOC),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no

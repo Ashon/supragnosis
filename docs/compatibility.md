@@ -203,6 +203,17 @@ What a receiver does with an extension it does not know is the wire's rule: an e
 decode is rejected alone and holds its stream, and a new signed field raises the sync protocol
 (sync-correctness.md Sections 6 and 12).
 
+Two more cross machines within one exchange, between releases that may differ:
+
+- **Core's message signing bytes**: a fixed tag, a context, a zero byte, the message. They sign
+  what is not an attestation, and their tag keeps either signature from passing for the other.
+- **The join's wire** ([pairing.md](pairing.md) Section 4.3.2): the code, the commitment, the
+  words, the seal and the signed answer. It is fixed by the code's prefix, `sgjoin1-`; a change to
+  any part is a new prefix, which an older release refuses by name rather than misreading.
+
+Known-answer vectors pin the message signing bytes, the code, the commitment and the words, as
+they do the two encodings above.
+
 ## 5. Golden stores
 
 Each format has one store written by a real release of that format. It is checked in compressed,
@@ -348,9 +359,10 @@ admitted, the port taken, a certificate it cannot read - no longer stops the dae
 without it and `sync_status`'s new `listener` field says why. `principal add` and `remove` tell the
 daemon, which opens or closes the listener.
 
-**Pairing adds no key to `supragnosis.toml`** (pairing.md D15, specified). A joined machine's
-receive list, the hub's name and the vouched keys live in `~/.supragnosis/hubs/`, and a hub's
-invitations and pairing's peer records in `~/.supragnosis/hub/`, so a release before pairing still
+**Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
+receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
+one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in
+`~/.supragnosis/hub/`, so a release before pairing still
 starts on a paired node and syncs without the receive list's cap or the vouched keys.
 
 **The band says what it held back** (design-system.md step 61). The curation report's `merge_band`

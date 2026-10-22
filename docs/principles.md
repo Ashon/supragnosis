@@ -843,7 +843,7 @@ something wrong - knowledge silently absent, or a surface open without authentic
     opening a surface the configuration did not authorize: a non-loopback bind without TLS, or with
     nothing admitted - no node, no principal and no open invitation - refuses, because degrading
     there would serve in the open. The listener refuses, not the node: what else it serves stays up
-    and says why the listener is down. *(Revised 2026-10-22 by the author for pairing.md D5: an
+    and says why the listener is down. *(Revised 2026-10-22 by the author for pairing.md, decision D5: an
     invitation the person has just made admits its holder's preview and join, and nothing
     else.)* And running a configuration other than the one written: a key this build does not
     know refuses, because a misspelled key parses clean and does nothing, and where it sits in an

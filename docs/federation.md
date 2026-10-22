@@ -239,7 +239,7 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 
 - Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the hub listener ONLY, and ONLY when TLS
   is enabled and something is admitted - a node on the allowlist, a principal, or an open invitation
-  ([pairing.md](pairing.md) D5). A listener that may not bind leaves the rest of the node serving. The MCP loopback
+  ([pairing.md](pairing.md), decision D5). A listener that may not bind leaves the rest of the node serving. The MCP loopback
   bind guard is unchanged - it is NOT relaxed - and the viewer does not bind TCP at all (it serves
   over a local unix socket); federation adds a separately-guarded surface. **Revision (specified in
   [remote-server.md](remote-server.md)):** the local daemon's guard stays exactly as stated, and this
@@ -282,7 +282,7 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
   key**, which every node carries in its local config (Section 9) - the single out-of-band trust root.
   Bootstrapping a fresh spoke = configure hub URL + bearer + anchor key; pull; verify the policy against
   the anchor; verify everything else against the policy. Until anchor (2) is built, a spoke's
-  `origin_keys` stand in for it, and [pairing.md](pairing.md) D11 adds an interim fourth: at a join
+  `origin_keys` stand in for it, and [pairing.md](pairing.md), decision D11, adds an interim fourth: at a join
   the hub vouches, in an answer signed by the node key the code names, for keys it has verified,
   each bounded by the last sequence it stored from that origin. A removed peer's key is kept for
   that bound alone, so no event it sends later verifies anywhere.
