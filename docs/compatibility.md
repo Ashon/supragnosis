@@ -402,6 +402,12 @@ one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing
 `~/.supragnosis/hub/`, so a release before pairing still
 starts on a paired node and syncs without the receive list's cap or the vouched keys.
 
+**An entity id is a resource** (architecture.md Section 7, Principle 14). `resources/templates/list`
+gains `supragnosis://entity/{id}`, and `resources/read` answers it as `get_entity` does; an unknown id
+is `resource_not_found`, and on the hub's agent surface an id outside the reader's grants reads as an
+unknown one. The server's instructions name the new form, and an unknown URI's hint lists every
+form. Nothing else changed.
+
 **The ladder says what it held back** (design-system.md step 62). The curation report gains
 `name_ladder`, an added `{held_back}` object right after `name_variants`: the alike-named pairs the
 ladder left out because they are already answered, counted once each and apart from the band's. A

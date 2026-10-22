@@ -546,6 +546,24 @@ impl SupragnosisServer {
                 Ok(Some(obs)) => (obs.workspace().to_string(), Some(id)),
                 _ => return Ok(()), // absent or unreadable: the normal path answers that
             },
+            Some(ResourceUri::Entity(id)) => match self.engine.get_entity(id) {
+                Ok(Some(view)) => {
+                    let ws = view
+                        .entity
+                        .provenance
+                        .first()
+                        .map(|p| p.workspace.clone())
+                        .unwrap_or_default();
+                    if !p.can_read(&ws) {
+                        // An entity id is computable from a workspace and a name: one outside the
+                        // grants answers exactly as an unknown one (remote-viewer.md Section 3.4).
+                        return Err(unknown_entity_resource(id, true));
+                    }
+                    return (surface.servable)(&ws)
+                        .map_err(|why| ErrorData::resource_not_found(why, None));
+                }
+                _ => return Ok(()), // absent or unreadable: the normal path answers that
+            },
             _ => return Ok(()),
         };
         if !p.can_read(&ws) {
@@ -1835,7 +1853,8 @@ impl ServerHandler for SupragnosisServer {
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
                  observation back-reference (raw content + provenance + lineage - use it to \
-                 confirm the basis of a search hit).",
+                 confirm the basis of a search hit), and supragnosis://entity/{id} is an entity \
+                 as get_entity answers it.",
         )
     }
 
@@ -2097,6 +2116,14 @@ impl ServerHandler for SupragnosisServer {
                  raw content, the full provenance attestation, and the derived_from lineage.",
             )
             .with_mime_type("application/json");
+        // An entity by its id (Principle 14): what get_entity answers, dereferenceable as a URI.
+        let entity = ResourceTemplate::new("supragnosis://entity/{id}", "entity")
+            .with_title("Entity (canonical name, type, attestations)")
+            .with_description(
+                "By entity id (the kind=entity id from a search_knowledge hit or a graph node), \
+                 query the entity as get_entity answers it.",
+            )
+            .with_mime_type("application/json");
         // The template set IS fixed at compile time, unlike the concrete list above, but it gets
         // the same zero: a client that cached templates while refusing to cache the resources they
         // expand over would hold two halves of one answer with different ages.
@@ -2105,6 +2132,7 @@ impl ServerHandler for SupragnosisServer {
             hypergraph,
             types,
             observation,
+            entity,
         ])
         .with_ttl_ms(0)
         .with_cache_scope(CacheScope::Private)))
@@ -2232,11 +2260,22 @@ fn read_uri(
                 None,
             )),
         },
+        // An entity by its id (Principle 14), as get_entity answers it.
+        Some(ResourceUri::Entity(id)) => match engine.get_entity(id) {
+            Ok(Some(view)) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&view), uri)]))
+            }
+            Ok(None) => Err(unknown_entity_resource(id, remote)),
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
         None => Err(ErrorData::resource_not_found(
             format!(
-                "unknown resource URI: {uri} - only the forms \
-                 supragnosis://workspace/{{workspace}}/graph and \
-                 supragnosis://observation/{{id}} are supported"
+                "unknown resource URI: {uri} - the forms are supragnosis://workspaces, \
+                 supragnosis://workspace/{{workspace}}/graph, .../hypergraph and .../types, \
+                 supragnosis://observation/{{id}} and supragnosis://entity/{{id}}"
             ),
             None,
         )),
@@ -2255,6 +2294,8 @@ enum ResourceUri<'a> {
     Types(&'a str),
     /// `supragnosis://observation/<id>` - observation back-reference (Principles 2/14).
     Observation(&'a str),
+    /// `supragnosis://entity/<id>` - an entity, as get_entity answers it (Principle 14).
+    Entity(&'a str),
 }
 
 /// Resource URI parser. Returns None on malformed input. A segment must not contain `/`.
@@ -2291,6 +2332,12 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
             return None;
         }
         return Some(ResourceUri::Observation(id));
+    }
+    if let Some(id) = uri.strip_prefix("supragnosis://entity/") {
+        if id.is_empty() || id.contains('/') {
+            return None;
+        }
+        return Some(ResourceUri::Entity(id));
     }
     None
 }
@@ -2433,6 +2480,23 @@ fn unknown_remote_start() -> String {
 
 /// An observation id that is not here - or, remotely, not in a workspace the principal may read,
 /// which must read the same.
+/// An entity resource no entity answers - or, remotely, one outside the reader's grants, said the
+/// same way (Principle 5, remote-viewer.md Section 3.4).
+fn unknown_entity_resource(id: &str, remote: bool) -> ErrorData {
+    let msg = if remote {
+        format!(
+            "no entity with id {id} in the workspaces you may read - absence is not a negation \
+             (open-world). Use the kind=entity id from a search_knowledge hit or a graph node"
+        )
+    } else {
+        format!(
+            "entity id not found: {id} - absence is not a negation (open-world). Use the \
+             kind=entity id from a search_knowledge hit or a graph node"
+        )
+    };
+    ErrorData::resource_not_found(msg, None)
+}
+
 fn unknown_observation(id: &str, remote: bool) -> ErrorData {
     let msg = if remote {
         format!(
