@@ -651,6 +651,10 @@ their diffs + check results (`list_proposals` / `get_proposal`, Section 11) and 
   log directly from the UI is a violation (Principle 23: no bypass).
 - **Loopback / local trust only.** The console is a write surface only on the local trust surface
   (Principle 17); it is not exposed to a remote client.
+- **What it opens says so.** A merge or split the console opens carries the console's mark,
+  engine-stamped as a verdict's is, so who asked reads as the person at that console; its reason,
+  which says why and not who, comes from the console's fixed list. A confirmation's reason is the
+  sentence its notice said (design-system.md Section 29.3). *(Added by design-system.md step 51c.)*
 - **Solo, self-attested.** In a single-user workspace the user is both proposer and reviewer; the
   policy permits self-approval, but the verdict carries the self-attested mark (Section 10) so trust is
   still distinguished when the canon federates (Principle 18).
