@@ -2952,6 +2952,173 @@ fn p19_a_split_pair_is_never_suggested_again() {
     );
 }
 
+/// A clock the test sets before each act, so "authored in the same millisecond" is stated rather
+/// than slept for.
+struct SetClock(std::sync::atomic::AtomicU64);
+
+impl SetClock {
+    fn at(&self, millis: u64) {
+        self.0.store(millis, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl supragnosis_core::Clock for SetClock {
+    fn now_millis(&self) -> supragnosis_core::Timestamp {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// guard (unmerge.md S5, design-system.md Section 29.23, Principle 16): "Suppression is derived from
+/// the log, so nodes with equal logs suppress equally." The split pair and the person's no are folds
+/// over the log on every read, with no flag stored, so the claim is about convergence, and the P16
+/// suite compared graphs only.
+///
+/// One log holds six alike-named pairs: one merged then split; one left alone; one a person rejected
+/// from the console; one rejected in the same millisecond that named it; one rejected and then
+/// observed again later, which lifts the no; and one rejected from the console of a second node.
+/// The name ladder carries every one of them - the merge band needs an embedder these nodes lack.
+/// The author's report must not change when it stamps its log (a tie keeps the no, so a stamp's
+/// counter cannot lift it), and after the second node's reject comes back the whole report must be
+/// the same on the author and on fresh nodes given the log whole, reversed, one event at a time,
+/// and partitioned with a duplicated batch. A node holding only the entity observations offers
+/// every pair, so the equality is not two empty lists agreeing.
+#[test]
+fn p16_equal_logs_suppress_suggestions_equally() {
+    let id = |name: &str| Entity::make_id(WS, name);
+    let pair = |a: &str, b: &str| (id(a), id(b));
+    let (split_pair, left_alone, rejected) =
+        (pair("TrustTier", "Trust Tier"), pair("Port", "Ports"), pair("Graph", "Graphs"));
+    let (tied, lifted, remote_no) =
+        (pair("Lamp", "Lamps"), pair("Edge", "Edges"), pair("Node", "Nodes"));
+
+    let store_a = Arc::new(InMemoryStore::new());
+    let clock_a = Arc::new(SetClock(1_000.into()));
+    let engine_a = Engine::new(store_a.clone(), "host-a", WS).with_clock(clock_a.clone());
+    for (a, b) in [("TrustTier", "Trust Tier"), ("Port", "Ports"), ("Graph", "Graphs")] {
+        observe(&engine_a, &format!("{a} and {b}"), &[a, b], vec![]);
+    }
+    for (a, b) in [("Edge", "Edges"), ("Node", "Nodes")] {
+        observe(&engine_a, &format!("{a} and {b}"), &[a, b], vec![]);
+    }
+    clock_a.at(1_100);
+    let merge = propose_merge(&engine_a, &[&split_pair.0, &split_pair.1], &split_pair.0, "ashon");
+    let no = propose_merge(&engine_a, &[&rejected.0, &rejected.1], &rejected.0, "ashon");
+    let no_then_news = propose_merge(&engine_a, &[&lifted.0, &lifted.1], &lifted.0, "ashon");
+    let theirs = propose_merge(&engine_a, &[&remote_no.0, &remote_no.1], &remote_no.0, "ashon");
+    clock_a.at(1_200);
+    review(&engine_a, &merge, "merge", "reviewer");
+    clock_a.at(1_300);
+    let split = propose_split(&engine_a, &merge, "ashon");
+    clock_a.at(1_400);
+    review(&engine_a, &split, "merge", "reviewer");
+    review(&engine_a, &no, "reject", "reviewer");
+    review(&engine_a, &no_then_news, "reject", "reviewer");
+    // Named, proposed and rejected in one millisecond: the observation is not news after the no.
+    clock_a.at(2_000);
+    observe(&engine_a, "Lamp and Lamps", &["Lamp", "Lamps"], vec![]);
+    let same_ms = propose_merge(&engine_a, &[&tied.0, &tied.1], &tied.0, "ashon");
+    review(&engine_a, &same_ms, "reject", "reviewer");
+    // Later knowledge about one target is.
+    clock_a.at(2_500);
+    observe(&engine_a, "edges carry a kind", &["Edge"], vec![]);
+
+    // The ladder is the generator here; the band reports itself unavailable on every node.
+    let offered =
+        |e: &Engine, (a, b): &(String, String)| {
+            e.curation(Some(WS)).expect("curation").name_variants.iter().any(|g| {
+                g.members.iter().any(|m| &m.id == a) && g.members.iter().any(|m| &m.id == b)
+            })
+        };
+    let offers = |e: &Engine| {
+        [&split_pair, &left_alone, &rejected, &tied, &lifted, &remote_no].map(|p| offered(e, p))
+    };
+    let report =
+        |e: &Engine| serde_json::to_string(&e.curation(Some(WS)).expect("curation")).unwrap();
+    //                split  alone  rejected tied   lifted remote
+    let everywhere = [false, true, false, false, true, false];
+
+    // The second node's merge waits until it rejects it, which holds the pair back as well.
+    assert_eq!(offers(&engine_a), everywhere, "the author's suggestions, unstamped");
+    let unstamped = report(&engine_a);
+    let node_a = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([1u8; 32]));
+    node_a.backfill(&*store_a, WS).expect("backfill a");
+    // A push reprojects after it stamps, so the console reads what this reads.
+    engine_a.reproject(Some(WS)).expect("reproject a");
+    assert_eq!(report(&engine_a), unstamped, "stamping changes nothing the hold shows");
+
+    // A second node takes the log and casts its own console reject.
+    let ours = export_delta(&*store_a, WS, &VersionVector::default(), &[WS.to_string()])
+        .expect("export a");
+    let node_b = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([2u8; 32]));
+    let keys: BTreeMap<String, String> = [
+        (node_a.node_id().to_string(), node_a.public_key_hex()),
+        (node_b.node_id().to_string(), node_b.public_key_hex()),
+    ]
+    .into();
+    let store_b = Arc::new(InMemoryStore::new());
+    let mut vv_b = VersionVector::default();
+    node_b.apply(&*store_b, WS, ours, &keys, &mut vv_b).expect("apply at b");
+    let engine_b =
+        Engine::new(store_b.clone(), "host-b", WS).with_clock(Arc::new(SetClock(3_000.into())));
+    engine_b.reproject(Some(WS)).expect("reproject b");
+    review(&engine_b, &theirs, "reject", "reviewer");
+    node_b.backfill(&*store_b, WS).expect("backfill b");
+    let all = export_delta(&*store_b, WS, &VersionVector::default(), &[WS.to_string()])
+        .expect("export b");
+    assert_eq!(all.len(), 19, "seven entity observations, six proposals and their six verdicts");
+
+    let mut vv_a = version_vector(&*store_a, WS).expect("vv a");
+    node_a.apply(&*store_a, WS, all.clone(), &keys, &mut vv_a).expect("apply at a");
+    engine_a.reproject(Some(WS)).expect("reproject a");
+    let state = engine_a.get_proposal(Some(WS), &theirs).unwrap().expect("replicated").state;
+    assert_eq!(state, "rejected", "the second node's reject reached the author");
+    assert_eq!(offers(&engine_a), everywhere, "and holds the pair back here as the person's no");
+    let authored = report(&engine_a);
+
+    let deliver = |batches: Vec<Vec<_>>, label: &str| -> Engine {
+        let store = Arc::new(InMemoryStore::new());
+        let node = SyncNode::new(supragnosis_core::NodeIdentity::from_secret_bytes([9u8; 32]));
+        let mut vv = VersionVector::default();
+        for b in batches {
+            node.apply(&*store, WS, b, &keys, &mut vv)
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+        }
+        let engine = Engine::new(store, "host-x", WS);
+        engine.reproject(Some(WS)).expect("reproject");
+        engine
+    };
+
+    let mut reversed = all.clone();
+    reversed.reverse();
+    let (earlier, later) = all.split_at(all.len() / 2);
+    let paths = [
+        ("one batch", vec![all.clone()]),
+        ("reversed batch", vec![reversed.clone()]),
+        (
+            "reversed, one event per batch",
+            reversed.iter().map(|e| vec![e.clone()]).collect(),
+        ),
+        (
+            "the later part, the later part again, then the earlier",
+            vec![later.to_vec(), later.to_vec(), earlier.to_vec()],
+        ),
+    ];
+    for (label, batches) in paths {
+        let engine = deliver(batches, label);
+        assert_eq!(offers(&engine), everywhere, "{label}: the same suggestions");
+        assert_eq!(report(&engine), authored, "{label}: equal logs give an equal curation report");
+    }
+
+    // Direction: the suppression is the log's doing. With only the entity observations delivered,
+    // every pair is an ordinary candidate, and the report differs from the one above.
+    let entities_only: Vec<_> =
+        all.iter().filter(|e| !e.assertions.entities.is_empty()).cloned().collect();
+    assert_eq!(entities_only.len(), 7, "exactly the proposal events are withheld");
+    let bare = deliver(vec![entities_only], "entities only");
+    assert_eq!(offers(&bare), [true; 6], "without the proposals every pair is offered");
+    assert_ne!(report(&bare), authored, "the comparison above is not between two empty reports");
+}
+
 /// guard (Principle 15, unmerge.md Section 7): "both must be reversible". A split is not absorbing -
 /// unlike an excision tombstone - so re-merging separated entities is an ordinary new entity_merge
 /// and needs no special case. Suppression is of the suggestion, never of the possibility.

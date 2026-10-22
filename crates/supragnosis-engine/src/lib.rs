@@ -2248,9 +2248,15 @@ impl Engine {
 
     /// Entity pairs the person's no still holds back (design-system.md Section 29.23, dreaming.md
     /// Section 5.5): every pair a merge names whose reject carries the console's mark, until an
-    /// observation that is not a proposal event, ordered after that reject's console attestation by
-    /// HLC, asserts one of the merge's targets as named. A console reject counts whichever node cast
-    /// it, so equal logs hold back equal pairs (P16); an agent's reject and a withdrawal hold nothing.
+    /// observation that is not a proposal event, authored in a later millisecond than that reject's
+    /// console attestation, asserts one of the merge's targets as named. A console reject counts
+    /// whichever node cast it, so equal logs hold back equal pairs (P16); an agent's reject and a
+    /// withdrawal hold nothing.
+    ///
+    /// Only the walls are compared. A stamp is made at export (sync-correctness.md Section 3), so the
+    /// counter and node that break a tie say which content id or node id sorts first, not which act
+    /// came first: read whole, they would let the observation that named the pair lift the no, and
+    /// only once the node that cast it stamps.
     fn person_no_pairs(
         &self,
         workspace: Option<&str>,
@@ -2312,7 +2318,7 @@ impl Engine {
         }
         for (proposal, at) in no {
             let p = &props[proposal];
-            if p.targets.iter().any(|t| said.get(t).is_some_and(|h| *h > at)) {
+            if p.targets.iter().any(|t| said.get(t).is_some_and(|h| h.wall > at.wall)) {
                 continue; // the knowledge has changed since the person's no
             }
             for i in 0..p.targets.len() {

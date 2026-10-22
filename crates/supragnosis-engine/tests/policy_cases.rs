@@ -2509,7 +2509,7 @@ fn p19_suggestions_follow_the_persons_no() {
     assert!(offered(&engine), "an agent's reject is not the person's no");
     decide(&engine, &merge, "reject");
     assert!(!offered(&engine), "the person's no holds the pair back");
-    // Ordered after the reject by HLC, which for a local write is its millisecond.
+    // In a later millisecond than the reject: a tie keeps the no (design-system.md Section 29.23).
     std::thread::sleep(std::time::Duration::from_millis(2));
     observe(&engine, "the enum gained a variant", &["TrustTier"]);
     assert!(offered(&engine), "new knowledge about one of the pair lifts the no");
