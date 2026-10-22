@@ -851,7 +851,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   deterministic fold with merge as the **absorbing** outcome (convergent and monotonic); no verdict
   deletes an assertion; the viewer's accept casts a verdict observation rather than writing the
   projection. The belief diff is now a computed artifact and the blocking checks are enforced by the fold.
-  *Not satisfied*: commit effects beyond `entity_merge`/`claim_promotion`/`claim_demotion`,
+  *Not satisfied*: commit effects beyond `entity_merge`/`entity_split`/`claim_promotion`/`claim_demotion`,
   and the self-attested marker for the single-person exception (see deferrals).
 - Principle 7 (7th revision, consolidation generates but does not commit): curation signals
   (duplicates/grab-bags/orphans/contradictions/merge-cycles) are a **read-only projection** that
@@ -932,7 +932,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   proposal kind has no commit effect** (Section 13 of proposal-workflow.md assigns it, with `recall`, to M4+).
   Since M3.5b a `tbox_change` proposal IS gated by one structural check - a name its own affected_types declare on
   both the entity and relation axes blocks the merge (Principle 9: a structural contradiction is a bug, unlike a
-  contradiction between assertions). The check is deliberately scoped to the proposal itself, not the live glossary:
+  contradiction between assertions). Since design-system.md step 56 no `tbox_change` merge counts at all until the
+  kind has its effect, so the check is shown on the proposal and gates nothing until then. The check is deliberately scoped to the proposal itself, not the live glossary:
   a glossary-scoped check could flip an already-merged proposal to blocked when a later `define_type` lands (the
   merged -> blocked direction I16 forbids), so the cross-glossary collision surfaces as an informative curation
   signal instead (proposal-workflow.md Section 6 [impl]). The rest of T-Box consistency (cyclic subtype / domain-range) stays unimplemented because no subtype
@@ -994,10 +995,11 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   person already works. What is still owed is the agent-side half, which only tool descriptions can carry (P22):
   descriptions that make an agent observe and search *during* its own work without being asked -> revisit when
   the tool descriptions are next revised.
-- Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **three kinds now
-  have effects** - `entity_merge` (id forwarding), and since M3a `claim_promotion`/`claim_demotion`
-  (the gate tier, surface-capped); `tbox_change`/`recall` fold correctly and change nothing
-  (-> Phase 5 / M5). The **belief diff** is a
+- Principle 23 (the gateway to canon) *enforcement*: the structure is in place, and **four kinds now
+  have effects** - `entity_merge` (id forwarding) and `entity_split` (its reversal, unmerge.md), and
+  since M3a `claim_promotion`/`claim_demotion` (the gate tier, surface-capped); `tbox_change`/`recall`
+  have no effect (-> M4 Phase 5 / M6 step 5), and since design-system.md step 56 the fold counts no
+  merge of either and no surface casts one until each has its effect. The **belief diff** is
   now a **computed artifact** on `get_proposal`, so "no merge without a diff" is a property of the gate rather than a UI
   convention: gate proposals report the tier moves and the beliefs they overturn (carrying contested before/after, so
   Section 5 item 3 falls out of the same comparison), and `entity_merge` reports the references that rewire and which
@@ -1029,7 +1031,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   delegation chains, or it will label reviewed merges as self-attested (the inverse error).
   The **recall verdict's non-delegability** (a human's direct act) now has its local mechanism: the fold counts a
   recall merge only when the verdict carries the engine-stamped console marker (resolution.md Section 6) and
-  demotes any other to a comment, and the agent surface refuses to cast one - so a recall merge that reached the
+  demotes any other to a comment, and the agent surface refuses to cast one (since design-system.md step 56,
+  every recall merge is a comment until recall has its effect, which this rule then guards) - so a recall merge that reached the
   log through MCP before this guard, or arrives replicated without the marker, never folds to merged (guarded by
   `i17_a_recall_merge_without_the_console_marker_never_folds_to_merged` and
   `i17_the_agent_surface_refuses_a_recall_merge_and_the_log_is_unchanged`). It was built while `recall` still

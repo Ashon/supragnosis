@@ -125,6 +125,10 @@ a P5 failure: a short list must not read as the whole list.
 - **Decisions are the person's.** The model may draft proposals (`propose`) and comment (`review`
   with `comment`). It does not merge, and it ends by telling the person where to decide: the Review
   panel in the Supragnosis app or viewer.
+- **What has no effect is said to have none.** A proposal whose kind has no commit effect yet - a
+  `tbox_change` or a `recall`, which the view and the `brief` digest mark `no_effect_yet` - changes
+  nothing and cannot be accepted until the kind has its effect. The model says so, and does not
+  describe the effect the kind will have. *(Added by design-system.md step 56.)*
 - **A proposal stays in one workspace.** It is filed in the workspace its targets belong to, never
   `*`, and a name two workspaces share is two entities, never drafted as a merge (principles.md
   Principle 15). *(Added by design-system.md step 51a.)*

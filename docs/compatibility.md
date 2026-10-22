@@ -315,6 +315,18 @@ answers did:
 - A merged claim promotion in `list_proposals` and `get_proposal` carries `granted_tier`.
 - The descriptions of `observe`, `review`, `list_proposals` and `get_proposal` change to say so.
 
+**No merge without an effect** (design-system.md step 56). No tool's input changed, and these
+answers did:
+- `review` refuses a merge of a `tbox_change` on every surface, as it already refused a `recall`
+  merge from an agent, while the kind has no commit effect; a comment, a reject and a withdrawal are
+  accepted. A client that merged one got a success that changed nothing, and the fold now reads
+  that merge as a comment, so the proposal reads open again. The release note names this change.
+- A proposal view in `list_proposals` and `get_proposal` of either kind carries `no_effect_yet:
+  true`, an added field, and its diff note says the kind cannot be merged yet.
+- `propose` adds a `note` when it opens one.
+- The descriptions of `propose`, `review`, `list_proposals` and `get_proposal`, the rules every
+  prompt keeps, and the `brief` digest's open proposals say which kinds have no effect yet.
+
 **Nodes say when they were last said** (design-system.md step 53). The graph and hypergraph
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.

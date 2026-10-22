@@ -180,9 +180,13 @@ non-delegable.
 
 ## 6. The recall verdict's commit effect
 
-`recall` is an accepted proposal kind whose fold is correct and whose effect is absent. A reviewer
-can merge one today and nothing happens - which is worse than refusing the kind, because the gate
-reports a decision it did not carry out.
+`recall` is an accepted proposal kind whose effect is absent, and since design-system.md step 56 no
+merge of one is valid until it has that effect: the fold reads a recall merge as a comment and every
+surface refuses one. Step 5 keeps it so for merges cast before it: the effect counts only merges the
+engine stamped as cast once recall had it, since a merge cast without its diff was cast without
+review (P23), and C7 binds a recall to the base it reviewed. *(Revised by design-system.md step 56.
+This read: "A reviewer can merge one today and nothing happens - which is worse than refusing the
+kind, because the gate reports a decision it did not carry out.")*
 
 A merged `recall` verdict, over its target and the `derived_from` closure the proposal named:
 
