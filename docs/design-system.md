@@ -30,7 +30,7 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
-> Step 51a, All as a view, is specified.
+> Step 51a, All as a view, is built.
 
 ## 1. Why this exists
 
@@ -1951,7 +1951,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    whenever a row needs the person, the last pane reopened, and a window that keeps its size and
    place and has a smallest size.
 
-51a. **All as a view** (Section 29.15; principles.md Principle 15, proposal-workflow.md I2,
+51a. **All as a view** [built] (Section 29.15; principles.md Principle 15, proposal-workflow.md I2,
    proposal-workflow.md Section 3.1, proposal-workflow.md Section 6, proposal-workflow.md I16,
    resolution.md Section 5,
    unmerge.md Section 9, prompts.md Sections 4 and 5, compatibility.md Section 7, and this
@@ -4928,3 +4928,16 @@ No other row needs a principle changed.
   owed, and its registry clause names the trigger.
 - It does not echo the workspace in every write's answer, warn of a new workspace name, or name the
   workspace on search hits; those are the agent surface's step after step 53.
+
+**Guarded by** `p15_a_merge_never_crosses_a_workspace`,
+`p15_a_gate_act_names_only_its_own_workspaces_observations`,
+`p15_a_split_names_only_its_own_workspaces_merge`,
+`p15_the_all_workspaces_view_is_the_union_of_each_workspaces_fold` (a proposal reads under All as in
+its workspace, nothing merges across, a stray console accept raises no tier under All, and the stray
+accept is listed in the node-wide report only),
+`p24_a_verdict_naming_no_proposal_of_its_workspace_is_refused` and
+`p17_a_region_named_under_all_is_filed_where_it_was_asserted` in the engine's policy cases;
+`every_act_under_all_is_filed_where_its_item_lives` over the viewer's socket;
+`under_all_the_console_files_where_items_live` in the viewer's review tests; and
+`star_is_a_view_on_the_local_surface` and `a_remote_merge_names_only_its_own_workspaces_entities` in
+the agent surface's tests.

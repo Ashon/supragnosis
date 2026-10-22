@@ -180,6 +180,8 @@ pub struct AffectedTypeItem {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReviewRequest {
+    /// The proposal's workspace, where the verdict is filed and counts. On this node it may be left
+    /// out, or '*', and the proposal's own is used.
     #[serde(default)]
     pub workspace: Option<String>,
     /// The proposal id (from propose / list_proposals).
@@ -434,6 +436,19 @@ impl SupragnosisServer {
 
     /// The remote checks for a resource read: an authenticated principal (R2), a granted workspace
     /// (R3) that may be served (R5). A refusal reads as "not found for you", never as absence.
+    /// On this node `*` is the all-workspaces view, and a write is filed in one workspace (design-system.md
+    /// Section 29.15). The remote surface refuses `*` before a write reaches the tool (`admit_write`);
+    /// this is the same answer for the local one, which used to file into a workspace named `*`.
+    fn all_is_no_place(&self, tool: &str, ws: Option<&str>) -> Option<String> {
+        match ws {
+            Some(w) if remote::current().is_none() && remote::is_all(w) => Some(format!(
+                "{tool} writes to one workspace - name it, or leave it out for {}",
+                self.engine.default_workspace()
+            )),
+            _ => None,
+        }
+    }
+
     fn remote_resource_ok(
         &self,
         surface: &remote::Surface,
@@ -514,6 +529,9 @@ impl SupragnosisServer {
         description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id and the linked entity/relation ids."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
+        if let Some(why) = self.all_is_no_place("observe", req.workspace.as_deref()) {
+            return err_json(&why);
+        }
         // The workspace actually used (node default when omitted) - carried on the event so the viewer knows the scope.
         let workspace = req
             .workspace
@@ -726,7 +744,11 @@ impl SupragnosisServer {
             return resp.to_string();
         }
         let query = req.query.clone();
-        let ws = req.workspace.clone();
+        // `*` is every workspace here, as an omitted one is (design-system.md Section 29.15).
+        let ws = req
+            .workspace
+            .clone()
+            .filter(|w| remote::current().is_some() || !remote::is_all(w));
         let limit = req.limit.unwrap_or(20);
         let engine = self.engine.clone();
         let searched =
@@ -965,6 +987,9 @@ impl SupragnosisServer {
         description = "Define ontology types (T-Box) for a workspace: give an entity type or relation type a name and a natural-language definition of what it means. Use this to record the vocabulary of the ontology so a type is not just a bare label but has a stated meaning (e.g. entity type 'Driver' = 'a kernel module that ...'; relation type 'depends_on' = 'X requires Y at runtime'). A description is required. Scoped to the workspace. Read them back via the supragnosis://workspace/{ws}/types resource."
     )]
     async fn define_type(&self, Parameters(req): Parameters<DefineTypeRequest>) -> String {
+        if let Some(why) = self.all_is_no_place("define_type", req.workspace.as_deref()) {
+            return err_json(&why);
+        }
         // Map the string target to the typed axis, rejecting anything else (self-correctable error).
         let mut defs = Vec::with_capacity(req.defs.len());
         for d in req.defs {
@@ -1006,6 +1031,9 @@ impl SupragnosisServer {
         description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
+        if let Some(why) = self.all_is_no_place("propose", req.workspace.as_deref()) {
+            return err_json(&why);
+        }
         // Map each affected type's string axis to the typed vocabulary (mirror define_type).
         let mut affected_types = Vec::with_capacity(req.affected_types.len());
         for a in req.affected_types {
@@ -1040,6 +1068,43 @@ impl SupragnosisServer {
                 }
             }
         }
+        // A split names a merge of its own workspace, checked the same way.
+        if remote::current().is_some() && req.kind == "entity_split" {
+            let ws = req.workspace.clone().unwrap_or_default();
+            for t in &req.targets {
+                let here = matches!(self.engine.proposal_workspace(t), Ok(Some(h)) if h == ws);
+                if !here {
+                    return err_json(&format!(
+                        "merge '{t}' is not a proposal of workspace '{ws}' - a remote split names \
+                         only merges its own workspace holds"
+                    ));
+                }
+            }
+        }
+        // A merge's targets are checked the same way: an entity of another workspace answers exactly
+        // as one that does not exist, so a guessed id says nothing about a workspace the principal
+        // was never granted. The engine's own refusal, which names the other workspace, is for the
+        // local surfaces (design-system.md Section 29.15).
+        if remote::current().is_some() && req.kind == "entity_merge" {
+            let ws = req.workspace.clone().unwrap_or_default();
+            for t in req.targets.iter().chain(req.into.iter()) {
+                let id = if t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    t.clone()
+                } else {
+                    supragnosis_core::Entity::make_id(&ws, t)
+                };
+                let here = matches!(
+                    self.engine.store().get_entity(&id),
+                    Ok(Some(e)) if e.provenance.first().is_some_and(|p| p.workspace == ws)
+                );
+                if !here {
+                    return err_json(&format!(
+                        "target '{t}' is not an entity of workspace '{ws}' - a remote merge names \
+                         only entities its own workspace holds"
+                    ));
+                }
+            }
+        }
         let input = EngineProposeInput {
             workspace: req.workspace,
             kind: req.kind,
@@ -1069,8 +1134,22 @@ impl SupragnosisServer {
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
-        let (ws, prop, dec, note, obo) =
+        let (mut ws, prop, dec, note, obo) =
             (req.workspace, req.proposal, req.decision, req.note, req.on_behalf_of);
+        // A verdict is filed in its proposal's workspace, the only place it counts (proposal-workflow.md
+        // I2). This node may read every workspace, so an omitted one or `*` means the proposal's own;
+        // the remote surface has already named the principal's (design-system.md Section 29.15).
+        if remote::current().is_none() && ws.as_deref().is_none_or(remote::is_all) {
+            match self.engine.proposal_workspace(&prop) {
+                Ok(Some(home)) => ws = Some(home),
+                Ok(None) => {
+                    return err_json(&format!(
+                        "no proposal {prop} in any workspace - ids come from propose and list_proposals"
+                    ))
+                }
+                Err(e) => return store_failure_json(&e),
+            }
+        }
         // This is the agent-facing surface (resolution.md Section 6): the engine stamps the Agent
         // marker, capping what a merged promotion can grant. Never client-suppliable.
         let app = writing_app();
@@ -1095,7 +1174,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "List proposals in a workspace (newest first) with their folded state (open/merged/rejected/withdrawn), kind, targets, and verdict count."
+        description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in. A verdict counts only in its proposal's workspace."
     )]
     async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -1112,7 +1191,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id."
+        description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in."
     )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
         let ws: Option<String> = match req.workspace.as_deref() {
@@ -1851,18 +1930,22 @@ fn read_uri(
                 None,
             )),
         },
-        Some(ResourceUri::Graph(ws)) => match engine.graph(Some(ws)) {
-            Ok(graph) => {
-                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
+        Some(ResourceUri::Graph(ws)) => {
+            match engine.graph(Some(ws).filter(|w| remote || !remote::is_all(w))) {
+                Ok(graph) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
+                }
+                // A backend failure is surfaced as an internal error, not not_found (absence) - preserving the Principle 5 distinction.
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("storage backend failure (not a missing resource): {e}"),
+                    None,
+                )),
             }
-            // A backend failure is surfaced as an internal error, not not_found (absence) - preserving the Principle 5 distinction.
-            Err(e) => Err(ErrorData::internal_error(
-                format!("storage backend failure (not a missing resource): {e}"),
-                None,
-            )),
-        },
+        }
         // Co-occurrence second-order structure (Principle 11): the entity sets an observation asserted together, as hyperedges.
-        Some(ResourceUri::Hypergraph(ws)) => match engine.hypergraph(Some(ws)) {
+        Some(ResourceUri::Hypergraph(ws)) => match engine
+            .hypergraph(Some(ws).filter(|w| remote || !remote::is_all(w)))
+        {
             Ok(hg) => Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&hg), uri)])),
             Err(e) => Err(ErrorData::internal_error(
                 format!("storage backend failure (not a missing resource): {e}"),
@@ -1870,15 +1953,17 @@ fn read_uri(
             )),
         },
         // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
-        Some(ResourceUri::Types(ws)) => match engine.types(Some(ws)) {
-            Ok(types) => {
-                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
+        Some(ResourceUri::Types(ws)) => {
+            match engine.types(Some(ws).filter(|w| remote || !remote::is_all(w))) {
+                Ok(types) => {
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
+                }
+                Err(e) => Err(ErrorData::internal_error(
+                    format!("storage backend failure (not a missing resource): {e}"),
+                    None,
+                )),
             }
-            Err(e) => Err(ErrorData::internal_error(
-                format!("storage backend failure (not a missing resource): {e}"),
-                None,
-            )),
-        },
+        }
         // Observation back-reference (Principles 2/14): whoever knows the id can query the substance (raw content/provenance/lineage).
         Some(ResourceUri::Observation(id)) => match engine.get_observation(id) {
             Ok(Some(obs)) => {
@@ -2033,4 +2118,167 @@ fn unknown_observation(id: &str, remote: bool) -> ErrorData {
         )
     };
     ErrorData::resource_not_found(msg, None)
+}
+
+#[cfg(test)]
+mod all_is_a_view {
+    //! design-system.md Section 29.15 on the agent surface: `*` is a view, a verdict is filed where
+    //! its proposal lives, and a remote merge names only entities of its own workspace.
+    use super::*;
+    use supragnosis_core::Entity;
+    use supragnosis_store::InMemoryStore;
+
+    fn server() -> (Arc<Engine>, SupragnosisServer) {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        for (ws, names) in [
+            ("infra", &["Payment service", "Payments"][..]),
+            ("secret", &["Payment service"][..]),
+        ] {
+            engine
+                .observe(ObserveInput {
+                    content: format!("in {ws}"),
+                    workspace: Some(ws.into()),
+                    source_ref: None,
+                    confidence: None,
+                    on_behalf_of: None,
+                    derived_from: vec![],
+                    entities: names
+                        .iter()
+                        .map(|n| EngineEntityInput {
+                            name: (*n).into(),
+                            kind: None,
+                            description: None,
+                        })
+                        .collect(),
+                    relations: vec![],
+                })
+                .expect("observe");
+        }
+        (engine.clone(), SupragnosisServer::new(engine))
+    }
+
+    fn req<T: serde::de::DeserializeOwned>(v: serde_json::Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(v).expect("request"))
+    }
+
+    fn json(s: &str) -> serde_json::Value {
+        serde_json::from_str(s).expect("json")
+    }
+
+    #[tokio::test]
+    async fn star_is_a_view_on_the_local_surface() {
+        let (engine, s) = server();
+        let out =
+            json(&s.observe(req(serde_json::json!({ "content": "x", "workspace": "*" }))).await);
+        assert!(
+            out["error"].as_str().is_some_and(|e| e.contains("writes to one workspace")),
+            "{out}"
+        );
+        assert!(
+            !engine.workspaces().expect("list").iter().any(|w| w == "*"),
+            "a workspace named * exists"
+        );
+        let hits = json(
+            &s.search_knowledge(req(serde_json::json!({ "query": "Payments", "workspace": "*" })))
+                .await,
+        );
+        assert!(
+            hits["hits"].as_array().is_some_and(|h| !h.is_empty()),
+            "`*` searched a workspace named *: {hits}"
+        );
+        // A verdict with no workspace is filed where its proposal lives.
+        let here = Entity::make_id("infra", "Payment service");
+        let p = json(
+            &s.propose(req(serde_json::json!({
+                "workspace": "infra", "kind": "entity_merge",
+                "targets": [Entity::make_id("infra", "Payments"), here], "into": here,
+            })))
+            .await,
+        );
+        let pid = p["proposal_id"].as_str().expect("proposal id").to_string();
+        let v = json(
+            &s.review(req(serde_json::json!({ "proposal": pid, "decision": "reject" })))
+                .await,
+        );
+        assert!(v["observation_id"].is_string(), "{v}");
+        let state = engine.get_proposal(Some("infra"), &pid).expect("get").expect("proposal").state;
+        assert_eq!(state, "rejected", "the verdict was not filed with its proposal");
+        let v = json(
+            &s.review(req(serde_json::json!({ "proposal": "nope", "decision": "comment" })))
+                .await,
+        );
+        assert!(
+            v["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("no proposal nope in any workspace")),
+            "{v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_remote_merge_names_only_its_own_workspaces_entities() {
+        let (_, s) = server();
+        let p = remote::Principal {
+            name: "alice".into(),
+            read: ["infra".to_string()].into(),
+            write: ["infra".to_string()].into(),
+        };
+        let here = Entity::make_id("infra", "Payment service");
+        let elsewhere = Entity::make_id("secret", "Payment service");
+        let absent = "ab".repeat(32);
+        let mut said = Vec::new();
+        for other in [elsewhere, absent] {
+            let r = remote::as_principal(
+                p.clone(),
+                s.propose(req(serde_json::json!({
+                    "workspace": "infra", "kind": "entity_merge", "targets": [other.clone(), here], "into": here,
+                }))),
+            )
+            .await;
+            let e = json(&r)["error"].as_str().expect("refused").replace(&other, "<id>");
+            assert!(
+                !e.contains("secret"),
+                "the refusal names a workspace the principal was never granted: {e}"
+            );
+            said.push(e);
+        }
+        assert_eq!(said[0], said[1], "an entity elsewhere answers differently from an absent one");
+        let ok = remote::as_principal(
+            p.clone(),
+            s.propose(req(serde_json::json!({
+                "workspace": "infra", "kind": "entity_merge",
+                "targets": ["Payments", "Payment service"], "into": "Payment service",
+            }))),
+        )
+        .await;
+        assert!(json(&ok)["proposal_id"].is_string(), "{ok}");
+        // A split names a merge of its own workspace: one of another answers as an absent one.
+        let secret_merge = s
+            .engine
+            .propose(EngineProposeInput {
+                workspace: Some("secret".into()),
+                kind: "entity_merge".into(),
+                targets: vec![Entity::make_id("secret", "Payment service"), "cd".repeat(32)],
+                into: Some(Entity::make_id("secret", "Payment service")),
+                tier: None,
+                rationale: None,
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("a merge in secret");
+        let mut said = Vec::new();
+        for other in [secret_merge, "ef".repeat(32)] {
+            let r = remote::as_principal(
+                p.clone(),
+                s.propose(req(serde_json::json!({
+                    "workspace": "infra", "kind": "entity_split", "targets": [other.clone()],
+                }))),
+            )
+            .await;
+            said.push(json(&r)["error"].as_str().expect("refused").replace(&other, "<id>"));
+        }
+        assert_eq!(said[0], said[1], "a merge elsewhere answers differently from an absent one");
+        assert!(!said[0].contains("secret"), "{}", said[0]);
+    }
 }

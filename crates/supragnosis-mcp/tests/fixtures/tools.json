@@ -89,7 +89,7 @@
     },
     {
       "name": "get_proposal",
-      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts) by id.",
+      "description": "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "list_proposals",
-      "description": "List proposals in a workspace (newest first) with their folded state (open/merged/rejected/withdrawn), kind, targets, and verdict count.",
+      "description": "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in. A verdict counts only in its proposal's workspace.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -411,6 +411,7 @@
           },
           "workspace": {
             "default": null,
+            "description": "The proposal's workspace, where the verdict is filed and counts. On this node it may be left\nout, or '*', and the proposal's own is used.",
             "type": [
               "string",
               "null"

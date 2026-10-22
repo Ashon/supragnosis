@@ -1897,6 +1897,14 @@ function signalItems(seg) {
     }
     // T-Box axis collisions (Principle 9): a name defined on both axes - informative, usually a mistake.
     for (const n of curation.type_axis_collisions || []) add("x:" + n, "A type on both axes: " + n, { axis: n });
+    // A verdict filed away from its proposal decides nothing (proposal-workflow.md I2); an earlier
+    // build filed one cast under All in the node default. Listed under All on this node only
+    // (design-system.md Section 29.15).
+    for (const v of curation.stray_verdicts || []) {
+      const p = proposals.find(q => q.id === v.proposal);
+      if (!p || (p.state !== "open" && p.state !== "blocked")) continue;   // listed while the proposal still waits
+      add("sv:" + v.observation, "A verdict filed away from its proposal: " + proposalTitle(p), { stray: v });
+    }
   }
   return items;
 }
@@ -1904,7 +1912,7 @@ function signalItems(seg) {
 function signalHint(seg) {
   if (seg === "suggestions") {
     const band = curation && !(curation.merge_suggestions || []).length ? " By meaning: " + bandEmptyReason(curation.merge_band) + "." : "";
-    return html`<div class="hint">Possible duplicates the store found. Proposing one opens a merge that waits under Needs you.${band}</div>`;
+    return html`<div class="hint">Possible duplicates the store found, and names two workspaces share. Proposing a duplicate opens a merge that waits under Needs you.${band}</div>`;
   }
   if (seg === "health") return html`<div class="hint">Signals about the shape of the knowledge. Nothing here needs deciding today.</div>`;
   return "";
@@ -1912,6 +1920,8 @@ function signalHint(seg) {
 function nchipHtml(n) {
   return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
 }
+// How a stray verdict's act is said (Section 29.15).
+const STRAY_ACTS = { merge: "accept", reject: "reject", withdraw: "withdrawal" };
 function signalDetail(it) {
   const b = it.body, local = surfaceKind === "local";
   const parts = [html`<h3>${it.title}</h3>`];
@@ -1937,6 +1947,13 @@ function signalDetail(it) {
     parts.push(html`<p class="why">${c.current} is shown; ${others.join(", ")} ${others.length > 1 ? "were" : "was"} also asserted.</p>`);
   } else if (b.axis) {
     parts.push(html`<p class="why">Defined as both an entity type and a relation type - see Definitions in the filters.</p>`);
+  } else if (b.stray) {
+    const v = b.stray, act = STRAY_ACTS[v.decision] || "verdict";
+    parts.push(html`<p class="why">This ${act} was filed in ${v.filed_in}, where the proposal does not live, so it decides nothing. The proposal still waits in ${v.proposal_in}.</p>`);
+    if (proposals.some(q => q.id === v.proposal)) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-stray="${v.proposal}">Show the proposal</button>${skipButton()}</div>`);
+    else parts.push(html`<div class="rv-acts">${skipButton()}</div>`);
+    parts.push(html`<p class="hint"><kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+    return parts;
   }
   if (itemNodes(it).length) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-map="1">Show on the map</button>${skipButton()}</div>`);
   else parts.push(html`<div class="rv-acts">${skipButton()}</div>`);
@@ -2006,10 +2023,8 @@ function wireCuration(host) {
       const ws = wsInput.value.trim();
       let q = "?a=" + encodeURIComponent(row.dataset.a) + "&b=" + encodeURIComponent(row.dataset.b);
       if (row.dataset.src) q += "&src=" + encodeURIComponent(row.dataset.src);
-      // "*"/"all" is the all-workspaces VIEW sentinel, not a workspace name - forwarding it would
-      // file the proposal into a workspace literally called "*" (the read endpoints normalize it,
-      // the write endpoints do not).
-      if (ws && ws !== "*" && ws !== "all") q += "&workspace=" + encodeURIComponent(ws);
+      // Under All the server files the merge where its pair lives (design-system.md Section 29.15).
+      if (ws) q += "&workspace=" + encodeURIComponent(ws);
       await consoleWrite("/api/propose_merge", q, "Merge proposed - it waits under Needs you for a verdict");
       await poll();
     };
@@ -2336,7 +2351,8 @@ async function fetchReviewView(id) {
 let reviewEvidence = null;   // {id, cols: [{id, name, list}], opened}
 async function fetchReviewEvidence(p) {
   const id = p.id, ws = wsInput.value.trim();
-  const wsq = ws && ws !== "*" && ws !== "all" ? "&workspace=" + encodeURIComponent(ws) : "";
+  // Under All the evidence is every workspace's, as the scope on screen is (Section 29.15).
+  const wsq = ws ? "&workspace=" + encodeURIComponent(ws) : "";
   const cols = [];
   try {
     if (p.kind === "entity_merge") {
@@ -2378,27 +2394,31 @@ function identityHtml(p, ev) {
   if (still) rows.push(html`<div class="drow ident">${keptName}'s ${still.field === "kind" ? "type" : still.field} stays contested - <button type="button" class="linkish" data-review="${"c:" + still.id}">also under Needs you</button></div>`);
   return html`<div class="ddiff">${rows}</div>`;
 }
-// Every check, in words keyed by the proposal's kind and the check's name (Section 29.7); one the
-// page has no words for as the engine names it.
+// Every check, in words keyed by the proposal's kind, the check's name and whether it passed
+// (Sections 29.7 and 29.15), so a failed check never reads as its passing words; one the page has
+// no words for as the engine names it, with the engine's detail when it fails.
 const CHECK_SAID = {
-  "entity_merge|referential integrity": p => "All " + ((p.targets || []).length + (p.into && !(p.targets || []).includes(p.into) ? 1 : 0)) + " entities are in this log",
-  "entity_merge|distinct targets": () => "The targets are at least two entities",
-  "entity_merge|canonical target named": () => "It names the entity to keep",
-  "tbox_change|t-box axis consistency": () => "Types are consistent",
-  "entity_split|reversible target": () => "It names a merge to undo",
-  "claim_promotion|referential integrity": () => "Its observations are in this log",
-  "claim_demotion|referential integrity": () => "Its observations are in this log",
-  "claim_promotion|tier stated": () => "It says the tier it asks for",
-  "claim_demotion|tier stated": () => "It says the tier it asks for",
+  "entity_merge|referential integrity": (p, ok) => ok ? "All " + ((p.targets || []).length + (p.into && !(p.targets || []).includes(p.into) ? 1 : 0)) + " entities are in its workspace" : "Not every entity it names is in its workspace",
+  "entity_merge|distinct targets": (p, ok) => ok ? "The targets are at least two entities" : "It names fewer than two entities",
+  "entity_merge|canonical target named": (p, ok) => ok ? "It names the entity to keep" : "The entity to keep is not among the ones it names",
+  "tbox_change|t-box axis consistency": (p, ok) => ok ? "Types are consistent" : "A name is defined as both an entity type and a relation type",
+  "entity_split|reversible target": (p, ok) => ok ? "It names a merge to undo" : "The merge it names is not in its workspace, or was never accepted",
+  "claim_promotion|referential integrity": (p, ok) => ok ? "Its observations are in its workspace" : "Not every observation it names is in its workspace",
+  "claim_demotion|referential integrity": (p, ok) => ok ? "Its observations are in its workspace" : "Not every observation it names is in its workspace",
+  "claim_promotion|tier stated": (p, ok) => ok ? "It says the tier it asks for" : "It does not say the tier it asks for",
+  "claim_demotion|tier stated": (p, ok) => ok ? "It says the tier it asks for" : "It does not say the tier it asks for",
 };
-function checkSaid(p, c) { const f = CHECK_SAID[p.kind + "|" + c.name]; return f ? f(p) : c.name; }
+function checkSaid(p, c) {
+  const f = CHECK_SAID[p.kind + "|" + c.name];
+  return f ? f(p, c.passed) : c.passed ? c.name : c.name + ": " + c.detail;
+}
 function checkListHtml(p, cs) {
   const rows = (cs || []).map(c => {
     if (c.name === "trust profile") {
       const said = String(c.detail || "").split(", ").filter(Boolean).map(x => { const [n, t] = x.split(" "); return n + " " + tierName(t); }).join(", ");
       return html`<div class="ckrow"><span class="i i-info" aria-hidden="true"></span><span>Sources: ${said || "none"}</span></div>`;
     }
-    return html`<div class="ckrow ${c.passed ? "ok" : "bad"}"><span class="i ${c.passed ? "i-circle-check" : "i-circle-alert"}" role="img" aria-label="${c.passed ? "Passed" : "Failed"}"></span><span>${c.passed ? checkSaid(p, c) : checkSaid(p, c) + ": " + c.detail}</span></div>`;
+    return html`<div class="ckrow ${c.passed ? "ok" : "bad"}"><span class="i ${c.passed ? "i-circle-check" : "i-circle-alert"}" role="img" aria-label="${c.passed ? "Passed" : "Failed"}"></span><span>${checkSaid(p, c)}</span></div>`;
   });
   return html`<div class="cklist">${rows}</div>`;
 }
@@ -2505,6 +2525,7 @@ function wireDecisions(host, item) {
   host.querySelectorAll("[data-undo]").forEach(b => { b.onclick = () => undoDecided(item.p); });
   host.querySelectorAll("[data-map]").forEach(b => { b.onclick = () => previewOnMap(item); });
   host.querySelectorAll("[data-skip]").forEach(b => { b.onclick = () => stepReview(1); });
+  host.querySelectorAll("[data-stray]").forEach(b => { b.onclick = () => openReviewItem(b.dataset.stray); });
 }
 function stepReview(by) {
   const items = segItems();

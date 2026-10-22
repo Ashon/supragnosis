@@ -854,6 +854,23 @@ async fn viz_socket_is_owner_only_and_review_needs_no_browser_headers() {
     let store = Arc::new(InMemoryStore::new());
     let engine =
         Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
+    observe_depends(&engine);
+    let proposal = engine
+        .propose(supragnosis_engine::ProposeInput {
+            workspace: None,
+            kind: "entity_merge".into(),
+            targets: vec![
+                supragnosis_core::Entity::make_id("ws", "rmcp"),
+                supragnosis_core::Entity::make_id("ws", "supragnosis"),
+            ],
+            into: Some(supragnosis_core::Entity::make_id("ws", "supragnosis")),
+            tier: None,
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("propose");
     let sock = serve_uds("perm", engine, ev_channel()).await;
 
     // 0600: only the owning user may connect.
@@ -870,11 +887,15 @@ async fn viz_socket_is_owner_only_and_review_needs_no_browser_headers() {
 
     // The write endpoint routes with no browser-trust headers: the verdict reaches the engine
     // (append-only verdict observation; the fold decides) instead of a 403 transport gate.
-    let r = uds_get(&sock, "/api/review?proposal=missing&decision=merge").await;
+    let r = uds_get(&sock, &format!("/api/review?proposal={proposal}&decision=reject")).await;
     assert!(
         body_of(&r, "200").contains("observation_id"),
         "the verdict must reach the gated engine path: {r}"
     );
+    // An id that names no proposal is the engine's refusal, with its reason, and not a transport
+    // gate (design-system.md Section 29.15).
+    let r = uds_get(&sock, "/api/review?proposal=missing&decision=merge").await;
+    assert!(body_of(&r, "400").contains("no proposal missing"), "{r}");
 
     let _ = std::fs::remove_file(&sock);
 
@@ -1821,4 +1842,110 @@ async fn a_slow_request_holds_no_other_one() {
         "the health check waited on the slow request: {answered:?}"
     );
     assert!(slow.await.expect("slow request").starts_with("HTTP/1.1 200"));
+}
+
+/// Every act the console takes under All is filed where its item lives (design-system.md Sections 7
+/// and 29.15): a verdict in its proposal's workspace, a suggested merge in its pair's, a split in its
+/// merge's and a named region in its observations' - none in the node default - and the console
+/// opens no merge across workspaces.
+#[tokio::test]
+async fn every_act_under_all_is_filed_where_its_item_lives() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "h", "default"));
+    let in_ws = |ws: &str, names: &[&str]| ObserveInput {
+        content: format!("{} in {ws}", names.join(" and ")),
+        workspace: Some(ws.into()),
+        source_ref: None,
+        confidence: None,
+        on_behalf_of: None,
+        derived_from: vec![],
+        entities: names
+            .iter()
+            .map(|n| EntityInput { description: None, name: (*n).into(), kind: None })
+            .collect(),
+        relations: vec![],
+    };
+    engine
+        .observe(in_ws("billing", &["Postgres", "PostgreSQL", "Ledger"]))
+        .expect("observe");
+    engine.observe(in_ws("web", &["Postgres"])).expect("observe");
+    let id = |ws: &str, n: &str| supragnosis_core::Entity::make_id(ws, n);
+    let sock = serve_uds("act-under-all", engine.clone(), ev_channel()).await;
+
+    // A suggested merge under All is filed where its pair lives.
+    let q = format!(
+        "/api/propose_merge?a={}&b={}&src=variant:separator&workspace=*",
+        id("billing", "Postgres"),
+        id("billing", "PostgreSQL")
+    );
+    let merge = json_get(&uds_get(&sock, &q).await)["proposal_id"]
+        .as_str()
+        .expect("proposal id")
+        .to_string();
+    assert_eq!(engine.proposal_workspace(&merge).expect("read").as_deref(), Some("billing"));
+    // Its accept under All is filed with it, so the merge reads Merged in billing itself.
+    let r =
+        uds_get(&sock, &format!("/api/review?proposal={merge}&decision=merge&workspace=*")).await;
+    body_of(&r, "200");
+    let state = |ws: Option<&str>| engine.get_proposal(ws, &merge).expect("get").map(|p| p.state);
+    assert_eq!(state(Some("billing")).as_deref(), Some("merged"));
+    assert_eq!(
+        state(None),
+        state(Some("billing")),
+        "All reads the proposal as its workspace does"
+    );
+    // Un-merge under All is filed in the merge's workspace.
+    let split =
+        json_get(&uds_get(&sock, &format!("/api/propose_split?merge={merge}&workspace=*")).await)
+            ["proposal_id"]
+            .as_str()
+            .expect("split id")
+            .to_string();
+    assert_eq!(engine.proposal_workspace(&split).expect("read").as_deref(), Some("billing"));
+    // A pair across workspaces, and a source the server does not know, are refused.
+    let q = format!(
+        "/api/propose_merge?a={}&b={}&workspace=*",
+        id("web", "Postgres"),
+        id("billing", "PostgreSQL")
+    );
+    let r = uds_get(&sock, &q).await;
+    assert!(
+        body_of(&r, "400").contains("The console opens no merge across workspaces."),
+        "{r}"
+    );
+    let q = format!(
+        "/api/propose_merge?a={}&b={}&src=made-up",
+        id("billing", "Ledger"),
+        id("billing", "PostgreSQL")
+    );
+    body_of(&uds_get(&sock, &q).await, "400");
+    // A verdict on an id no proposal has is refused, and the log keeps no row for it.
+    body_of(
+        &uds_get(&sock, "/api/review?proposal=nope&decision=reject&workspace=*").await,
+        "400",
+    );
+    // A region named under All is asserted in its observations' workspace.
+    let hg = engine.hypergraph(None).expect("hypergraph");
+    let h = hg
+        .hyperedges
+        .iter()
+        .find(|h| h.member_names.iter().any(|n| n == "Ledger"))
+        .expect("billing's region");
+    let r =
+        uds_get(&sock, &format!("/api/reify?hyperedge={}&name=Storage&workspace=*", h.id)).await;
+    body_of(&r, "200");
+    assert!(
+        engine.get_entity(&id("billing", "Storage")).expect("get").is_some(),
+        "the region is not in billing"
+    );
+    assert!(
+        engine.get_entity(&id("default", "Storage")).expect("get").is_none(),
+        "the region went to the node default"
+    );
+    assert!(
+        engine.list_proposals(Some("default")).expect("list").is_empty()
+            && engine.curation(None).expect("curation").stray_verdicts.is_empty(),
+        "an act under All was filed in the node default"
+    );
+    let _ = std::fs::remove_file(&sock);
 }

@@ -403,11 +403,15 @@ const TOPIC: &str = "\n\nStart from the search hits in the digest; call get_enti
 context. Report what is known (with citations), what is contested, and what is not known - searched \
 for and not found. Do not fill gaps from your own knowledge without saying the store does not hold it.";
 
-const CURATE: &str = "\n\nThe digest is the curation report: cross-workspace duplicates, \
-near-name variants, merge suggestions, loose clusters (grab bags), orphans, contradictions and \
-merge cycles. For each clear case, draft a proposal with `propose` - entity_merge for duplicates \
-and variants, entity_split for a merge that joined different things, claim_promotion or \
-claim_demotion only where the evidence supports it - with a rationale that cites the evidence. \
+const CURATE: &str = "\n\nThe digest is the curation report: names two workspaces share \
+(`duplicates`), near-name variants, merge suggestions, loose clusters (grab bags), orphans, \
+contradictions and merge cycles. For each clear case, draft a proposal with `propose` - \
+entity_merge for variants and merge suggestions, entity_split for a merge that joined different \
+things, claim_promotion or claim_demotion only where the evidence supports it - with a rationale \
+that cites the evidence. A name two workspaces share is two entities: list it for the person and \
+never draft a merge across workspaces, which is refused. File each proposal in the workspace its \
+targets belong to, never `*`. `stray_verdicts`, when present, are verdicts filed away from their \
+proposal, which decide nothing: tell the person which proposals still wait. \
 Never propose recall; that is the person's call alone. Skip ambiguous cases and list them as \
 questions for the person instead. Finish with the ids of the proposals you created, tell the person \
 to review them in the Review panel, and that the `brief` prompt shows the result once they decide.";

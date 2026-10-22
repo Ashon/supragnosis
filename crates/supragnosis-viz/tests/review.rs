@@ -237,10 +237,16 @@ fn the_review_page_shows_its_evidence() {
     for part in ["i-circle-check", "i-circle-alert", "c.name === \"trust profile\"", "Sources: "] {
         assert!(checks.contains(part), "the checks do not hold {part}");
     }
-    assert!(SCRIPT.contains("\"entity_merge|referential integrity\": p => \"All \""));
+    // A check reads its own words whether it passed or failed (Section 29.15).
+    assert!(SCRIPT.contains("\"entity_merge|referential integrity\": (p, ok) => ok ? \"All \""));
+    assert!(SCRIPT.contains("\"Not every entity it names is in its workspace\""));
     assert!(SCRIPT.contains(
-        "\"claim_promotion|referential integrity\": () => \"Its observations are in this log\""
+        "\"claim_promotion|referential integrity\": (p, ok) => ok ? \"Its observations are in its workspace\""
     ));
+    assert!(
+        !checks.contains("checkSaid(p, c) + \": \" + c.detail"),
+        "a failed check reads its passing words and then the engine's detail"
+    );
     let fetch = function("fetchReviewEvidence");
     assert!(fetch.contains("/api/observations?entity=") && fetch.contains("observationById("));
     let render = function("renderReview");
@@ -250,4 +256,38 @@ fn the_review_page_shows_its_evidence() {
     );
     assert!(CSS.contains(".evcols {") && CSS.contains(".ckrow.ok .i { color:var(--ok-ink); }"));
     let _ = PAGE;
+}
+
+/// Section 29.15: under All the console sends the view, `*`, and the server files each act where its
+/// item lives - so the page no longer drops `*` before a write, the evidence reads every workspace,
+/// and Health lists a verdict filed away from its proposal with the way to it.
+#[test]
+fn under_all_the_console_files_where_items_live() {
+    let wire = function("wireCuration");
+    assert!(
+        !wire.contains("ws !== \"*\" && ws !== \"all\") q += \"&workspace=\""),
+        "Propose drops `*`, so the server files the merge in the node default"
+    );
+    assert!(
+        function("fetchReviewEvidence").contains("const wsq = ws ? \"&workspace=\""),
+        "the evidence under All reads the node default"
+    );
+    let items = function("signalItems");
+    assert!(
+        items.contains("curation.stray_verdicts")
+            && items.contains("A verdict filed away from its proposal: "),
+        "Health does not list a verdict filed away from its proposal"
+    );
+    let detail = function("signalDetail");
+    for part in [
+        "where the proposal does not live, so it decides nothing",
+        "data-stray=",
+        "Show the proposal",
+    ] {
+        assert!(detail.contains(part), "a stray verdict's item does not say {part}");
+    }
+    assert!(
+        function("wireDecisions").contains("[data-stray]"),
+        "Show the proposal does nothing"
+    );
 }
