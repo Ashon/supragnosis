@@ -6469,12 +6469,35 @@ function showTip(n, cx, cy) {
 
 
 // --- Interaction ---------------------------------------------------------------------
+// A pinch zooms as far as the fingers spread (Section 29.30): a trackpad pinch, which Chrome and
+// Firefox send as wheel events with ctrlKey and WebKit as gesture events, scales the map 1:1 around
+// the pointer through the touch pinch's own camera move. The mouse wheel keeps its step a notch.
+let gestureScale = null;   // the scale WebKit last reported, while a trackpad pinch runs
 canvas.addEventListener("wheel", ev => {
   if (settling) return;   // graph is hidden behind the loader - ignore interaction until it settles
   ev.preventDefault();
+  if (ev.ctrlKey) {
+    if (gestureScale !== null) return;   // the gesture events carry this pinch; never count it twice
+    const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? innerHeight : 1);
+    pinchTo(ev.clientX, ev.clientY, Math.min(1.25, Math.max(0.8, Math.exp(-dy / 100))));
+    userMoved = true; personMoved();
+    return;
+  }
   zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);
   personMoved();
 }, { passive: false });
+canvas.addEventListener("gesturestart", ev => {
+  ev.preventDefault();   // the map takes the pinch; the page is not magnified
+  if (!settling) gestureScale = ev.scale || 1;
+});
+canvas.addEventListener("gesturechange", ev => {
+  ev.preventDefault();
+  if (settling || gestureScale === null || !ev.scale) return;
+  pinchTo(ev.clientX, ev.clientY, ev.scale / gestureScale);
+  gestureScale = ev.scale;
+  userMoved = true; personMoved();
+});
+canvas.addEventListener("gestureend", ev => { ev.preventDefault(); gestureScale = null; });
 
 canvas.addEventListener("mousedown", ev => {
   if (settling) return;   // graph hidden (loading) - no drag/pan/select
