@@ -537,6 +537,62 @@ pub fn drift(running: Option<&str>, here: &str) -> Drift {
     }
 }
 
+/// One look at a daemon a job was just loaded for (Section 6): the version it serves, when it
+/// answers, and otherwise what its manager shows - the job's process and last exit, if the job is
+/// loaded at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartLook {
+    pub serving: Option<String>,
+    pub pid: Option<u32>,
+    pub last_exit: Option<i64>,
+}
+
+/// What a start came to (Section 6, L4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Start {
+    /// It answers, and serves this version.
+    Serving(String),
+    /// Its manager showed it failing - no process and a non-zero last exit - for
+    /// [`START_FAILING_LOOKS`] looks running; the exit status is the last one seen.
+    Failed(i64),
+    /// [`START_LOOKS`] looks went by with neither: still starting, which is reported as slow, not
+    /// failed - a daemon repaying owed projections before it binds (crash-recovery.md K3) can take
+    /// a while.
+    Slow,
+}
+
+/// Looks a start is watched for, one every [`START_TICK`]: thirty seconds.
+pub const START_LOOKS: u32 = 120;
+/// Looks of failing running that make a failure: three seconds. A job crash-looping on the store
+/// lock sits like that between respawns, as does a unit waiting out `RestartSec`, while one being
+/// restarted shows its previous exit only for a moment.
+pub const START_FAILING_LOOKS: u32 = 12;
+pub const START_TICK: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The decision `await_daemon` makes over its looks, kept apart from the sleeping and the asking so
+/// a table can drive it.
+#[derive(Debug, Default)]
+pub struct StartWatch {
+    looks: u32,
+    failing_for: u32,
+}
+
+impl StartWatch {
+    /// Takes one look; `Some` once the start has come to something.
+    pub fn see(&mut self, look: StartLook) -> Option<Start> {
+        self.looks += 1;
+        if let Some(v) = look.serving {
+            return Some(Start::Serving(v));
+        }
+        let failing = look.pid.is_none() && look.last_exit.is_some_and(|c| c != 0);
+        self.failing_for = if failing { self.failing_for + 1 } else { 0 };
+        if self.failing_for >= START_FAILING_LOOKS {
+            return Some(Start::Failed(look.last_exit.unwrap_or_default()));
+        }
+        (self.looks >= START_LOOKS).then_some(Start::Slow)
+    }
+}
+
 /// The `version` field of the viewer's `/api/about` body.
 pub fn parse_about_version(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -857,6 +913,62 @@ mod tests {
             "{\n\t\"Label\" = \"sh.brew.supragnosis-server\";\n\t\"LastExitStatus\" = 256;\n};";
         assert_eq!(parse_launchctl_list(failing), (None, Some(256)));
         assert_eq!(parse_launchctl_list(""), (None, None));
+    }
+
+    /// daemon-lifecycle.md Section 6 and L4: a job that was loaded and does not come up is a
+    /// failure only after three seconds of failing running; anything in between - a respawn with a
+    /// process, a clean last exit, a job not yet listed - starts the count again; an answer ends the
+    /// watch whatever came before; and thirty seconds of neither is slow, not failed.
+    #[test]
+    fn a_start_fails_only_after_three_seconds_of_failing() {
+        let answers =
+            |v: &str| StartLook { serving: Some(v.into()), pid: None, last_exit: Some(1) };
+        let failing = |code| StartLook { serving: None, pid: None, last_exit: Some(code) };
+        let running = StartLook { serving: None, pid: Some(41), last_exit: Some(1) };
+        let clean = StartLook { serving: None, pid: None, last_exit: Some(0) };
+        let unlisted = StartLook { serving: None, pid: None, last_exit: None };
+        let watch = |looks: Vec<StartLook>| {
+            let mut w = StartWatch::default();
+            looks.into_iter().enumerate().find_map(|(i, l)| w.see(l).map(|s| (i + 1, s)))
+        };
+        let n = START_FAILING_LOOKS as usize;
+        assert_eq!(START_TICK * START_FAILING_LOOKS, std::time::Duration::from_secs(3));
+        assert_eq!(START_TICK * START_LOOKS, std::time::Duration::from_secs(30));
+
+        let mut looks = vec![unlisted.clone(), running.clone()];
+        looks.push(answers("0.9.1"));
+        assert_eq!(watch(looks), Some((3, Start::Serving("0.9.1".into()))));
+
+        assert_eq!(watch(vec![failing(78); n]), Some((n, Start::Failed(78))));
+        let mut looks = vec![failing(1); n - 1];
+        looks.push(failing(78));
+        assert_eq!(watch(looks), Some((n, Start::Failed(78))), "the last exit seen");
+
+        for between in [running.clone(), clean.clone(), unlisted.clone()] {
+            let mut looks = vec![failing(78); n - 1];
+            looks.push(between.clone());
+            looks.extend(vec![failing(78); n - 1]);
+            looks.push(answers("0.9.1"));
+            assert_eq!(
+                watch(looks),
+                Some((2 * n, Start::Serving("0.9.1".into()))),
+                "{between:?} starts the count again"
+            );
+        }
+
+        let mut looks = vec![failing(78); n - 1];
+        looks.push(answers("0.9.1"));
+        assert_eq!(watch(looks), Some((n, Start::Serving("0.9.1".into()))));
+
+        let slow = vec![running; START_LOOKS as usize];
+        assert_eq!(watch(slow), Some((START_LOOKS as usize, Start::Slow)));
+        let mut looks = vec![clean; START_LOOKS as usize - 1];
+        looks.push(failing(78));
+        assert_eq!(
+            watch(looks),
+            Some((START_LOOKS as usize, Start::Slow)),
+            "one failing look is not a failure"
+        );
     }
 
     #[test]

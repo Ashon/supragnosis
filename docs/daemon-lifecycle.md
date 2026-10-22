@@ -370,5 +370,9 @@ Checked on this machine without changing it:
 
 L4's wait for the job was not exercised against a failing job here, because that would mean
 breaking the daemon this machine runs on. Its rule - three seconds with no process and a non-zero
-last exit - is stated in `await_daemon`.
+last exit is a failure, and thirty seconds of neither that nor an answer is slow - is
+`lifecycle::StartWatch`, which `await_daemon` feeds one look at a time.
+`a_start_fails_only_after_three_seconds_of_failing` drives it with sequences of looks: an answer,
+twelve failing looks, a respawn, a clean exit or an unlisted job starting the count again, and a
+slow start.
 
