@@ -4,7 +4,8 @@
 > it. Companion to [architecture.md](architecture.md) (the write path) and
 > [daemon-lifecycle.md](daemon-lifecycle.md) (who starts and stops the process).
 >
-> Status: **built** (Section 7 steps 1-3). Two things building it changed are recorded in Section 8.
+> Status: **built** (Section 7 steps 1-4). Step 4, on 2026-10-23, made the engine's writers commit
+> whole (Section 3a). Two things building it changed are recorded in Section 8.
 
 ## 1. Why this exists
 
@@ -29,12 +30,11 @@ rather than absent. "Not found" for a fact the log holds is exactly "knowledge s
 
 ## 2. What this is NOT
 
-- **Not atomic writes.** The stronger design runs the append and every projection write in one
-  transaction, so the gap never exists. It would also make `observe` faster, since today it pays one
-  commit per touched row (a full reproject of the author's store is about 460 commits and 1.9 s, all
-  of it I/O). But the projection reads the log through snapshot read contexts, and a single
-  transaction means moving those reads inside the write. That reshapes the store port. It remains
-  the follow-up, and nothing here gets in its way.
+- **Not atomic writes - for appends that project later.** The engine's own writers became atomic
+  with Section 3a: `observe`, `define_type`, `propose` and `review` commit their row and its
+  projection in one transaction, so no gap exists for them. The ledger remains for the appends that
+  are projected after the fact - a sync `apply`, a stamping backfill, `migrate` and `rekey` - whose
+  re-materialization is a separate act.
 - **Not a shutdown protocol.** Correctness does not depend on how a process ends. Graceful shutdown
   would make recovery rarer, but it cannot make it unnecessary - power loss and panics do not send
   SIGTERM - so it is not what this rests on.
@@ -46,20 +46,39 @@ rather than absent. "Not found" for a fact the log holds is exactly "knowledge s
 
 ## 3. The mechanism: an owed-projection ledger
 
-**Every append records, in the same store transaction, that its projection is owed.**
-`add_observation` - the one way anything enters the log, used by `observe`, `define_type`,
-`propose`, `review`, the sync crate's `apply`, `migrate` and `rekey` - writes the observation's id
-and workspace into an `owed` table inside the transaction that writes the row. The store does this
-itself, so no caller can append without it. That includes the sync crate, which holds only an
-`AssertionStore` and never sees the engine.
+**Every append projected after the fact records, in the same store transaction, that its
+projection is owed.** `add_observation` - the way the sync crate's `apply`, `migrate` and `rekey`
+enter the log - writes the observation's id and workspace into an `owed` table inside the
+transaction that writes the row. The store does this itself, so no caller can append through it
+without the entry. That includes the sync crate, which holds only an `AssertionStore` and never sees
+the engine. The engine's writers - `observe`, `define_type`, `propose`, `review` - enter through
+`commit_projected` instead, which writes the projection in the row's transaction (Section 3a).
 
 **An entry is cleared only by the projection that repays it.**
 
-- `observe` and the other engine writers clear their own observation's entry after its last
-  projection write.
+- The engine's writers record no entry and clear none (Section 3a).
 - A `reproject` of a workspace clears that workspace's entries. It clears only the entries it read
   before it began, because an append that lands while the reproject runs may be missing from the log
   snapshot it projected.
+
+### 3a. The engine's writers commit whole (2026-10-23)
+
+The atomic-write follow-up, for the writers the engine runs. Each folds the projection its row
+calls for from the log as it would read with the row in it - the stored row, absorbed with the new
+attestation, standing in for it - and hands the row and the projected entities and relations to the
+store's `commit_projected`, which writes them in one transaction. So:
+
+- **Nothing is owed for them.** The row and its projection commit together or not at all; no entry
+  is recorded and none is cleared. A failed projection write fails the whole write, and the log is
+  as it was.
+- **No clear covers a re-arrival.** An entry the ledger already held for the same id - a sync
+  `apply` of the same content, landed first - is left for the re-materialization that repays it.
+  The accepted exception Section 8 recorded is gone.
+- **One commit instead of many.** An `observe` paid one commit for its append and one for each
+  touched row; it now pays one.
+
+The fold still reads under the engine's write lock, so no engine writer lands between its read and
+its commit; a sync `apply` can, and records its own entry, as before.
 
 **A writer that opens the store repays what is owed before it serves.** Opening the engine in any
 process that writes - the daemon, a stdio server, the one-shot CLI commands - reads the ledger.
@@ -92,8 +111,9 @@ have produced, and running it twice changes nothing.
 - **Loud where it is read** (Principle 24). A startup log line scrolls away. The last recovery -
   when, which workspaces, how many observations it repaid - and the ledger's current size are
   reported by the viewer's `/api/health` and by `supragnosis status`. A non-zero ledger on a running
-  daemon means a projection failed after its append. The fact is in the log, and the graph will show
-  it after the next open.
+  daemon means an append projected after the fact - a sync, a stamping backfill, a re-key - has not
+  been re-materialized, or its re-materialization failed. The fact is in the log, and the graph will
+  show it after the next open.
 - **A store the ledger has never seen is owed in full, once.** Appends made before the ledger
   existed carry no record of whether they were projected, and a store that ran earlier builds may
   already hold the gap Section 1 describes. So the first open by a ledger-aware build - the one that
@@ -110,10 +130,10 @@ have produced, and running it twice changes nothing.
 
 | | Invariant |
 |---|---|
-| **K1** | Every append a ledger-aware build makes records its owed projection in the same store transaction as the row. No append path in such a build can skip it; appends an older build made are Section 4's downgrade case. |
-| **K2** | An owed entry is cleared only after the projection that repays it is written: the appending writer's own projection, or a reproject that read the entry before it began. The one accepted exception is a clear by id that also covers a concurrent re-arrival of the same observation (Section 8). |
+| **K1** | Every append a ledger-aware build makes either commits with its projection in one store transaction (the engine's writers, Section 3a) or records its owed projection in the transaction that writes the row. No append path in such a build can do neither; appends an older build made are Section 4's downgrade case. |
+| **K2** | An owed entry is cleared only after the projection that repays it is written, by a reproject that read the entry before it began. No writer clears an entry it did not read so: the engine's writers clear none (Section 3a). |
 | **K3** | A writer process that opens a store with owed entries re-projects those workspaces before it serves a read or accepts a write. |
-| **K4** | Correctness does not depend on how a process ends. SIGKILL, panic, power loss, a failed projection write: each leaves entries the next open repays, within K1's and K2's stated exceptions. |
+| **K4** | Correctness does not depend on how a process ends. SIGKILL, panic, power loss, a failed projection write: each leaves either nothing written - an engine writer's whole commit (Section 3a) - or entries the next open repays. |
 | **K5** | Recovery is reported where it is read: `/api/health` and `supragnosis status` carry the last recovery and the ledger's current size. |
 
 ## 6. Closure map
@@ -129,8 +149,11 @@ have produced, and running it twice changes nothing.
 
 1. **The ledger** in the store port: written by `add_observation` in its transaction, read and
    cleared through `KnowledgeStore`, which only the engine holds. In-memory and redb adapters.
-2. **Clearing** in the engine's writers and in `reproject`.
+2. **Clearing** in `reproject`, and in the engine's writers until step 4.
 3. **Recovery on open** for every writer process, with the report on `/api/health` and `status`.
+4. **Whole commits** for the engine's writers (Section 3a): `commit_projected` on `KnowledgeStore`
+   in both adapters, and `observe`, `define_type`, `propose` and `review` folding their projection
+   from the log with their row in it.
 
 Guarded by:
 
@@ -143,15 +166,28 @@ Guarded by:
   entry is handed comes back from `build_engine` over a scratch redb store with nothing owed and
   the owed append in its graph.
 - `a_completed_write_owes_nothing` and `a_reproject_repays_only_its_own_workspace` - K2.
-- `a_projection_write_that_fails_leaves_its_entry` - K2 under a fault: a store refusing projection
-  writes keeps the append and its entry, through an observe and a reproject that both say they
-  failed, and the next open repays it.
+- `a_projected_commit_lands_whole_and_owes_nothing` - Section 3a on every adapter, in the port
+  conformance suite: the row and its projection land together, owing nothing and clearing nothing.
+- `an_engine_write_that_fails_leaves_nothing_written` - K4 for the engine's writers: a store refusing
+  the commit leaves no row, no projection and no entry.
+- `an_engine_write_leaves_a_re_arrivals_entry` - K2: an observe of the content an apply delivered
+  keeps the apply's entry, and writes the row a replay writes.
+- `an_observe_folds_the_gate_that_names_its_row` - Section 3a: the row about to be committed is
+  read by every fold, the gates included, so a merged promotion of it that arrived first applies
+  and the observe writes the row a replay writes.
+- `a_reproject_that_fails_leaves_its_entry` - K2 under a fault: a store refusing projection writes
+  keeps an apply's entry through a reproject that says it failed, and the next open repays it.
 - `a_pull_that_stamps_rows_re_materializes_them` - the hub repays what stamping owes.
 - `health_reports_owed_projections_and_the_last_recovery` - K5.
 
 Checked end to end: a stdio server killed with SIGKILL during a burst of 60 `observe` calls on a
 scratch store left one owed observation. The daemon then opened the store, re-projected the
 workspace before it bound, and `status` reported "recovered at start".
+
+Checked end to end again after step 4: six stdio servers, each killed with SIGKILL at a random point
+in a burst of 60 `observe` calls on a scratch store, left nothing owed, and each graph held exactly
+the entities its log named. In one run the log held a write whose reply never left the process, and
+its projection was there with it.
 
 ## 8. What building it changed
 
@@ -165,10 +201,8 @@ workspace before it bound, and `status` reported "recovered at start".
   With the ledger in place, that showed up as entries left owed after every pull that stamped
   anything - correctly, since the graph was behind. The pull handler now runs the hub's
   re-materialize hook after a stamping backfill, and `sync_push` re-projects and reports it.
-- **A clear names an id, so one edge is accepted rather than closed.** If a sync `apply` delivers a
-  re-arrival of the very observation an `observe` is still projecting, the observe's clear removes
-  the entry for both. The apply's own re-materialization still runs. The debt is lost only if the
-  process dies between that clear and that re-materialization, and only for the same content
-  arriving from two directions at once. Closing it needs a per-append sequence in the ledger, which
-  the atomic-write follow-up makes unnecessary.
+- **A clear named an id, so one edge was accepted rather than closed** - until Section 3a. If a sync
+  `apply` delivered a re-arrival of the very observation an `observe` was still projecting, the
+  observe's clear removed the entry for both, and the debt was lost if the process died before the
+  apply's re-materialization. The engine's writers now clear nothing, so the apply's entry stays.
 

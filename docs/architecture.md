@@ -938,7 +938,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   write waits out a reproject: about the per-workspace re-projection time crash-recovery.md Section 4 measures
   (about 2 s at today's scale). The vectors a reproject needs are computed before it takes the lock and used
   only for the text they were made for, as the backfill does (semantic-retrieval.md SR7), so a freshly pulled
-  workspace or a changed model does not make writes wait out the embedder. The atomic-write follow-up stays owed for the crash window, which is a different boundary.
+  workspace or a changed model does not make writes wait out the embedder. The crash window, a different
+  boundary, closed the same day: the engine's writers commit their row and its projection in one store
+  transaction (crash-recovery.md Section 3a).
 - Principles 3/4 (supersede/bitemporal) *logic*: supersede/retraction observation handling, the asserted close of a disproven relation's valid interval,
   `as_of_valid`/`as_of_recorded` time-travel queries -> **M3c** (split out of M3b, since it needs negation
   semantics rather than identity work - resolution-identity.md Section 8). (Fields were introduced in M1.
@@ -1179,5 +1181,6 @@ Phase 5's.
   `write_guard`. A store-level atomic upsert would still be a refinement, but the divergence this
   condition guarded against no longer exists. The same boundary under a crash rather than under
   concurrency - append committed, projection not - was unguarded until 2026-10: it is now repaid by
-  the owed-projection ledger at the next open ([crash-recovery.md](crash-recovery.md)), and one
-  transaction for the append and its projection is that document's named follow-up.
+  the owed-projection ledger at the next open ([crash-recovery.md](crash-recovery.md)), and since
+  2026-10-23 the engine's writers commit the append and its projection in one transaction
+  (crash-recovery.md Section 3a), so for them the boundary no longer exists.
