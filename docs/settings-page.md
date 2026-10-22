@@ -109,7 +109,10 @@ Which server this Mac's AI apps use (remote-server.md Section 3).
   optional CA bundle for a server whose certificate a private CA signed. The shell runs
   `supragnosis server add <name> <url>`, with `--ca <file>` when one is given.
   - The credential is written to the CLI's stdin. It never goes into an argument, a log line or a
-    response, and the field is cleared the moment the value is handed over (S2).
+    response, and the field is cleared the moment the value is handed over (S2). The first line of
+    the CLI's refusal reaches the page, except that should it quote the credential, the shell puts
+    "[the credential]" in its place first. A CLI that refuses before reading the credential is
+    answered by its refusal, not by the pipe it closed.
   - The CLI checks the URL (HTTPS, or loopback HTTP) and refuses what it refuses. The page shows
     that refusal instead of deciding first.
   - "Use it now", checked by default, makes the new profile active once it is added.
@@ -319,7 +322,12 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   the source: every command opens with the caller check, and the commands declared, registered and
   granted are one set, so a command added later cannot act before the check.
 - **S2**: `a_credential_never_becomes_an_argument` - the arguments of `server add` are built without
-  it.
+  it. `a_credential_reaches_the_cli_on_stdin_only` runs `add_server_with` against stand-in CLIs:
+  one records its arguments, environment and stdin, and the credential is on stdin alone; one quotes
+  its stdin in a refusal, and the answer carries the refusal without the credential; one refuses
+  before reading, and the answer is its refusal. The page's script reads the field once and writes
+  it once, to clear it, before the call, hands the value only to the shape check and the call, and
+  neither it nor kit.js, the other script the page loads, logs anything.
 - **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
   each control the tray gave up (`login_set`, `daemon_restart`, `server_use`, `server_add`,
   `server_remove`, `app_toggle`) by name, and each is one of the app's registered commands.
