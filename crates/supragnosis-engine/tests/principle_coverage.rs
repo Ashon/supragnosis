@@ -3883,11 +3883,13 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
              identity, an attestation axis, a merge target, or inside the signed bytes",
         )),
         c("the wire envelope and the well-formedness check are forced the same way",
-          Evidence::Deferred(
-            "Revisit when the wire envelope next gains a field - `AttestationEvent` is read field \
-             by field in `check_event`, and `check_well_formed` and `Assertions::is_empty` \
-             enumerate without destructuring, so a new field there rides unchecked",
-        )),
+          Evidence::Structural(
+            "`check_event` destructures `AttestationEvent`, and `check_well_formed` and \
+             `Assertions::is_empty` destructure `Assertions`, with no `..` - so a field the wire \
+             envelope gains fails to compile in each until it is decided whether it is identity, \
+             signed, checked at ingest or counted, as the identity and signing functions above are \
+             forced",
+          )),
     ]),
     (15, "Resolution Is Substrate's Job", &[
         // P15 says a wrong merge is more expensive than a wrong split "though, by Principle 3, both

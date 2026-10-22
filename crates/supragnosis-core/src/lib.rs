@@ -625,10 +625,13 @@ fn hash_opt_u64(hasher: &mut blake3::Hasher, v: Option<u64>) {
 
 impl Assertions {
     pub fn is_empty(&self) -> bool {
-        self.entities.is_empty()
-            && self.relations.is_empty()
-            && self.type_defs.is_empty()
-            && self.proposal_events.is_empty()
+        // Destructured with no `..`: a field added to the envelope is a compile error here until it
+        // is counted, or an event carrying only it would be serialized as carrying nothing.
+        let Assertions { entities, relations, type_defs, proposal_events } = self;
+        entities.is_empty()
+            && relations.is_empty()
+            && type_defs.is_empty()
+            && proposal_events.is_empty()
     }
 
     /// Deterministic byte encoding for the content-address hash. A hand-rolled encoding not coupled to the
@@ -816,7 +819,14 @@ impl Observation {
                 }
             }
         }
-        for e in &self.assertions.entities {
+        // Destructured with no `..`: a field added to the envelope is a compile error here until it
+        // is checked, or decided to need no check - a peer's event would carry it in unchecked.
+        let Assertions { entities, relations, type_defs, proposal_events } = &self.assertions;
+        // A proposal event's payload is data the proposal fold interprets at read time, where one it
+        // cannot read counts as empty; the gate judges structure, not proposals (proposal-workflow.md
+        // I1).
+        let _ = proposal_events;
+        for e in entities {
             if e.name.trim().is_empty() {
                 return Err(
                     "an entity assertion has an empty name (a non-assertion with no referent)"
@@ -830,7 +840,7 @@ impl Observation {
                 ));
             }
         }
-        for r in &self.assertions.relations {
+        for r in relations {
             if r.from.trim().is_empty() || r.to.trim().is_empty() {
                 return Err(format!(
                     "a relation endpoint is empty (from: {:?}, to: {:?})",
@@ -844,7 +854,7 @@ impl Observation {
                 ));
             }
         }
-        for t in &self.assertions.type_defs {
+        for t in type_defs {
             if t.name.trim().is_empty() || t.description.trim().is_empty() {
                 return Err(
                     "a type definition has an empty name or description (Principle 8)".into()
