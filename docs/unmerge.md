@@ -113,7 +113,9 @@ This is the whole of the risk in this feature, and the rule that answers it is:
 - Suppression is derived, not stored: a merged split verdict is in the log forever, so the pair it
   separated is computable on any node with the same log (P16). It is the same shape as
   `open_merge_pairs`, which already suppresses pairs awaiting a verdict, and it should live beside
-  it so the two cannot drift on what "do not offer this again" means.
+  it so the two cannot drift on what "do not offer this again" means. *(Revised by design-system.md
+  step 57: one set holds both, with a pair under a Blocked merge and a pair whose merge the person
+  rejected, until the knowledge changes (dreaming.md Section 5.5).)*
 - The pair stays mergeable by hand. Opening an `entity_merge` on split entities is allowed and needs
   no special case - this is the distinction the band already draws, where a generator proposes and
   only a verdict commits (P19, IR2). What the split removes is the nagging, not the option.
