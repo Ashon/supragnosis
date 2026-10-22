@@ -3804,6 +3804,19 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["p15_hypergraph_membership_forwards_accepted_merges"])),
         c("top-band candidates merge automatically",
           Evidence::Deferred("M4+ - deliberately not done; the auto-merge executor needs I15 re-validation")),
+        // Resolution is scoped to the workspace, as the T-Box is (P11): a merge across two
+        // workspaces belonged to no workspace's canon (design-system.md Section 29.15).
+        c("resolution is scoped to the workspace - a merge joins entities of one workspace, and an \
+           all-workspaces read is the union of each workspace's resolution",
+          Evidence::Deferred(
+            "specified by design-system.md step 51a. Revisit when its build lands the refusal and \
+             the per-workspace fold",
+          )),
+        c("identity across workspaces is expressed only through an explicit alignment assertion",
+          Evidence::Deferred(
+            "no alignment assertion exists, for entities or for types (P11), so nothing yet says two \
+             workspaces' entities are one. Revisit when a bridge claim is built",
+          )),
     ]),
     (16, "Topology-Independent Convergence", &[
         c("one observation set converges to one state regardless of order, partitioning or duplication",
@@ -4185,7 +4198,7 @@ const BULLETS: &[(u8, &[&[u8]])] = &[
     (12, &[&[], &[1], &[1]]),
     (13, &[&[], &[1], &[1]]),
     (14, &[&[], &[1, 3], &[2], &[5], &[4, 6, 7]]),
-    (15, &[&[], &[2], &[1, 3, 4], &[1]]),
+    (15, &[&[], &[2], &[1, 3, 4], &[1], &[5, 6]]),
     (16, &[&[], &[1], &[2], &[2, 3], &[1], &[4]]),
     (17, &[&[], &[1], &[1, 4], &[2, 3, 6], &[5]]),
     // C4 (untrusted text never becomes markup in the review console) answers the headline - every

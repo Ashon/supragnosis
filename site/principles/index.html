@@ -74,7 +74,7 @@
             </div>
             <div class="grp" data-n="5">
               <a class="col" href="#p14" data-p="14" aria-label="P14, 7 clauses: 4 tested, 1 by construction, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span><span class="cell o"></span><span class="cell o"></span></a>
-              <a class="col" href="#p15" data-p="15" aria-label="P15, 4 clauses: 3 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p15" data-p="15" aria-label="P15, 6 clauses: 3 tested, 3 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
               <a class="col" href="#p16" data-p="16" aria-label="P16, 4 clauses: 4 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
               <a class="col" href="#p17" data-p="17" aria-label="P17, 6 clauses: 6 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
               <a class="col" href="#p18" data-p="18" aria-label="P18, 6 clauses: 4 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
@@ -109,7 +109,7 @@
             <div class="grp" data-n="1"><span>6</span></div>
           </div>
         </div>
-        <p class="count"><b>108</b> clauses across <b>24</b> principles: <b>74</b> tested by name, <b>6</b> hold by construction, <b>28</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
+        <p class="count"><b>110</b> clauses across <b>24</b> principles: <b>74</b> tested by name, <b>6</b> hold by construction, <b>30</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
         <ul class="legend"><li><i class="cell t"></i>Tested by name</li><li><i class="cell s"></i>Holds by construction</li><li><i class="cell p"></i>Owed, today's behavior pinned</li><li><i class="cell o"></i>Owed</li></ul>
         <!-- /registry:ledger -->
         <dl class="gloss">
@@ -531,7 +531,7 @@
           <p class="thesis">Stable names, one graph from one log, and trust that the receiver decides.</p>
         </div>
         <!-- registry:chapter:3 -->
-        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
         <!-- /registry:chapter:3 -->
       </header>
       <div class="prs">
@@ -579,12 +579,14 @@
           </figure>
           <!-- registry:clauses:15 -->
           <details class="clauses">
-            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">4 clauses: 3 tested, 1 owed</span></summary>
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">6 clauses: 3 tested, 3 owed</span></summary>
             <ul class="cl">
               <li><i class="cell t"></i><span>a merge and a split are both reversible<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell t"></i><span>the substrate proposes identity candidates rather than leaving them to the operator<span class="st">tested by 2 named tests</span></span></li>
               <li><i class="cell t"></i><span>a proposed identity is committed by the gate, never by the generator<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell o"></i><span>top-band candidates merge automatically<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>resolution is scoped to the workspace - a merge joins entities of one workspace, and an all-workspaces read is the union of each workspace's resolution<span class="st">owed</span></span></li>
+              <li><i class="cell o"></i><span>identity across workspaces is expressed only through an explicit alignment assertion<span class="st">owed</span></span></li>
             </ul>
           </details>
           <!-- /registry:clauses:15 -->
