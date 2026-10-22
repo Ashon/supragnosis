@@ -1040,12 +1040,16 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             "an open invitation counts as an admission until it expires and admits only its holder's preview and join",
             Evidence::Scenario(&[
                 "a_listener_that_cannot_open_leaves_the_node_serving",
+                "an_unused_invitation_closes_the_listener_at_its_expiry",
                 "a_machine_joins_over_the_listener_and_is_refused_once_removed",
             ]),
         ),
         c(
             "a hub an invitation made says what its listener does, in sync_status too, on a node with no sync",
-            Evidence::Scenario(&["a_hub_with_no_sync_says_what_its_listener_does"]),
+            Evidence::Scenario(&[
+                "the_first_invitation_makes_a_hub_of_a_node_with_no_config",
+                "a_hub_with_no_sync_says_what_its_listener_does",
+            ]),
         ),
     ]),
     (2, &[c(
@@ -1086,6 +1090,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             "the_first_invitation_makes_the_server_section",
             "a_join_is_allowed_and_answered_for_its_request_alone",
             "who_may_join_and_who_may_invite",
+            "an_answer_counts_only_for_the_request_shown",
         ]),
     )]),
     (7, &[
@@ -1127,6 +1132,8 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&[
             "an_invitation_says_what_became_of_it",
             "a_join_is_allowed_and_answered_for_its_request_alone",
+            "an_answer_counts_only_for_the_request_shown",
+            "who_may_join_and_who_may_invite",
             "the_request_and_the_answer_survive_a_restart",
             "the_words_depend_on_every_part_of_the_request",
         ]),

@@ -140,7 +140,9 @@ two require the code's secret, the last a joined machine's credential.
   `[server]` exists and by the first invitation when it does not, so that invitation needs no
   restart. What reports on it is there from the start: the admin socket, the event channel, and
   the listener's state, which `sync_status` reads on a node with no sync as well. A node with no
-  `supragnosis.toml` makes no node key until it invites.
+  `supragnosis.toml` makes no node key until it invites. Until its next start, the viewer's Sync
+  pane does not list the machines a hub made this way admits, and the invitation says so;
+  `supragnosis peer list` lists them at once, and step 4 makes the pane read them the same way.
 - **At run time**, the daemon opens the listener when the first admission arrives - an invitation,
   a joined machine, a principal - and closes it when the last one ends, an unused invitation
   expiring among them. The bind rule is checked each time it would open (D5, PA1). `principal add`
@@ -211,6 +213,11 @@ two require the code's secret, the last a joined machine's credential.
     commitment and nonce until it has an answer; a repeat with all of them the same is the same
     request. A request under the same code with other keys or another commitment, or a nonce that
     does not match the commitment, ends the invitation, and both are told;
+  - takes Allow and Deny only for the request the person was shown: each names the invitation,
+    the machine and the words, and an answer to a request that has changed since - another
+    invitation, other words - is refused and admits no one. A request is checked, too, for a
+    node key on the curve and a one-time key not of small order before the hub shows it, and on
+    Allow the answer is made and signed before any file is written;
   - **on Allow**, mints a 32-byte bearer credential and adds the allowlist entry - the node id, the
     key, the credential's hash and the invitation's workspaces - and records it in
     `~/.supragnosis/hub/peers.toml` with the name, as an entry pairing made; swaps its live peer

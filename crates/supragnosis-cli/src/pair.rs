@@ -23,6 +23,7 @@ const CHECKSUM_CONTEXT: &str = "supragnosis sgjoin1 2026-10-22 code checksum";
 const WORDS_CONTEXT: &str = "supragnosis sgjoin1 2026-10-22 words";
 const COMMITMENT_CONTEXT: &str = "supragnosis sgjoin1 2026-10-22 commitment";
 const SEAL_CONTEXT: &str = "supragnosis sgjoin1 2026-10-22 seal";
+const SECRET_HASH_CONTEXT: &str = "supragnosis sgjoin1 2026-10-22 secret hash";
 /// The context the hub's node key signs a join's answer under; no attestation is signed under it.
 pub const ANSWER_CONTEXT: &str = "sgjoin1 answer";
 
@@ -61,7 +62,8 @@ impl std::fmt::Display for CodeError {
         f.write_str(match self {
             CodeError::NotACode => "This is not a join code: a code starts with \"sgjoin1-\".",
             CodeError::Newer => {
-                "This code was made by a newer release of supragnosis. Update this machine, then                  use the code."
+                "This code was made by a newer release of supragnosis. Update this machine, then \
+                 use the code."
             }
             CodeError::Damaged => "This code is incomplete or changed. Copy it again.",
         })
@@ -411,7 +413,19 @@ pub fn sign_answer(
 
 /// The invitation's id as an answer names it: the hash the hub keeps of its secret.
 pub fn secret_hash(secret: &[u8; 32]) -> String {
-    blake3::hash(secret).to_hex().to_string()
+    hex(&secret_hash_bytes(secret))
+}
+
+pub fn secret_hash_bytes(secret: &[u8; 32]) -> [u8; 32] {
+    blake3::derive_key(SECRET_HASH_CONTEXT, secret)
+}
+
+/// Whether an X25519 key can be sealed to: not one of the points of small order, which give every
+/// key the same all-zero secret.
+pub fn usable_onetime_key(key: &[u8; 32]) -> bool {
+    random32().is_ok_and(|probe| {
+        curve25519_dalek::MontgomeryPoint(*key).mul_clamped(probe).to_bytes() != [0; 32]
+    })
 }
 
 /// What the joining machine expects an answer to name.
@@ -525,14 +539,17 @@ mod tests {
         "807134898a8ac279d11caed76d01f449b53b6b424c70a40c8fc93ef4c71681f1";
     const KNOWN_WORDS: [&str; 3] = ["oven", "rose", "whistle"];
     const KNOWN_SECRET_HASH: &str =
-        "ebaf85b465a09de21b398fb112c1500f2cbe658c42f379e0c0f18d24b819f637";
+        "23edf4a7b711baea0aef0aa1d0ea63e3a4ec45c2429983ed095832d7f2e815ac";
 
     /// The words are the same for the same request on both sides, and change with any of its parts.
     #[test]
     fn the_words_depend_on_every_part_of_the_request() {
         let w = words(&[1; 32], &[2; 32], &[3; 32], &[4; 32], &[5; 32]);
         assert_eq!(w, words(&[1; 32], &[2; 32], &[3; 32], &[4; 32], &[5; 32]));
+        assert_ne!(w, words(&[9; 32], &[2; 32], &[3; 32], &[4; 32], &[5; 32]), "secret");
+        assert_ne!(w, words(&[1; 32], &[9; 32], &[3; 32], &[4; 32], &[5; 32]), "node key");
         assert_ne!(w, words(&[1; 32], &[2; 32], &[6; 32], &[4; 32], &[5; 32]), "one-time key");
+        assert_ne!(w, words(&[1; 32], &[2; 32], &[3; 32], &[9; 32], &[5; 32]), "its nonce");
         assert_ne!(w, words(&[1; 32], &[2; 32], &[3; 32], &[4; 32], &[6; 32]), "hub nonce");
         let mut seen = std::collections::BTreeSet::new();
         assert!(WORDS.iter().all(|w| seen.insert(*w)), "every word once");
@@ -555,6 +572,10 @@ mod tests {
             .replace_range(0..2, if &bent.ciphertext[0..2] == "00" { "01" } else { "00" });
         assert!(mine.open(&bent).is_err(), "a changed seal");
         assert!(seal(&[0; 32], b"x").is_err(), "a small-order key seals nothing");
+        let mut one = [0u8; 32];
+        one[0] = 1;
+        assert!(!usable_onetime_key(&[0; 32]) && !usable_onetime_key(&one), "small order");
+        assert!(usable_onetime_key(&mine.public()));
         let again = OneTime::from_secret(*mine.secret());
         assert_eq!(again.open(&sealed).unwrap(), b"credential", "the kept key opens it");
     }
