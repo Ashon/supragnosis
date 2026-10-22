@@ -396,6 +396,12 @@ one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing
 `~/.supragnosis/hub/`, so a release before pairing still
 starts on a paired node and syncs without the receive list's cap or the vouched keys.
 
+**The ladder says what it held back** (design-system.md step 62). The curation report gains
+`name_ladder`, an added `{held_back}` object right after `name_variants`: the alike-named pairs the
+ladder left out because they are already answered, counted once each and apart from the band's. A
+union over workspaces adds the counts. The `curate` prompt says what a nonzero count beside an empty
+list means.
+
 **The band says what it held back** (design-system.md step 61). The curation report's `merge_band`
 gains `held_back`, an added field: the near pairs the band left out because a merge names them, a
 split pulled them apart or the person's reject holds them back. The `curate` prompt, whose digest

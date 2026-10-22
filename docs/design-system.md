@@ -36,7 +36,7 @@
 > is built. Step 57, a repeat says what it found, is built. Step 58, a panel on a tablet ends above
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
 > demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
-> ladder says what it held back, is specified.
+> ladder says what it held back, is built.
 
 ## 1. Why this exists
 
@@ -2026,7 +2026,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 61. **The band says what it held back** [built] (Section 29.27; resolution-identity.md Section 3 and
    unmerge.md Section 5 repaid): `merge_band` counts the near pairs it left out, and an empty band
    says whether none are near or the near pairs it found are all answered.
-62. **The ladder says what it held back** (Section 29.28; Section 29.27's owed row repaid): the
+62. **The ladder says what it held back** [built] (Section 29.28; Section 29.27's owed row repaid): the
    name-variant ladder counts the pairs it left out because they are answered, and Suggestions says
    by name, as it does by meaning, whether none are alike or the ones it found are all answered.
 
@@ -6024,4 +6024,8 @@ group's chips still name every member.
 **Guarded by** an engine unit test (one pair reached at two rungs counted once; a listed group of
 three keeping its held-back pair uncounted; an empty ladder counting every pair it reached), the
 review tests (each line by name, the count read apart from its absence, the order after "By
-meaning"), and the MCP prompts test (the `curate` sentence).
+meaning"), and the MCP prompts test (the `curate` sentence). A browser check on a scenario daemon
+reads Suggestions in a workspace holding "TrustTier" and "Trust Tier": with the pair listed, no
+sentence by name; once a merge of them waits, "By name: none waiting - 1 alike-named pair is already
+proposed, split apart or held back by your reject." after "By meaning"; and in a workspace with
+nothing alike, "By name: none - no two names match ..." - a count of zero said as a known none.

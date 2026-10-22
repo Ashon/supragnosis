@@ -815,7 +815,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   applies the same rule to its one embedding-dependent signal: `merge_band`
   (`available`/`embedded`/`examined`/`held_back`) accompanies `merge_suggestions`, so an empty list
   separates "no near pairs" from "no embedder here" from "ran over part of the workspace" from "the
-  near pairs are already answered" instead of collapsing them (the other curation signals are deterministic and need no such caveat).
+  near pairs are already answered" instead of collapsing them. The other curation signals are
+  deterministic and always run; the name-variant ladder, which also leaves out what is answered,
+  says how much in `name_ladder` (`held_back`, design-system.md Section 29.28).
 - Principle 17 (knowledge sovereignty, sync boundary): sharing is a workspace whitelist defaulting to
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
   (bearer) and authorizes per workspace on every route. **Federated retrieval goes through the same
