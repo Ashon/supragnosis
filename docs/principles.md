@@ -136,6 +136,12 @@
 > workspace-less or `*` read is answered from the caller's grants on every remote surface, never
 > filtered afterwards - remote-server.md 4.3 and remote-viewer.md V3 had made this reading, where
 > this principle had covered only the network read tier.
+> Revision: 2026-10-22 (design-system.md step 51a) - *tightens* 15: identity resolution stays
+> inside one workspace. An entity merge joins entities of one workspace, and identity across
+> workspaces is an explicit alignment assertion, as Principle 11 already has it for types. The
+> curation report had offered the same name in two workspaces as a merge to propose, and such a
+> merge belonged to no workspace's canon: Blocked in its own workspace, Merged only in the
+> all-workspaces view (proposal-workflow.md I2).
 
 ---
 
@@ -547,6 +553,11 @@ client.** Hosts speak in their own vocabularies, and the resolution layer makes 
     merge made without conviction. A wrong merge is more expensive than a wrong split (though, by
     Principle 3, both must be reversible).
   - The resolution history (what became what, on what basis) is retained as provenance.
+  - **Resolution stays inside a workspace.** An entity merge joins entities of one workspace - the
+    population an id is resolved in (Principle 14) and the sharing unit (Principle 17) - so the same
+    name in two workspaces is two entities, and an all-workspaces read is the union of each
+    workspace's resolution. Identity across workspaces is expressed only through an explicit
+    alignment assertion (bridge claim), as type connections are (Principle 11).
 
 ### Principle 16. Topology-Independent Convergence (Topology-Independent Convergence)
 

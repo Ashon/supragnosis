@@ -178,10 +178,12 @@ The two kinds gain their commit effect, mirroring how `entity_merge` already wor
 fold-derived projection effect, no new storage):
 
 - **Payload**: target observation ids + requested tier (promotion) or demoted tier (demotion).
-  Well-formedness at `propose`: targets non-empty and present in the local log (the referential
-  integrity blocking check of proposal-workflow.md Section 6, applied at open time as
-  capture-side validation; the fold re-checks at verdict time), requested tier a valid
-  `TrustTier`.
+  Well-formedness at `propose`: targets non-empty and present in the local log, in the
+  workspace the proposal is filed in (the referential integrity blocking check of
+  proposal-workflow.md Section 6, applied at open time as capture-side validation; the fold
+  re-checks at verdict time), requested tier a valid `TrustTier`. *(Revised by design-system.md
+  step 51a: a target in another workspace was taken, and granted under the all-workspaces view
+  alone.)*
 - **Effect**: a merged verdict sets the targets' gate tier (Section 3). The effect is derived by
   the fold from the verdict (I2/I6 - no separate `tier_promoted` event is required for
   correctness; one may be emitted later as a UX record, per proposal-workflow.md 7.2).

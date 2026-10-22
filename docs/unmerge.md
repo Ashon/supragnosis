@@ -185,7 +185,9 @@ suite. A split's suite:
 
 **Blocking** (referential integrity, the existing class - you cannot reverse what is not there):
 
-- the named proposal exists in the local log,
+- the named proposal exists in the local log, in the split's own workspace *(revised by
+  design-system.md step 51a: a proposal is read in its own workspace, so a split filed away from its
+  merge reverses nothing anywhere, as it never did in the merge's workspace)*,
 - its kind is `entity_merge`,
 - it carries a merge verdict - `merged` or `blocked`, or `rejected` after a merge verdict the checks
   held back, but not `open` or plainly `rejected`. Reversing something that was never decided is a

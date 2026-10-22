@@ -30,6 +30,7 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
+> Step 51a, All as a view, is specified.
 
 ## 1. Why this exists
 
@@ -775,11 +776,14 @@ Everything that waits for a person's decision, in one place, split in three:
   drafts, listed apart from published proposals and marked as drafts (dreaming.md Section 8); then
   contested beliefs - those that tie on trust (resolution.md Section 4.1), an entity's type or a
   type's definition (IR5). Each row says what it asks: "Ledger's type: Table or Concept?".
-- **Suggestions**: merge suggestions, name variants and cross-workspace collisions. Each offers
-  "Propose", which opens a proposal and decides nothing.
-- **Health**: overloaded contexts, unlinked entities, merge cycles, type axis collisions and the
-  conflicts trust settled, folded
-  by default. P22 wants curation where the reader already is, not a second job.
+- **Suggestions**: merge suggestions, name variants and names two workspaces share. A suggestion
+  offers "Propose", which opens a proposal and decides nothing; a name two workspaces share is two
+  entities, so it offers only Show on the map. *(Revised by step 51a: the shared name offered Propose
+  in words, which a merge across workspaces cannot be.)*
+- **Health**: overloaded contexts, unlinked entities, merge cycles, type axis collisions, the
+  conflicts trust settled and, under All, verdicts filed away from their proposal, folded
+  by default. P22 wants curation where the reader already is, not a second job. *(Revised by step
+  51a: a verdict filed away from its proposal decides nothing, and was listed nowhere.)*
 - **Decided**: every proposal decided, by its outcome in words - Accepted, Rejected, Withdrawn -
   with each act's reverse on its item. A blocked one is still under Needs you.
 
@@ -787,6 +791,13 @@ Every segment is a queue: a list of items on the left, the selected item's detai
 right, and J and K between them, so a suggestion or a signal is an item as a proposal is. *(Revised
 by step 42: Suggestions and Health were one sentence beside one long list, and contested type
 definitions waited only in the rail.)*
+
+**Every act is filed where its item lives**, whatever scope is on screen: a verdict in its
+proposal's workspace, a proposed merge in its two entities' workspace, a split in its merge's, a
+named region in the workspace of the observations that asserted it, and a settle in its
+observation's (below). All is a view and no place to file anything (Section 29.15). *(Revised by
+step 51a: the rule was written for Settle alone, and every other act taken under All was filed in
+the node default.)*
 
 An item shows, in this order: what it would do in one sentence; for a draft, its confidence; the
 belief diff, before and after (proposal-workflow.md Section 14.2); each check, and for a failing one
@@ -1939,6 +1950,16 @@ and it fails when one of them appears in the viewer's source other than as an ar
    a sidebar with no heading for its one group, a count that says what it counts, a dot on AI apps
    whenever a row needs the person, the last pane reopened, and a window that keeps its size and
    place and has a smallest size.
+
+51a. **All as a view** (Section 29.15; principles.md Principle 15, proposal-workflow.md I2,
+   proposal-workflow.md Section 3.1, proposal-workflow.md Section 6, proposal-workflow.md I16,
+   resolution.md Section 5,
+   unmerge.md Section 9, prompts.md Sections 4 and 5, compatibility.md Section 7, and this
+   document's Section 7 revised): `*`
+   reads every workspace and files into none, on every surface; a verdict counts only in its
+   proposal's workspace, and one filed elsewhere is listed in Health; every console act under All is
+   filed where its item lives; and a merge joins entities of one workspace. The same name is step
+   51b, and Same as... and Keep ... instead are step 51c.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -4007,13 +4028,15 @@ No row needs a principle changed.
     observation counts for Postgres from then on". When the kept entity has a contested field in the
     Needs-you list, "Postgres's type stays contested - also under Needs you", a link to that item.
     Then the belief rows, in Section 29.6's words.
-  - **Checks** lists every check, passed and failed, each with a Lucide check or alert. A passed
-    check reads in words keyed by the proposal's kind and the check's name - for a merge "All 3
-    entities are in this log", "The targets are at least two entities", "It names the entity to
-    keep"; for a type change "Types are consistent"; for an un-merge "It names a merge to undo"; for
-    a gate act "Its observations are in this log", "It says the tier it asks for" - and one the page
-    has no words for as the engine names it. A failed check reads its name and the engine's detail,
-    and a failing blocking one keeps its Blocked block. The trust profile, a check that blocks
+  - **Checks** lists every check, passed and failed, each with a Lucide check or alert. A check
+    reads in words keyed by the proposal's kind, the check's name and whether it passed - for a merge
+    "All 3 entities are in its workspace" or "Not every entity it names is in its workspace", "The
+    targets are at least two entities", "It names the entity to keep"; for a type change "Types are
+    consistent"; for an un-merge "It names a merge to undo"; for a gate act "Its observations are in
+    its workspace", "It says the tier it asks for" - and one the page has no words for as the engine
+    names it, with the engine's detail when it fails. A failing blocking one keeps its Blocked block.
+    *(Revised by step 51a: a failed check read its passing words and then the engine's detail, so a
+    blocked merge read "All 2 entities are in this log: 1 target entit(ies) are not asserted".)* The trust profile, a check that blocks
     nothing, reads "Sources: 3 Agent, 1 Human confirmed".
   - **Evidence** lists the observations the decision rests on in the Log's row anatomy, each opening
     its card: for a merge, one column per entity - "PostgreSQL 1", "Postgres 2"; for a gate act, the
@@ -4785,3 +4808,123 @@ Settings... and its first section with a dot, and the sidebar's heading, count, 
 browser checks of Settings at 760 by 480 and 200% text measure that the count fits and a tall sheet
 scrolls to its buttons.
 
+
+### 29.15 Step 51a: All as a view
+
+**What was found.** By the consistency, closure and usability audits of 2026-10-22, each verified by
+running a scratch store:
+- **`*` means three things.** The viewer files an act taken under All in the node default
+  workspace; the remote surface refuses `*` for a write; the local MCP surface takes it for a
+  workspace literally named `*`, which `observe` then creates.
+- **One proposal reads differently in two scopes.** A verdict cast under All lands in the node
+  default, where its proposal does not live: the proposal stays Open in its own workspace and reads
+  Merged under All, and the two maps differ. The tray opens Review under All, so this is the common
+  path. A merge proposed from All is filed where neither entity is, and its Accept is refused. This
+  breaks proposal-workflow.md I2 and proposal-workflow.md Section 3.1, and store-migration.md
+  Section 6: the union of the scoped views is the unscoped view.
+- **Name this region under All crosses a sharing boundary.** It asserts the region and its members'
+  names in the node default, so a name from a workspace a principal may not read becomes readable
+  in one it may (P17).
+- **A merge across workspaces is invited, and belongs to no canon.** The `curate` prompt asks for a
+  merge of each duplicate its digest lists, those across workspaces included; such a merge is
+  Blocked in its own workspace and Merged only under All.
+- **A verdict on an unknown proposal id is taken,** on every surface, and the log keeps its row.
+- **A gate act can name another workspace's observation.** A claim promotion filed in one workspace
+  is checked against the whole log, so its grant reaches another workspace's observation under All
+  alone.
+- **Review's evidence under All reads the node default,** so a merge's sources there count 0.
+
+**Decisions.** The author decided (2026-10-22): an entity merge joins entities of one workspace, on
+every surface, and identity across workspaces is an explicit alignment assertion, as a type's is; a
+verdict counts only in its proposal's workspace, and one filed elsewhere is listed in Health; and
+this step comes before the same name (51b) and Same as... (51c).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P15 | Resolution is the substrate's job, and conservative | revised, tightening - resolution stays inside a workspace: a merge joins entities of one workspace, and the same name in two is two entities until an alignment assertion says otherwise. principles.md records the revision, and the registry gains its clause |
+| P11 | Type connections across workspaces only through an explicit alignment assertion | agrees - entities follow the same rule |
+| P17 | A workspace is the sharing unit; a node-wide read exists only on the local trust surface | repays - no act taken under All writes into a workspace other than its item's, so Name this region copies no name across |
+| proposal-workflow.md I2 and proposal-workflow.md Section 3.1 | A proposal's state folds the events that belong to it; a canon is a workspace's | revised - the events that belong to a proposal are those filed in its own workspace, and All is the union of the workspaces' folds, not a canon |
+| proposal-workflow.md Section 6 and resolution.md Section 5 | Referential integrity: what the payload names, an entity or a gate act's observation, exists in the local log, also at capture for a gate act | revised - in the proposal's own workspace, whatever scope reads it, at capture as at the fold |
+| unmerge.md Section 9 | A split's target is a decided merge in the local log | revised - in the split's own workspace |
+| proposal-workflow.md I16 | Merged is absorbing | revised - a proposal an earlier build filed away from what it names stops acting: a merge across workspaces, a gate act on another workspace's observation, and a split filed away from its merge read Blocked, where under All they had read Merged. In its own workspace each already read Blocked or acted on nothing, and All was never a canon. The author's store holds none: its four gate acts name their own workspace, no entity spans two, and each of its 100 verdicts is filed with its proposal |
+| store-migration.md Section 6 | The union of the scoped views equals the unscoped view | repays - for proposals, for forwarding, and for every projection built on them |
+| P16 | Equal logs read equally | agrees - the fold is still a function of the log, now one workspace at a time |
+| P5 and P21 | Unknown is said and never reads as success; the surface is narrow and legible | repays - a verdict that names no proposal of its workspace is refused with the reason, and `*` means one thing on every surface |
+| P24 and P16, and the capture policy of propose | Refuse only when proceeding is worse; an act is not refused because something has not synced yet | agrees - a verdict here is cast on what this node lists. One naming no proposal of its workspace here was reviewed nowhere, and kept, it would decide nothing until a proposal arrived unseen, so proceeding is worse. A comment and a withdrawal are refused alike: each would be a row about nothing. A replicated verdict still folds whenever its proposal arrives (I8, I11), and on the local surfaces a merge's target, or a split's merge, that has not arrived is still taken; on the remote surface an absent one answers as one elsewhere, as a gate act's target already did (remote-viewer.md Section 3.4) |
+| P2 and P18 | A proposal's reason is true and not shaped by the client | agrees - `/api/propose_merge` refuses a suggestion source it does not know, rather than recording the merge band's reason for it |
+| U18 | Settle is filed in the workspace of the observation it changes | agrees - every other console act now follows it |
+| remote-viewer.md Section 3.4 | On the remote surface an id outside the grants answers as an unknown one | agrees - the remote surface checks a merge's targets as it checks a gate act's, with one sentence for absent and elsewhere, so the engine's sentence that names the other workspace reaches only the local surfaces; and the stray verdicts are computed only for the node-wide report, which the read tier never builds |
+| Section 7 | Every act is filed in the workspace of the observation it changes, written for Settle | revised - every console act is filed where its item lives |
+| Section 7, Health | Health's signals | revised - under All it lists verdicts filed away from their proposal, while the proposal still waits |
+| Section 29.7 | A check reads its passing words; a failed one adds the engine's detail | revised - a failed check reads its own words, so it never reads as passed |
+| prompts.md Section 4 and compatibility.md Section 7 | The digest and the MCP surface's changes are listed | revised - no tool's input changes; the answers that do are listed there |
+
+No other row needs a principle changed.
+
+**Behaviour.**
+- **`*` is a view on every surface.** A read with `*` reads every workspace the surface may read,
+  and a write is filed in one. On the local MCP surface `observe`, `propose` and `define_type`
+  refuse `*`, "observe writes to one workspace - name it, or leave it out for default", as the
+  remote surface does. `search_knowledge` and the graph, hypergraph and types resources, which took
+  `*` for a name, take it for every workspace; `workspace_map`, `list_proposals` and
+  `get_proposal` already did, and `traverse` reads by id.
+- **A verdict is filed where its proposal lives.** The engine refuses a verdict, a comment or a
+  withdrawal that names no proposal of the workspace it would be filed in: "no proposal 3f2a... in
+  workspace infra - a verdict is filed in its proposal's own workspace, which list_proposals
+  names". To the engine an omitted workspace is still the node default. On the local surfaces, the
+  local `review` tool an omitted workspace or `*` means the proposal's own, and on the console `*`
+  does; there an id this node holds nowhere is refused, "no proposal 3f2a... in any workspace". On the
+  remote surface the principal's workspace is named, as now.
+- **A verdict counts only in its proposal's workspace.** Under All the fold runs in each workspace
+  and the results are joined. A proposal then reads the same in its workspace and under All, its
+  checks read its own workspace, and forwarding under All is the union of each workspace's. A verdict
+  filed in another workspace decides nothing.
+- **Health lists it.** Under All on the local console, Health lists each verdict or withdrawal
+  whose proposal this node holds in another workspace, while that proposal is still Open or
+  Blocked: "A verdict filed away from its proposal: Merge Postgres into PostgreSQL", saying "This
+  accept was filed in default, where the proposal does not live, so it decides nothing. The
+  proposal still waits in infra." with Show the proposal, which selects it on Review. A verdict whose proposal this node does not hold is not
+  listed: it may be waiting for its proposal to arrive. The list is part of the node-wide report
+  only, so no single workspace's report, and no remote reader, carries it.
+- **A proposal filed away from what it names** reads Blocked, its check saying what is missing
+  from its workspace; it is rejected, and opened again where its targets live.
+- **Every console act is filed where its item lives,** under All as in one workspace:
+  - Accept and Reject in the proposal's workspace;
+  - Propose on a suggestion in its pair's workspace. A pair in two workspaces is refused, "The
+    console opens no merge across workspaces.", and so is a suggestion source the server does not
+    know; an absent source is the merge band, as now;
+  - Propose a split in its merge's workspace;
+  - Name this region in the workspace of the observations that asserted the region;
+  - Settle in its observation's, as now.
+- **A proposal acts within its own workspace.** `propose` refuses an `entity_merge` naming an
+  entity of another workspace than the one it is filed in, and on the local surfaces says which:
+  "entity_merge joins entities of one workspace: Payment service is in atlas-web, and this proposal
+  is filed in infra. The same name in two workspaces is two entities (Principle 15)." A merge's
+  target the log does not hold yet is still taken, and blocks until it arrives, as now. A gate act
+  naming another workspace's observation is refused the same way, and so is a split filed away
+  from its merge. On the remote surface every target must be in the principal's workspace, said in
+  one sentence for absent and elsewhere.
+- **A proposal names its workspace.** `list_proposals` and `get_proposal` carry `workspace`, and
+  their descriptions list `blocked` among the states.
+- **The `curate` prompt** lists the same name in two workspaces as two entities for the person, and
+  drafts no merge across workspaces; a proposal is filed in its targets' workspace, never `*`.
+- **Review's evidence under All** reads every workspace, so a merge's sources are counted.
+- **A failed check reads its own words** on Review: "Not every entity it names is in its
+  workspace", never the passing "All 2 entities are in its workspace" followed by the engine's
+  detail. The engine's detail says "not asserted in this proposal's workspace" where it said "not
+  asserted in the local log", which named no other workspace and still does not.
+- **Suggestions' line** reads "Possible duplicates the store found, and names two workspaces share.
+  Proposing a duplicate opens a merge that waits under Needs you."
+- **The engine's notes** on the curation report and on an entity's workspace say the same name in
+  two workspaces is two entities, never a merge to propose.
+
+**What this step does not do.**
+- It does not show namesakes on the sheet or light them together (step 51b), nor offer Same as...
+  and Keep ... instead (step 51c).
+- It does not build the alignment assertion that says two entities of two workspaces are one; it is
+  owed, and its registry clause names the trigger.
+- It does not echo the workspace in every write's answer, warn of a new workspace name, or name the
+  workspace on search hits; those are the agent surface's step after step 53.

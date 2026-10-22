@@ -285,6 +285,24 @@ absence once made a strict client reject the whole list (v0.3.1).
 The prompt list is pinned the same way (`tests/fixtures/prompts.json`, [prompts.md](prompts.md)
 Section 6): renaming a prompt or an argument, or making an argument required, is breaking.
 
+**`*` is a view on every surface** (design-system.md step 51a). No tool's input changed, and these
+answers did:
+- On the local surface, as on the remote one, `observe`, `propose` and `define_type` refuse `*`,
+  `all` and an empty name, which had been taken for a workspace of that name, and the reads take
+  `*` for every workspace.
+- `review` files its verdict in the proposal's own workspace, which on the local surface an omitted
+  workspace or `*` now means, and refuses an id that names no proposal of the workspace it is filed
+  in.
+- `propose` refuses an `entity_merge` whose targets are entities of another workspace, a gate act
+  naming another workspace's observation, and a split filed away from its merge. On the local
+  surface the refusal names the other workspace; on the remote one it reads as for an absent
+  target.
+- `list_proposals` and `get_proposal` name each proposal's `workspace`, an added field, and count
+  `blocked` among the states.
+- The `curate` prompt lists the same name in two workspaces as two entities rather than a merge to
+  draft. Its digest, read for all workspaces, gains `stray_verdicts`, and the prompt says what they
+  are.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

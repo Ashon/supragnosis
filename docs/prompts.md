@@ -96,7 +96,11 @@ same state always gives the same digest.
 - **`what-do-we-know-about`:** the search hits for the topic across workspaces, with ids, kinds,
   scores and the `mode` that answered (keyword or hybrid), and the entities they touch.
 - **`curate`:** the curation report - duplicate candidates, grab-bag clusters, orphans,
-  contradictions, merge cycles - with the evidence each names.
+  contradictions, merge cycles - with the evidence each names. The same name in two workspaces is
+  listed as names two workspaces share, for the person, under Section 5's rule; read for all
+  workspaces, the report also lists `stray_verdicts`, verdicts filed away from their proposal, which
+  the model tells the person about. *(Revised by design-system.md step 51a: the prompt asked for a
+  merge of every duplicate, those across workspaces included.)*
 - **`review-proposal`:** `get_proposal`'s view: the proposal, its belief diff and its check
   results.
 
@@ -121,6 +125,9 @@ a P5 failure: a short list must not read as the whole list.
 - **Decisions are the person's.** The model may draft proposals (`propose`) and comment (`review`
   with `comment`). It does not merge, and it ends by telling the person where to decide: the Review
   panel in the Supragnosis app or viewer.
+- **A proposal stays in one workspace.** It is filed in the workspace its targets belong to, never
+  `*`, and a name two workspaces share is two entities, never drafted as a merge (principles.md
+  Principle 15). *(Added by design-system.md step 51a.)*
 - **The person's language.** The instruction is English; the model answers in the language the
   person writes in.
 
