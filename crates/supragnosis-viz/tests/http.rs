@@ -612,6 +612,54 @@ fn inspector_never_folds_a_contested_belief() {
     );
 }
 
+/// guard (inspector.md D4): the silence rule's baseline is the loaded scope, never the
+/// legend-filtered subset. A source tripwire: `nodes` is set in one place, from the /api/graph
+/// response mapped whole, and `scopeBaseline` loops once, over `nodes`, naming none of the legend's
+/// filters, the working set, or a helper that applies them - so hiding a type cannot make a row
+/// appear on an unrelated node.
+#[test]
+fn the_silence_baseline_reads_the_whole_response() {
+    let js = include_str!("../assets/viewer.js");
+    let start = js
+        .find("\nfunction scopeBaseline(")
+        .expect("viewer.js no longer defines scopeBaseline");
+    let rest = &js[start + 1..];
+    let body = &rest[..rest.find("\n}\n").expect("scopeBaseline has no closing brace")];
+    assert_eq!(body.matches("for (").count(), 1, "scopeBaseline makes one pass:\n{body}");
+    assert!(
+        body.contains("for (const n of nodes)"),
+        "scopeBaseline must read every loaded node:\n{body}"
+    );
+    for filtered in [
+        "typeOff",
+        "trustOff",
+        "edgeTypeOff",
+        "workSet",
+        "listRows",
+        "keptDrawn",
+        ".filter(",
+    ] {
+        assert!(!body.contains(filtered), "scopeBaseline must not read {filtered}:\n{body}");
+    }
+
+    let sets: Vec<&str> = js
+        .match_indices("nodes = ")
+        .filter(|(i, _)| {
+            let before = js[..*i].chars().next_back();
+            !before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        })
+        .map(|(i, _)| js[i..].lines().next().unwrap())
+        .collect();
+    assert_eq!(
+        sets,
+        [
+            "nodes = [], edges = [], typeColor = {}, edgeKinds = [];",
+            "nodes = g.nodes.map(n => {"
+        ],
+        "`nodes` is declared empty and set only from the graph response, every node of it"
+    );
+}
+
 /// design-system.md U2 (Principle 18): the map draws trust from the effective tier the server
 /// computed, never anything else, and says what it reads. A tripwire on the shape: the ring reads
 /// `n.trust_tier` and the scope's uniformity, the uniformity is taken over every loaded node (never the

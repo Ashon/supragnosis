@@ -419,10 +419,7 @@ const INSPECTOR_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the baseline is computed over the whole loaded /api/graph response, never the legend-filtered subset",
-            Evidence::Deferred(
-                "viewer.js scopeBaseline iterates `nodes` and not the typeOff-filtered set - a comment and a loop, \
-                 not a guard. Revisit when a source tripwire pins that scopeBaseline reads `nodes` and never `typeOff`",
-            ),
+            Evidence::Scenario(&["the_silence_baseline_reads_the_whole_response"]),
         ),
     ]),
     (5, &[
