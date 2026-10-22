@@ -1714,6 +1714,13 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         // the Search row's button, the order of stop and reset, and the page following the re-embedding.
         Evidence::Scenario(&["a_store_the_daemon_cannot_open_is_rebuilt_from_the_page"]),
     )]),
+    (8, &[c(
+        "a page in the main window may listen for and emit events, ask whether the window is full screen and drag it, and nothing \
+         else of the platform's - no menu, tray, image, path or resource",
+        // The app's test holds capabilities/default.json to exactly those grants, and each page API
+        // the shell calls to a grant that covers it.
+        Evidence::Scenario(&["the_window_pages_get_only_what_they_use"]),
+    )]),
 ];
 
 // docs/consolidation.md Section 9 - the retrieval weight and the recall effect (C rows).
