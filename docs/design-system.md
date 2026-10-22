@@ -37,7 +37,7 @@
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
 > demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
 > ladder says what it held back, is built. Step 63, the window's pages get only what they use, is
-> specified.
+> built.
 
 ## 1. Why this exists
 
@@ -2030,7 +2030,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
 62. **The ladder says what it held back** [built] (Section 29.28; Section 29.27's owed row repaid): the
    name-variant ladder counts the pairs it left out because they are answered, and Suggestions says
    by name, as it does by meaning, whether none are alike or the ones it found are all answered.
-63. **The window's pages get only what they use** (Section 29.29; Section 29.13's owed menu
+63. **The window's pages get only what they use** [built] (Section 29.29; Section 29.13's owed menu
    interface repaid, settings-page.md S8): a page in the main window may listen for and emit the
    shell's events, ask whether the window is full screen and drag it, and nothing else of the
    platform's: not the menus, the tray, images, paths or resources.
