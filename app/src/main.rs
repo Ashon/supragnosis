@@ -4450,64 +4450,71 @@ mod settings_tests {
         assert_eq!(
             granted,
             [
-                "core:event:default",
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:event:allow-emit",
                 "core:window:allow-is-fullscreen",
                 "core:window:allow-start-dragging",
                 "core:window:allow-internal-toggle-maximize",
             ],
             "exactly what the pages use"
         );
-        for broad in [
-            "core:default",
-            "core:menu",
-            "core:tray",
-            "core:image",
-            "core:path",
-            "core:resources",
-            "core:app",
-            "core:webview",
-        ] {
-            assert!(granted.iter().all(|g| !g.starts_with(broad)), "{broad} is not the pages'");
-        }
-        // What the shell and the app's pages call, each covered above.
-        let shell = include_str!("../assets/shell-init.js");
-        for (call, grant) in [
-            ("event.listen(\"viz-event\"", "core:event:default"),
-            ("event.listen(\"shell-fullscreen\"", "core:event:default"),
-            ("event.emit(\"shell-page-loaded\"", "core:event:default"),
-            ("getCurrentWindow().isFullscreen()", "core:window:allow-is-fullscreen"),
-        ] {
-            assert!(
-                shell.replace(['\n', ' '], "").contains(&call.replace(' ', "")),
-                "the shell calls {call}"
-            );
-            assert!(granted.contains(&grant), "{call} needs {grant}");
-        }
-        assert!(
-            include_str!("../assets/settings.js").contains("__TAURI__.event.listen(\"setup-line\"")
-        );
-        assert!(
-            include_str!("../assets/welcome.js").contains("window.__TAURI__.event.listen(ev, fn)")
-        );
-        // The title bar's drag and double-click zoom are the drag region's two window calls.
-        assert!(shell.contains("header.setAttribute(\"data-tauri-drag-region\", \"deep\")"));
-        // No page calls the platform's menu, tray or window setters.
-        for page in [
-            shell,
-            include_str!("../assets/settings.js"),
-            include_str!("../assets/welcome.js"),
-        ] {
-            for setter in [
-                "__TAURI__.menu",
-                "__TAURI__.tray",
-                "__TAURI__.image",
-                "__TAURI__.path",
-                ".setTitle(",
-                ".setSize(",
-            ] {
-                assert!(!page.contains(setter), "a page calls {setter}");
+        // Every platform call a page makes, mapped to the grant that covers it - a new one fails
+        // here until it is named, rather than being refused silently at run time.
+        let allowed: [(&str, &str); 4] = [
+            ("__TAURI__.event.listen", "core:event:allow-listen"),
+            ("__TAURI__.event.emit", "core:event:allow-emit"),
+            ("__TAURI__.core.invoke", "the settings capability's commands (S1)"),
+            (
+                "__TAURI__.window.getCurrentWindow().isFullscreen",
+                "core:window:allow-is-fullscreen",
+            ),
+        ];
+        let pages = [
+            ("shell-init.js", include_str!("../assets/shell-init.js")),
+            ("settings.js", include_str!("../assets/settings.js")),
+            ("welcome.js", include_str!("../assets/welcome.js")),
+            ("kit.js", include_str!("../assets/kit.js")),
+        ];
+        let mut calls = 0;
+        for (file, text) in pages {
+            // Calls read across line breaks: `window.__TAURI__.event\n  .listen(` is one call.
+            let flat: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+            let mut rest = flat.as_str();
+            while let Some(at) = rest.find("__TAURI__.") {
+                let call: String = rest[at..]
+                    .chars()
+                    .take_while(|c| {
+                        c.is_alphanumeric() || *c == '_' || *c == '.' || *c == '(' || *c == ')'
+                    })
+                    .collect();
+                let call = call.trim_end_matches('(').to_string();
+                assert!(
+                    call == "__TAURI__." || allowed.iter().any(|(api, _)| call.starts_with(api)),
+                    "{file} calls {call}, which no grant names"
+                );
+                calls += 1;
+                rest = &rest[at + "__TAURI__.".len()..];
             }
+            assert!(!text.contains("__TAURI_INTERNALS__"), "{file} calls the platform's internals");
         }
+        assert!(calls >= 7, "the scan reads the pages' calls, {calls} of them");
+        for (_, grant) in &allowed[..2] {
+            assert!(granted.contains(grant), "{grant} is named but not granted");
+        }
+        assert!(granted.contains(&allowed[3].1));
+        // The viewer runs in the same window and calls the platform not at all.
+        for viewer in [
+            include_str!("../../crates/supragnosis-viz/assets/viewer.js"),
+            include_str!("../../crates/supragnosis-viz/assets/viewer-sim.js"),
+            include_str!("../../crates/supragnosis-viz/assets/viewer-gl.js"),
+        ] {
+            assert!(!viewer.contains("__TAURI"), "the viewer calls the platform");
+        }
+        // The title bar's drag and double-click zoom are the drag region's two window calls.
+        let shell = include_str!("../assets/shell-init.js");
+        assert!(shell.contains("header.setAttribute(\"data-tauri-drag-region\", \"deep\")"));
+        assert!(shell.replace(['\n', ' '], "").contains("event.listen(\"viz-event\""));
     }
 
     /// docs/design-system.md Section 6, U26: the bar keeps room for the traffic lights only while

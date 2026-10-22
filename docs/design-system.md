@@ -6042,8 +6042,8 @@ the pages of the main window, which any of them may still call; it is owed with 
 permissions, unscheduled." The main window's baseline capability grants Tauri's `core:default`,
 which carries `core:menu:default` and `core:tray:default`: any page the window shows - the viewer a
 daemon serves, and once remote-viewer.md's app step lands, a page a hub serves - may replace the app
-menu (`set-as-app-menu`), add items, or change the tray's title, tooltip and icon, so a page can
-speak with the app's own voice where the person reads the app's state. The pages use none of it:
+menu (`set-as-app-menu`), add items, or change, hide or remove the tray and replace its menu - its
+id is fixed - so a page can speak with the app's own voice where the person reads the app's state. The pages use none of it:
 the shell listens for and emits events, asks whether the window is full screen, and drags the
 window by its title bar; the app's own pages call the app's commands, which settings-page.md S1
 already locks.
@@ -6057,27 +6057,30 @@ already locks.
 | Section 29.13 | The menu interface stays callable by every page of the main window | repays |
 | settings-page.md Section 4 and S1 | No command is open by default; a capability is scoped to windows, so the caller check is the lock | agrees - S1 locks the app's commands by caller; this narrows the platform's to what the pages use, and the new S8 says so |
 | remote-viewer.md | A hub's page shown in the app is not trusted with the app's surfaces | agrees - repaid before the page that needs it arrives |
-| P18 | What can write is an attack surface | agrees - the menus and the tray are where the person reads the app's state, and no page writes them now |
+| P18 | What can write is an attack surface | agrees - the menus and the tray are where the person reads the app's state, and no page writes them now, except the map items' enabled state a page's load report sets, harmless since each press finds its control again (Section 29.13) |
 | Section 29.13's tray and menu | The tray says the memory's state and the menu holds the map's commands | agrees - both are built and changed in the app's Rust side, which no permission governs, and the pages' load report reaches it as an event |
 
 No row needs a principle changed.
 
 **Behaviour.**
-- **The baseline.** The main window's `default` capability grants `core:event:default` (listen,
-  unlisten, emit, emit-to), `core:window:allow-is-fullscreen`, `core:window:allow-start-dragging`
-  and `core:window:allow-internal-toggle-maximize`, and no other platform permission.
+- **The baseline.** The main window's `default` capability grants `core:event:allow-listen`,
+  `allow-unlisten` and `allow-emit`, `core:window:allow-is-fullscreen`,
+  `core:window:allow-start-dragging` and `core:window:allow-internal-toggle-maximize`, and no other
+  platform permission.
 - **What stays.** The title bar drags and double-click zooms; a page loaded in full screen asks
   and keeps no room for the traffic lights; the shell's `shell-page-loaded` report enables the
   map's menu commands; Settings and Welcome hear `setup-line`; the app's own commands still answer
   only the app's own pages (S1).
 - **What goes.** A page can no longer make or change a menu, the tray, an image, a path or a
-  resource, nor read the window's size, place or monitor.
+  resource, nor read the window's size, place or monitor. In a debug build the devtools shortcut
+  (Cmd+Opt+I) goes with them, since Tauri sends it through the webview permission; Inspect Element
+  on the page's menu still opens them.
 
 **What this step does not do.** It does not change S1's caller check, the commands' list, or the
 menu and tray themselves.
 
-**Guarded by** the app's capability test, which reads `capabilities/default.json` and holds it to
-exactly those four grants - no `core:default`, no `core:menu`, no `core:tray` - and holds each page
-API the shell calls (`event.listen`, `event.emit`, `getCurrentWindow().isFullscreen()`, the drag
-region) to a grant that covers it.
+**Guarded by** `the_window_pages_get_only_what_they_use` in the app's tests, which holds
+`capabilities/default.json` to exactly those grants, reads every platform call in the app's page
+scripts and fails on one no grant names, and holds the viewer's scripts to no platform call at
+all.
 
