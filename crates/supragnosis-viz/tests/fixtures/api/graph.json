@@ -1,0 +1,60 @@
+{
+  "edges": [
+    {
+      "from": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+      "to": "b44ceaf256e12fea348ffea32efe41fb61e0a8d92e54740ebce8616cd8035829",
+      "trust_tier": "agent_extracted",
+      "type": "depends_on"
+    }
+  ],
+  "nodes": [
+    {
+      "competitors": [
+        {
+          "observation": "fb61fe5b538cecee7243a08023b3d70055d26207da3a7ead878af247acd8ebe2",
+          "trust_tier": "agent_extracted",
+          "value": "System"
+        }
+      ],
+      "contested": true,
+      "degree": 1,
+      "id": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+      "kind_source": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+      "last_said": 1792000000000,
+      "name": "supragnosis",
+      "origins": [
+        "h"
+      ],
+      "sources": 2,
+      "trust_tier": "agent_extracted",
+      "type": "Project",
+      "workspace": "ws"
+    },
+    {
+      "degree": 1,
+      "id": "b44ceaf256e12fea348ffea32efe41fb61e0a8d92e54740ebce8616cd8035829",
+      "kind_source": "175e0d4c253b0e80843b80c5df1ded272f807df946eb527f3c24f109fa92fd37",
+      "last_said": 1792000000000,
+      "name": "rmcp",
+      "origins": [
+        "h"
+      ],
+      "sources": 1,
+      "trust_tier": "agent_extracted",
+      "type": "Tool",
+      "workspace": "ws"
+    }
+  ],
+  "stats": {
+    "edge_count": 1,
+    "node_count": 2,
+    "trust_counts": {
+      "agent_extracted": 2
+    },
+    "type_counts": {
+      "Project": 1,
+      "Tool": 1
+    }
+  },
+  "workspace": "ws"
+}

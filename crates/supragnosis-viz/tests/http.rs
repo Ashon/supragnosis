@@ -1763,6 +1763,112 @@ async fn viz_serves_observation_log_and_explain() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// Whether `live` keeps every field of `example`, each with the same kind of value: the check that
+/// an answer was not removed from or narrowed. An added field passes; an array is held to the
+/// example element by element as far as both go.
+fn keeps_fields(
+    example: &serde_json::Value,
+    live: &serde_json::Value,
+    at: &str,
+) -> Result<(), String> {
+    use serde_json::Value;
+    match (example, live) {
+        (Value::Null, _) => Ok(()),
+        (Value::Object(e), Value::Object(l)) => e.iter().try_for_each(|(k, v)| match l.get(k) {
+            Some(lv) => keeps_fields(v, lv, &format!("{at}.{k}")),
+            None => Err(format!("{at}.{k} is gone")),
+        }),
+        (Value::Array(e), Value::Array(l)) => {
+            if !e.is_empty() && l.is_empty() {
+                return Err(format!("{at} is empty where the example holds {}", e.len()));
+            }
+            e.iter()
+                .zip(l)
+                .enumerate()
+                .try_for_each(|(i, (x, y))| keeps_fields(x, y, &format!("{at}[{i}]")))
+        }
+        (Value::Bool(_), Value::Bool(_))
+        | (Value::Number(_), Value::Number(_))
+        | (Value::String(_), Value::String(_)) => Ok(()),
+        _ => Err(format!("{at}: the example holds {example}, the viewer answers {live}")),
+    }
+}
+
+/// guard (inspector.md D6, compatibility.md Section 8): no field of /api/graph, /api/explain or
+/// /api/observations is removed or narrowed. Each has an example document under
+/// tests/fixtures/api/, answered by the viewer over a fixed scenario - two observations, a relation
+/// and a contested kind - and the live answer must keep every field of it with the same kind of
+/// value. An added field passes; `SUPRAGNOSIS_WRITE_FIXTURES=1` rewrites the examples to include it.
+#[tokio::test]
+async fn the_viewer_api_keeps_its_fields() {
+    // Every act in one fixed millisecond, so the contested kind falls to the same side each run and
+    // the example's keys - a type count is keyed by the winning type - are the live answer's.
+    struct Fixed;
+    impl supragnosis_core::Clock for Fixed {
+        fn now_millis(&self) -> supragnosis_core::Timestamp {
+            1_792_000_000_000
+        }
+    }
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "ws").with_clock(Arc::new(Fixed)));
+    observe_depends(&engine);
+    engine
+        .observe(ObserveInput {
+            content: "supragnosis is a system".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                description: None,
+                name: "supragnosis".into(),
+                kind: Some("System".into()),
+            }],
+            relations: vec![],
+        })
+        .expect("observe");
+    let sock = serve_uds("apifix", engine, ev_channel()).await;
+    let graph = json_get(&uds_get(&sock, "/api/graph?workspace=ws").await);
+    let sid = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["name"] == "supragnosis")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let answers = [
+        ("graph", graph),
+        (
+            "explain",
+            json_get(&uds_get(&sock, &format!("/api/explain?entity={sid}")).await),
+        ),
+        (
+            "observations",
+            json_get(&uds_get(&sock, "/api/observations?workspace=ws").await),
+        ),
+    ];
+    let _ = std::fs::remove_file(&sock);
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/api");
+    let write = std::env::var("SUPRAGNOSIS_WRITE_FIXTURES").is_ok_and(|v| v == "1");
+    for (name, live) in answers {
+        let path = dir.join(format!("{name}.json"));
+        if write {
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(&path, serde_json::to_string_pretty(&live).unwrap() + "\n").unwrap();
+            continue;
+        }
+        let example: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
+        )
+        .unwrap();
+        keeps_fields(&example, &live, name).unwrap_or_else(|e| panic!("{e}"));
+    }
+}
+
 /// Principle 17, the OUTER of the two layers `bind_uds` establishes. Its sibling
 /// `viz_socket_is_owner_only_and_review_needs_no_browser_headers` covers the socket's own 0600 mode;
 /// this covers the directory, which the code creates 0700 as defense in depth so a foreign local
