@@ -3749,6 +3749,33 @@ mod status_text_tests {
             .contains("title: disconnect ? null : APPS[a.id] + \" connected\", detail: null"));
     }
 
+    /// settings-page.md S4: every setting the tray offered - Start at Login, Restart Daemon, Server
+    /// and AI Apps - is on the page. A source tripwire, one per command: settings.js calls each of
+    /// the four controls' commands by name, through `act` (which says how it went) or `invoke`, and
+    /// each is one the app registers for its own pages.
+    #[test]
+    fn every_setting_the_tray_offered_is_on_the_page() {
+        let js = include_str!("../assets/settings.js");
+        for (setting, cmd) in [
+            ("Start at Login", "login_set"),
+            ("Restart Daemon", "daemon_restart"),
+            ("Server", "server_use"),
+            ("Server", "server_add"),
+            ("Server", "server_remove"),
+            ("AI Apps", "app_toggle"),
+        ] {
+            let quoted = format!("\"{cmd}\"");
+            let called = js.lines().any(|line| {
+                line.find(&quoted).is_some_and(|at| {
+                    let before = &line[..at];
+                    before.contains("act(") || before.contains("invoke(")
+                })
+            });
+            assert!(called, "{setting}: settings.js no longer calls {cmd}");
+            assert!(crate::APP_COMMANDS.contains(&cmd), "{cmd} is not one of the app's commands");
+        }
+    }
+
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
     /// tray's line, Settings' Server and This Mac panes, Setup's first card and the starting page.
     /// "Answering" is a remote server's word only.

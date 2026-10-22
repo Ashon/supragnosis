@@ -1676,12 +1676,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (4, &[c(
         "every setting the tray offered - Start at Login, Restart Daemon, Server, AI Apps - is on the page",
-        Evidence::Deferred(
-            "the four controls became login_set, daemon_restart, server_use/add/remove and app_toggle, all in \
-             SETTINGS_COMMANDS, and the tray now builds only status, Open Graph, Settings... and Quit - but no test \
-             reads settings.js for the rows that call them. Revisit when the page's script gets a source tripwire \
-             like the viewer's, one per command name",
-        ),
+        Evidence::Scenario(&["every_setting_the_tray_offered_is_on_the_page"]),
     )]),
     (5, &[c(
         "the page renders the text it is given as text: no markup sink in settings.js or shell-init.js, a policy in the page's head, no inline script",
