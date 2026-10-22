@@ -360,6 +360,9 @@ Guarded by:
 - `a_store_held_by_no_manager_is_unrecognized` and `redb_in_use_sees_a_writer_and_only_a_writer` -
   L1 for a holder that binds no port.
 - `a_pid_counts_only_when_it_is_supragnosis` - L9.
+- `a_pidfile_naming_anything_else_is_stale` - L9: `lifecycle::pidfile_state` with a stand-in process
+  reader; a pid that is gone or another program's is stale and cleared, and the only pid the
+  lifecycle commands observe, and so signal, is a live supragnosis one.
 - `the_generated_job_refuses_an_environment_that_adds_exposure` - L7.
 
 Checked on this machine without changing it:

@@ -1597,11 +1597,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a pidfile naming anything else is stale and is cleared, never signalled",
-            Evidence::Deferred(
-                "`live_pidfile` filters by pid_is_supragnosis and `clear_stale_pidfile` removes what it rejects, \
-                 called by stop and restart before they classify; both shell out to kill and ps and no test drives \
-                 them. Revisit when the pidfile step is given an injectable process reader",
-            ),
+            Evidence::Scenario(&["a_pidfile_naming_anything_else_is_stale"]),
         ),
     ]),
 ];
