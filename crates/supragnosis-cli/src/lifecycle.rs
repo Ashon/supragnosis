@@ -154,6 +154,31 @@ pub fn is_supragnosis_command(comm: &str) -> bool {
     !comm.is_empty() && comm.rsplit('/').next() == Some("supragnosis")
 }
 
+/// What the pidfile says (L9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pidfile {
+    /// No pidfile, or one that names no pid.
+    Absent,
+    /// It names a live supragnosis process - the only pid a signal may go to.
+    Live(i32),
+    /// It names a process that is gone, or one that is not supragnosis: cleared, never signalled.
+    Stale(i32),
+}
+
+/// Reads the pidfile's `text` (when it exists), asking `alive` and `is_supragnosis` about the pid it
+/// names - the process reader kept outside, so a table can stand in for `kill -0` and `ps`.
+pub fn pidfile_state(
+    text: Option<&str>,
+    alive: impl Fn(i32) -> bool,
+    is_supragnosis: impl Fn(i32) -> bool,
+) -> Pidfile {
+    match text.and_then(|t| t.trim().parse::<i32>().ok()) {
+        None => Pidfile::Absent,
+        Some(pid) if alive(pid) && is_supragnosis(pid) => Pidfile::Live(pid),
+        Some(pid) => Pidfile::Stale(pid),
+    }
+}
+
 /// L7: the environment a generated job would run with must not widen what the daemon exposes or
 /// switch off a defence. Each refusal names the key, because it came either from `--env` or from the
 /// plist being replaced, and the operator has to know which line to change (L5: their file is not
@@ -780,6 +805,49 @@ mod tests {
             "/Applications/Supragnosis.app/Contents/MacOS/supragnosis-app"
         ));
         assert!(!is_supragnosis_command(""));
+    }
+
+    /// L9: a signal goes only to a supragnosis process. The pidfile counts as live only when its pid
+    /// is alive and is supragnosis; a pid that is gone, or one another program now holds, is stale -
+    /// cleared, never signalled - and a file that names no pid is no pidfile.
+    #[test]
+    fn a_pidfile_naming_anything_else_is_stale() {
+        let alive = |pid: i32| pid != 3;
+        let ours = |pid: i32| pid == 7;
+        let state = |text: Option<&str>| pidfile_state(text, alive, ours);
+        assert_eq!(state(Some("7\n")), Pidfile::Live(7));
+        assert_eq!(state(Some("5")), Pidfile::Stale(5), "alive, but another program's");
+        assert_eq!(state(Some("3")), Pidfile::Stale(3), "gone");
+        assert_eq!(state(None), Pidfile::Absent);
+        assert_eq!(state(Some("")), Pidfile::Absent);
+        assert_eq!(state(Some("seven")), Pidfile::Absent);
+        let asked = std::cell::Cell::new(false);
+        let gone = pidfile_state(
+            Some("3"),
+            |_| false,
+            |_| {
+                asked.set(true);
+                true
+            },
+        );
+        assert_eq!(gone, Pidfile::Stale(3));
+        assert!(!asked.get(), "a pid that is gone is not looked up further");
+
+        // The CLI's pidfile reads go through this one decision, and the only pid the lifecycle
+        // commands see - the one a stop or a restart signals - is a live one.
+        let main = include_str!("main.rs");
+        assert!(
+            main.contains("lifecycle::pidfile_state("),
+            "the CLI reads the pidfile through it"
+        );
+        let observed = &main[main.find("    lifecycle::Observed {\n").expect("the observation")..];
+        let observed = &observed[..observed.find("    }\n").expect("it closes")];
+        assert!(observed.contains("pidfile: live_pidfile()"), "{observed}");
+        let live = &main[main.find("fn live_pidfile()").expect("live_pidfile")..];
+        let live = &live[..live.find("\n}\n").expect("it closes")];
+        assert!(
+            live.contains("Pidfile::Live(pid) => Some(pid)") && !live.contains("Stale(pid) =>")
+        );
     }
 
     /// L7: the generated job refuses an environment that disables auth or the secret scan, or names

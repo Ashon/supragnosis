@@ -4624,8 +4624,16 @@ fn daemon_store_path(env: impl Fn(&str) -> Option<String>) -> Option<std::path::
 
 /// The pidfile's process, only when it is alive AND is supragnosis (L9). A pid outlives the process
 /// it named, and acting on a reused one would signal an unrelated program.
+fn pidfile_now() -> lifecycle::Pidfile {
+    let text = std::fs::read_to_string(pid_path()).ok();
+    lifecycle::pidfile_state(text.as_deref(), pid_alive, pid_is_supragnosis)
+}
+
 fn live_pidfile() -> Option<i32> {
-    read_pid().filter(|p| pid_alive(*p) && pid_is_supragnosis(*p))
+    match pidfile_now() {
+        lifecycle::Pidfile::Live(pid) => Some(pid),
+        _ => None,
+    }
 }
 
 fn pid_is_supragnosis(pid: i32) -> bool {
@@ -4641,7 +4649,7 @@ fn pid_is_supragnosis(pid: i32) -> bool {
 
 #[cfg(unix)]
 fn clear_stale_pidfile() {
-    if read_pid().is_some() && live_pidfile().is_none() {
+    if let lifecycle::Pidfile::Stale(_) = pidfile_now() {
         let _ = std::fs::remove_file(pid_path());
     }
 }
