@@ -87,6 +87,9 @@ pub struct Sidecar {
     /// they are empty again.
     #[serde(default)]
     pub created: Vec<String>,
+    /// The hub's key was in `origin_keys` before the join - written by the person - and stays.
+    #[serde(default)]
+    pub hub_key_was_there: bool,
     #[serde(default)]
     pub vouched: Vec<pair::Vouched>,
 }
@@ -133,17 +136,24 @@ fn write_toml<T: Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
     crate::write_secret(path, toml::to_string(value)?.as_bytes())
 }
 
-/// Who may join (D6, PA9): not a machine that already syncs to a hub, and not one that admits a
-/// node of its own.
+/// Who may join (D6, PA9): not a machine with a hub entry of any kind - one this release disables,
+/// plain `http://` or an unreadable `ca`, included, since a second would join beside it - and not
+/// one that admits a node of its own. The edit a join makes is tried here too, on the file as it
+/// is, so a shape it cannot extend is said before the hub admits anyone.
 pub fn may_join(paths: &Paths) -> Result<()> {
     let Some(fc) = crate::fed::load_at(&paths.config)? else {
         return Ok(());
     };
-    if let Some(link) = fc.sync.links().0.first() {
+    let hub = fc
+        .sync
+        .server
+        .first()
+        .map(|e| e.url.clone())
+        .or_else(|| fc.sync.servers.first().cloned());
+    if let Some(url) = hub {
         anyhow::bail!(
-            "This machine already syncs with {}. In this version a machine syncs with one other; \
-             `supragnosis hub leave` stops that first.",
-            link.url
+            "This machine already syncs with {url}. In this version a machine syncs with one other; \
+             `supragnosis hub leave` stops that first."
         );
     }
     if let Some(entry) = fc.server.as_ref().and_then(|s| s.allowlist.first()) {
@@ -153,7 +163,130 @@ pub fn may_join(paths: &Paths) -> Result<()> {
             entry.node_id
         );
     }
+    let text = std::fs::read_to_string(&paths.config)
+        .with_context(|| format!("reading {}", paths.config.display()))?;
+    let trial = JoinWrite {
+        url: "https://hub.invalid:7420",
+        credential: "0",
+        ca: None,
+        hub: &"0".repeat(32),
+        hub_key: &"0".repeat(64),
+        send: &["trial".to_string()],
+        serve: true,
+    };
+    write_join(&text, &trial).with_context(|| {
+        format!("{} has a shape a join cannot add to - edit it by hand", paths.config.display())
+    })?;
     Ok(())
+}
+
+/// What a join writes into `supragnosis.toml`.
+struct JoinWrite<'a> {
+    url: &'a str,
+    credential: &'a str,
+    ca: Option<&'a str>,
+    hub: &'a str,
+    hub_key: &'a str,
+    send: &'a [String],
+    serve: bool,
+}
+
+/// The file as a join leaves it, and what it added, so leaving removes exactly that.
+struct Written {
+    text: String,
+    sent: Vec<String>,
+    served: Vec<String>,
+    created: Vec<String>,
+    hub_key_was_there: bool,
+}
+
+/// The join's edit of `supragnosis.toml` (Section 4.4), on `text`: a `[[sync.server]]` entry, the
+/// hub's key in `origin_keys`, the ticked workspaces in the sharing lists - keys a release before
+/// pairing reads - with every line the person wrote kept.
+fn write_join(text: &str, w: &JoinWrite<'_>) -> Result<Written> {
+    let fc: crate::fed::FileConfig = toml::from_str(text).context("parsing supragnosis.toml")?;
+    anyhow::ensure!(
+        fc.sync.server.is_empty() && fc.sync.servers.is_empty(),
+        "this machine began syncing with another hub during the join"
+    );
+    let hub_key_was_there = match fc.sync.origin_keys.get(w.hub) {
+        Some(kept) => {
+            anyhow::ensure!(
+                kept.eq_ignore_ascii_case(w.hub_key),
+                "supragnosis.toml already names another key for the hub {}",
+                w.hub
+            );
+            true
+        }
+        None => false,
+    };
+    let mut doc: toml_edit::DocumentMut = text.parse().context("parsing supragnosis.toml")?;
+    let mut created: Vec<String> = Vec::new();
+    if doc.get("sync").is_none() {
+        created.push("sync".into());
+    }
+    let sync = doc
+        .entry("sync")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
+        .context("[sync] is not a table")?;
+    for key in ["server", "origin_keys", "share_workspaces", "serve_workspaces"] {
+        if !sync.contains_key(key) {
+            created.push(key.into());
+        }
+    }
+    let servers = sync
+        .entry("server")
+        .or_insert(toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()))
+        .as_array_of_tables_mut()
+        .context("[sync] server is not an array of tables")?;
+    let mut entry = toml_edit::Table::new();
+    entry["url"] = toml_edit::value(w.url);
+    entry["auth_token"] = toml_edit::value(w.credential);
+    if let Some(ca) = w.ca {
+        entry["ca"] = toml_edit::value(ca);
+    }
+    servers.push(entry);
+    if !hub_key_was_there {
+        sync.entry("origin_keys")
+            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+            .as_table_like_mut()
+            .context("[sync] origin_keys is not a table")?
+            .insert(w.hub, toml_edit::value(w.hub_key));
+    }
+    let mut add = |key: &str, what: &[String]| -> Result<Vec<String>> {
+        let list = sync
+            .entry(key)
+            .or_insert(toml_edit::value(toml_edit::Array::new()))
+            .as_array_mut()
+            .with_context(|| format!("[sync] {key} is not a list"))?;
+        let mut added = Vec::new();
+        for item in what {
+            if !list.iter().any(|v| v.as_str() == Some(item)) {
+                list.push(item.as_str());
+                added.push(item.clone());
+            }
+        }
+        Ok(added)
+    };
+    let sent = add("share_workspaces", w.send)?;
+    let served = match w.serve {
+        true => add("serve_workspaces", w.send)?,
+        false => Vec::new(),
+    };
+    if !w.serve {
+        created.retain(|k| k != "serve_workspaces");
+    }
+    let text = doc.to_string();
+    toml::from_str::<crate::fed::FileConfig>(&text)
+        .context("the joined configuration does not read back")?;
+    Ok(Written { text, sent, served, created, hub_key_was_there })
+}
+
+/// Why a call to the hub failed: a connection that may come back, or an answer that will not.
+enum Failure {
+    Again(anyhow::Error),
+    Final(anyhow::Error),
 }
 
 /// The hub at the first of the code's addresses that answers, checked as the code says (Section
@@ -167,7 +300,7 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
         }
         CertCheck::ByName => join_client(JoinTls::ByName)?,
     };
-    let mut other_certificate = Vec::new();
+    let (mut other_certificate, mut not_by_name) = (Vec::new(), Vec::new());
     for address in &code.addresses {
         let sent = client
             .post(format!("https://{address}/pair/preview"))
@@ -175,13 +308,16 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
             .send()
             .await;
         match sent {
-            Ok(r) if r.status().is_success() => {
-                let preview = r.json().await.context("the hub's preview is not JSON")?;
-                return Ok((address.clone(), client, preview));
-            }
+            Ok(r) if r.status().is_success() => match r.json().await {
+                Ok(preview) => return Ok((address.clone(), client, preview)),
+                Err(e) => tracing::warn!(%address, error = %e, "the preview is not JSON"),
+            },
             Ok(r) => tracing::warn!(%address, status = %r.status(), "the hub refused the preview"),
             Err(e) if format!("{e:?}").contains(NOT_THE_CODES_HUB) => {
                 other_certificate.push(address.clone())
+            }
+            Err(e) if format!("{e:?}").contains("InvalidCertificate") => {
+                not_by_name.push(address.clone())
             }
             Err(e) => tracing::warn!(%address, error = %e, "the hub did not answer there"),
         }
@@ -190,6 +326,14 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
         anyhow::bail!(
             "This is not the machine that made the code: {} presented another certificate.",
             other_certificate.join(", ")
+        );
+    }
+    if !not_by_name.is_empty() {
+        anyhow::bail!(
+            "The certificate at {} does not verify for its name against the roots built into \
+             supragnosis, as the code says it should. This is not the machine that made the code, \
+             or its certificate changed - make a new code on the hub.",
+            not_by_name.join(", ")
         );
     }
     let port = code.addresses.first().map(|a| crate::invite::port_of(a)).unwrap_or(7420);
@@ -205,6 +349,28 @@ fn said(answer: &serde_json::Value) -> String {
     answer["said"].as_str().unwrap_or("The hub ended the join.").to_string()
 }
 
+/// The certificate in `pem` whose SHA-256 is `pin`, alone: what the code names, and nothing a file
+/// of several would let it trust beside it (PA3).
+fn pinned_block(pem: &str, pin: &[u8; 32]) -> Option<String> {
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    let mut rest = pem;
+    while let Some(at) = rest.find(BEGIN) {
+        let tail = &rest[at..];
+        let stop = tail.find(END)? + END.len();
+        let block = &tail[..stop];
+        let der = supragnosis_sync::http::certificate_der(block.as_bytes()).ok()?;
+        if pair::sha256(&der) == *pin {
+            return Some(format!("{block}\n"));
+        }
+        rest = &tail[stop..];
+    }
+    None
+}
+
+/// How long past the code's expiry a join keeps asking: the hub's clock may run behind this one's.
+const SLACK: u64 = 60;
+
 /// `join` (Section 4.3): asks the hub the code names to admit this machine, shows the words while it
 /// waits for the hub's Allow, and on its signed answer writes what it grants. The person's ticks
 /// count only where the answer agrees.
@@ -216,14 +382,18 @@ pub async fn join(
     person: &mut dyn Person,
     poll: Duration,
 ) -> Result<Joined> {
-    anyhow::ensure!(
-        code.expires > crate::invite::now(),
-        "This code has expired. Make a new code on the hub."
-    );
+    let invitation = pair::secret_hash(&code.secret);
+    let kept = read_toml::<Joining>(&paths.joining())?;
+    if code.expires <= crate::invite::now() {
+        // The open join's one-time key goes with its code.
+        if kept.as_ref().is_some_and(|j| j.invitation == invitation) {
+            let _ = std::fs::remove_file(paths.joining());
+        }
+        anyhow::bail!("This code has expired. Make a new code on the hub.");
+    }
     may_join(paths)?;
     crate::private_dir(&paths.hubs())?;
-    let invitation = pair::secret_hash(&code.secret);
-    let mut open = match read_toml::<Joining>(&paths.joining())? {
+    let mut open = match kept {
         Some(j) if j.invitation == invitation => j,
         _ => Joining {
             invitation,
@@ -273,22 +443,49 @@ pub async fn join(
         commitment: hex(&commitment),
         nonce: reveal.then(|| hex(&nonce)),
     };
-    let call = |req: JoinRequest| {
-        let (client, url) = (client.clone(), format!("{url}/pair/join"));
+    let deadline = code.expires + SLACK;
+    // One call to the hub, asked again while the connection fails and the code is good: the hub
+    // keeps a request and its answer until then. An answer it gives is never asked again.
+    let call = |reveal: bool| {
+        let (client, url, req) = (client.clone(), format!("{url}/pair/join"), ask(reveal));
         async move {
-            let r = client.post(url).json(&req).send().await?.error_for_status()?;
-            anyhow::Ok(r.json::<serde_json::Value>().await?)
+            loop {
+                let failure = match client.post(&url).json(&req).send().await {
+                    Ok(r) => match r.error_for_status() {
+                        Ok(r) => match r.json::<serde_json::Value>().await {
+                            Ok(v) => return Ok(v),
+                            Err(e) => Failure::Final(e.into()),
+                        },
+                        Err(e) => Failure::Final(e.into()),
+                    },
+                    Err(e) if e.is_connect() || e.is_timeout() => Failure::Again(e.into()),
+                    Err(e) => Failure::Final(e.into()),
+                };
+                match failure {
+                    Failure::Again(e) if crate::invite::now() <= deadline => {
+                        tracing::warn!(error = %format!("{e:#}"), "asking the hub again");
+                        tokio::time::sleep(poll).await;
+                    }
+                    Failure::Again(e) | Failure::Final(e) => return Err(e),
+                }
+            }
         }
     };
     // The hub's nonce is kept before this machine reveals its own (Section 4.3.2).
     let hub_nonce = match open.hub_nonce.clone() {
         Some(kept) => kept,
         None => {
-            let first = call(ask(false)).await?;
+            let first = call(false)
+                .await
+                .map_err(|e| end(format!("The hub stopped answering: {e:#}")))?;
             if first["state"] != "pending" {
                 return Err(end(said(&first)));
             }
-            let theirs = first["hub_nonce"].as_str().context("the hub sent no nonce")?.to_string();
+            let theirs = first["hub_nonce"]
+                .as_str()
+                .filter(|n| hex32(n).is_some())
+                .context("the hub sent no usable nonce")?
+                .to_string();
             open.hub_nonce = Some(theirs.clone());
             write_toml(&paths.joining(), &open)?;
             theirs
@@ -299,27 +496,25 @@ pub async fn join(
         &node_key,
         &onetime.public(),
         &nonce,
-        &hex32(&hub_nonce).context("the hub's nonce")?,
+        &hex32(&hub_nonce).context("the kept hub nonce")?,
     );
     let mut shown = false;
     let answer = loop {
-        let reply = match call(ask(true)).await {
-            Ok(reply) => reply,
-            // The hub keeps a request and its answer until the code expires, so a dropped
-            // connection is asked again until then.
-            Err(e) if crate::invite::now() <= code.expires => {
-                tracing::warn!(error = %format!("{e:#}"), "asking the hub again");
-                tokio::time::sleep(poll).await;
-                continue;
-            }
-            Err(e) => return Err(e),
-        };
+        let reply =
+            call(true).await.map_err(|e| end(format!("The hub stopped answering: {e:#}")))?;
         match reply["state"].as_str() {
             Some("pending") => {
                 if reply["hub_nonce"].as_str() != Some(hub_nonce.as_str()) {
                     return Err(end(
                         "The hub's answer changed during the join, so this join stops. Make a \
                          new code on the hub."
+                            .into(),
+                    ));
+                }
+                if crate::invite::now() > deadline {
+                    return Err(end(
+                        "The hub did not answer before the code expired. Make a new code on the \
+                         hub."
                             .into(),
                     ));
                 }
@@ -333,7 +528,8 @@ pub async fn join(
             _ => return Err(end(said(&reply))),
         }
     };
-    let signed: pair::SignedAnswer = serde_json::from_value(answer).context("the hub's answer")?;
+    let signed: pair::SignedAnswer =
+        serde_json::from_value(answer).map_err(|e| end(format!("the hub's answer: {e}")))?;
     let expect = pair::Expected {
         code,
         joining_node: &me.node_id(),
@@ -350,86 +546,40 @@ pub async fn join(
         choices.send.into_iter().filter(|w| body.workspaces.contains(w)).collect();
     let serve = choices.serve && body.serves_principals;
     let hub = code.hub.clone();
-    let pem_path = match &body.certificate {
-        Some(pem) => {
+    // A pinned hub is trusted as the one certificate the code names; one checked by name stays
+    // checked by name, so a renewal breaks nothing (D13).
+    let ca = match (&code.check, &body.certificate) {
+        (CertCheck::Fingerprint(pin), Some(pem)) => {
+            let one = pinned_block(pem, pin).ok_or_else(|| {
+                end("the answer's certificate is not the one the code names".into())
+            })?;
             let path = paths.pem(&hub);
-            crate::write_secret(&path, pem.as_bytes())?;
+            crate::write_secret(&path, one.as_bytes())?;
             Some(path.display().to_string())
         }
-        None => None,
+        (CertCheck::Fingerprint(_), None) => {
+            return Err(end("the answer carries no certificate".into()));
+        }
+        (CertCheck::ByName, _) => None,
     };
-    let (sent, served, created) = crate::fed::edit_config_at(&paths.config, |text| {
-        let fc: crate::fed::FileConfig =
-            toml::from_str(text).context("parsing supragnosis.toml")?;
-        anyhow::ensure!(
-            fc.sync.links().0.is_empty(),
-            "this machine began syncing with another hub during the join"
-        );
-        if let Some(kept) = fc.sync.origin_keys.get(&hub) {
-            anyhow::ensure!(
-                kept.eq_ignore_ascii_case(&body.hub_key),
-                "supragnosis.toml already names another key for the hub {hub}"
-            );
-        }
-        let mut doc: toml_edit::DocumentMut = text.parse().context("parsing supragnosis.toml")?;
-        let mut created: Vec<String> = Vec::new();
-        if doc.get("sync").is_none() {
-            created.push("sync".into());
-        }
-        let sync = doc
-            .entry("sync")
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_mut()
-            .context("[sync] is not a table")?;
-        for key in ["server", "origin_keys", "share_workspaces", "serve_workspaces"] {
-            if !sync.contains_key(key) {
-                created.push(key.into());
-            }
-        }
-        let servers = sync
-            .entry("server")
-            .or_insert(toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()))
-            .as_array_of_tables_mut()
-            .context("[sync] server is not an array of tables")?;
-        let mut entry = toml_edit::Table::new();
-        entry["url"] = toml_edit::value(url.as_str());
-        entry["auth_token"] = toml_edit::value(credential.as_str());
-        if let Some(pem) = &pem_path {
-            entry["ca"] = toml_edit::value(pem.as_str());
-        }
-        servers.push(entry);
-        sync.entry("origin_keys")
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_like_mut()
-            .context("[sync] origin_keys is not a table")?
-            .insert(&hub, toml_edit::value(body.hub_key.as_str()));
-        let mut add = |key: &str, what: &[String]| -> Result<Vec<String>> {
-            let list = sync
-                .entry(key)
-                .or_insert(toml_edit::value(toml_edit::Array::new()))
-                .as_array_mut()
-                .with_context(|| format!("[sync] {key} is not a list"))?;
-            let mut added = Vec::new();
-            for w in what {
-                if !list.iter().any(|v| v.as_str() == Some(w)) {
-                    list.push(w.as_str());
-                    added.push(w.clone());
-                }
-            }
-            Ok(added)
-        };
-        let sent = add("share_workspaces", &send)?;
-        let served = match serve {
-            true => add("serve_workspaces", &send)?,
-            false => Vec::new(),
-        };
-        if !serve {
-            created.retain(|k| k != "serve_workspaces");
-        }
-        let edited = doc.to_string();
-        toml::from_str::<crate::fed::FileConfig>(&edited)
-            .context("the joined configuration does not read back")?;
-        Ok((edited, (sent, served, created)))
+    // The file holds the credential from here on: owner-only before the edit, so the copy the edit
+    // writes is too.
+    if paths.config.exists() {
+        owner_only(&paths.config)?;
+    }
+    let write = JoinWrite {
+        url: &url,
+        credential: &credential,
+        ca: ca.as_deref(),
+        hub: &hub,
+        hub_key: &body.hub_key,
+        send: &send,
+        serve,
+    };
+    let written = crate::fed::edit_config_at(&paths.config, |text| {
+        let w = write_join(text, &write)?;
+        let text = w.text.clone();
+        Ok((text, w))
     })?;
     owner_only(&paths.config)?;
     write_toml(
@@ -439,15 +589,23 @@ pub async fn join(
             hub_key: body.hub_key.clone(),
             url: url.clone(),
             receive: body.workspaces.clone(),
-            sent: sent.clone(),
-            served: served.clone(),
-            created,
+            sent: written.sent.clone(),
+            served: written.served.clone(),
+            created: written.created,
+            hub_key_was_there: written.hub_key_was_there,
             vouched: body.vouched.clone(),
         },
     )?;
     let _ = std::fs::remove_file(paths.joining());
     tracing::info!(hub = %hub, url = %url, "joined a hub");
-    Ok(Joined { hub_name: body.hub_name, hub, url, receive: body.workspaces, sent, served })
+    Ok(Joined {
+        hub_name: body.hub_name,
+        hub,
+        url,
+        receive: body.workspaces,
+        sent: written.sent,
+        served: written.served,
+    })
 }
 
 /// `supragnosis.toml` holds the credential once a join has written it: owner-only, wherever
@@ -529,21 +687,32 @@ pub async fn leave(paths: &Paths) -> Result<Left> {
     let entry = fc.sync.server.iter().find(|e| e.url == car.url).cloned();
     let mut hub_answered = false;
     if let Some(entry) = &entry {
-        let builder = reqwest::Client::builder().timeout(Duration::from_secs(20));
-        let builder = match &entry.ca {
-            Some(ca) => {
-                let pem = std::fs::read(ca).with_context(|| format!("reading {}", ca.display()))?;
-                builder.use_preconfigured_tls(supragnosis_sync::http::tls_trusting(&pem)?)
-            }
-            None => builder,
+        // A certificate that cannot be read is a hub that cannot be asked: this machine still
+        // leaves, and says the hub did not answer.
+        let tls = match &entry.ca {
+            Some(ca) => std::fs::read(ca)
+                .ok()
+                .and_then(|pem| supragnosis_sync::http::tls_trusting(&pem).ok())
+                .map(Some),
+            None => Some(None),
         };
-        let sent = builder
-            .build()?
-            .post(format!("{}/pair/leave", car.url))
-            .bearer_auth(&entry.auth_token)
-            .send()
-            .await;
-        hub_answered = sent.is_ok_and(|r| r.status().is_success());
+        if let Some(tls) = tls {
+            let builder = reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .connect_timeout(Duration::from_secs(5));
+            let builder = match tls {
+                Some(tls) => builder.use_preconfigured_tls(tls),
+                None => builder,
+            };
+            if let Ok(client) = builder.build() {
+                let sent = client
+                    .post(format!("{}/pair/leave", car.url))
+                    .bearer_auth(&entry.auth_token)
+                    .send()
+                    .await;
+                hub_answered = sent.is_ok_and(|r| r.status().is_success());
+            }
+        }
     }
     crate::fed::edit_config_at(&paths.config, |text| {
         let mut doc: toml_edit::DocumentMut = text.parse().context("parsing supragnosis.toml")?;
@@ -552,7 +721,9 @@ pub async fn leave(paths: &Paths) -> Result<Left> {
                 servers.retain(|t| t.get("url").and_then(|u| u.as_str()) != Some(car.url.as_str()));
             }
             if let Some(keys) = sync.get_mut("origin_keys").and_then(|k| k.as_table_like_mut()) {
-                if keys.get(&hub).and_then(|k| k.as_str()) == Some(car.hub_key.as_str()) {
+                if !car.hub_key_was_there
+                    && keys.get(&hub).and_then(|k| k.as_str()) == Some(car.hub_key.as_str())
+                {
                     keys.remove(&hub);
                 }
             }
@@ -599,12 +770,26 @@ mod tests {
     use supragnosis_store::InMemoryStore;
     use supragnosis_sync::SyncNode;
 
-    /// The test's person: ticks what it was told to, and keeps the words it was shown.
+    /// The test's person: ticks what it was told to, keeps the words it was shown, and says when.
     struct Scripted {
         send: Vec<String>,
         serve: bool,
         offered: Vec<String>,
-        words: Arc<std::sync::Mutex<Vec<String>>>,
+        words: Vec<String>,
+        /// Told when the words are shown: the hub then holds the request with its words.
+        shown: Arc<tokio::sync::Notify>,
+    }
+
+    impl Scripted {
+        fn new(send: &[&str], serve: bool) -> Scripted {
+            Scripted {
+                send: send.iter().map(|w| w.to_string()).collect(),
+                serve,
+                offered: Vec::new(),
+                words: Vec::new(),
+                shown: Default::default(),
+            }
+        }
     }
 
     impl Person for Scripted {
@@ -614,7 +799,8 @@ mod tests {
         }
 
         fn words(&mut self, _hub: &str, words: &[&str]) {
-            *self.words.lock().unwrap() = words.iter().map(|w| w.to_string()).collect();
+            self.words = words.iter().map(|w| w.to_string()).collect();
+            self.shown.notify_one();
         }
     }
 
@@ -662,7 +848,7 @@ mod tests {
     /// The hub's person: Allow once the words are shown, for the request shown.
     fn allow_when_asked(p: Arc<Pairing>) -> tokio::task::JoinHandle<serde_json::Value> {
         tokio::task::spawn_blocking(move || {
-            for _ in 0..400 {
+            for _ in 0..2400 {
                 let shown = crate::invite::tests_support::shown(&p, invite::now());
                 if !shown.words.is_empty() {
                     return p.allow(&shown, invite::now()).unwrap();
@@ -671,6 +857,18 @@ mod tests {
             }
             panic!("no request reached its words");
         })
+    }
+
+    /// Runs a join until its words are shown, then stops it, as a person closing the terminal
+    /// would: the hub holds the request with its words.
+    async fn until_words(m: &Machine, code: &Code, person: &mut Scripted) {
+        let shown = person.shown.clone();
+        tokio::select! {
+            done = join(&m.paths, &m.me, "MacBook", code, person, Duration::from_millis(30)) => {
+                panic!("the join ended before Allow: {:?}", done.map(|_| ()))
+            }
+            _ = shown.notified() => {}
+        }
     }
 
     struct Machine {
@@ -688,16 +886,16 @@ mod tests {
             let paths = Paths { base: dir.clone(), config: dir.join("supragnosis.toml") };
             std::fs::write(&paths.config, "# the person's own line\nhost_label = \"MacBook\"\n")
                 .unwrap();
-            Machine {
-                dir,
-                paths,
-                me: NodeIdentity::from_secret_bytes([seed; 32]),
-                secret: [seed; 32],
-            }
+            let secret = [seed; 32];
+            Machine { dir, paths, me: NodeIdentity::from_secret_bytes(secret), secret }
         }
 
         fn config(&self) -> String {
             std::fs::read_to_string(&self.paths.config).unwrap()
+        }
+
+        async fn join(&self, code: &Code, person: &mut Scripted) -> Result<Joined> {
+            join(&self.paths, &self.me, "MacBook", code, person, Duration::from_millis(30)).await
         }
     }
 
@@ -749,27 +947,19 @@ mod tests {
     /// from the code - ticking one workspace it is offered and one it is not - and the two then
     /// keep the invited workspaces in step by the joined machine's round alone: what it sends goes
     /// to the hub, and what it receives comes back, received-only workspaces included (PA5, PA12).
+    /// The link it wrote trusts the hub's certificate alone, after the join as during it (PA3).
     #[tokio::test(flavor = "multi_thread")]
     async fn a_machine_joins_and_both_sync_with_no_call() {
         let hub = Hub::new("join-two");
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme", "docs"]);
         let m = Machine::new("two", 21);
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person = Scripted {
-            send: vec!["acme".into(), "secret".into()],
-            serve: true,
-            offered: Vec::new(),
-            words: words.clone(),
-        };
+        let mut person = Scripted::new(&["acme", "secret"], true);
         let allowed = allow_when_asked(listener.pairing.clone());
-        let joined =
-            join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-                .await
-                .expect("joins");
+        let joined = m.join(&code, &mut person).await.expect("joins");
         let hub_side = allowed.await.unwrap();
         assert_eq!(person.offered, vec!["acme".to_string(), "docs".to_string()]);
-        assert_eq!(words.lock().unwrap().len(), 3, "the words were shown");
+        assert_eq!(person.words.len(), 3, "the words were shown");
         assert_eq!(hub_side["joined"]["name"], "MacBook");
         assert_eq!(joined.receive, vec!["acme".to_string(), "docs".to_string()]);
         assert_eq!(
@@ -810,9 +1000,20 @@ mod tests {
             has(&hub_engine, "acme", "Invoice"),
             "the joined machine's write reached the hub"
         );
+
+        // After the join, the link trusts the hub's certificate and no other.
+        let other = Hub::new("join-two-other");
+        let (_other, other_port) = serve(&other).await;
+        let link = supragnosis_sync::ServerLink {
+            url: format!("https://127.0.0.1:{other_port}"),
+            ..ctx.servers[0].clone()
+        };
+        let client = supragnosis_sync::http::SyncClient::for_link(&link).unwrap();
+        assert!(client.ping().await.is_err(), "another certificate is refused after the join");
     }
 
-    /// A code whose pin is not the certificate the address presents ends there, said as such; and
+    /// A code whose pin is not the certificate the address presents ends there, said as such; one
+    /// that says "by name" refuses a certificate that does not verify against the built-in roots; and
     /// a machine that already syncs with a hub, or admits one, does not join (PA3, PA9).
     #[tokio::test(flavor = "multi_thread")]
     async fn a_join_refuses_another_certificate_and_a_chain() {
@@ -820,30 +1021,29 @@ mod tests {
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("cert", 22);
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person = Scripted { send: vec![], serve: false, offered: vec![], words };
+        let mut person = Scripted::new(&[], false);
         let wrong = Code { check: CertCheck::Fingerprint([7; 32]), ..code.clone() };
-        let e = join(&m.paths, &m.me, "MacBook", &wrong, &mut person, Duration::from_millis(30))
-            .await
-            .unwrap_err()
-            .to_string();
+        let e = m.join(&wrong, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("not the machine that made the code"), "{e}");
+        let by_name = Code { check: CertCheck::ByName, ..code.clone() };
+        let e = m.join(&by_name, &mut person).await.unwrap_err().to_string();
+        assert!(
+            e.contains("does not verify for its name"),
+            "a self-made certificate is not one by name: {e}"
+        );
         let expired = Code { expires: invite::now() - 1, ..code.clone() };
-        let e = join(&m.paths, &m.me, "MacBook", &expired, &mut person, Duration::from_millis(30))
-            .await
-            .unwrap_err()
-            .to_string();
+        let e = m.join(&expired, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("expired"), "{e}");
         std::fs::write(
             &m.paths.config,
-            "[sync]\n[[sync.server]]\nurl = \"https://other.example:7420\"\nauth_token = \"t\"\n",
+            "[sync]\n[[sync.server]]\nurl = \"http://other.example:7420\"\nauth_token = \"t\"\n",
         )
         .unwrap();
-        let e = join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("already syncs with https://other.example:7420"), "{e}");
+        let e = m.join(&code, &mut person).await.unwrap_err().to_string();
+        assert!(
+            e.contains("already syncs with http://other.example:7420"),
+            "even an entry this release disables: {e}"
+        );
         std::fs::write(
             &m.paths.config,
             "[server]\nlisten = \"127.0.0.1:1\"\n[[server.allowlist]]\nnode_id = \"abc\"\npublic_key_hex = \"00\"\nbearer_hash = \"00\"\nshared_workspaces = []\n",
@@ -851,10 +1051,16 @@ mod tests {
         .unwrap();
         let e = may_join(&m.paths).unwrap_err().to_string();
         assert!(e.contains("admits a machine of its own"), "a hub does not join another: {e}");
+        // A shape the join cannot add to is said before the hub admits anyone.
+        std::fs::write(&m.paths.config, "sync = { share_workspaces = [] }\n").unwrap();
+        let e = format!("{:#}", may_join(&m.paths).unwrap_err());
+        assert!(e.contains("cannot add to"), "{e}");
+        assert!(listener.pairing.peers().unwrap().joined.is_empty());
     }
 
     /// `join` run again with the same code asks as the same request - the invitation stays open -
-    /// and a hub nonce other than the one kept ends the join (Section 4.3.2).
+    /// and finishes with an answer the hub gave while it was not running; a hub nonce other than
+    /// the one kept ends the join (Section 4.3.2).
     #[tokio::test(flavor = "multi_thread")]
     async fn a_join_run_again_is_the_same_request_and_a_changed_nonce_ends_it() {
         let hub = Hub::new("join-again");
@@ -872,36 +1078,21 @@ mod tests {
         };
         crate::private_dir(&m.paths.hubs()).unwrap();
         write_toml(&m.paths.joining(), &first).unwrap();
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person = Scripted { send: vec![], serve: false, offered: vec![], words };
         // The hub never sent that nonce: the request it holds is not this one, so the join ends.
-        let e = join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .unwrap_err()
-            .to_string();
+        let e = m.join(&code, &mut Scripted::new(&[], false)).await.unwrap_err().to_string();
         assert!(e.contains("Make a new code"), "{e}");
         assert!(!m.paths.joining().exists(), "an ended join leaves nothing to reuse");
 
         // A run that stops before Allow and runs again keeps the request, and joins.
         let code = invite_at(&listener.pairing, port, &["acme"]);
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person =
-            Scripted { send: vec![], serve: false, offered: vec![], words: words.clone() };
-        let stopped = tokio::time::timeout(
-            Duration::from_millis(600),
-            join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30)),
-        )
-        .await;
-        assert!(stopped.is_err(), "it was waiting for Allow");
+        until_words(&m, &code, &mut Scripted::new(&[], false)).await;
         let kept: Joining = read_toml(&m.paths.joining()).unwrap().expect("kept");
         assert!(kept.hub_nonce.is_some() && kept.chosen.is_some());
         // Allowed on the hub while no `join` ran; the next run finds the answer waiting.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
-        let mut person = Scripted { send: vec![], serve: false, offered: vec![], words };
-        join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .expect("the same request, allowed");
-        assert!(person.offered.is_empty(), "nothing was asked twice");
+        let mut again = Scripted::new(&[], false);
+        m.join(&code, &mut again).await.expect("the same request, allowed");
+        assert!(again.offered.is_empty(), "nothing was asked twice");
     }
 
     /// An answer whose signature does not verify under the key the code names is not acted on:
@@ -913,16 +1104,8 @@ mod tests {
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("tamper", 25);
         let before = m.config();
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person =
-            Scripted { send: vec!["acme".into()], serve: false, offered: vec![], words };
-        // Asked, then stopped while it waited for Allow.
-        let waited = tokio::time::timeout(
-            Duration::from_millis(600),
-            join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30)),
-        )
-        .await;
-        assert!(waited.is_err(), "it was waiting for Allow");
+        let mut person = Scripted::new(&["acme"], false);
+        until_words(&m, &code, &mut person).await;
         // Allowed, and the kept answer's signature bent: the right length, the wrong bytes.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
         let invites = hub.paths.hub.join("invites.toml");
@@ -931,17 +1114,15 @@ mod tests {
         let mut bent = text.clone();
         bent.replace_range(at..at + 2, if &text[at..at + 2] == "00" { "01" } else { "00" });
         crate::write_secret(&invites, bent.as_bytes()).unwrap();
-        let e = join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .unwrap_err()
-            .to_string();
+        let e = m.join(&code, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("signature does not verify"), "{e}");
         assert_eq!(m.config(), before, "nothing was written");
         assert!(joined(&m.paths).unwrap().is_empty());
     }
 
-    /// `hub leave` asks the hub to remove this machine, then removes only what the join wrote; and a
-    /// hub that removed it first is said not to have answered, and the rest happens anyway.
+    /// `hub leave` asks the hub to remove this machine, then removes only what the join wrote -
+    /// the hub's key too, unless the person had written it; and a hub that cannot be asked is said
+    /// not to have answered, and the rest happens anyway.
     #[tokio::test(flavor = "multi_thread")]
     async fn leaving_removes_only_what_the_join_wrote() {
         let hub = Hub::new("join-leave");
@@ -953,13 +1134,8 @@ mod tests {
             "# the person's own line\n[sync]\nshare_workspaces = [\"mine\"]\n",
         )
         .unwrap();
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person =
-            Scripted { send: vec!["acme".into()], serve: false, offered: vec![], words };
         let allowed = allow_when_asked(listener.pairing.clone());
-        join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .expect("joins");
+        m.join(&code, &mut Scripted::new(&["acme"], false)).await.expect("joins");
         allowed.await.unwrap();
         let left = leave(&m.paths).await.expect("leaves");
         assert!(left.hub_answered, "the hub removed this machine");
@@ -981,15 +1157,32 @@ mod tests {
         let m = Machine::new("leave-bare", 26);
         let before = m.config();
         let code = invite_at(&listener.pairing, port, &["acme"]);
-        let words = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let mut person =
-            Scripted { send: vec!["acme".into()], serve: false, offered: vec![], words };
         let allowed = allow_when_asked(listener.pairing.clone());
-        join(&m.paths, &m.me, "MacBook", &code, &mut person, Duration::from_millis(30))
-            .await
-            .expect("joins again");
+        m.join(&code, &mut Scripted::new(&["acme"], false)).await.expect("joins again");
         allowed.await.unwrap();
         leave(&m.paths).await.expect("leaves");
         assert_eq!(m.config().trim_end(), before.trim_end(), "{}", m.config());
+
+        // The hub's key, written by the person before the join, stays; a certificate that cannot
+        // be read leaves anyway, saying the hub did not answer.
+        let m = Machine::new("leave-kept", 27);
+        let code = invite_at(&listener.pairing, port, &["acme"]);
+        let hub_key = NodeIdentity::from_secret_bytes(HUB_SECRET).public_key_hex();
+        std::fs::write(
+            &m.paths.config,
+            format!("[sync.origin_keys]\n{} = \"{hub_key}\"\n", code.hub),
+        )
+        .unwrap();
+        let allowed = allow_when_asked(listener.pairing.clone());
+        m.join(&code, &mut Scripted::new(&[], false))
+            .await
+            .expect("joins with the key known");
+        allowed.await.unwrap();
+        std::fs::remove_file(m.paths.pem(&code.hub)).unwrap();
+        let left = leave(&m.paths).await.expect("leaves without its certificate");
+        assert!(!left.hub_answered);
+        let fc = crate::fed::load_at(&m.paths.config).unwrap().unwrap();
+        assert_eq!(fc.sync.origin_keys.get(&code.hub), Some(&hub_key), "the person's key stays");
+        assert!(fc.sync.server.is_empty());
     }
 }

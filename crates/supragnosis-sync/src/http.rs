@@ -214,7 +214,11 @@ pub enum JoinTls {
 /// The HTTP client a join uses (docs/pairing.md Section 4.3).
 pub fn join_client(check: JoinTls) -> Result<reqwest::Client, TransportError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let builder = reqwest::Client::builder().timeout(CALL_TIMEOUT);
+    // A first address that drops packets - the LAN one, off the LAN - is given up on quickly, so
+    // the next is tried well inside the code's ten minutes.
+    let builder = reqwest::Client::builder()
+        .timeout(CALL_TIMEOUT)
+        .connect_timeout(std::time::Duration::from_secs(5));
     let builder = match check {
         JoinTls::ByName => builder,
         JoinTls::Pinned(accept) => {
