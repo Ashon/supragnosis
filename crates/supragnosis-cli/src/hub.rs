@@ -23,6 +23,9 @@ use supragnosis_sync::SyncNode;
 
 use crate::{fed, invite};
 
+/// A listener that runs: where, with which TLS, and its task.
+type Running = (SocketAddr, Option<sync_http::TlsPaths>, tokio::task::JoinHandle<()>);
+
 /// The hub's listener, opened and closed by the bind rule.
 pub struct HubListener {
     store: Arc<dyn AssertionStore>,
@@ -32,7 +35,8 @@ pub struct HubListener {
     pub peers: Arc<PeerDirectory>,
     /// The hub's invitations and the machines they admitted (docs/pairing.md Section 4.3).
     pub pairing: Arc<invite::Pairing>,
-    running: Mutex<Option<(SocketAddr, tokio::task::JoinHandle<()>)>>,
+    /// The listener that runs: where, with which TLS, and its task. A change of either reopens it.
+    running: Mutex<Option<Running>>,
     /// Held across a whole `apply`: two at once would both see no listener and both bind, and the
     /// one that lost would record a refusal while the other listened.
     applying: tokio::sync::Mutex<()>,
@@ -123,7 +127,11 @@ impl HubListener {
         };
         let admitted = self.peers.admitted().allowlist.len() + srv.principals.len() + invitations;
         let wanted = self.wanted(srv, admitted);
-        let current = self.running.lock().ok().and_then(|r| r.as_ref().map(|(a, _)| *a));
+        let current = self
+            .running
+            .lock()
+            .ok()
+            .and_then(|r| r.as_ref().map(|(a, tls, _)| (*a, tls.clone())));
         let state = match wanted {
             Err(why) => {
                 self.stop();
@@ -133,7 +141,9 @@ impl HubListener {
                 };
                 serde_json::json!({"listening": false, "address": srv.listen, "why": why})
             }
-            Ok((addr, _)) if current == Some(addr) && !addr.port().eq(&0) => {
+            Ok((addr, tls))
+                if current.as_ref() == Some(&(addr, tls.clone())) && !addr.port().eq(&0) =>
+            {
                 serde_json::json!({"listening": true, "address": addr.to_string(), "why": null})
             }
             Ok((addr, tls)) => {
@@ -155,7 +165,7 @@ impl HubListener {
                     self.store.clone(),
                     self.node.clone(),
                     addr,
-                    tls,
+                    tls.clone(),
                     self.peers.clone(),
                     hooks,
                 )
@@ -169,7 +179,7 @@ impl HubListener {
                             }
                         });
                         if let Ok(mut r) = self.running.lock() {
-                            *r = Some((at, task));
+                            *r = Some((addr, tls, task));
                         }
                         tracing::info!(listen = %at, admitted, "federation sync API listening");
                         serde_json::json!({"listening": true, "address": at.to_string(), "why": null})
@@ -213,7 +223,7 @@ impl HubListener {
 
     fn stop(&self) {
         if let Ok(mut r) = self.running.lock() {
-            if let Some((addr, task)) = r.take() {
+            if let Some((addr, _, task)) = r.take() {
                 task.abort();
                 tracing::info!(listen = %addr, "federation sync API closed");
             }
@@ -740,6 +750,43 @@ mod tests {
             }
         }
         assert!(closed, "closed at the expiry by the loop alone: {}", why());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A listener whose `[server]` gains TLS on the same address reopens with it, rather than
+    /// keeping the plain one it ran (found by running a join against a hub edited this way).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_listener_reopens_when_its_certificate_changes() {
+        let dir = std::env::temp_dir().join(format!("sg-reopen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (slot, paths, _) = slot_at(&dir);
+        let hub = slot.hub().await.unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let listen = format!("127.0.0.1:{port}");
+        let plain = fed::ServerSection {
+            listen: listen.clone(),
+            tls_cert: None,
+            tls_key: None,
+            allowlist: Vec::new(),
+            principals: Vec::new(),
+        };
+        assert_eq!(hub.apply(&plain).await["listening"], true);
+        let (cert, key) =
+            invite::make_certificate(&paths.hub, &["localhost".into()], invite::now()).unwrap();
+        let tls = fed::ServerSection { tls_cert: Some(cert.clone()), tls_key: Some(key), ..plain };
+        assert_eq!(hub.apply(&tls).await["listening"], true);
+        let pem = std::fs::read(&cert).unwrap();
+        let client = reqwest::Client::builder()
+            .use_preconfigured_tls(supragnosis_sync::http::tls_trusting(&pem).unwrap())
+            .build()
+            .unwrap();
+        let answer = client
+            .post(format!("https://{listen}/pair/preview"))
+            .json(&serde_json::json!({"secret": "00".repeat(32)}))
+            .send()
+            .await
+            .expect("the listener speaks TLS now");
+        assert!(answer.status().is_success());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

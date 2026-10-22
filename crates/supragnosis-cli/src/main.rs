@@ -89,6 +89,14 @@ enum Cmd {
     /// Let another machine join this one: prints a one-time code, then each request's words and
     /// asks to allow it (docs/pairing.md Section 3a)
     Invite(InviteArgs),
+    /// Join another machine's hub with the code it gave: reads the code on stdin, shows the words
+    /// to compare, and on the hub's Allow starts syncing (docs/pairing.md Section 4.3)
+    Join(JoinArgs),
+    /// The hub this machine joined: leave it (docs/pairing.md Section 4.6)
+    Hub {
+        #[command(subcommand)]
+        cmd: HubCmd,
+    },
     /// The machines that joined this hub: list them, or remove one (docs/pairing.md Section 4.6)
     Peer {
         #[command(subcommand)]
@@ -188,6 +196,34 @@ struct InviteArgs {
     /// Print the invitation as JSON and return at once, without waiting (the desktop app reads this)
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Args, Default)]
+struct JoinArgs {
+    /// Workspaces this machine also sends to the hub, comma-separated; asked one by one in a
+    /// terminal when omitted. It receives every workspace the invitation keeps either way
+    #[arg(long)]
+    send: Option<String>,
+    /// Let the hub serve what this machine sends to the people it admits, when it serves any
+    #[arg(long)]
+    serve: bool,
+    /// The name the hub shows for this machine (default: this machine's name)
+    #[arg(long)]
+    name: Option<String>,
+    /// One JSON object per line - the preview, the words, the outcome - and no questions (the
+    /// desktop app reads this)
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum HubCmd {
+    /// Stop syncing with the hub this machine joined, and ask it to remove this machine
+    Leave {
+        /// Do not ask first
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -368,6 +404,7 @@ mod connect;
 mod hook;
 mod hub;
 mod invite;
+mod join;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 mod pair;
@@ -392,6 +429,8 @@ fn main() -> Result<()> {
         Cmd::Server(a) => server_cmd(a),
         Cmd::Principal { cmd } => principal_cmd(cmd),
         Cmd::Invite(a) => invite_cmd(a),
+        Cmd::Join(a) => join_cmd(a),
+        Cmd::Hub { cmd } => hub_cmd(cmd),
         Cmd::Peer { cmd } => peer_cmd(cmd),
         Cmd::Service { cmd: ServiceCmd::Install(a) } => service_install(a),
         Cmd::Service { cmd: ServiceCmd::Uninstall } => service_uninstall(),
@@ -1270,6 +1309,9 @@ async fn build_sync_context(
     config_notes.extend(noncanonical_key_notes(&fc));
     let (serve_workspaces, serve_notes) = fc.sync.serve_set();
     config_notes.extend(serve_notes);
+    // What a join recorded this node receives (docs/pairing.md Section 4.5, PA12).
+    let (receive, receive_note) = join::receive_list(&join::Paths::default_paths());
+    config_notes.extend(receive_note);
     for n in &config_notes {
         tracing::error!("federation configuration: {n}");
     }
@@ -1354,6 +1396,7 @@ async fn build_sync_context(
         Some(Arc::new(supragnosis_mcp::SyncContext {
             node,
             share_workspaces: fc.sync.share_workspaces.clone(),
+            receive,
             serve_workspaces,
             servers: links,
             config_notes,
@@ -1853,30 +1896,52 @@ fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     let identity = fed::load_or_create_identity()?;
     let node = supragnosis_sync::SyncNode::new(identity)
         .with_seq_mark(fed::fed_base_dir().join("node.seq"));
-    let ws = a.workspace.unwrap_or_else(|| cfg.workspace.clone());
+    // A node a join set up syncs what it shares and what its join recorded, as its daemon's round
+    // does, and no other workspace (docs/pairing.md Section 4.5, PA12); any other node syncs the
+    // one workspace named, or its default.
+    let share = &fc.sync.share_workspaces;
+    let workspaces: Vec<String> =
+        match (a.workspace, join::receive_list(&join::Paths::default_paths())) {
+            (Some(ws), (Some(receive), _)) => {
+                anyhow::ensure!(
+                    share.contains(&ws) || receive.contains(&ws),
+                    "this node syncs only the workspaces it shares and the ones its join recorded \
+                 ({}); {ws} is neither",
+                    share.iter().chain(&receive).cloned().collect::<Vec<_>>().join(", ")
+                );
+                vec![ws]
+            }
+            (Some(ws), _) => vec![ws],
+            (None, (Some(receive), _)) => {
+                let mut all = share.clone();
+                all.extend(receive.into_iter().filter(|w| !share.contains(w)));
+                all
+            }
+            (None, (None, _)) => vec![cfg.workspace.clone()],
+        };
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(async {
         let engine = build_engine(&cfg, None)?;
         let store = engine.store();
         let mut keys = trusted_origin_keys(&fc.sync);
         keys.insert(node.node_id().to_string(), node.public_key_hex());
-        for link in &links {
-            let server = &link.url;
-            let client = supragnosis_sync::http::SyncClient::for_link(link)?
-                .with_serve(fc.sync.serve_set().0);
-            let s = client
-                .sync_workspace(&store, &node, &ws, &fc.sync.share_workspaces, &keys)
-                .await?;
+        for ws in &workspaces {
+            for link in &links {
+                let server = &link.url;
+                let client = supragnosis_sync::http::SyncClient::for_link(link)?
+                    .with_serve(fc.sync.serve_set().0);
+                let s = client.sync_workspace(&store, &node, ws, share, &keys).await?;
+                println!(
+                    "{server} {ws}: pushed {} pulled {} (rejected: by server {}, locally {})",
+                    s.pushed, s.pulled, s.rejected_by_server, s.rejected_locally
+                );
+            }
+            let r = engine.reproject(Some(ws))?;
             println!(
-                "{server}: pushed {} pulled {} (rejected: by server {}, locally {})",
-                s.pushed, s.pulled, s.rejected_by_server, s.rejected_locally
+                "reprojected {}: {} observations -> {} entities, {} relations",
+                ws, r.observations, r.entities, r.relations
             );
         }
-        let r = engine.reproject(Some(&ws))?;
-        println!(
-            "reprojected {}: {} observations -> {} entities, {} relations",
-            ws, r.observations, r.entities, r.relations
-        );
         anyhow::Ok(())
     })
 }
@@ -3228,6 +3293,195 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
             println!("Denied. The invitation is closed; make a new code to try again.");
         }
         return Ok(());
+    }
+}
+
+/// The terminal's side of a join: the preview's questions, and the words.
+struct TerminalPerson {
+    send: Option<Vec<String>>,
+    serve: bool,
+    json: bool,
+}
+
+impl join::Person for TerminalPerson {
+    fn preview(
+        &mut self,
+        hub: &str,
+        workspaces: &[String],
+        serves_principals: bool,
+    ) -> Result<join::Choices> {
+        if self.json {
+            println!(
+                "{}",
+                serde_json::json!({"preview": {"hub_name": hub, "workspaces": workspaces, "serves_principals": serves_principals}})
+            );
+            return Ok(join::Choices {
+                send: self.send.clone().unwrap_or_default(),
+                serve: self.serve,
+            });
+        }
+        println!();
+        match workspaces.is_empty() {
+            true => println!("{hub} shares no workspace yet."),
+            false => println!("From {hub}, this machine will receive {}.", workspaces.join(", ")),
+        }
+        let send = match &self.send {
+            Some(send) => send.clone(),
+            None => {
+                let mut send = Vec::new();
+                for w in workspaces {
+                    if ask_yes(&format!("Also send {w} from this machine to {hub}?"))? {
+                        send.push(w.clone());
+                    }
+                }
+                send
+            }
+        };
+        let serve = match (serves_principals, send.is_empty(), self.send.is_some()) {
+            (true, false, false) => ask_yes(&format!(
+                "{hub} also serves people it admits. May it serve what this machine sends to them?"
+            ))?,
+            (true, false, true) => self.serve,
+            _ => false,
+        };
+        Ok(join::Choices { send, serve })
+    }
+
+    fn words(&mut self, hub: &str, words: &[&str]) {
+        if self.json {
+            println!("{}", serde_json::json!({"words": words, "hub_name": hub}));
+            return;
+        }
+        println!();
+        println!("This machine's words:");
+        println!();
+        println!("    {}", words.join("   "));
+        println!();
+        println!("Allow it on {hub} if it shows the same words. Waiting for {hub}...");
+    }
+}
+
+/// `supragnosis join` (docs/pairing.md Section 4.3): the code on stdin, never as an argument, so it
+/// never sits in a process list.
+fn join_cmd(a: JoinArgs) -> Result<()> {
+    use std::io::{BufRead, IsTerminal, Write};
+    init_tracing();
+    let interactive = std::io::stdin().is_terminal() && !a.json;
+    if interactive {
+        print!("Paste the code from the hub, then press Return: ");
+        std::io::stdout().flush()?;
+    }
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    let code = pair::Code::decode(&line)?;
+    let send = a
+        .send
+        .as_deref()
+        .map(|s| s.split(',').map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect());
+    let mut person = TerminalPerson {
+        send: send.or(if a.json { Some(Vec::new()) } else { None }),
+        serve: a.serve,
+        json: a.json,
+    };
+    let paths = join::Paths::default_paths();
+    let me = fed::load_or_create_identity()?;
+    let name = a.name.unwrap_or_else(|| invite::hub_name(&paths.config));
+    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+    let joined = rt.block_on(join::join(
+        &paths,
+        &me,
+        &name,
+        &code,
+        &mut person,
+        std::time::Duration::from_secs(2),
+    ));
+    let joined = match joined {
+        Ok(j) => j,
+        Err(e) if a.json => {
+            println!("{}", serde_json::json!({"error": format!("{e:#}")}));
+            return Err(e);
+        }
+        Err(e) => return Err(e),
+    };
+    // `[sync]` is read at start: a running daemon restarts to sync with the hub.
+    let restarted = match hub::call("GET", "/hub/peers") {
+        Ok(Some(_)) => match restart(resolve(RunArgs::default(), true)) {
+            Ok(()) => "restarted",
+            Err(e) => {
+                tracing::warn!(error = %format!("{e:#}"), "the daemon did not restart after the join");
+                "not_restarted"
+            }
+        },
+        _ => "not_running",
+    };
+    if a.json {
+        println!("{}", serde_json::json!({"joined": joined, "daemon": restarted}));
+        return Ok(());
+    }
+    println!();
+    println!("Joined {}.", joined.hub_name);
+    match joined.sent.is_empty() {
+        true => println!(
+            "This machine receives {} and sends nothing yet.",
+            list_or_none(&joined.receive)
+        ),
+        false => println!(
+            "This machine receives {} and sends {}.",
+            list_or_none(&joined.receive),
+            joined.sent.join(", ")
+        ),
+    }
+    match restarted {
+        "restarted" => {
+            println!("Supragnosis restarted and syncs with {} on its own.", joined.hub_name)
+        }
+        "not_restarted" => println!("Restart Supragnosis to start syncing."),
+        _ => println!("Start Supragnosis - `supragnosis start`, or the app - to start syncing."),
+    }
+    Ok(())
+}
+
+fn list_or_none(list: &[String]) -> String {
+    match list.is_empty() {
+        true => "no workspace yet".into(),
+        false => list.join(", "),
+    }
+}
+
+/// `supragnosis hub` (docs/pairing.md Section 4.6).
+fn hub_cmd(cmd: HubCmd) -> Result<()> {
+    init_tracing();
+    match cmd {
+        HubCmd::Leave { yes } => {
+            let paths = join::Paths::default_paths();
+            let hubs = join::joined(&paths)?;
+            let Some((_, car)) = hubs.first() else {
+                anyhow::bail!("This machine joined no hub through pairing.");
+            };
+            println!(
+                "This machine stops syncing with {} now. What each already holds stays on it.",
+                car.name
+            );
+            if !yes && !ask_yes(&format!("Stop syncing with {}?", car.name))? {
+                println!("Nothing changed.");
+                return Ok(());
+            }
+            let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
+            let left = rt.block_on(join::leave(&paths))?;
+            match left.hub_answered {
+                true => println!("{} removed this machine.", left.hub_name),
+                false => println!(
+                    "{} did not answer, so it keeps this machine's row until it is removed there                      (`supragnosis peer remove`). This machine no longer syncs with it.",
+                    left.hub_name
+                ),
+            }
+            if let Ok(Some(_)) = hub::call("GET", "/hub/peers") {
+                if let Err(e) = restart(resolve(RunArgs::default(), true)) {
+                    println!("Restart Supragnosis to stop the rounds it runs: {e:#}");
+                }
+            }
+            Ok(())
+        }
     }
 }
 

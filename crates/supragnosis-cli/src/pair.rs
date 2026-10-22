@@ -5,11 +5,6 @@
 //! Both sides compute every one of these, so all of it is fixed by the code's `sgjoin1` prefix: a
 //! change to any of it is a new prefix, which a release that does not know it refuses by name.
 
-// The joining machine's half - reading a code, the one-time key, checking an answer - is called by
-// `join`, which is docs/pairing.md Section 10 step 3b; until it lands only this module's tests and
-// the hub's call them.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
@@ -327,6 +322,7 @@ pub struct OneTime {
 }
 
 impl OneTime {
+    #[cfg(test)]
     pub fn new() -> Result<OneTime> {
         Ok(OneTime { secret: random32()? })
     }
@@ -335,6 +331,7 @@ impl OneTime {
         OneTime { secret }
     }
 
+    #[cfg(test)]
     pub fn secret(&self) -> &[u8; 32] {
         &self.secret
     }

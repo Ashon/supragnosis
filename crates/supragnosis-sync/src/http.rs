@@ -196,6 +196,103 @@ impl rustls::client::danger::ServerCertVerifier for NamedCertificates {
     }
 }
 
+/// What a refused pin says, so a joining machine can tell "not the machine that made the code" from
+/// a host it could not reach (docs/pairing.md Section 4.3).
+pub const NOT_THE_CODES_HUB: &str = "the certificate is not the one the join code names";
+
+/// Says yes to the DER of the one certificate a pin names.
+pub type AcceptCertificate = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
+
+/// How a joining machine checks the hub before it holds the hub's certificate (docs/pairing.md
+/// Section 4.3): exactly the certificate the code's fingerprint names, from any address - `accept`
+/// says yes to its DER - or the built-in roots and the address's name.
+pub enum JoinTls {
+    Pinned(AcceptCertificate),
+    ByName,
+}
+
+/// The HTTP client a join uses (docs/pairing.md Section 4.3).
+pub fn join_client(check: JoinTls) -> Result<reqwest::Client, TransportError> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let builder = reqwest::Client::builder().timeout(CALL_TIMEOUT);
+    let builder = match check {
+        JoinTls::ByName => builder,
+        JoinTls::Pinned(accept) => {
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let verifier = Arc::new(PinnedBy { accept, provider: provider.clone() });
+            let tls = rustls::ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .map_err(|e| TransportError::Tls(e.to_string()))?
+                .dangerous()
+                .with_custom_certificate_verifier(verifier)
+                .with_no_client_auth();
+            builder.use_preconfigured_tls(tls)
+        }
+    };
+    Ok(builder.build()?)
+}
+
+/// Accepts the one certificate a pin names, whatever address presented it; the handshake's
+/// signatures are still verified against it, so a server without its key is refused.
+struct PinnedBy {
+    accept: AcceptCertificate,
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
+
+impl std::fmt::Debug for PinnedBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PinnedBy")
+    }
+}
+
+impl rustls::client::danger::ServerCertVerifier for PinnedBy {
+    fn verify_server_cert(
+        &self,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        match (self.accept)(end_entity.as_ref()) {
+            true => Ok(rustls::client::danger::ServerCertVerified::assertion()),
+            false => Err(rustls::Error::General(NOT_THE_CODES_HUB.into())),
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider.signature_verification_algorithms.supported_schemes()
+    }
+}
+
 /// The (origin, seq) of a wire event, read without decoding it. Empty for an unstamped one.
 fn stream_of(raw: &serde_json::Value) -> (String, u64) {
     let sync = &raw["attestation"]["sync"];
@@ -926,7 +1023,7 @@ async fn bounded(
 }
 
 /// TLS material for the in-process rustls termination (F10).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsPaths {
     pub cert_pem: std::path::PathBuf,
     pub key_pem: std::path::PathBuf,
