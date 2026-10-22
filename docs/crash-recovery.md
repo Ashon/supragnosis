@@ -139,6 +139,9 @@ Guarded by:
 - `redb_owed_projections_survive_a_reopen` - the ledger outlives the process that wrote it.
 - `a_store_from_before_the_ledger_is_owed_in_full_once` - an upgraded store repays its history once.
 - `an_append_whose_projection_never_ran_is_projected_at_the_next_open` - K3 and K4.
+- `a_daemon_repays_what_it_owes_before_it_serves` - K3 at the process: the engine every serving
+  entry is handed comes back from `build_engine` over a scratch redb store with nothing owed and
+  the owed append in its graph.
 - `a_completed_write_owes_nothing` and `a_reproject_repays_only_its_own_workspace` - K2.
 - `a_pull_that_stamps_rows_re_materializes_them` - the hub repays what stamping owes.
 - `health_reports_owed_projections_and_the_last_recovery` - K5.

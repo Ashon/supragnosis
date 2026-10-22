@@ -1127,9 +1127,18 @@ fn build_engine(
     cfg: &Config,
     events: Option<&tokio::sync::broadcast::Sender<String>>,
 ) -> Result<Arc<Engine>> {
+    build_engine_in(cfg, events, &fed::fed_base_dir())
+}
+
+/// [`build_engine`] with the state directory named, so a test can stand one in.
+fn build_engine_in(
+    cfg: &Config,
+    events: Option<&tokio::sync::broadcast::Sender<String>>,
+    state_dir: &std::path::Path,
+) -> Result<Arc<Engine>> {
     refuse_unmigrated_store(cfg)?;
     // Every writer passes here, so this is where the state directory is closed if it was found open.
-    private_dir(&fed::fed_base_dir())?;
+    private_dir(state_dir)?;
     let embedder = build_embedder(&cfg.embed_kind)?;
     let embed_dim = embedder.as_ref().map(|e| e.dimensions());
     let store: Arc<dyn KnowledgeStore> = match cfg.store_kind.as_str() {
@@ -6895,6 +6904,83 @@ mod service_files {
             assert!(b.contains("move_"), "{install} moves a hand-written file aside");
             assert!(!b.contains("remove_file("), "{install} removes no file");
         }
+    }
+}
+
+#[cfg(test)]
+mod repayment {
+    use super::*;
+
+    /// crash-recovery.md K3: a writer process that opens a store with owed entries re-projects those
+    /// workspaces before it serves a read or accepts a write. An append whose projection never ran is
+    /// left in a scratch redb store; the engine every serving entry is handed comes back from
+    /// `build_engine` with nothing owed and the entity in its graph - so whatever the caller then
+    /// binds serves a graph that is not behind its log. Each serving entry takes its engine from
+    /// there.
+    #[test]
+    fn a_daemon_repays_what_it_owes_before_it_serves() {
+        let dir = std::env::temp_dir().join(format!("sg-repay-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let prov = supragnosis_core::Provenance {
+            host: "host-a".into(),
+            on_behalf_of: None,
+            workspace: "ws1".into(),
+            source_ref: None,
+            observed_at: 1,
+            confidence: None,
+            trust_tier: Default::default(),
+            sync: None,
+        };
+        let assertions = supragnosis_core::Assertions {
+            entities: vec![supragnosis_core::EntityAssertion {
+                name: "Owed Entity".into(),
+                kind: None,
+                description: None,
+            }],
+            ..Default::default()
+        };
+        {
+            let store = RedbStore::open(redb_path(data.to_str().unwrap())).expect("open");
+            let obs = supragnosis_core::Observation::with_assertions(
+                "appended, then the process died".into(),
+                prov,
+                assertions,
+            );
+            use supragnosis_core::AssertionStore;
+            store.add_observation(obs).expect("append");
+            use supragnosis_core::KnowledgeStore;
+            assert_eq!(store.owed_projections().unwrap().len(), 1, "owed, as a crash leaves it");
+        }
+        let cfg = Config {
+            host: "host-a".into(),
+            workspace: "ws1".into(),
+            store_kind: "redb".into(),
+            data_dir: data.to_str().unwrap().into(),
+            embed_kind: "none".into(),
+            session: "s".into(),
+            http: None,
+            viz: None,
+            mcp_auth: true,
+        };
+        let engine = build_engine_in(&cfg, None, &dir.join("state")).expect("the engine");
+        assert_eq!(engine.owed_count().unwrap(), 0, "repaid before the engine is handed over");
+        let graph = engine.graph(Some("ws1")).expect("graph");
+        assert!(graph.nodes.iter().any(|n| n.name == "Owed Entity"), "the owed append is in it");
+        drop(engine);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // The serving entries take the engine from build_engine and nowhere else.
+        let src = include_str!("main.rs");
+        let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
+        assert_eq!(app.matches("Engine::new(").count(), 1, "one place builds the engine");
+        let run = &app[app.find("async fn run(cfg: Config)").expect("run")..];
+        let run = &run[..run.find("\n}\n").expect("it closes")];
+        assert!(
+            run.contains("build_engine(&cfg"),
+            "the daemon and stdio server take it from there"
+        );
     }
 }
 
