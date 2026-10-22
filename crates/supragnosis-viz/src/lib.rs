@@ -1793,7 +1793,7 @@ mod tests {
                 src[..i].ends_with("path == ") || rest[end + 1..].trim_start().starts_with("=>");
             let path_like = routed
                 && (lit == "/"
-                    || lit.starts_with("/viewer.")
+                    || lit.starts_with("/viewer")
                     || (lit.starts_with("/api/")
                         && lit[5..]
                             .chars()
