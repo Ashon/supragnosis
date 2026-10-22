@@ -191,7 +191,8 @@ Peers tab showed, read from this Mac's daemon, and not shown while a remote prof
 - **Without a supragnosis.toml** the section says that sync is not set up and where it would be.
 - *(Revised by pairing.md Section 5: the pane offers "Let another Mac join this one", "Join another
   Mac", Remove this Mac, Stop syncing and Sync now; granting a joined Mac another workspace stays in
-  the file.)*
+  the file. The step that builds them is deferred by pairing.md's decision D16; until it lands the
+  CLI carries each act - `supragnosis invite`, `join`, `peer remove`, `hub leave`, `sync`.)*
 
 ### 3.5 About
 

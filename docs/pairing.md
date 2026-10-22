@@ -9,7 +9,7 @@
 > makes the person the out-of-band channel - they carry a one-time code from one screen to the
 > other and allow the join on the hub - and lets the two machines do the rest.
 >
-> Status: **specified; steps 1, 2 and 3 built** (Section 10). The author decided its choices on
+> Status: **specified; steps 1 to 3 built, 4 and 5 deferred** (Section 10, D16). The author decided its choices on
 > 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
 > (D11).
@@ -114,10 +114,13 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
   firewall, or the server's (ufw, firewalld) and the network's.
 - **Local Network access on a joining Mac.** macOS lets a process reach another machine on the
   local network only with Local Network access (System Settings > Privacy & Security > Local
-  Network); without it, a connection fails as if there were no route. The Linux hub run of step 3d
-  met this - the terminal running `supragnosis join` had no such access, while a system tool from
-  the same terminal did - and an unreachable hub's message on a Mac names it. How macOS asks the
-  daemon and the app for it is step 4's to settle, with the signed app.
+  Network); without it, a connection fails as if there were no route. Measured on macOS 27.0.1
+  after the Linux hub run of step 3d met it: the daemon's binary as a user LaunchAgent - ad hoc
+  signed as Homebrew ships it, signed with the Developer ID and an embedded usage description, or
+  inside a signed app bundle - was refused at once on every try, with no prompt seen, while
+  Apple's own `nc` from the same Mac reached the network. A Mac's daemon that cannot reach its hub
+  therefore works offline, as any partitioned node does (D16), and an unreachable hub's message, a
+  join's and a round's, names Local Network access on a Mac.
 
 A joining machine on Linux runs `supragnosis join`, reading the code on stdin, and shows the three
 words in the terminal while it waits for the hub's answer. It asks which invited workspaces to
@@ -452,6 +455,14 @@ as now (S6).
   the hub's name and the vouched keys go in `~/.supragnosis/hubs/`, beside the hub's pinned
   certificate and, while a join is open, its one-time key, so a release before pairing, which
   refuses keys it does not know, still starts and syncs.
+- **D16 - A hub out of reach is a partition the node works through** (the author, 2026-10-22, on
+  the Local Network finding above: "solve it as a distributed-systems problem"). A node that cannot
+  reach its hub - the network, a firewall, or macOS refusing its daemon the local network - works
+  offline: it records as before, its rounds back off and say why, and its next round after the hub
+  is reached converges as federation.md Section 5 guarantees. Merging what diverged meanwhile is the
+  fold's and the proposals' work, apart from the transport. No signing or bundling works around
+  macOS here in this version, and a joined machine's sync stays one-way unless the person ticks a
+  workspace to send (D12): it receives, and sends only what was chosen.
 - **Invitations are not configuration.** They live beside `supragnosis.toml`, not in it, since a
   file the person edits should not hold a ten-minute secret.
 - **Widening stays in the file.** Granting a joined machine another workspace is the act
@@ -549,10 +560,13 @@ as now (S6).
      a replaced machine receiving the removed one's events up to the bound and none after.
    - **3d. A Linux hub** [run] in a throwaway machine, invited over SSH with Allow in the terminal and
      joined from this Mac, with the run recorded in the pull request.
-4. **Settings**: the invitation and join sheets with Allow, the rows' Remove, Stop syncing and Sync
-   now, and the hint. `invite --json`, `invite --show --json` and `peer list --json`, which the
-   sheets read, join compatibility.md Section 6 then, with their schema and examples.
-5. **Setup** on a second Mac points to Join another Mac.
+4. **Settings** [deferred]: the invitation and join sheets with Allow, the rows' Remove, Stop
+   syncing and Sync now, and the hint. `invite --json`, `invite --show --json` and `peer list
+   --json`, which the sheets read, join compatibility.md Section 6 then, with their schema and
+   examples. Deferred by D16: on a Mac the daemon these sheets would set syncing cannot reach a hub
+   on the local network, so the sheets wait until a route for its Local Network access is chosen -
+   a daemon registered by the signed app, or another - and the CLI carries every scene meanwhile.
+5. **Setup** [deferred] on a second Mac points to Join another Mac - with step 4.
 
 ### 10.1 What splitting step 3 checked
 
@@ -568,6 +582,18 @@ as now (S6).
 | compatibility.md Section 4 | Extended: the join's wire and core's message signing bytes cross machines too, fixed by the code's prefix and pinned by known answers. |
 | Contradicts | None found. |
 | Owed | None new. |
+
+### 10.2 What deferring steps 4 and 5 checked
+
+| Against | Finding |
+|---|---|
+| P5 - absence is not negation, P24 - degrade loudly | Agrees. A hub out of reach is said in the round, `sync_status` and the join, with the reason - Local Network access named on a Mac - and the node goes on serving (D16). |
+| P17 - sharing | Agrees. A joined machine receives and sends only what the person ticked, as before (D12). |
+| federation.md Section 5 | Agrees. Convergence after a partition is what the log, the version vectors and the fold already give; nothing new is merged by the transport. |
+| daemon-lifecycle.md, "not a bundled daemon" | Kept. A daemon the app registers is one route for Local Network access, left open with step 4. |
+| settings-page.md Section 3.4 | Its revision note now says the acts wait, and that the CLI carries them. |
+| Contradicts | None found. |
+| Owed | Step 4's sheets and step 5's link, with the Local Network route; the JSON contract for `invite` and `peer list`. |
 
 ## 11. Closure map
 

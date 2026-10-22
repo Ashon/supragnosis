@@ -1111,7 +1111,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         c(
             "hub leave and the Settings rows say so before they act - hub leave prints it, and the step that builds the rows tests both",
             Evidence::Deferred(
-                "docs/pairing.md's Settings acts are not built yet. Revisit when its Section 10 step 4 lands",
+                "docs/pairing.md's Settings acts are deferred by its decision D16. Revisit when its Section 10 step 4 lands, once a route for the daemon's Local Network access on a Mac is chosen",
             ),
         ),
     ]),
