@@ -1114,6 +1114,12 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
         ),
     )]),
+    (15, &[c(
+        "a node with a hub runs a sync round on its own over its shared workspaces, one at a time whatever starts it, and says when the last ran, what it moved and why it failed",
+        Evidence::Deferred(
+            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 1 lands",
+        ),
+    )]),
 ];
 
 // docs/e2e.md Section 7 - the end-to-end scenarios (J rows).
