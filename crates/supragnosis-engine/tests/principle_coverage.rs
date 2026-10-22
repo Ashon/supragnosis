@@ -1304,6 +1304,7 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
             "a_second_backfill_embeds_nothing_and_keeps_a_stored_vector",
             "an_entity_whose_text_changed_mid_batch_is_left_for_the_next_run",
             "an_attached_vector_lands_only_where_none_is_stored",
+            "sr7_a_reproject_embeds_before_it_takes_the_write_lock",
         ]),
     )]),
     (8, &[c(

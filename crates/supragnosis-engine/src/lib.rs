@@ -2042,7 +2042,7 @@ impl Engine {
         // write would hand the projection a log that does not contain the observation it is
         // projecting. Scoping it to the read is what keeps that unrepresentable.
         let cx = &ReadCtx::default();
-        self.project_entities(&workspace, Some(&touched), cx)?;
+        self.project_entities(&workspace, Some(&touched), cx, &HashMap::new())?;
 
         // The edge ids this call asserted. Derived from the input rather than from the projection,
         // because the two answer different questions: this is "what did this observe name", while the
@@ -4955,7 +4955,47 @@ impl Engine {
         ws: &str,
         only: Option<&HashSet<String>>,
         cx: &ReadCtx,
+        prepared: &HashMap<String, Vec<f32>>,
     ) -> Result<usize, StoreError> {
+        let mut count = 0;
+        for mut entity in self.fold_entities(ws, only, cx)? {
+            let text = entity_text(&entity);
+            if let Some(existing) = self.store.get_entity(&entity.id)? {
+                // Keep the stored embedding ONLY if its source text is unchanged (IR4: never stale).
+                if existing.embedding.is_some() && entity_text(&existing) == text {
+                    entity.embedding = existing.embedding;
+                }
+                entity.properties = existing.properties;
+            }
+            if entity.embedding.is_none() {
+                // A vector computed before the write lock for this exact text (see `reproject`);
+                // otherwise embedded here.
+                if let Some(vec) = prepared.get(&text) {
+                    entity.embedding = Some(vec.clone());
+                } else if let Some(embedder) = &self.embedder {
+                    match embedder.embed_one(&text) {
+                        Ok(vec) => entity.embedding = Some(vec),
+                        Err(e) => tracing::warn!(
+                            entity_id = %entity.id, name = %entity.canonical_name, error = %e,
+                            "entity embedding failed - stored without name-meaning recall (degrade)"
+                        ),
+                    }
+                }
+            }
+            self.store.put_entity(entity)?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// The entity rows the log folds to (see [`Engine::project_entities`]), before anything is
+    /// read from the stored rows: no embedding, no carried properties.
+    fn fold_entities(
+        &self,
+        ws: &str,
+        only: Option<&HashSet<String>>,
+        cx: &ReadCtx,
+    ) -> Result<Vec<Entity>, StoreError> {
         let gates = self.gate_grants(Some(ws), cx)?;
         let mut obss = self.observations(Some(ws))?;
         obss.sort_by(|a, b| {
@@ -5021,7 +5061,7 @@ impl Engine {
             }
         }
 
-        let mut count = 0;
+        let mut out = Vec::with_capacity(name_cands.len());
         for (id, ncs) in &name_cands {
             let canonical =
                 self.policy.choose(ncs).map(|c| ncs[c.index].value.clone()).unwrap_or_default();
@@ -5030,7 +5070,7 @@ impl Engine {
                 .get(id)
                 .and_then(|ks| self.policy.choose(ks).map(|c| ks[c.index].value.clone()))
                 .unwrap_or_else(|| "Concept".to_string());
-            let mut entity = Entity {
+            out.push(Entity {
                 id: id.clone(),
                 kind,
                 canonical_name: canonical,
@@ -5039,30 +5079,40 @@ impl Engine {
                 properties: serde_json::Value::Null,
                 provenance: prov.get(id).cloned().unwrap_or_default(),
                 embedding: None,
-            };
-            let text = entity_text(&entity);
-            if let Some(existing) = self.store.get_entity(id)? {
-                // Keep the stored embedding ONLY if its source text is unchanged (IR4: never stale).
-                if existing.embedding.is_some() && entity_text(&existing) == text {
-                    entity.embedding = existing.embedding;
-                }
-                entity.properties = existing.properties;
-            }
-            if entity.embedding.is_none() {
-                if let Some(embedder) = &self.embedder {
-                    match embedder.embed_one(&text) {
-                        Ok(vec) => entity.embedding = Some(vec),
-                        Err(e) => tracing::warn!(
-                            entity_id = %entity.id, name = %entity.canonical_name, error = %e,
-                            "entity embedding failed - stored without name-meaning recall (degrade)"
-                        ),
-                    }
-                }
-            }
-            self.store.put_entity(entity)?;
-            count += 1;
+            });
         }
-        Ok(count)
+        Ok(out)
+    }
+
+    /// Vectors for the entity texts a re-materialization of `ws` will need - every row whose stored
+    /// vector is missing or was made for other text - computed with no lock held, as the backfill
+    /// does (semantic-retrieval.md SR7), so a write does not wait out the embedder. The projection
+    /// then takes a vector from here only for the exact text it was made for (IR4). Empty without an
+    /// embedder; a batch that fails is left to be embedded under the lock, as before.
+    fn vectors_for_reproject(&self, ws: &str) -> HashMap<String, Vec<f32>> {
+        let mut prepared = HashMap::new();
+        let Some(embedder) = &self.embedder else {
+            return prepared;
+        };
+        let Ok(rows) = self.fold_entities(ws, None, &ReadCtx::default()) else {
+            return prepared;
+        };
+        let mut texts: Vec<String> = Vec::new();
+        for row in &rows {
+            let text = entity_text(row);
+            let stored = self.store.get_entity(&row.id).ok().flatten();
+            let fresh = stored.is_some_and(|e| e.embedding.is_some() && entity_text(&e) == text);
+            if !fresh && !prepared.contains_key(&text) && !texts.contains(&text) {
+                texts.push(text);
+            }
+        }
+        for chunk in texts.chunks(32) {
+            let refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
+            if let Ok(vectors) = embedder.embed(&refs) {
+                prepared.extend(chunk.iter().cloned().zip(vectors));
+            }
+        }
+        prepared
     }
 
     /// Projects relations from the log - the edge half of what [`Engine::project_entities`] does for
@@ -5507,9 +5557,11 @@ impl Engine {
         // A re-materialization is a write section like observe's: it reads the log and then upserts
         // every row of the workspace, so an observe landing between the two would have its
         // projection overwritten by a snapshot taken before it. The engine's write guard serializes
-        // the two (architecture.md Section 14); reads stay concurrent.
-        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // the two (architecture.md Section 14); reads stay concurrent. The vectors it needs are
+        // computed first, with no lock held, so a write waits for the projection and not the model.
         let ws = workspace.unwrap_or(&self.default_workspace).to_string();
+        let prepared = self.vectors_for_reproject(&ws);
+        let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // K2: what this reproject repays is what the ledger held BEFORE it read the log. An append
         // landing while it runs - only a sync apply or a stamp, which append without the write
         // guard - may be missing from the snapshot it projects, so its entry stays for the next
@@ -5524,7 +5576,7 @@ impl Engine {
         let cx = &ReadCtx::default();
         // Entities: the same resolution write path the incremental observe uses, over ALL entities
         // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
-        let entities = self.project_entities(&ws, None, cx)?;
+        let entities = self.project_entities(&ws, None, cx, &prepared)?;
 
         // The same fold the incremental write runs, over every edge rather than one observe's.
         let relations = self.project_relations(&ws, None)?;
