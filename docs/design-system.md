@@ -37,7 +37,7 @@
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
 > demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
 > ladder says what it held back, is built. Step 63, the window's pages get only what they use, is
-> built.
+> built. Step 64, a pinch zooms as far as the fingers spread, is built.
 
 ## 1. Why this exists
 
@@ -2034,6 +2034,9 @@ and it fails when one of them appears in the viewer's source other than as an ar
    interface repaid, settings-page.md S8): a page in the main window may listen for and emit the
    shell's events, ask whether the window is full screen and drag it, and nothing else of the
    platform's: not the menus, the tray, images, paths or resources.
+64. **A pinch zooms as far as the fingers spread** [built] (Section 29.30; step 52's rule carried to
+   the trackpad): a trackpad pinch scales the map with the fingers, 1:1 around the pointer, as a
+   touch screen's pinch already does, and the mouse wheel keeps its step of 12% a notch.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -6097,3 +6100,47 @@ menu and tray themselves.
 scripts and fails on one no grant names, and holds the viewer's scripts to no platform call at
 all.
 
+### 29.30 Step 64: a pinch zooms as far as the fingers spread
+
+**What was found.** The author, 2026-10-23: zooming by touch is much faster than by the mouse
+wheel, so a pinch has to be made with great care. The map's wheel handler zooms 12% in or out for
+every wheel event, whatever its size. A mouse sends one event a notch, so the step is right for it.
+A trackpad pinch, which Chrome and Firefox send as wheel events with `ctrlKey` set, sends dozens a
+second, each a small delta - and each one moved the map the whole 12%. WebKit, the app's window
+among it, sends a trackpad pinch as gesture events instead, which the map did not take. A touch
+screen's pinch already follows the fingers, 1:1 (step 52).
+
+**Decisions.** None is open: step 52's rule - a pinch zooms as far as the fingers spread - is
+carried to the trackpad.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| Section 29.18 (step 52) | Two fingers pinch to zoom 1:1 under the fingers | agrees - the trackpad's pinch now follows the same rule, through the same camera move |
+| Section 29.4 | A wheel or pinch on the map is the person's move | agrees - every pinch event is one, as before |
+| U28 | Drawing never moves the layout | agrees - only the camera moves |
+| U31 and U40 | The map pans and zooms within the frame budget | agrees - a pinch moves the camera as a wheel step does, and the bench's wheel steps are unchanged |
+| WCAG 2.5.1 | A multipoint gesture has a single-pointer alternative | agrees - unchanged: the wheel, the zoom buttons and Fit |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The mouse wheel** is unchanged: 12% in or out a notch, eased, around the pointer.
+- **A trackpad pinch as wheel events** - `ctrlKey` set, as Chrome and Firefox send it - scales the map
+  by `exp(-deltaY / 100)` an event, the delta in pixels, at most 25% either way, 1:1 around the
+  pointer with no easing, as a touch pinch does.
+- **A trackpad pinch as gesture events** - WebKit's `gesturestart`, `gesturechange` and
+  `gestureend` - scales the map by the ratio of the gesture's scale to the last it reported, around
+  the pointer, and the page is not magnified. While a gesture runs, `ctrlKey` wheel events are not
+  taken, so no pinch counts twice.
+- **A touch screen's pinch** is unchanged.
+
+**What this step does not do.** A two-finger scroll on a trackpad is a wheel event without `ctrlKey`,
+which an engine does not tell apart from a mouse's; it keeps the wheel's step.
+
+**Guarded by** `a_pinch_zooms_as_far_as_the_fingers_spread` in the viewer's keys tests: the wheel
+handler keeps the notch step, a `ctrlKey` wheel scales by the delta through the touch pinch's camera
+move and is not taken during a gesture, and the gesture events scale by the ratio and prevent the
+page's own zoom. A browser check sends ten small `ctrlKey` wheel events and a gesture through the
+viewer and reads the camera's scale.
