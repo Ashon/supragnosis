@@ -93,7 +93,8 @@ costs eight pixels and means the field is never wholly absent from the panel.
 | description | when asserted | nothing: an unasserted description is the normal case (P8 makes it optional at capture) |
 | effective tier, as text | when the scope is not uniform | stated in the scope line; the dot stays |
 | origin | when the scope is not uniform | stated in the scope line; per-attestation hosts stay on the card |
-| workspace | when the scope spans more than one | the workspace chips name it. An entity whose `workspace` is empty sits in more than one through a merge, and says so rather than showing nothing |
+| workspace | when the scope spans more than one | the workspace chips name it. An entity whose `workspace` is empty sat in more than one through a merge, and says so rather than showing nothing; since design-system.md step 51a no merge crosses a workspace, so the case cannot arise |
+| also named in | on the local console, after the workspace row, when another workspace has an entity by the same name: one line per workspace, with Show (design-system.md Section 29.16) | nothing when no other workspace has one; "Not compared with other workspaces" with the reason when the read failed or the workspace list did not load; absent on the read tier, which compares no workspaces. *(Added by design-system.md step 51b.)* |
 | aliases | when non-empty | nothing to state |
 | contested block | whenever `contested` is true, expanded, with its actions | never silenced (D1) |
 | competitors resolved by trust | one visible line with the count, expanding to the rows and their actions | never hidden, only folded: resolution.md 4.1 makes these informational, P6 keeps them queryable |

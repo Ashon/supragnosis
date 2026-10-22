@@ -30,7 +30,7 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
-> Step 51a, All as a view, is built.
+> Step 51a, All as a view, is built, and step 51b, the same name, is specified.
 
 ## 1. Why this exists
 
@@ -779,7 +779,10 @@ Everything that waits for a person's decision, in one place, split in three:
 - **Suggestions**: merge suggestions, name variants and names two workspaces share. A suggestion
   offers "Propose", which opens a proposal and decides nothing; a name two workspaces share is two
   entities, so it offers only Show on the map. *(Revised by step 51a: the shared name offered Propose
-  in words, which a merge across workspaces cannot be.)*
+  in words, which a merge across workspaces cannot be.)* The shared-name row is titled by the name as
+  written, says each entity's workspace on its chip and says what the shared name means (Section
+  29.16). *(Revised by step 51b: it was titled by its lower-case key, and its chips named the same
+  entity twice.)*
 - **Health**: overloaded contexts, unlinked entities, merge cycles, type axis collisions, the
   conflicts trust settled and, under All, verdicts filed away from their proposal, folded
   by default. P22 wants curation where the reader already is, not a second job. *(Revised by step
@@ -1960,6 +1963,10 @@ and it fails when one of them appears in the viewer's source other than as an ar
    proposal's workspace, and one filed elsewhere is listed in Health; every console act under All is
    filed where its item lives; and a merge joins entities of one workspace. The same name is step
    51b, and Same as... and Keep ... instead are step 51c.
+51b. **The same name** (Section 29.16; D9; Section 7, inspector.md Section 5 and remote-viewer.md
+   Section 3.2 revised): on the local console the sheet says when another workspace
+   uses the entity's name, All lights the drawn namesakes with what is pointed at or selected, and
+   the Suggestions row for a shared name says what it is and which workspace each entity is in.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -4941,3 +4948,76 @@ accept is listed in the node-wide report only),
 `under_all_the_console_files_where_items_live` in the viewer's review tests; and
 `star_is_a_view_on_the_local_surface` and `a_remote_merge_names_only_its_own_workspaces_entities` in
 the agent surface's tests.
+
+### 29.16 Step 51b: the same name
+
+**What was found.** Measured on the Graph and Review pages:
+- **The same name in two workspaces reads as two unrelated things.** "Payment service" in infra and
+  in atlas-web sit apart on the map, and neither the sheet nor the map says the store noticed the
+  shared name.
+- **The Suggestions row for it says little.** "Same name in two workspaces: payment service" shows
+  the name as the key it is grouped by, in lower case; its chips name the same entity twice with
+  nothing to tell them apart; and nothing says what the shared name means now that a merge cannot
+  join them (Section 29.15).
+
+**Decisions.** The author approved D9 - the same name across workspaces is said - and decided
+(2026-10-22) that it is said on the local console only.
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| P15 and Section 29.15 | Resolution stays inside a workspace; the same name in two is two entities | agrees - the shared name is said, and nothing offers to merge it |
+| P17 and remote-viewer.md Sections 3.2 and 12 | A node-wide read exists only on the local trust surface; the read tier's union is never computed across workspaces | agrees - the sheet's line and the lighting are the local console's alone, and the read tier refuses `/api/namesakes`, saying where the same name is shown |
+| P5 and inspector.md D3 | A read that could not answer is said, never shown as nothing | agrees - on the local console a failed read, or a workspace list that did not load, is said on the sheet. The read tier has no comparison at all, so no line is ever missing there: it says what it reads, each workspace alone, in remote-viewer.md Section 12 |
+| Section 29.9 | A hover lights without dimming the rest; dimming stays with a selection | agrees - a hover lights the drawn namesakes in the hover's set, and a selection lights them with its neighbours |
+| U37 and U38 | The map does no work per frame that a load can do; what a selection lights keeps its strength | agrees - the namesakes are indexed when the graph loads. A selection's namesakes are lit as its neighbours are, so they do not fade; a hover's fade by rank, as a hover's neighbours do |
+| Focus framing, the viewer's rule | Focus frames exactly what the selection lights | agrees, with one exception the code says - focus frames the entity and its neighbours, not its namesakes, which can sit across the map |
+| Section 29.4 and Section 29.11 | A change of scope starts the selection history afresh and ends the working set | agrees - Show changes the scope to All only when it is not already All, as any change of scope does, so Back does not return to the entity left; under All it selects in place, and Back returns |
+| Section 7, Suggestions | A row says what it is and offers its act | revised - the shared-name row is titled by the name as written, its chips say their workspace, and a line says what the shared name means; it keeps Show on the map |
+| Section 9 | System terms stay out of a line read first | agrees - the Suggestions line names no principle |
+| Boundaries' Workspace line, the viewer's words | A line says what is drawn, and is true | agrees - it said "no entity is in two", which a merge across workspaces could make untrue; since step 51a none can, and the line says what the shared name means |
+| inspector.md Section 5 | The sheet's rows | revised - it gains Also named in, after the workspace row; its workspace row's "sits in more than one through a merge" can no longer arise |
+| U17 | No identifier in a line read first | agrees - each entity is said by its name and its workspace, and no answer spells an id |
+| U19 | Every act is a control with a name | agrees - Show is a button named with the entity it shows |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **Also named in.** On the local console, the sheet of an entity that another workspace has an
+  entity by the same name for says, after its workspace line, "Also named in atlas-web: Payment
+  service (Service)", with Show; with several, one line each, in workspace order.
+  - The namesakes come from `/api/namesakes?entity=<id>&in=<ws>&in=<ws>...`, one `in` for each
+    workspace the page lists. Each costs one lookup of the id the entity's name has there, the same
+    trimmed, lower-case name the id is made from, and each namesake found costs the fold of its own
+    workspace's merges: a namesake its workspace merged into another entity is left out, as the
+    Suggestions row leaves it out. The sheet reads once per selected entity and keeps the answer
+    while the graph does not change, so a poll re-draws it without reading again. Nothing shows
+    while the read is in flight, and an answer for an entity no longer selected is dropped.
+  - If the read fails, the sheet says "Not compared with other workspaces:" and why; if the page's
+    workspace list did not load, "Not compared with other workspaces: the workspace list did not
+    load". The page makes no read until it knows it is on the local console, and none for an entity
+    whose workspace is empty, which since step 51a cannot arise. An entity the server does not hold
+    answers 404, "no entity by that id".
+  - Show selects that entity. Under All it selects in place; otherwise it goes to the address
+    `?workspace=*&entity=<id>`, so the selection waits for All's graph.
+- **Lit together.** Under All on the local console, the drawn entities of other workspaces with the
+  same name light with what is pointed at - in the hover's set, without dimming the rest - and with
+  what is selected, as its neighbours do. They are indexed by the page's lower case of the trimmed
+  name when the graph loads, which can differ from the server's rule on rare characters; the sheet's
+  line is the server's.
+- **Suggestions.** The shared-name row reads "Same name in 2 workspaces: Payment service", with the
+  count of workspaces and the name as its first member writes it. Each chip keeps its type and says
+  its workspace, "Payment service - infra", read from the graph the page holds; a member the page
+  does not hold shows its name alone. Its line says "Each workspace keeps its own entity by this
+  name, and a merge cannot join entities of two workspaces." It keeps Show on the map, which frames
+  them with its way back to Review.
+- **Boundaries.** The Workspace line reads "A workspace outline around each workspace: a sharing
+  unit. The same name in two workspaces is two entities".
+- **The read tier** refuses `/api/namesakes`: "the read tier compares no workspaces - each is read
+  alone; the same name is shown at a node's own console (docs/remote-viewer.md Section 12)".
+
+**What this step does not do.**
+- It does not offer Same as... or Keep ... instead, which are step 51c.
+- It does not compare names on the read tier.
+- It does not look up aliases: a name is matched by the id's rule, as the Suggestions row matches it.

@@ -91,6 +91,7 @@ viewer later therefore stays closed until someone decides what it may do (V2). O
 | `/api/resolve/preview` | refused | The diff and checks a settle at the console would have (design-system.md Section 29.2). It writes nothing, but the read tier offers no settle to preview, and answering it would need Section 3.4's unknown-id rule for every target. |
 | `/api/resolve/undo` | refused | The acts that would reverse a merged confirmation or demotion, with their diff and checks (design-system.md Section 29.3). It writes nothing, and is refused for the preview's reasons. |
 | `/api/reify`, `/api/propose_merge`, `/api/propose_split` | refused | Writes. A principal with a write grant reaches `observe` and `propose` through MCP. |
+| `/api/namesakes` | refused | The same name in other workspaces (design-system.md Section 29.16). Each workspace is read alone here (Section 12), so the tier compares none; the same name is shown at a node's own console. *(Added by design-system.md step 51b.)* |
 
 A refusal is a 403 whose reason says where the act can be done instead.
 
