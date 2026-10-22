@@ -2132,3 +2132,64 @@ fn s10_the_console_counts_the_unmerges_a_re_merge_follows() {
         "the other direction counted"
     );
 }
+
+/// GIVEN an entity said twice and a second entity merged into it, WHEN the graph and the hypergraph
+/// are read, THEN the entity's time is the latest observation among its rows, the merged-away row's
+/// included, and both reads give it the same time (design-system.md Section 29.19, P16).
+#[test]
+fn p16_an_entity_is_last_said_at_its_latest_attestation() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let at = |n: &str, t: u64| {
+        store
+            .add_observation(Observation::with_assertions(
+                format!("{n} at {t}"),
+                Provenance {
+                    host: "h".into(),
+                    on_behalf_of: None,
+                    workspace: "infra".into(),
+                    source_ref: None,
+                    observed_at: t,
+                    confidence: None,
+                    trust_tier: TrustTier::default(),
+                    sync: None,
+                },
+                Assertions {
+                    entities: vec![supragnosis_core::EntityAssertion {
+                        name: n.into(),
+                        kind: None,
+                        description: None,
+                    }],
+                    ..Default::default()
+                },
+            ))
+            .expect("add");
+    };
+    at("Postgres", 1_000);
+    at("Postgres", 3_000);
+    at("PostgreSQL", 5_000);
+    infra.reproject(Some("infra")).expect("reproject");
+    let (a, b) = (Entity::make_id("infra", "PostgreSQL"), Entity::make_id("infra", "Postgres"));
+    let time = |id: &str| {
+        let g = infra.graph(Some("infra")).expect("graph");
+        let h = infra.hypergraph(Some("infra")).expect("hypergraph");
+        (
+            g.nodes.iter().find(|n| n.id == id).and_then(|n| n.last_said),
+            h.nodes.iter().find(|n| n.id == id).and_then(|n| n.last_said),
+        )
+    };
+    assert_eq!(time(&b), (Some(3_000), Some(3_000)), "the latest of two observations");
+    let merge = propose_in(&infra, "infra", "entity_merge", vec![a, b.clone()], Some(b.clone()))
+        .expect("propose");
+    infra
+        .review_proposal(
+            Some("infra".into()),
+            merge,
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Console,
+        )
+        .expect("merge");
+    assert_eq!(time(&b), (Some(5_000), Some(5_000)), "the merged-away row's time counts");
+}

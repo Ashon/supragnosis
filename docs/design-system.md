@@ -31,7 +31,7 @@
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
 > Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
-> and Keep ... instead, and step 52, the map on a phone. Step 53, time on the map, is specified.
+> and Keep ... instead, step 52, the map on a phone, and step 53, time on the map.
 
 ## 1. Why this exists
 
@@ -1983,7 +1983,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    inspector.md Section 6 revised): one finger moves the map and two zoom it, the page opens on the
    map, the inspector's sheet has two heights, and the camera buttons sit at the map's foot above the
    sheet.
-53. **Time on the map** (Section 29.19; Section 6, U24, inspector.md Section 5 and compatibility.md
+53. **Time on the map** [built] (Section 29.19; Section 6, U24, inspector.md Section 5 and compatibility.md
    Section 7 revised): each entity carries when it was last said, the hover card, the sheet and List
    say it, and a Said filter dims what was not said today, in the last 7 days or since the person's
    last visit.
@@ -5276,3 +5276,9 @@ No row needs a principle changed.
 - It does not time relations, or replay the map as it was at a past moment.
 - It does not know when knowledge arrived: a time is when it was said, so something synced after the
   last visit but said before it is not "since your last visit".
+
+**Guarded by** `p16_an_entity_is_last_said_at_its_latest_attestation` in the engine's policy cases
+(the latest of two observations, a merged-away row's time counted, the graph and the hypergraph
+agreeing) and `the_map_says_when_each_entity_was_said` in the viewer's key tests (the Said section
+and its radio group, the read tier's missing last visit, the visit's half hour, the status line, the
+relations dimmed, and the hover card, the sheet and List saying the time).
