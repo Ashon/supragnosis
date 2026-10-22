@@ -366,8 +366,13 @@ Implemented:
   computable from a workspace and a name (remote-viewer.md Section 3.4), and one the hub may not serve
   says why, as the tool does (R5).
 
-Specified but not implemented: `supragnosis://workspace/{ws}/summary`, `supragnosis://proposal/{id}`
-(a proposal id is dereferenceable today through the `get_proposal` tool), and
+- `supragnosis://proposal/{id}` - a proposal, read where it lives: the same answer as the
+  `get_proposal` tool under `workspace: "*"` (its targets, verdicts, state, belief diff and checks).
+  An unknown id is `resource_not_found` saying absence is not a negation; on the hub's agent surface
+  a proposal in a workspace outside the reader's grants answers exactly as an unknown one, and one the
+  hub may not serve says why (R5).
+
+Specified but not implemented: `supragnosis://workspace/{ws}/summary` and
 `supragnosis://workspace/{ws}/canon-policy` (the canon-policy artifact itself is M4 Phase 5).
 
 ### Prompts
@@ -807,8 +812,8 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   planting a delimiter in the content cannot collide an id with another observation (Principle 18).
   `Assertions::hash_into`, `attestation_signing_bytes`, `provenance_order`, and `absorb` **exhaustively
   destructure** their inputs, so adding a model field is a compile error that forces the
-  identity-vs-metadata and signed-vs-derived decisions to be explicit. Every entity and observation
-  id the system hands out is a dereferenceable `supragnosis://` URI (Section 7).
+  identity-vs-metadata and signed-vs-derived decisions to be explicit. Every entity, observation and
+  proposal id the system hands out is a dereferenceable `supragnosis://` URI (Section 7).
 - Principle 16 (topology-independent convergence): CAS dedup + HLC total order + deterministic
   re-materialization (`reproject` replays the log in `(ordering_hlc, id)` order). Query responses pin ties
   and truncation by stable id. Per the 8th revision, the two convergence points are distinguished:
