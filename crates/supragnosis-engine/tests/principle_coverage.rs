@@ -1438,12 +1438,7 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (5, &[c(
         "connect without a client argument only reads",
-        Evidence::Deferred(
-            "`connect_list` reaches `Client::installed`/`entry`, which stat and read files, and the writers \
-             (`run_client_cli`, `write_replacing`) are reached only after a client id parses - but nothing asserts \
-             the listing leaves HOME untouched; connect_json_matches_its_example runs it under a nonexistent HOME \
-             without checking. Revisit when that test asserts the temp HOME is still absent afterwards",
-        ),
+        Evidence::Scenario(&["connect_without_an_app_only_reads"]),
     )]),
     (6, &[c(
         "the capture hook never blocks the agent, never writes to the store itself, and speaks only after a \
