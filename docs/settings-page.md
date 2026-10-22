@@ -138,7 +138,9 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   owed - and the last recovery (crash-recovery.md K5). The words are design-system.md Section 9's
   state words (step 45).
 - **Start at Login** is a switch, with the behaviour daemon-lifecycle.md Section 6 gave the tray's
-  check item: on is `service install --take-over`, off is `service uninstall`.
+  check item: on is `service install --take-over`, off is `service uninstall`. A change the CLI
+  refuses shows as a failure, "Start at Login was not turned on" or "... off", with the CLI's reason
+  beneath it (daemon-lifecycle.md L4), and the switch then shows what is true.
 - **Restart Daemon** restarts it, and the CLI's answer shows at the foot of the page. The page then
   reads the daemon's state every two seconds until it answers, for up to a minute, as it does
   whenever it opens on a daemon that is not answering: a restart still coming up, or one reported as
@@ -331,6 +333,10 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   place of Restart for a store the daemon cannot open, Rebuild index on the Search row, the command
   stopping the app's own daemon before the CLI resets the store and attaching after, and the page
   following the re-embedding.
+- **Feedback (Section 3)**: `a_refused_login_change_says_why` and `a_refused_server_change_says_why`
+  - a change the CLI refuses (Start at Login, Use, Remove) reaches the page as an error carrying the
+  CLI's reason, returned as it is, under a failure title of the control's own, so it keeps until it
+  is read and never shows as the success it was not (daemon-lifecycle.md L4).
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps
   items, now tests the page's app rows: the state, and the button's label or its absence.
 
