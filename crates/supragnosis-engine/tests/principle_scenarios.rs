@@ -1270,6 +1270,117 @@ fn sr7_a_reproject_embeds_before_it_takes_the_write_lock() {
     }
 }
 
+/// guard (P3, architecture.md Section 14): a relation accumulates its attestations the way an
+/// entity does, and that changes nothing about how far the edge is trusted. One agent asserts an
+/// edge, and the same observation is said again later; another, on another host, asserts the edge
+/// twice in one observation. The edge carries every attestation, credited once per observation, and
+/// the graph counts them as `sources` - while its confidence is still the HLC-latest asserting
+/// observation's. A fresh replay of the same log writes the same rows (IR3).
+#[test]
+fn p3_a_relation_accumulates_its_attestations() {
+    let store = Arc::new(InMemoryStore::new());
+    let a = Engine::new(store.clone(), "host-a", WS)
+        .with_clock(Arc::new(ScriptedClock::new(1_000, 10)));
+    let b = Engine::new(store.clone(), "host-b", WS)
+        .with_clock(Arc::new(ScriptedClock::new(5_000, 10)));
+    let edge = |description: &str| RelationInput {
+        from: "driver".into(),
+        kind: "depends_on".into(),
+        to: "kernel".into(),
+        description: Some(description.into()),
+        valid_from: None,
+        valid_to: None,
+    };
+    let say = |e: &Engine, content: &str, confidence: f32, relations: Vec<RelationInput>| {
+        e.observe(ObserveInput {
+            content: content.into(),
+            workspace: None,
+            source_ref: None,
+            confidence: Some(confidence),
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations,
+        })
+        .expect("observe");
+    };
+    say(&a, "the driver needs the kernel", 0.9, vec![edge("loads into it")]);
+    say(&a, "the driver needs the kernel", 0.9, vec![edge("loads into it")]);
+    say(
+        &b,
+        "kernel first, then the driver",
+        0.4,
+        vec![edge("loads into it"), edge("loads into it")],
+    );
+
+    let id = supragnosis_core::Relation::make_id(
+        &Entity::make_id(WS, "driver"),
+        "depends_on",
+        &Entity::make_id(WS, "kernel"),
+    );
+    let row = store.all_relations(Some(WS)).unwrap().into_iter().find(|r| r.id == id).unwrap();
+    let hosts: Vec<&str> = row.attestations.iter().map(|p| p.host.as_str()).collect();
+    assert_eq!(hosts, ["host-a", "host-a", "host-b"], "every attestation, once per observation");
+    assert_eq!(row.provenance.host, "host-b", "the HLC-latest asserting observation's");
+
+    let edge_of = |e: &Engine| {
+        let g = e.graph(Some(WS)).unwrap();
+        let x = g.edges.iter().find(|x| x.kind == "depends_on").unwrap();
+        (x.sources, x.confidence, x.trust_tier)
+    };
+    let (sources, confidence, tier) = edge_of(&a);
+    assert_eq!(sources, 3, "the graph counts the edge's support");
+    assert_eq!(
+        confidence,
+        Some(0.4),
+        "trust still comes from the latest assertion, not the most"
+    );
+    assert_eq!(tier, TrustTier::AgentExtracted);
+
+    let fresh = Engine::new(store.clone(), "host-c", WS);
+    let before = serde_json::to_string(&a.graph(Some(WS)).unwrap()).unwrap();
+    fresh.reproject(Some(WS)).expect("replay");
+    assert_eq!(serde_json::to_string(&fresh.graph(Some(WS)).unwrap()).unwrap(), before);
+    let replayed = store.all_relations(Some(WS)).unwrap().into_iter().find(|r| r.id == id).unwrap();
+    let json = |r: &supragnosis_core::Relation| serde_json::to_string(&r.attestations).unwrap();
+    assert_eq!(json(&replayed), json(&row), "incremental write equals replay (IR3)");
+}
+
+/// guard (P3, P15; architecture.md Section 14): a merge that collapses two edges onto one counts the
+/// support of both, as a merged node counts its members'. `api -> db` is said three times and
+/// `svc -> db` once; once `svc` is merged into `api`, the one edge left counts four.
+#[test]
+fn p3_a_merged_edge_counts_the_support_of_every_row() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine =
+        Engine::new(store, "host-a", WS).with_clock(Arc::new(ScriptedClock::new(1_000, 10)));
+    let uses = |from: &str| RelationInput {
+        from: from.into(),
+        kind: "uses".into(),
+        to: "db".into(),
+        description: None,
+        valid_from: None,
+        valid_to: None,
+    };
+    for n in 1..=3 {
+        observe(
+            &engine,
+            &format!("api uses the db, said {n}"),
+            &["api", "db"],
+            vec![uses("api")],
+        );
+    }
+    observe(&engine, "svc uses the db", &["svc", "db"], vec![uses("svc")]);
+    let (api, svc) = (Entity::make_id(WS, "api"), Entity::make_id(WS, "svc"));
+    let merge = propose_merge(&engine, &[&api, &svc], &api, "ashon");
+    review(&engine, &merge, "merge", "reviewer");
+
+    let g = engine.graph(Some(WS)).unwrap();
+    let edges: Vec<_> = g.edges.iter().filter(|e| e.kind == "uses").collect();
+    assert_eq!(edges.len(), 1, "the merge collapsed the two edges onto one");
+    assert_eq!(edges[0].sources, 4, "and the one counts the support of both");
+}
+
 // --- P16 (4th revision): read-path reproducibility with ties -----------------------------------
 
 /// guard (principles.md P16 "query responses must be deterministic too"): keyword hits that tie

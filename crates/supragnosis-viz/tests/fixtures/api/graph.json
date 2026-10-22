@@ -2,6 +2,7 @@
   "edges": [
     {
       "from": "31cedf07de3f1acf5c0d044a7690810289b5701259f3e1cb4c0e49027a5acd27",
+      "sources": 1,
       "to": "b44ceaf256e12fea348ffea32efe41fb61e0a8d92e54740ebce8616cd8035829",
       "trust_tier": "agent_extracted",
       "type": "depends_on"

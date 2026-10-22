@@ -465,6 +465,7 @@ mod tests {
                     to: to.clone(),
                     kind: "rel".into(),
                     provenance: prov(),
+                    attestations: Vec::new(),
                     valid_from: None,
                     valid_to: None,
                 })

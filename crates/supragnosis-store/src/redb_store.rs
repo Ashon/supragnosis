@@ -83,7 +83,7 @@ fn backend(e: impl std::fmt::Display) -> StoreError {
 
 /// The store format this build writes (docs/compatibility.md Section 3). Section 3.7 says what
 /// raises it; a raise adds its step to [`upgrade_to`], its row to Section 3.2 and a golden store.
-pub const FORMAT: u32 = 3;
+pub const FORMAT: u32 = 4;
 
 /// The lowest format a binary must implement to share a store this build has written. Raised when
 /// a binary of an earlier format, writing here, would lose or contradict something (Section 3.7).
@@ -196,26 +196,33 @@ fn upgrade_to(txn: &redb::WriteTransaction, to: u32) -> Result<(), StoreError> {
         // appends were projected, and nothing vouches for them, so every log row is owed once: one
         // reproject of each workspace, which repairs whatever an older build's crash left behind
         // (crash-recovery.md Section 4).
-        2 => {
-            use redb::ReadableMultimapTable;
-            let by_ws = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
-            let mut owed = txn.open_table(OWED).map_err(backend)?;
-            for entry in by_ws.iter().map_err(backend)? {
-                let (ws, ids) = entry.map_err(backend)?;
-                for id in ids {
-                    owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
-                }
-            }
-            Ok(())
-        }
+        2 => owe_every_row(txn),
         // Format 3 is the table of the app that wrote each attestation: it starts empty, since what
         // was written before it records no app (design-system.md Section 29.8).
         3 => {
             txn.open_table(APPS).map_err(backend)?;
             Ok(())
         }
+        // Format 4 is a relation row that carries its attestations (architecture.md Section 14).
+        // Relations are derived, so nothing is rewritten here: every log row is owed once, and the
+        // first open re-projects each workspace, giving every relation its list.
+        4 => owe_every_row(txn),
         _ => Err(StoreError::Backend(format!("no upgrade step to store format {to}"))),
     }
+}
+
+/// Owes every log row a projection, so the next open re-projects every workspace.
+fn owe_every_row(txn: &redb::WriteTransaction) -> Result<(), StoreError> {
+    use redb::ReadableMultimapTable;
+    let by_ws = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
+    let mut owed = txn.open_table(OWED).map_err(backend)?;
+    for entry in by_ws.iter().map_err(backend)? {
+        let (ws, ids) = entry.map_err(backend)?;
+        for id in ids {
+            owed.insert(id.map_err(backend)?.value(), ws.value()).map_err(backend)?;
+        }
+    }
+    Ok(())
 }
 
 fn encode_vector(v: &[f32]) -> Vec<u8> {
@@ -1064,6 +1071,7 @@ mod tests {
                     kind: "depends_on".into(),
                     description: None,
                     provenance: prov_in("ws1"),
+                    attestations: Vec::new(),
                     valid_from: None,
                     valid_to: None,
                 })
@@ -1267,11 +1275,42 @@ mod tests {
         let store = RedbStore::open(&path).expect("upgrade");
         assert_eq!(
             store.format().expect("format"),
-            StoreFormat { format: 3, min_reader: 2, format_by: Some(RELEASE.to_string()) }
+            StoreFormat { format: FORMAT, min_reader: 2, format_by: Some(RELEASE.to_string()) }
         );
         assert!(store.attestation_apps(&["k".to_string()]).expect("the table opens").is_empty());
         drop(store);
         assert!(!copy_beside(&path, 2).exists(), "min_reader did not move, so no copy");
+        let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+    }
+
+    /// compatibility.md Sections 3.2 and 3.7, architecture.md Section 14: a format 3 store is
+    /// upgraded to 4 by owing every log row once - relations are derived, so the first open
+    /// re-projects them with their attestations - and min_reader stays 2, so no copy is kept.
+    #[test]
+    fn a_format_3_store_owes_every_row_so_its_relations_are_reprojected() {
+        let path = tmp_path();
+        let obs = Observation::new("said before relations accumulated".into(), prov_in("ws1"));
+        let id = obs.id.clone();
+        {
+            let store = RedbStore::open(&path).expect("open");
+            store.add_observation(obs).expect("append");
+            store.clear_owed(std::slice::from_ref(&id)).expect("projected then");
+            let txn = store.db.begin_write().expect("txn");
+            {
+                let mut meta = txn.open_table(META).expect("meta");
+                meta.insert("format", "3").expect("format");
+                meta.insert("min_reader", "2").expect("min_reader");
+            }
+            txn.commit().expect("commit");
+        }
+        let store = RedbStore::open(&path).expect("upgrade");
+        assert_eq!(
+            store.format().expect("format"),
+            StoreFormat { format: 4, min_reader: 2, format_by: Some(RELEASE.to_string()) }
+        );
+        assert_eq!(store.owed_projections().expect("ledger"), vec![(id, "ws1".to_string())]);
+        drop(store);
+        assert!(!copy_beside(&path, 3).exists(), "min_reader did not move, so no copy");
         let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
     }
 

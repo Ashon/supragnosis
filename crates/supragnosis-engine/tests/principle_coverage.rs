@@ -3618,12 +3618,10 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "the_format_2_store_v0_4_7_wrote_reads_whole",
         ])),
         c("a relation accumulates attestations the way an entity and an observation do",
-          Evidence::Deferred(
-            "M3c/M5 - relation provenance is still a single attestation, so a second assertion of \
-             the same edge replaces rather than accumulates. Recorded in architecture.md Section 14 \
-             under the Principle 1/6 deferral but never given a clause here; the conflict-surfacing \
-             half is Principle 6's own deferred row",
-        )),
+          Evidence::Scenario(&[
+            "p3_a_relation_accumulates_its_attestations",
+            "p3_a_merged_edge_counts_the_support_of_every_row",
+          ])),
         // Named by three documents and tracked by none until now: P3 demands it here, P15 demands
         // both directions of it, and proposal-workflow.md counts "entity-merge / split" as one of
         // the five gated intents. The implementation shipped five kinds with the split half missing,
