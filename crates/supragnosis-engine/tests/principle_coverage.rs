@@ -3403,6 +3403,8 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/tests/daemon_exit.rs"),
     include_str!("../../supragnosis-cli/tests/embed_reset.rs"),
     include_str!("../../supragnosis-mcp/src/remote.rs"),
+    // The agent surface's own unit tests (design-system.md Section 29.15).
+    include_str!("../../supragnosis-mcp/src/lib.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.
     include_str!("../../../app/src/main.rs"),
@@ -3808,10 +3810,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // workspaces belonged to no workspace's canon (design-system.md Section 29.15).
         c("resolution is scoped to the workspace - a merge joins entities of one workspace, and an \
            all-workspaces read is the union of each workspace's resolution",
-          Evidence::Deferred(
-            "specified by design-system.md step 51a. Revisit when its build lands the refusal and \
-             the per-workspace fold",
-          )),
+          Evidence::Scenario(&[
+            "p15_a_merge_never_crosses_a_workspace",
+            "p15_a_gate_act_names_only_its_own_workspaces_observations",
+            "p15_a_split_names_only_its_own_workspaces_merge",
+            "p15_the_all_workspaces_view_is_the_union_of_each_workspaces_fold",
+          ])),
         c("identity across workspaces is expressed only through an explicit alignment assertion",
           Evidence::Deferred(
             "no alignment assertion exists, for entities or for types (P11), so nothing yet says two \

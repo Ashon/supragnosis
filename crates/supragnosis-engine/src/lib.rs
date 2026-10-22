@@ -367,7 +367,8 @@ pub struct CurationReport {
     /// Entities colliding under the SAME normalization the entity id uses (`trim`+`lowercase`).
     /// Within one workspace this is necessarily empty - two such entities would share an id and be
     /// one row - so it reports only **cross-workspace** name collisions, and only when the report is
-    /// built unscoped. Orthographic duplicates inside a workspace are `name_variants` below.
+    /// built unscoped. They are two entities that share a name, never a merge to propose (Principle
+    /// 15). Orthographic duplicates inside a workspace are `name_variants` below.
     pub duplicates: Vec<DuplicateGroup>,
     /// Oversized co-occurrence contexts - loose grab-bags, split/refine candidates (Principle 11).
     pub grab_bags: Vec<GrabBag>,
@@ -415,7 +416,29 @@ pub struct CurationReport {
     /// Principle 9). Informative, not blocking: an axis collision is legal but usually a mistake -
     /// the one structural T-Box check available before a subtype hierarchy exists (Principle 13).
     pub type_axis_collisions: Vec<String>,
+    /// Verdicts filed in a workspace their proposal does not live in, which decide nothing
+    /// (proposal-workflow.md I2). An earlier build filed a verdict cast under All in the node
+    /// default; this lists each so a person can decide the proposal where it lives
+    /// (design-system.md Section 29.15). Computed only for the all-workspaces report on this node:
+    /// naming the proposal's workspace answers across workspaces, which no single workspace's
+    /// report, and so no remote reader, may do.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stray_verdicts: Vec<StrayVerdict>,
     pub stats: CurationStats,
+}
+
+/// A verdict filed away from its proposal ([`CurationReport::stray_verdicts`]).
+#[derive(Serialize)]
+pub struct StrayVerdict {
+    /// The verdict's own observation id.
+    pub observation: String,
+    pub proposal: String,
+    /// merge | reject | withdraw.
+    pub decision: String,
+    /// Where the verdict was filed.
+    pub filed_in: String,
+    /// Where its proposal lives.
+    pub proposal_in: String,
 }
 
 /// One observation's retrieval weight ([consolidation.md](../../../docs/consolidation.md) Section 4).
@@ -949,7 +972,11 @@ pub struct ProposalView {
     /// For tbox_change: the T-Box types this proposal defines/changes - the viewer's highlight hint.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub affected_types: Vec<AffectedType>,
-    /// open | merged | rejected | withdrawn (solo fold; merge is the absorbing state, I16).
+    /// The workspace the proposal lives in: the one its opening observation was written to, where its
+    /// verdicts count (proposal-workflow.md I2). An all-workspaces list names it on every row.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub workspace: String,
+    /// open | blocked | merged | rejected | withdrawn (merge is the absorbing state, I16).
     pub state: String,
     pub verdicts: usize,
     pub opened_at: Timestamp,
@@ -1038,15 +1065,13 @@ pub struct GraphNode {
     /// the workspace be drawn as a boundary where `origins` cannot: a host set unions across nodes
     /// (F4), and a workspace does not.
     ///
-    /// **One case breaks it, and it is reachable rather than theoretical.** An `entity_merge` folds
-    /// several ids into one canonical id, and its checks are `into`-among-targets, at least two
-    /// distinct targets, and referential integrity - none of them compares workspaces. The curation
-    /// report meanwhile surfaces cross-workspace name collisions as merge candidates by design, so
-    /// the suggestion arrives on its own. A merge taken across that boundary leaves one entity whose
-    /// attestations name two workspaces, and the surviving id's own workspace cannot be recovered
-    /// from it (the id is a hash). So this field reports **empty** rather than picking one: an
-    /// arbitrary pick would be a claim the log does not make, and the boundary layer draws nothing
-    /// for a node with no workspace, which is the honest picture of an entity that spans two.
+    /// **One case broke it until design-system.md step 51a.** An `entity_merge` folds several ids into
+    /// one canonical id, and nothing compared workspaces, so a merge across two left one entity whose
+    /// attestations named both, merged in the all-workspaces view alone. A merge now joins entities of
+    /// one workspace (Principle 15) and All is the union of each workspace's fold, so the case no
+    /// longer arises. The field still reports **empty** rather than picking one if a row ever names two
+    /// workspaces: an arbitrary pick would be a claim the log does not make, and the boundary layer
+    /// draws nothing for a node with no workspace.
     ///
     /// Read from the attestations rather than stored on the entity: it is already determined by the
     /// id they projected into, and a model field would be a second copy of what the identity fixes
@@ -2325,7 +2350,9 @@ impl Engine {
             sources: e.provenance.len(),
             degree: degree.get(&e.id).copied().unwrap_or(0),
         };
-        // (1) Merge candidates: entities sharing a normalized name but with distinct ids (Principle 15).
+        // (1) Namesakes: entities sharing a normalized name with distinct ids, which within a workspace
+        // cannot happen, so these are the same name in two workspaces - two entities, never a merge
+        // to propose (Principle 15).
         // BTreeMap keeps the groups ordered by key (Principle 16 deterministic read).
         let mut by_name: BTreeMap<String, Vec<&Entity>> = BTreeMap::new();
         for &e in &entities {
@@ -2490,8 +2517,13 @@ impl Engine {
         // walks. Reported, consumed by nothing - Section 8 step 1.
         let gates = self.gate_grants(workspace, cx)?;
         let demotion_candidates = recall_weights(&self.log(workspace, cx)?, &gates);
+        let stray_verdicts = match workspace {
+            Some(_) => Vec::new(),
+            None => self.stray_verdicts(cx)?,
+        };
         Ok(CurationReport {
             workspace: workspace.map(String::from),
+            stray_verdicts,
             duplicates,
             grab_bags,
             orphans,
@@ -2572,6 +2604,25 @@ impl Engine {
                     "entity_merge needs at least 2 target ids (the entities to merge)".into(),
                 ));
             }
+            // Resolution stays inside a workspace (Principle 15): the workspace is the population an
+            // id is resolved in and the sharing unit, so a merge across two belongs to no canon -
+            // Blocked in the workspace it is filed in, and never Merged anywhere else
+            // (design-system.md Section 29.15). A target this node does not hold yet is still taken,
+            // and blocks until it arrives. The remote surface checks targets before they get here,
+            // so this sentence, which names the other workspace, reaches only the local surfaces.
+            for t in &input.targets {
+                if let Some(e) = self.store.get_entity(t)? {
+                    let home = entity_workspace(&e);
+                    if home != ws {
+                        return Err(ObserveError::Invalid(format!(
+                            "entity_merge joins entities of one workspace: {} is in {home}, and \
+                             this proposal is filed in {ws}. The same name in two workspaces is \
+                             two entities (Principle 15)",
+                            e.canonical_name
+                        )));
+                    }
+                }
+            }
             match &input.into {
                 None => {
                     return Err(ObserveError::Invalid(
@@ -2605,6 +2656,20 @@ impl Engine {
                         .into(),
                 ));
             }
+            // A proposal acts within its own workspace (design-system.md Section 29.15): a split
+            // filed away from its merge would reverse nothing anywhere. A merge this node does not
+            // hold yet is still taken, as above; the remote surface checks it before it gets here.
+            let filed_in =
+                input.workspace.clone().unwrap_or_else(|| self.default_workspace.clone());
+            if let Some(home) = self.proposal_workspace(&input.targets[0])? {
+                if home != filed_in {
+                    return Err(ObserveError::Invalid(format!(
+                        "the merge {} lives in workspace {home}, and this split is filed in \
+                         {filed_in} - a proposal acts within its own workspace, so file it there",
+                        input.targets[0]
+                    )));
+                }
+            }
         }
         // Gate kinds (resolution.md Section 5): a requested tier is mandatory, and the targets are
         // OBSERVATION ids that must exist in the local log - the referential-integrity blocking check
@@ -2623,13 +2688,26 @@ impl Engine {
                     "unknown tier '{t}'. use unverified | agent_extracted | host_signed | human_confirmed"
                 )));
             };
+            let filed_in =
+                input.workspace.clone().unwrap_or_else(|| self.default_workspace.clone());
             for target in &input.targets {
-                if self.store.get_observation(target)?.is_none() {
+                let Some(obs) = self.store.get_observation(target)? else {
                     return Err(ObserveError::Invalid(format!(
                         "target observation '{target}' is not in the local log - {} targets are \
                          observation ids (as returned by observe / carried on search hits), and an \
                          observation that is not here cannot be promoted or demoted",
                         input.kind
+                    )));
+                };
+                // A proposal acts within its own workspace (design-system.md Section 29.15). The
+                // remote surface checks targets before they get here, so naming the other
+                // workspace reaches only the local surfaces.
+                if obs.workspace() != filed_in {
+                    return Err(ObserveError::Invalid(format!(
+                        "target observation '{target}' is in workspace {}, and this proposal is \
+                         filed in {filed_in} - a proposal acts within its own workspace, so file it \
+                         there",
+                        obs.workspace()
                     )));
                 }
             }
@@ -2704,6 +2782,69 @@ impl Engine {
         Ok(id)
     }
 
+    /// Every verdict or withdrawal filed in a workspace its proposal does not live in, oldest first
+    /// by the log's order. A verdict whose proposal this node does not hold is not listed: it may be
+    /// waiting for its proposal to arrive, and the fold tolerates that (I8).
+    fn stray_verdicts(&self, cx: &ReadCtx) -> Result<Vec<StrayVerdict>, StoreError> {
+        let log = self.log(None, cx)?;
+        let homes: HashMap<&str, &str> = log
+            .iter()
+            .filter(|o| {
+                o.assertions
+                    .proposal_events
+                    .iter()
+                    .any(|e| e.event == ProposalEventKind::Opened)
+            })
+            .map(|o| (o.id.as_str(), o.workspace()))
+            .collect();
+        let mut out = Vec::new();
+        for obs in log.iter() {
+            for ev in &obs.assertions.proposal_events {
+                if !matches!(ev.event, ProposalEventKind::Verdict | ProposalEventKind::Withdrawn) {
+                    continue;
+                }
+                let Some(home) = homes.get(ev.proposal.as_str()) else {
+                    continue;
+                };
+                if *home == obs.workspace() {
+                    continue;
+                }
+                let decision = if ev.event == ProposalEventKind::Withdrawn {
+                    "withdraw".to_string()
+                } else {
+                    serde_json::from_str::<serde_json::Value>(&ev.payload)
+                        .ok()
+                        .and_then(|v| v.get("decision").and_then(|d| d.as_str()).map(String::from))
+                        .unwrap_or_default()
+                };
+                out.push(StrayVerdict {
+                    observation: obs.id.clone(),
+                    proposal: ev.proposal.clone(),
+                    decision,
+                    filed_in: obs.workspace().to_string(),
+                    proposal_in: home.to_string(),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The workspace a proposal lives in: the one its opening observation was written to. `None` when
+    /// this node holds no proposal by that id. The local surfaces use it to file a verdict cast under
+    /// All where its proposal lives (design-system.md Section 29.15).
+    pub fn proposal_workspace(&self, id: &str) -> Result<Option<String>, StoreError> {
+        Ok(self
+            .store
+            .get_observation(id)?
+            .filter(|o| {
+                o.assertions
+                    .proposal_events
+                    .iter()
+                    .any(|e| e.event == ProposalEventKind::Opened)
+            })
+            .map(|o| o.workspace().to_string()))
+    }
+
     /// Cast a verdict / comment / withdrawal on a proposal (Principle 23). Records the event as an
     /// observation (I1); the fold derives the resulting state. `decision` is merge|reject|comment|withdraw.
     /// `surface` is decided by the caller crate per call-site (resolution.md Section 6) - it is
@@ -2732,32 +2873,46 @@ impl Engine {
             return Err(ObserveError::Invalid("proposal id is required".into()));
         }
         let workspace = workspace.unwrap_or_else(|| self.default_workspace.clone());
+        // A verdict is filed in its proposal's workspace, the only place it counts (I2): one filed
+        // anywhere else would decide nothing and stay in the log for good. So a verdict that names no
+        // proposal of this workspace is refused here, with nothing said about any other workspace -
+        // on the remote surface this one is the principal's (remote-viewer.md Section 3.4). A
+        // replicated verdict never passes through here, so arrival order is still the fold's to
+        // tolerate.
+        let views = self.fold_proposals(Some(&workspace), cx)?;
+        let Some(view) = views.get(&proposal) else {
+            return Err(ObserveError::Invalid(format!(
+                "no proposal {proposal} in workspace '{workspace}' - a verdict is filed in its \
+                 proposal's own workspace, which list_proposals names"
+            )));
+        };
         // Fail fast on a local merge attempt that the fold would refuse anyway. This is a courtesy,
         // not the gate: the fold is what enforces (a replicated verdict never reaches this path), so
         // this exists to say WHY rather than to let the caller discover a "blocked" state later.
         if decision == "merge" {
-            if let Some(view) = self.get_proposal(Some(&workspace), &proposal)? {
-                // I17: a recall verdict is a human's direct act. The fold would not count a recall
-                // merge cast from the agent surface (it reads the marker off the log), so refuse
-                // here and say where to decide - the same courtesy as the blocking checks below.
-                if view.kind == "recall" && surface == VerdictSurface::Agent {
-                    return Err(ObserveError::Invalid(
-                        "a recall verdict is a human's direct act (Principle 23, I17): this surface \
-                         cannot merge one, and the fold would not count it. Decide it in the Review \
-                         panel of the Supragnosis app or viewer; a `comment` is accepted here"
-                            .into(),
-                    ));
-                }
-                let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
-                let decided = self.decided_merges(Some(&workspace), cx)?;
-                let failures =
-                    self.blocking_failures(Some(&workspace), &view, &asserted, &decided)?;
-                if !failures.is_empty() {
-                    return Err(ObserveError::Invalid(format!(
-                        "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
-                        failures.join("; ")
-                    )));
-                }
+            // I17: a recall verdict is a human's direct act. The fold would not count a recall
+            // merge cast from the agent surface (it reads the marker off the log), so refuse here
+            // and say where to decide - the same courtesy as the blocking checks below.
+            if view.kind == "recall" && surface == VerdictSurface::Agent {
+                return Err(ObserveError::Invalid(
+                    "a recall verdict is a human's direct act (Principle 23, I17): this surface \
+                     cannot merge one, and the fold would not count it. Decide it in the Review \
+                     panel of the Supragnosis app or viewer; a `comment` is accepted here"
+                        .into(),
+                ));
+            }
+            let asserted = self.asserted_entity_ids(Some(&workspace), cx)?;
+            let decided: HashSet<String> = views
+                .values()
+                .filter(|p| p.kind == "entity_merge" && carries_merge_verdict(p))
+                .map(|p| p.id.clone())
+                .collect();
+            let failures = self.blocking_failures(view, &asserted, &decided)?;
+            if !failures.is_empty() {
+                return Err(ObserveError::Invalid(format!(
+                    "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
+                    failures.join("; ")
+                )));
             }
         }
         // The surface marker rides source_ref, engine-stamped - the review surfaces accept no
@@ -2870,7 +3025,30 @@ impl Engine {
         cx: &ReadCtx,
     ) -> Result<BTreeMap<String, ProposalView>, StoreError> {
         let obss = self.log(workspace, cx)?;
-        let obss = obss.as_ref();
+        if workspace.is_some() {
+            return self.fold_workspace(&obss.iter().collect::<Vec<_>>());
+        }
+        // All is a view, not a place (design-system.md Section 29.15): it is the union of each
+        // workspace's fold, never a fold across them. A verdict therefore counts only where its
+        // proposal lives, a proposal's checks read its own workspace, and the forwarding every
+        // all-workspaces projection applies is the union of each workspace's (proposal-workflow.md
+        // I2, store-migration.md Section 6).
+        let mut by_ws: BTreeMap<&str, Vec<&Observation>> = BTreeMap::new();
+        for obs in obss.iter() {
+            by_ws.entry(obs.workspace()).or_default().push(obs);
+        }
+        let mut views = BTreeMap::new();
+        for group in by_ws.values() {
+            views.extend(self.fold_workspace(group)?);
+        }
+        Ok(views)
+    }
+
+    /// The proposal fold over one workspace's log.
+    fn fold_workspace(
+        &self,
+        obss: &[&Observation],
+    ) -> Result<BTreeMap<String, ProposalView>, StoreError> {
         let mut views: BTreeMap<String, ProposalView> = BTreeMap::new();
         let mut tally: HashMap<String, ProposalTally> = HashMap::new();
         // Pass 1: opened events define the proposals (id = the opening observation id).
@@ -2913,6 +3091,7 @@ impl Engine {
                     tier,
                     rationale,
                     affected_types,
+                    workspace: obs.workspace().to_string(),
                     state: "open".into(),
                     verdicts: 0,
                     opened_at: observed_at,
@@ -2974,7 +3153,7 @@ impl Engine {
         let mut blocked: HashSet<String> = HashSet::new();
         if views.iter().any(|(id, _)| tally.get(id).is_some_and(|t| t.merge)) {
             // One log pass, shared by every proposal being checked.
-            let asserted = self.asserted_entity_ids(workspace, cx)?;
+            let asserted = asserted_in(obss.iter().copied());
             // The entity_split check needs to know which merges were decided. This pass IS the fold
             // that assigns states, so it cannot ask for them - but `t.merge` is precisely the
             // condition [`carries_merge_verdict`] recognizes once a state exists.
@@ -2987,7 +3166,7 @@ impl Engine {
                 .collect();
             for (id, view) in views.iter() {
                 if tally.get(id).is_some_and(|t| t.merge)
-                    && !self.blocking_failures(workspace, view, &asserted, &decided)?.is_empty()
+                    && !self.blocking_failures(view, &asserted, &decided)?.is_empty()
                 {
                     blocked.insert(id.clone());
                 }
@@ -3126,6 +3305,14 @@ impl Engine {
         workspace: Option<&str>,
         id: &str,
     ) -> Result<Option<ProposalView>, StoreError> {
+        // Under All a proposal is read where it lives, so its diff and checks are its workspace's
+        // (design-system.md Section 29.15).
+        if workspace.is_none() {
+            return match self.proposal_workspace(id)? {
+                Some(home) => self.get_proposal(Some(&home), id),
+                None => Ok(None),
+            };
+        }
         let cx = &ReadCtx::default();
         let mut all = self.fold_proposals(workspace, cx)?;
         let Some(mut view) = all.remove(id) else {
@@ -3134,7 +3321,6 @@ impl Engine {
         (view.labels, view.into_label) = self.labels_for(id, &view, &all)?;
         view.belief_diff = Some(self.belief_diff(workspace, &view, cx)?);
         view.checks = self.blocking_checks(
-            workspace,
             &view,
             &self.asserted_entity_ids(workspace, cx)?,
             &self.decided_merges(workspace, cx)?,
@@ -3238,6 +3424,7 @@ impl Engine {
                 tier: Some(act.tier),
                 rationale: None,
                 affected_types: Vec::new(),
+                workspace: workspace.unwrap_or_default().to_string(),
                 state: "open".into(),
                 verdicts: 0,
                 opened_at: 0,
@@ -3249,7 +3436,7 @@ impl Engine {
                 belief_diff: None,
                 checks: Vec::new(),
             };
-            for c in self.blocking_checks(workspace, &view, &asserted, &decided)? {
+            for c in self.blocking_checks(&view, &asserted, &decided)? {
                 if !checks
                     .iter()
                     .any(|k| k.name == c.name && k.passed == c.passed && k.detail == c.detail)
@@ -3330,20 +3517,7 @@ impl Engine {
         workspace: Option<&str>,
         cx: &ReadCtx,
     ) -> Result<HashSet<String>, StoreError> {
-        let mut ids = HashSet::new();
-        for obs in self.log(workspace, cx)?.iter() {
-            let ws = obs.workspace().to_string();
-            for e in &obs.assertions.entities {
-                ids.insert(Entity::make_id(&ws, &e.name));
-            }
-            // Both endpoints of a relation assert their entities too - the projection creates rows
-            // for them, so the check must see them as existing for the same reason.
-            for r in &obs.assertions.relations {
-                ids.insert(Entity::make_id(&ws, &r.from));
-                ids.insert(Entity::make_id(&ws, &r.to));
-            }
-        }
-        Ok(ids)
+        Ok(asserted_in(self.log(workspace, cx)?.iter()))
     }
 
     /// The blocking checks of proposal-workflow.md Section 6, recomputed from the proposal and what
@@ -3360,7 +3534,6 @@ impl Engine {
     /// fold that calls this.
     fn blocking_checks(
         &self,
-        workspace: Option<&str>,
         view: &ProposalView,
         asserted: &HashSet<String>,
         decided_merges: &HashSet<String>,
@@ -3386,7 +3559,7 @@ impl Engine {
                         Some(t) if known => format!("{t} is a decided entity_merge"),
                         Some(t) => format!(
                             "{t} is not an entity_merge that has been decided - it is absent from \
-                             the local log, is another kind, or has no merge verdict yet"
+                             this proposal's workspace, is another kind, or has no merge verdict yet"
                         ),
                     },
                 );
@@ -3395,9 +3568,15 @@ impl Engine {
                 // Referential integrity: you cannot promote what is not here. Under incomplete sync
                 // the targets may simply not have arrived, and merging then would grant a tier to
                 // nothing.
+                // A proposal acts within its own workspace (proposal-workflow.md Section 6), so a
+                // target written to another workspace is as absent here as one never written.
                 let mut missing = Vec::new();
                 for t in &view.targets {
-                    if self.store.get_observation(t)?.is_none() {
+                    let here = match self.store.get_observation(t)? {
+                        Some(o) => view.workspace.is_empty() || o.workspace() == view.workspace,
+                        None => false,
+                    };
+                    if !here {
                         missing.push(t.clone());
                     }
                 }
@@ -3413,7 +3592,7 @@ impl Engine {
                         )
                     } else {
                         format!(
-                            "{} target observation(s) are not in the local log: {}",
+                            "{} target observation(s) are not in this proposal's workspace: {}",
                             missing.len(),
                             missing.join(", ")
                         )
@@ -3460,7 +3639,7 @@ impl Engine {
                         )
                     } else {
                         format!(
-                            "{} target entit(ies) are not asserted in the local log: {}",
+                            "{} target entit(ies) are not asserted in this proposal's workspace: {}",
                             missing.len(),
                             missing.join(", ")
                         )
@@ -3493,20 +3672,18 @@ impl Engine {
             }
             _ => {}
         }
-        let _ = workspace;
         Ok(out)
     }
 
     /// The blocking checks that FAIL - empty means a merge verdict may take effect.
     fn blocking_failures(
         &self,
-        workspace: Option<&str>,
         view: &ProposalView,
         asserted: &HashSet<String>,
         decided_merges: &HashSet<String>,
     ) -> Result<Vec<String>, StoreError> {
         Ok(self
-            .blocking_checks(workspace, view, asserted, decided_merges)?
+            .blocking_checks(view, asserted, decided_merges)?
             .into_iter()
             .filter(|c| c.blocking && !c.passed)
             .map(|c| format!("{}: {}", c.name, c.detail))
@@ -4086,6 +4263,10 @@ impl Engine {
         // proposal id -> (representative merge verdict's ordering hlc and obs id, the highest
         // surface ceiling among the proposal's merge verdicts).
         let mut rep_merge: HashMap<String, (Hlc, String, TrustTier)> = HashMap::new();
+        // A verdict counts only in its proposal's workspace (proposal-workflow.md I2), so under All
+        // each merge verdict is held with the workspace it was filed in until the proposals are known.
+        let mut homes: HashMap<String, String> = HashMap::new();
+        let mut merges: Vec<(String, Hlc, String, TrustTier, String)> = Vec::new();
         for obs in self.log(workspace, cx)?.iter() {
             let okey = ordering_hlc(obs);
             for ev in &obs.assertions.proposal_events {
@@ -4110,6 +4291,7 @@ impl Engine {
                             })
                             .unwrap_or_default();
                         opened.insert(obs.id.clone(), (targets, tier, kind == "claim_promotion"));
+                        homes.insert(obs.id.clone(), obs.workspace().to_string());
                     }
                     ProposalEventKind::Verdict => {
                         if v.get("decision").and_then(|x| x.as_str()) != Some("merge") {
@@ -4125,20 +4307,32 @@ impl Engine {
                             .map(|p| verdict_grant_ceiling(p.source_ref.as_deref()))
                             .max()
                             .unwrap_or_else(|| verdict_grant_ceiling(None));
-                        rep_merge
-                            .entry(ev.proposal.clone())
-                            .and_modify(|cur| {
-                                if (&okey, obs.id.as_str()) < (&cur.0, cur.1.as_str()) {
-                                    cur.0 = okey.clone();
-                                    cur.1 = obs.id.clone();
-                                }
-                                cur.2 = cur.2.max(ceiling);
-                            })
-                            .or_insert((okey.clone(), obs.id.clone(), ceiling));
+                        merges.push((
+                            ev.proposal.clone(),
+                            okey.clone(),
+                            obs.id.clone(),
+                            ceiling,
+                            obs.workspace().to_string(),
+                        ));
                     }
                     _ => {}
                 }
             }
+        }
+        for (proposal, okey, id, ceiling, filed_in) in merges {
+            if homes.get(&proposal) != Some(&filed_in) {
+                continue;
+            }
+            rep_merge
+                .entry(proposal)
+                .and_modify(|cur| {
+                    if (&okey, id.as_str()) < (&cur.0, cur.1.as_str()) {
+                        cur.0 = okey.clone();
+                        cur.1 = id.clone();
+                    }
+                    cur.2 = cur.2.max(ceiling);
+                })
+                .or_insert((okey, id, ceiling));
         }
         // The state fold is the single answer to "did this merge commit" (I13): consult it rather
         // than re-deriving blocking here, so the two can never drift apart again. Shares the
@@ -5993,12 +6187,36 @@ impl Engine {
         let live: Vec<&Entity> = all_entities.iter().filter(|e| !fwd.contains_key(&e.id)).collect();
         let node_ids: HashSet<&str> = live.iter().map(|e| e.id.as_str()).collect();
         let mut derived_from: Vec<String> = Vec::new();
+        let mut homes: BTreeSet<String> = BTreeSet::new();
         for obs in self.observations(ws)? {
             if co_asserted_members(&obs, &node_ids, &fwd) == h.members {
                 derived_from.push(obs.id.clone());
+                homes.insert(obs.workspace().to_string());
             }
         }
         derived_from.sort();
+        // All is a view, not a place (design-system.md Section 29.15): a region read under All is
+        // asserted where the observations that asserted it live, so its members' names are minted
+        // in their own workspace and nothing is copied into another.
+        let workspace = match workspace {
+            Some(w) => Some(w),
+            None => match homes.len() {
+                1 => homes.pop_first(),
+                0 => {
+                    return Err(ObserveError::Invalid(format!(
+                        "no observation asserts hyperedge '{}' any more - re-list before retrying",
+                        input.hyperedge
+                    )))
+                }
+                _ => {
+                    return Err(ObserveError::Invalid(format!(
+                        "hyperedge '{}' is asserted in more than one workspace, so it has no one \
+                         place to be named - name it from one workspace",
+                        input.hyperedge
+                    )))
+                }
+            },
+        };
         let name = match input.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
             Some(n) => n,
             None => {
@@ -6172,11 +6390,31 @@ fn entity_text(entity: &Entity) -> String {
     }
 }
 
+/// The entity ids a run of observations asserts, each minted in its observation's workspace: the
+/// referential-integrity check's input (proposal-workflow.md Section 6), read off the log rather than
+/// the projection (I8).
+fn asserted_in<'a>(obss: impl Iterator<Item = &'a Observation>) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for obs in obss {
+        let ws = obs.workspace();
+        for e in &obs.assertions.entities {
+            ids.insert(Entity::make_id(ws, &e.name));
+        }
+        // Both endpoints of a relation assert their entities too - the projection creates rows for
+        // them, so the check must see them as existing for the same reason.
+        for r in &obs.assertions.relations {
+            ids.insert(Entity::make_id(ws, &r.from));
+            ids.insert(Entity::make_id(ws, &r.to));
+        }
+    }
+    ids
+}
+
 /// The workspace an entity belongs to. The id is blake3(workspace + normalized name), so an entity
 /// lives in exactly one workspace and every attestation agrees; the first is representative.
 /// Candidate generators need this because a report built with `workspace: None` (the viewer's
 /// all-workspaces view) otherwise groups across workspaces, and an entity_merge spanning two of them
-/// is not a merge anyone can act on - the proposal has to be filed somewhere, and neither is right.
+/// is refused (Principle 15) - the same name in two workspaces is two entities.
 fn entity_workspace(e: &Entity) -> &str {
     e.provenance.first().map(|p| p.workspace.as_str()).unwrap_or("")
 }

@@ -490,7 +490,50 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
 /// there. None means the node default, which is what an unspecified workspace has always meant on
 /// the write path. Read and write must not disagree about what `*` is (Principle 17).
 fn write_workspace(raw: Option<String>) -> Option<String> {
-    raw.filter(|s| s != "*" && s != "all")
+    raw.filter(|s| !is_all(s))
+}
+
+/// Whether a workspace parameter names the all-workspaces view rather than a workspace.
+fn is_all(ws: &str) -> bool {
+    matches!(ws.trim(), "" | "*" | "all")
+}
+
+/// A storage failure while deciding where an act is filed: a 500, never a decision to file in the
+/// node default (P5).
+fn store_failure(e: &impl std::fmt::Display) -> Response {
+    Response {
+        status: "500 Internal Server Error",
+        content_type: "application/json",
+        body: err_body(&format!("storage backend failure: {e}")),
+    }
+}
+
+/// The workspace an entity lives in, read off its row: the one its id was minted in.
+fn entity_home(engine: &Engine, id: &str) -> Result<Option<String>, Response> {
+    engine
+        .store()
+        .get_entity(id)
+        .map(|e| e.and_then(|e| e.provenance.first().map(|p| p.workspace.clone())))
+        .map_err(|e| store_failure(&e))
+}
+
+/// The workspace a proposal lives in.
+fn proposal_home(engine: &Engine, id: &str) -> Result<Option<String>, Response> {
+    engine.proposal_workspace(id).map_err(|e| store_failure(&e))
+}
+
+/// The workspace a console act is filed in. All is a view and no place to file anything
+/// (design-system.md Section 29.15), so an act taken under All is filed where its item lives, which
+/// `home` reads; a named workspace is filed as named, and the engine refuses it where the item does
+/// not live. `None` is the node default, as an omitted workspace has always meant here.
+fn act_workspace(
+    raw: Option<String>,
+    home: impl FnOnce() -> Result<Option<String>, Response>,
+) -> Result<Option<String>, Response> {
+    match raw {
+        Some(w) if is_all(&w) => home(),
+        other => Ok(other),
+    }
 }
 
 /// `/api/graph` - resolves the workspace from the query and produces the graph projection.
@@ -854,7 +897,21 @@ fn review_response(engine: &Engine, query: &str) -> Response {
             body: err_body("review needs ?proposal=<id>&decision=merge|reject|withdraw"),
         };
     };
-    let workspace = write_workspace(param("workspace"));
+    // A verdict is filed in its proposal's workspace (proposal-workflow.md I2); under All an id this
+    // node holds nowhere is said so, rather than looked for in the node default.
+    let raw = param("workspace");
+    let under_all = raw.as_deref().is_some_and(is_all);
+    let workspace = match act_workspace(raw, || proposal_home(engine, &proposal)) {
+        Ok(None) if under_all => {
+            return Response {
+                status: "400 Bad Request",
+                content_type: "application/json",
+                body: err_body(&format!("no proposal {proposal} in any workspace")),
+            }
+        }
+        Ok(w) => w,
+        Err(r) => return r,
+    };
     // The Console surface (resolution.md Section 6): this server is reachable only through the 0600
     // unix socket, i.e. by the local OS principal - the engine stamps the console marker, which is
     // what permits a merged promotion to grant human_confirmed (a human's direct act, Principle 18).
@@ -1211,8 +1268,13 @@ fn propose_split_response(engine: &Engine, query: &str) -> Response {
             ),
         };
     };
+    // A split is filed in its merge's workspace, where the merge it reverses counts.
+    let workspace = match act_workspace(workspace, || proposal_home(engine, &merge)) {
+        Ok(w) => w,
+        Err(r) => return r,
+    };
     match engine.propose(supragnosis_engine::ProposeInput {
-        workspace: write_workspace(workspace),
+        workspace,
         kind: "entity_split".into(),
         targets: vec![merge],
         into: None,
@@ -1259,14 +1321,39 @@ fn propose_merge_response(engine: &Engine, query: &str) -> Response {
     // ladder needs no embedder, and filing its candidates as "embedding-near" would put a false
     // account of the evidence into the permanent log (Principle 2). Whitelisted rather than
     // free-text, so a client cannot shape what the log says about its own provenance (Principle 18).
+    // An absent source is the merge band, which is what the viewer sends for a band pair; a source
+    // this server does not know is refused rather than recorded as the band's reason.
     let rationale = match param("src").as_deref() {
         Some("variant:separator") => "name-variant ladder (separator/case normalization)",
         Some("variant:plural") => "name-variant ladder (plural fold)",
         Some("variant:alias") => "name-variant ladder (alias match)",
-        _ => "merge-band suggestion (embedding-near names)",
+        None => "merge-band suggestion (embedding-near names)",
+        Some(other) => {
+            return Response {
+                status: "400 Bad Request",
+                content_type: "application/json",
+                body: err_body(&format!("unknown suggestion source '{other}'")),
+            }
+        }
     };
+    // The console opens no merge across workspaces (D9, principles.md Principle 15), and one taken
+    // under All is filed in the workspace its pair shares (design-system.md Section 29.15).
+    let (home_a, home_b) = match (entity_home(engine, &a), entity_home(engine, &b)) {
+        (Ok(x), Ok(y)) => (x, y),
+        (Err(r), _) | (_, Err(r)) => return r,
+    };
+    if home_a.is_some() && home_b.is_some() && home_a != home_b {
+        return Response {
+            status: "400 Bad Request",
+            content_type: "application/json",
+            body: err_body("The console opens no merge across workspaces."),
+        };
+    }
     match engine.propose(supragnosis_engine::ProposeInput {
-        workspace: write_workspace(param("workspace")),
+        workspace: match act_workspace(param("workspace"), || Ok(home_b.or(home_a))) {
+            Ok(w) => w,
+            Err(r) => return r,
+        },
         kind: "entity_merge".into(),
         targets: vec![a, b.clone()],
         into: Some(b),

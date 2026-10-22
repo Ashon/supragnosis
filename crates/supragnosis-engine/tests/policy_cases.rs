@@ -1628,3 +1628,396 @@ fn an_attestation_names_its_app_on_local_reads_only() {
     let claude = moved.iter().find(|o| o.content == "written by claude code").expect("moved row");
     assert_eq!(claude.attestations[claude.author].app.as_deref(), Some("Claude Code"));
 }
+
+// --- All is a view (design-system.md Section 29.15) -----------------------------------------
+
+fn propose_in(
+    engine: &Engine,
+    ws: &str,
+    kind: &str,
+    targets: Vec<String>,
+    into: Option<String>,
+) -> Result<String, String> {
+    engine
+        .propose(ProposeInput {
+            workspace: Some(ws.into()),
+            kind: kind.into(),
+            targets,
+            into,
+            tier: if kind.starts_with("claim_") { Some("human_confirmed".into()) } else { None },
+            rationale: None,
+            affected_types: vec![],
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// One proposal event written straight to the log, as an earlier build or another node may have.
+fn plant_event(
+    store: &InMemoryStore,
+    ws: &str,
+    at: u64,
+    event: ProposalEventKind,
+    proposal: &str,
+    payload: serde_json::Value,
+) -> String {
+    let obs = Observation::with_assertions(
+        format!("planted {event:?} {proposal}"),
+        Provenance {
+            host: "host-a".into(),
+            on_behalf_of: None,
+            workspace: ws.into(),
+            source_ref: Some("surface:console".into()),
+            observed_at: at,
+            confidence: None,
+            trust_tier: TrustTier::default(),
+            sync: None,
+        },
+        Assertions {
+            proposal_events: vec![ProposalEventAssertion {
+                proposal: proposal.into(),
+                event,
+                payload: payload.to_string(),
+            }],
+            ..Default::default()
+        },
+    );
+    let id = obs.id.clone();
+    store.add_observation(obs).expect("plant");
+    id
+}
+
+/// GIVEN the same name in two workspaces, WHEN a merge of the two is proposed, THEN it is refused,
+/// naming the other workspace on this local surface; a merge inside one workspace is taken, and so
+/// is a target this node does not hold yet (Principle 15: resolution stays inside a workspace).
+#[test]
+fn p15_a_merge_never_crosses_a_workspace() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let web = Engine::new(store.clone(), "h", "atlas-web");
+    observe(&infra, "in infra", &["Payment service", "Payments"]);
+    observe(&web, "in web", &["Payment service"]);
+    let here = Entity::make_id("infra", "Payment service");
+    let there = Entity::make_id("atlas-web", "Payment service");
+    let err =
+        propose_in(&infra, "infra", "entity_merge", vec![there, here.clone()], Some(here.clone()))
+            .expect_err("a merge across workspaces is refused");
+    assert!(
+        err.contains("joins entities of one workspace") && err.contains("atlas-web"),
+        "the refusal does not say why: {err}"
+    );
+    propose_in(
+        &infra,
+        "infra",
+        "entity_merge",
+        vec![Entity::make_id("infra", "Payments"), here.clone()],
+        Some(here.clone()),
+    )
+    .expect("a merge inside one workspace is taken");
+    propose_in(&infra, "infra", "entity_merge", vec!["ab".repeat(32), here.clone()], Some(here))
+        .expect("a target that has not arrived yet is still taken");
+}
+
+/// GIVEN acts an earlier build filed away from what they name - a merge across workspaces with its
+/// merge verdict, and an accept filed in the node default for a proposal of another workspace - WHEN
+/// the all-workspaces view is read, THEN each proposal reads there as in its own workspace, nothing
+/// merges across, and the stray accept is listed in the node-wide report only (proposal-workflow.md
+/// I2, store-migration.md Section 6).
+#[test]
+fn p15_the_all_workspaces_view_is_the_union_of_each_workspaces_fold() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let web = Engine::new(store.clone(), "h", "atlas-web");
+    observe(&infra, "in infra", &["Payment service", "Payments"]);
+    observe(&web, "in web", &["Payment service"]);
+    let here = Entity::make_id("infra", "Payment service");
+    let there = Entity::make_id("atlas-web", "Payment service");
+
+    // The merge across workspaces, as a build before step 51a took it.
+    let across = plant_event(
+        &store,
+        "infra",
+        10,
+        ProposalEventKind::Opened,
+        "",
+        serde_json::json!({
+            "kind": "entity_merge", "targets": [there, here], "into": here,
+            "tier": null, "rationale": "an earlier build", "affected_types": [],
+        }),
+    );
+    plant_event(
+        &store,
+        "infra",
+        11,
+        ProposalEventKind::Verdict,
+        &across,
+        serde_json::json!({ "decision": "merge", "note": null }),
+    );
+    // A merge inside infra, accepted from All by an earlier build: the accept went to the default.
+    let inside = propose_in(
+        &infra,
+        "infra",
+        "entity_merge",
+        vec![Entity::make_id("infra", "Payments"), here.clone()],
+        Some(here.clone()),
+    )
+    .expect("propose");
+    let stray = plant_event(
+        &store,
+        "default",
+        12,
+        ProposalEventKind::Verdict,
+        &inside,
+        serde_json::json!({ "decision": "merge", "note": null }),
+    );
+
+    let state = |ws: Option<&str>, id: &str| {
+        infra
+            .list_proposals(ws)
+            .expect("list")
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| (p.state, p.workspace))
+    };
+    for (id, want) in [(&across, "blocked"), (&inside, "open")] {
+        assert_eq!(state(Some("infra"), id), Some((want.to_string(), "infra".to_string())));
+        assert_eq!(
+            state(None, id),
+            state(Some("infra"), id),
+            "All reads a proposal as its workspace does"
+        );
+    }
+    let all = infra.graph(None).expect("graph");
+    assert!(
+        all.nodes.iter().any(|n| n.id == there)
+            && all.nodes.iter().all(|n| !n.workspace.is_empty()),
+        "a merge across workspaces still joined the two under All"
+    );
+    let report = infra.curation(None).expect("curation");
+    assert_eq!(report.stray_verdicts.len(), 1, "the stray accept is not listed");
+    let s = &report.stray_verdicts[0];
+    assert_eq!(
+        (
+            s.observation.as_str(),
+            s.proposal.as_str(),
+            s.decision.as_str(),
+            s.filed_in.as_str(),
+            s.proposal_in.as_str()
+        ),
+        (stray.as_str(), inside.as_str(), "merge", "default", "infra")
+    );
+    assert!(
+        infra.curation(Some("infra")).expect("curation").stray_verdicts.is_empty(),
+        "a workspace's report names another workspace's proposal"
+    );
+    assert!(
+        infra.curation(Some("default")).expect("curation").stray_verdicts.is_empty(),
+        "a workspace's report names another workspace's proposal"
+    );
+    // A confirmation an agent merged in infra, capped at host_signed, beside a console accept an
+    // earlier build filed in the default: the tier under All is the tier in infra.
+    let billing = infra
+        .observe(ObserveInput {
+            content: "Billing is a Service".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Billing".into(),
+                kind: Some("Service".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let gate =
+        propose_in(&infra, "infra", "claim_promotion", vec![billing], None).expect("propose");
+    infra
+        .review_proposal(
+            Some("infra".into()),
+            gate.clone(),
+            "merge".into(),
+            None,
+            None,
+            VerdictSurface::Agent,
+        )
+        .expect("an agent's merge");
+    plant_event(
+        &store,
+        "default",
+        13,
+        ProposalEventKind::Verdict,
+        &gate,
+        serde_json::json!({ "decision": "merge", "note": null }),
+    );
+    let tier = |ws: Option<&str>| {
+        infra
+            .graph(ws)
+            .expect("graph")
+            .nodes
+            .into_iter()
+            .find(|n| n.name == "Billing")
+            .map(|n| n.trust_tier)
+    };
+    assert_eq!(tier(Some("infra")), Some(TrustTier::HostSigned), "the agent's merge is capped");
+    assert_eq!(
+        tier(None),
+        tier(Some("infra")),
+        "a stray console accept raised the tier under All"
+    );
+}
+
+/// GIVEN a merge of one workspace, WHEN a split of it is filed in another, THEN it is refused at
+/// capture on this local surface, naming where the merge lives; filed with its merge it is taken.
+#[test]
+fn p15_a_split_names_only_its_own_workspaces_merge() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    observe(&infra, "in infra", &["Payment service", "Payments"]);
+    let here = Entity::make_id("infra", "Payment service");
+    let merge = propose_in(
+        &infra,
+        "infra",
+        "entity_merge",
+        vec![Entity::make_id("infra", "Payments"), here.clone()],
+        Some(here),
+    )
+    .expect("propose");
+    let err = propose_in(&infra, "default", "entity_split", vec![merge.clone()], None)
+        .expect_err("a split filed away from its merge is refused");
+    assert!(err.contains("lives in workspace infra"), "the refusal does not say why: {err}");
+    propose_in(&infra, "infra", "entity_split", vec![merge], None).expect("filed with its merge");
+}
+
+/// GIVEN a proposal of one workspace, WHEN a verdict, a comment or a withdrawal names it in another
+/// workspace, or names an id no proposal has, THEN it is refused and nothing is written; in its own
+/// workspace the verdict is taken (P24: kept, the row would decide nothing).
+#[test]
+fn p24_a_verdict_naming_no_proposal_of_its_workspace_is_refused() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    observe(&infra, "in infra", &["Payment service", "Payments"]);
+    let here = Entity::make_id("infra", "Payment service");
+    let pid = propose_in(
+        &infra,
+        "infra",
+        "entity_merge",
+        vec![Entity::make_id("infra", "Payments"), here.clone()],
+        Some(here),
+    )
+    .expect("propose");
+    let before = snapshot(store.as_ref()).observations;
+    for (ws, id, decision) in [
+        (Some("atlas-web"), pid.as_str(), "reject"),
+        (Some("default"), pid.as_str(), "merge"),
+        (Some("infra"), "nope", "comment"),
+        (Some("infra"), "nope", "withdraw"),
+    ] {
+        let err = infra
+            .review_proposal(
+                ws.map(String::from),
+                id.into(),
+                decision.into(),
+                None,
+                None,
+                VerdictSurface::Agent,
+            )
+            .expect_err("a verdict that names no proposal of its workspace is taken");
+        assert!(err.to_string().contains("no proposal"), "the refusal does not say why: {err}");
+    }
+    assert_eq!(snapshot(store.as_ref()).observations, before, "a refused verdict wrote a row");
+    infra
+        .review_proposal(
+            Some("infra".into()),
+            pid.clone(),
+            "reject".into(),
+            None,
+            None,
+            VerdictSurface::Agent,
+        )
+        .expect("in its own workspace the verdict is taken");
+}
+
+/// GIVEN an observation of one workspace, WHEN a gate act filed in another names it, THEN it is
+/// refused at capture, naming the other workspace on this local surface; filed in its own workspace
+/// it is taken (proposal-workflow.md Section 6, resolution.md Section 5).
+#[test]
+fn p15_a_gate_act_names_only_its_own_workspaces_observations() {
+    let store = Arc::new(InMemoryStore::new());
+    let infra = Engine::new(store.clone(), "h", "infra");
+    let obs = infra
+        .observe(ObserveInput {
+            content: "Payments is a Service".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![EntityInput {
+                name: "Payments".into(),
+                kind: Some("Service".into()),
+                description: None,
+            }],
+            relations: vec![],
+        })
+        .expect("observe")
+        .observation_id;
+    let err = propose_in(&infra, "default", "claim_promotion", vec![obs.clone()], None)
+        .expect_err("a gate act on another workspace's observation is refused");
+    assert!(err.contains("is in workspace infra"), "the refusal does not say why: {err}");
+    propose_in(&infra, "infra", "claim_promotion", vec![obs], None)
+        .expect("in its own workspace it is taken");
+}
+
+/// GIVEN a region read under All, WHEN it is named with no workspace, THEN it is asserted in the
+/// workspace of the observations that asserted it, and no name is minted anywhere else
+/// (design-system.md Section 29.15, P17).
+#[test]
+fn p17_a_region_named_under_all_is_filed_where_it_was_asserted() {
+    let store = Arc::new(InMemoryStore::new());
+    // The node default is not the region's workspace, so filing in the default would show.
+    let secret = Engine::new(store.clone(), "h", "default");
+    secret
+        .observe(ObserveInput {
+            content: "together".into(),
+            workspace: Some("secret".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: ["Atlas", "Layers", "Tiles"]
+                .iter()
+                .map(|n| EntityInput { name: (*n).into(), kind: None, description: None })
+                .collect(),
+            relations: vec![],
+        })
+        .expect("observe");
+    let hg = secret.hypergraph(None).expect("hypergraph");
+    let h = hg.hyperedges.iter().find(|h| h.size == 3).expect("the region");
+    let out = secret
+        .reify_hyperedge(supragnosis_engine::ReifyInput {
+            workspace: None,
+            hyperedge: h.id.clone(),
+            name: Some("Mapping".into()),
+            kind: None,
+            source_ref: None,
+            on_behalf_of: None,
+        })
+        .expect("reify");
+    let o = store
+        .get_observation(&out.observation_id)
+        .expect("get")
+        .expect("the region's observation");
+    assert_eq!(o.workspace(), "secret", "the region was filed away from its members");
+    assert!(store.get_entity(&Entity::make_id("secret", "Mapping")).expect("get").is_some());
+    for name in ["Mapping", "Atlas"] {
+        assert!(
+            store.get_entity(&Entity::make_id("default", name)).expect("get").is_none(),
+            "{name} was minted in the node default"
+        );
+    }
+}
