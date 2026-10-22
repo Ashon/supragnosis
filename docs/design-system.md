@@ -30,8 +30,8 @@
 > is built, as is step 46b, the app that wrote it, step 47, a map that explains itself, and step 48,
 > the first entry on screen, step 49, search that finds and holds, and step 50a, the map's keys and
 > its View, step 50b, the menu bar and the tray, and step 50c, Settings' sidebar and the window.
-> Step 51a, All as a view, is built, and so is step 51b, the same name; step 51c, Same as... and
-> Keep ... instead, is specified.
+> Step 51a, All as a view, is built, and so are step 51b, the same name, and step 51c, Same as...
+> and Keep ... instead.
 
 ## 1. Why this exists
 
@@ -1971,7 +1971,7 @@ and it fails when one of them appears in the viewer's source other than as an ar
    Section 3.2 revised): on the local console the sheet says when another workspace
    uses the entity's name, All lights the drawn namesakes with what is pointed at or selected, and
    the Suggestions row for a shared name says what it is and which workspace each entity is in.
-51c. **Same as..., and Keep ... instead** (Section 29.17; D10, D19; Sections 7 and 29.7,
+51c. **Same as..., and Keep ... instead** [built] (Section 29.17; D10, D19; Sections 7 and 29.7,
    proposal-workflow.md Section 14.3 and resolution.md Section 6 revised): a person may say two entities of one workspace are
    the same, a merge on Review offers to keep the other name, and what the console opens says it
    was opened at the console.
@@ -5124,3 +5124,10 @@ No row needs a principle changed.
 - It does not offer Keep ... instead on a blocked merge, or on a merge of three or more entities.
 - It does not mark a confirmation's proposal: its reason is its notice sentence, and Who asked on it
   reads as before.
+
+**Guarded by** `p2_a_merge_opened_at_the_console_carries_its_mark` and
+`s10_the_console_counts_the_unmerges_a_re_merge_follows` in the engine's policy cases;
+`the_console_opens_marked_merges_that_can_follow_an_unmerge` over the viewer's socket (the two
+reasons, the mark on a merge and an un-merge, and a re-merge after an un-merge); and
+`same_as_and_keep_instead_hold_their_order` in the viewer's review tests (the picker's scope, Keep's
+read, open and reject in that order, and no Accept while the reverse is accepted).

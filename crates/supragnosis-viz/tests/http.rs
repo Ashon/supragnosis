@@ -2000,3 +2000,83 @@ async fn the_console_reads_the_same_name_in_other_workspaces() {
     );
     let _ = std::fs::remove_file(&sock);
 }
+
+/// Same as... and Keep ... instead open merges the console marks, with reasons that say why
+/// (design-system.md Section 29.17): `src=picked` and `src=reverse` have their own, a re-merge after an
+/// un-merge counts the un-merges so it is a different proposal (unmerge.md S10), and the un-merge the
+/// console opens carries the mark too.
+#[tokio::test]
+async fn the_console_opens_marked_merges_that_can_follow_an_unmerge() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store, "h", "infra"));
+    engine
+        .observe(ObserveInput {
+            content: "Postgres and PostgreSQL".into(),
+            workspace: None,
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: ["Postgres", "PostgreSQL"]
+                .iter()
+                .map(|n| EntityInput { description: None, name: (*n).into(), kind: None })
+                .collect(),
+            relations: vec![],
+        })
+        .expect("observe");
+    let id = |n: &str| supragnosis_core::Entity::make_id("infra", n);
+    let sock = serve_uds("same-as", engine.clone(), ev_channel()).await;
+    let open = |src: &'static str| {
+        let sock = sock.clone();
+        let (a, b) = (id("Postgres"), id("PostgreSQL"));
+        async move {
+            let r =
+                uds_get(&sock, &format!("/api/propose_merge?a={a}&b={b}&src={src}&workspace=*"))
+                    .await;
+            json_get(&r)["proposal_id"].as_str().expect("proposal id").to_string()
+        }
+    };
+    let marked = |pid: &str| {
+        engine
+            .get_observation(pid)
+            .expect("get")
+            .expect("the opening")
+            .provenance
+            .iter()
+            .all(|p| p.source_ref.as_deref() == Some(supragnosis_core::VERDICT_SURFACE_CONSOLE))
+    };
+    let reason =
+        |pid: &str| engine.get_proposal(None, pid).expect("get").expect("proposal").rationale;
+    let first = open("picked").await;
+    assert!(marked(&first), "a merge the console opened carries no mark");
+    assert_eq!(reason(&first).as_deref(), Some("two entities named as one from a search"));
+    let reverse = uds_get(
+        &sock,
+        &format!("/api/propose_merge?a={}&b={}&src=reverse", id("PostgreSQL"), id("Postgres")),
+    )
+    .await;
+    let reverse = json_get(&reverse)["proposal_id"].as_str().expect("id").to_string();
+    assert_eq!(
+        reason(&reverse).as_deref(),
+        Some("the other name kept, instead of a merge the other way")
+    );
+    // Accept the first, un-merge it, accept the un-merge, and open the same merge again.
+    body_of(
+        &uds_get(&sock, &format!("/api/review?proposal={first}&decision=merge")).await,
+        "200",
+    );
+    let split = uds_get(&sock, &format!("/api/propose_split?merge={first}")).await;
+    let split = json_get(&split)["proposal_id"].as_str().expect("split id").to_string();
+    assert!(marked(&split), "an un-merge the console opened carries no mark");
+    body_of(
+        &uds_get(&sock, &format!("/api/review?proposal={split}&decision=merge")).await,
+        "200",
+    );
+    let again = open("picked").await;
+    assert_ne!(again, first, "the re-merge is the merge the split reversed");
+    assert_eq!(
+        reason(&again).as_deref(),
+        Some("two entities named as one from a search, again after 1 un-merge")
+    );
+    let _ = std::fs::remove_file(&sock);
+}
