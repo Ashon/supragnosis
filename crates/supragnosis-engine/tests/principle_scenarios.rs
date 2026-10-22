@@ -613,6 +613,54 @@ fn p18_a_merged_promotion_never_lowers_its_target() {
     );
 }
 
+/// guard (proposal-workflow.md I5, P23): a rejected assertion keeps its original tier. A reject
+/// grants and demotes nothing - a rejected promotion leaves the target where it was, a rejected
+/// demotion does not lower it, and neither undoes a tier an earlier merge granted - from the
+/// console or the agent surface alike. Today a reject only records; this holds the line for the
+/// day the reject path grows its first effect (the Section 13 resubmission cooldown).
+#[test]
+fn p23_a_rejected_tier_change_keeps_the_tier() {
+    let (store, engine) = stepped_engine();
+    let o = kind_obs("cozo", "Tool", 100);
+    let id = o.id.clone();
+    store.add_observation(o).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    let rejected = |kind: &str, tier: &str, surface: VerdictSurface| {
+        let pid = engine
+            .propose(ProposeInput {
+                workspace: None,
+                kind: kind.into(),
+                targets: vec![id.clone()],
+                into: None,
+                tier: Some(tier.into()),
+                rationale: Some(format!("{kind} to {tier}, rejected from {surface:?}")),
+                affected_types: vec![],
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("propose");
+        engine
+            .review_proposal(None, pid.clone(), "reject".into(), None, None, surface)
+            .expect("reject");
+        assert_eq!(engine.get_proposal(None, &pid).unwrap().unwrap().state, "rejected");
+    };
+
+    for surface in [VerdictSurface::Console, VerdictSurface::Agent] {
+        rejected("claim_promotion", "human_confirmed", surface);
+        assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted, "a rejected promotion");
+        rejected("claim_demotion", "unverified", surface);
+        assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted, "a rejected demotion");
+    }
+    gate(&engine, "claim_promotion", &id, "human_confirmed", VerdictSurface::Console);
+    assert_eq!(tier_of(&engine, &id), TrustTier::HumanConfirmed);
+    rejected("claim_demotion", "unverified", VerdictSurface::Console);
+    assert_eq!(
+        tier_of(&engine, &id),
+        TrustTier::HumanConfirmed,
+        "a rejected demotion does not undo a granted tier"
+    );
+}
+
 /// guard (R5 revised; P16): merged gate events on one target apply in the order of their
 /// representative merge verdicts, each from the tier the previous left; a demotion still pushes
 /// below base (the fast-path); and a store fed the same log in the opposite order agrees.
