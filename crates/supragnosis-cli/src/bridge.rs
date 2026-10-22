@@ -589,6 +589,85 @@ mod tests {
         }
     }
 
+    /// C4: the daemon's own errors reach the client as the daemon wrote them. A JSON-RPC error - a
+    /// call to a tool the daemon does not have - arrives through the bridge exactly as the daemon
+    /// answers it without one. A refusal at the HTTP level has no JSON-RPC answer to pass on, so the
+    /// bridge says it as an error for that id, carrying the daemon's words unchanged.
+    #[tokio::test]
+    async fn the_daemons_own_errors_reach_the_client_as_written() {
+        let (addr, _d) = daemon(None, Arc::new(InMemoryStore::new())).await;
+        let url = format!("http://{addr}/mcp");
+        let call = serde_json::json!({"jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"no_such_tool","arguments":{}}});
+
+        let mut c = Client::start(url.clone(), Duration::from_secs(2), "tok");
+        c.handshake().await;
+        c.send(call.clone()).await;
+        let relayed = c.recv().await;
+
+        // The same call, asked of the daemon directly.
+        let http = reqwest::Client::new();
+        let post = |body: Value, session: Option<String>| {
+            let mut req = http
+                .post(&url)
+                .bearer_auth("tok")
+                .header(reqwest::header::ACCEPT, "application/json, text/event-stream")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body.to_string());
+            if let Some(s) = session {
+                req = req.header("Mcp-Session-Id", s);
+            }
+            req.send()
+        };
+        let init = post(
+            serde_json::json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{
+                "protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}),
+            None,
+        )
+        .await
+        .expect("initialize");
+        let session = init.headers().get("mcp-session-id").map(|v| v.to_str().unwrap().to_string());
+        let _ = init.text().await;
+        let _ = post(
+            serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            session.clone(),
+        )
+        .await
+        .expect("initialized");
+        let body = post(call, session).await.expect("call").text().await.expect("body");
+        let direct: Vec<Value> = sse_messages(&body)
+            .into_iter()
+            .chain(one_line(&body).filter(|_| !body.contains("data:")))
+            .map(|m| serde_json::from_str(&m).expect("json"))
+            .filter(|v: &Value| v["id"] == 9)
+            .collect();
+        assert_eq!(direct.len(), 1, "the daemon answered the call once: {body}");
+        assert!(
+            relayed["error"].is_object() || relayed["result"]["isError"] == true,
+            "{relayed}"
+        );
+        assert_eq!(relayed, direct[0], "the bridge passes the daemon's error on unchanged");
+
+        // A refusal at the HTTP level: the daemon's words, unchanged, in the error for that id.
+        let words = "the daemon refuses this: protocol version 1999-01-01 is not one it speaks";
+        let refusing = axum::Router::new().route(
+            "/mcp",
+            axum::routing::post(
+                move || async move { (axum::http::StatusCode::BAD_REQUEST, words) },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.expect("bind");
+        let at = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, refusing).await;
+        });
+        let mut c = Client::start(format!("http://{at}/mcp"), Duration::from_secs(2), "tok");
+        let reply = c.call(4, "tools/list", serde_json::json!({})).await;
+        assert_eq!(reply["id"], 4, "{reply}");
+        let message = reply["error"]["message"].as_str().expect("an error");
+        assert!(message.ends_with(&format!("answered 400: {words}")), "{message}");
+    }
+
     /// A token the daemon refuses is reported as such, naming the file it was read from.
     #[tokio::test]
     async fn a_refused_token_is_reported_with_its_file() {

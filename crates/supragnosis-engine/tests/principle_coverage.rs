@@ -1425,12 +1425,7 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the daemon's own errors reach the client as the daemon wrote them",
-            Evidence::Deferred(
-                "only success paths are relayed under test; a JSON-RPC error inside a 200 passes through `one_line` \
-                 untouched, but an HTTP-level refusal is re-authored by `describe` as a -32000 error, and no case \
-                 sends a request the daemon refuses. Revisit when a case calls an unknown tool through the bridge and \
-                 compares the two error bodies",
-            ),
+            Evidence::Scenario(&["the_daemons_own_errors_reach_the_client_as_written"]),
         ),
     ]),
     (5, &[c(
