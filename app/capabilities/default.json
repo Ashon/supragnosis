@@ -1,9 +1,10 @@
 {
   "identifier": "default",
-  "description": "Main window baseline: core IPC (the EventSource facade listens for viz-event), plus window dragging for the header-as-title-bar (drag region + double-click zoom).",
+  "description": "Main window baseline: what the pages use and nothing else (docs/design-system.md Section 29.29, settings-page.md S8). Events for the shell - the EventSource facade listens for viz-event, a page emits shell-page-loaded and hears shell-fullscreen and setup-line; the full-screen getter a page asks on load; and dragging and double-click zoom for the header-as-title-bar. No menu, tray, image, path or resource permission: any page the window shows could otherwise rewrite the app's menu or tray.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:allow-is-fullscreen",
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize"
   ]

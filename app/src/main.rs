@@ -4432,6 +4432,84 @@ mod settings_tests {
         );
     }
 
+    /// docs/design-system.md Section 29.29 and settings-page.md S8: the main window's pages get the
+    /// platform's events, its full-screen getter and the title bar's drag, and nothing else - no
+    /// menu, tray, image, path or resource, which any page the window shows could otherwise use to
+    /// speak with the app's voice. Each page API the shell calls is held to a grant that covers it.
+    #[test]
+    fn the_window_pages_get_only_what_they_use() {
+        let caps: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(caps["windows"], serde_json::json!(["main"]));
+        let granted: Vec<&str> = caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .collect();
+        assert_eq!(
+            granted,
+            [
+                "core:event:default",
+                "core:window:allow-is-fullscreen",
+                "core:window:allow-start-dragging",
+                "core:window:allow-internal-toggle-maximize",
+            ],
+            "exactly what the pages use"
+        );
+        for broad in [
+            "core:default",
+            "core:menu",
+            "core:tray",
+            "core:image",
+            "core:path",
+            "core:resources",
+            "core:app",
+            "core:webview",
+        ] {
+            assert!(granted.iter().all(|g| !g.starts_with(broad)), "{broad} is not the pages'");
+        }
+        // What the shell and the app's pages call, each covered above.
+        let shell = include_str!("../assets/shell-init.js");
+        for (call, grant) in [
+            ("event.listen(\"viz-event\"", "core:event:default"),
+            ("event.listen(\"shell-fullscreen\"", "core:event:default"),
+            ("event.emit(\"shell-page-loaded\"", "core:event:default"),
+            ("getCurrentWindow().isFullscreen()", "core:window:allow-is-fullscreen"),
+        ] {
+            assert!(
+                shell.replace(['\n', ' '], "").contains(&call.replace(' ', "")),
+                "the shell calls {call}"
+            );
+            assert!(granted.contains(&grant), "{call} needs {grant}");
+        }
+        assert!(
+            include_str!("../assets/settings.js").contains("__TAURI__.event.listen(\"setup-line\"")
+        );
+        assert!(
+            include_str!("../assets/welcome.js").contains("window.__TAURI__.event.listen(ev, fn)")
+        );
+        // The title bar's drag and double-click zoom are the drag region's two window calls.
+        assert!(shell.contains("header.setAttribute(\"data-tauri-drag-region\", \"deep\")"));
+        // No page calls the platform's menu, tray or window setters.
+        for page in [
+            shell,
+            include_str!("../assets/settings.js"),
+            include_str!("../assets/welcome.js"),
+        ] {
+            for setter in [
+                "__TAURI__.menu",
+                "__TAURI__.tray",
+                "__TAURI__.image",
+                "__TAURI__.path",
+                ".setTitle(",
+                ".setSize(",
+            ] {
+                assert!(!page.contains(setter), "a page calls {setter}");
+            }
+        }
+    }
+
     /// docs/design-system.md Section 6, U26: the bar keeps room for the traffic lights only while
     /// they are shown. The shell announces each full-screen transition, and a page asks the window on
     /// load, since one opened while the window is already full screen saw no transition and kept the
@@ -4451,9 +4529,9 @@ mod settings_tests {
         // The shell's side, read from this file: the test's own copy of the line is escaped, so it
         // cannot be what matches.
         assert!(include_str!("main.rs").contains("window.emit(\"shell-fullscreen\", fs)"));
-        // isFullscreen is one of the window getters core:default grants.
+        // The window grants the full-screen getter by name (design-system.md Section 29.29).
         let caps = include_str!("../capabilities/default.json");
-        assert!(caps.contains("\"core:default\""));
+        assert!(caps.contains("\"core:window:allow-is-fullscreen\""));
         for (file, html) in [
             ("settings.html", include_str!("../assets/settings.html")),
             ("welcome.html", include_str!("../assets/welcome.html")),
