@@ -61,9 +61,9 @@ for detail, and writes its answer.
 
 | Prompt | Arguments | The job |
 |---|---|---|
-| `brief` | `workspace` (default: the node default), `focus` (optional topic) | What this workspace's knowledge says now: its themes, what is contested, what is weakly supported, and what is waiting on a decision. |
+| `brief` | `workspace` (default: every workspace), `focus` (optional topic) | What this workspace's knowledge says now: its themes, what is contested, what is weakly supported, and what is waiting on a decision. |
 | `what-do-we-know-about` | `topic`, `workspace` (optional) | What the store holds on one topic, with sources - and what it does not hold. |
-| `curate` | `workspace` | Improve the canon: draft proposals for the tidy-ups the curation signals point at, for the person to review. |
+| `curate` | `workspace` (default: every workspace) | Improve the canon: draft proposals for the tidy-ups the curation signals point at, for the person to review. |
 | `review-proposal` | `id` | A first-pass review of one proposal: what it changes in belief, what its checks say, and a recommendation. The verdict stays the person's. |
 
 `brief` is the `summarize-workspace-knowledge` of architecture.md, renamed for the job it does: a

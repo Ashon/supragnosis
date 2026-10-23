@@ -356,9 +356,13 @@ carries on from: Principle 24's degrade loudly, without refusing the agent's wor
 
 ### 12.3 The workspace
 
-The hook names the workspace after the repository's top-level directory
-(`git rev-parse --show-toplevel`), because the project is the unit knowledge is organized by (the
-server instructions say so) and a repository is how a project appears on disk.
+The hook names the workspace after the repository's directory, because the project is the unit
+knowledge is organized by (the server instructions say so) and a repository is how a project appears
+on disk. The directory is the one holding the `.git` that `git rev-parse --git-common-dir` names, so
+a linked worktree is named by the repository it belongs to and not by its own directory, which for an
+agent's worktree is a generated name that would open a workspace of its own. A submodule, whose
+common directory sits under its parent's `.git/modules`, and a git too old to answer fall back to
+`git rev-parse --show-toplevel`.
 `SUPRAGNOSIS_WORKSPACE` in the hook's environment overrides it. The name is a suggestion in both
 lines: the agent may know better (a monorepo, a fork, a workspace the person named differently), and
 the text says "workspace", not "only this workspace".

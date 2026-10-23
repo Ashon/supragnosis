@@ -435,6 +435,34 @@ added fields.
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.
 
+**A write names its workspace, and a read without one reads them all** (the 2026-10-23 review of
+the agent surface). Two inputs changed, so this is **breaking**: the release note that carries it
+opens with it, and CHANGELOG.md's Breaking changes lists it.
+- `observe`, `define_type` and `propose` require `workspace`. An omitted one filed the write into
+  the node default, and an agent that forgot it split a project's knowledge across two workspaces,
+  each read seeing half - on a real node, one project's entities had piled up in `default`. The
+  schema marks the argument required, so the call is refused before it runs, and its description
+  says what to name it.
+- No tool takes an argument it does not declare: every input schema says `additionalProperties:
+  false`, and a call with an undeclared argument is refused naming it. A misspelled `workspace`
+  used to be dropped without a word, which sent the write to the node default too. The remote
+  surface refuses one the same way; what `remote::admit` adds to a call (`workspace`,
+  `on_behalf_of`) is declared by every tool it adds it to.
+
+No other input changed, and these answers did:
+- `list_proposals`, `workspace_map` and the `brief` and `curate` prompts read every workspace when
+  none is named, as `search_knowledge` and `what-do-we-know-about` already did. `get_proposal`
+  without one reads the proposal where it lives, as `review` files a verdict there.
+- The descriptions drop the rule labels (`Principle 23`, `I17`), which tell an agent nothing, and
+  the warning that the node default is routinely empty, which no tool reads now.
+- The sync tools keep the node default: each acts on one workspace, and the daemon's own round
+  covers the shared ones.
+
+Principle 17 holds: a read of every workspace is the local trust surface's view, and the remote
+surface still resolves an omitted workspace from the principal's grants before a tool sees it, so
+its answers do not change. Principle 1 holds too: an undeclared argument is a malformed call, not
+content, so refusing it is the well-formedness check at ingest and censors nothing.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on
