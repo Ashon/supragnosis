@@ -4469,7 +4469,7 @@ fn launchd_jobs() -> Vec<lifecycle::Job> {
         })
         .collect()
 }
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_jobs() -> Vec<lifecycle::Job> {
     Vec::new()
 }
@@ -4731,16 +4731,16 @@ fn launchd_bootstrap_canonical() -> Result<()> {
     println!("loaded launchd job {} (MCP server + viewer).", lifecycle::CANONICAL_LABEL);
     await_daemon(lifecycle::CANONICAL_LABEL)
 }
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_bootstrap_canonical() -> Result<()> {
     anyhow::bail!("a LaunchAgent plist was found on a system without launchd")
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_kickstart(job: &lifecycle::Job) -> Result<()> {
     anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
 }
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
     anyhow::bail!("launchd job {} reported on a system without launchd", job.label)
 }
@@ -5569,11 +5569,11 @@ fn launchd_uninstall() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_install(_args: ServiceInstallArgs) -> Result<()> {
     anyhow::bail!("service install manages a macOS LaunchAgent or a Linux systemd user unit, and this system has neither - `supragnosis serve` runs the daemon in the foreground")
 }
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn launchd_uninstall() -> Result<()> {
     anyhow::bail!("service uninstall manages a macOS LaunchAgent or a Linux systemd user unit, and this system has neither")
 }
@@ -5789,8 +5789,6 @@ fn systemd_uninstall() -> Result<()> {
     }
     Ok(())
 }
-
-// Non-unix: daemon lifecycle unsupported - point to serve --http.
 
 // --- Federation configuration + node identity (M4 Phase 4, docs/federation.md Section 9) ---------
 

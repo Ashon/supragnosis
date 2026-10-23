@@ -24,7 +24,6 @@
   if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
 
   // The two pages' addresses, on the app's own schemes.
-  var GRAPH = "viz://localhost/";
   var SETTINGS = "tauri://localhost/settings.html";
   var onSettings = /settings\.html$/.test(location.pathname) && location.protocol === "tauri:";
   window.supragnosisSetup = "tauri://localhost/welcome.html";

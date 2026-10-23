@@ -78,8 +78,7 @@ rcgen.workspace = true
 ring = "0.17"
 
 # Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
-# implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.
-[target.'cfg(unix)'.dependencies]
+# implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern).
 daemonize = "0.5"
 
 [dev-dependencies]
