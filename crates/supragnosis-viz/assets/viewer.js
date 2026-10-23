@@ -1329,8 +1329,8 @@ function activeSet() {
 const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
 // What each tier means, said of a source (Section 29.2); under the Trust legend and in the ask.
 const TIER_MEANS = {
-  human_confirmed: "Confirmed in this app on one of your machines, by you or a program running as you; agents are told to leave it to you. No agent's claim outranks it; a later review can lower it.",
-  host_signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an agent accepted.",
+  human_confirmed: "Confirmed through this app on one of your machines, by you or another program on your account; agents are told to leave it to you. No agent's claim outranks it; a later review can lower it.",
+  host_signed: "Above Agent, but not confirmed through this app: a trusted machine's signed claim, or a review an agent accepted.",
   agent_extracted: "What an AI app writes, and what this app writes for you, until a review raises or lowers it.",
   unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it so.",
 };
@@ -3219,8 +3219,8 @@ function obsCardHtml(o) {
   // The act that set the tier it reads at, said beside what its writer wrote.
   const g = o.gated_by;
   if (g) {
-    const by = writerOf({ source_ref: g.surface, origin_node: g.origin_node });
-    const what = g.promotion ? tierName(o.effective_tier) + " by " + by : "Lowered to " + tierName(o.effective_tier) + " by " + by;
+    const by = (g.surface === "surface:console" ? " from " : " by ") + writerOf({ source_ref: g.surface, origin_node: g.origin_node });
+    const what = g.promotion ? tierName(o.effective_tier) + by : "Lowered to " + tierName(o.effective_tier) + by;
     parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
   }
   // A person can demote a claim (Section 29.26): on the local console, for knowledge that reads above
@@ -3467,15 +3467,16 @@ function stripShown() {
 // The who-line (design-system.md Section 29.7): tier - writer, for whom - time. The writer is the
 // machine that wrote the authoring attestation: this one when it carries no sync stamp or its stamp's
 // origin is this node - a host name decides nothing, since every unconfigured node is "localhost" -
-// and any other by its origin id's first eight characters. A console verdict written here is "you
-// at this console" on the local console.
+// and any other by its origin id's first eight characters. A console verdict written here is "this
+// console" on the local console: the console is a path any program of the user can take, so it
+// names where the act was cast, not who cast it (resolution.md Section 6).
 let ownNode = null;   // this node's sync id, from the Sync read; null until known
 function writtenHere(a) { return !a.origin_node || (!!ownNode && a.origin_node === ownNode); }
 function writerOf(a) {
   if (!a) return "";
   const mine = writtenHere(a);
   const machine = mine ? here() : String(a.origin_node).slice(0, 8);
-  if (a.source_ref === "surface:console") return mine && surfaceKind === "local" ? "you at this console" : "a person at " + machine;
+  if (a.source_ref === "surface:console") return mine && surfaceKind === "local" ? "this console" : "the console at " + machine;
   // The app this node recorded for it (Section 29.8): "Claude Code on this Mac".
   return a.app && mine ? a.app + " on " + machine : machine;
 }

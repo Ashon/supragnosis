@@ -1085,8 +1085,9 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   The **console marker proves a path, not a person**, on a single machine too. The console's socket is
   0600, open to every process of the owning OS user, and the coding agents this product serves run as
   that user with a shell, so one request to the socket casts a console verdict - a `human_confirmed`
-  promotion, a recall merge. What stands in its way today is that the MCP path refuses and the
-  agent-facing text tells every agent the act is the person's (resolution.md Section 6). Telling a
+  promotion now, and a recall merge once recall has its effect. What stands in its way today is that
+  the MCP path caps a promotion at `host_signed` and the agent-facing text tells every agent the act
+  is the person's (resolution.md Section 6). Telling a
   person from their own processes takes an act only the person can perform: a socket peer that must be
   the signed app, or a key behind Touch ID that signs each confirmation. Owed; **revisit when** an
   agent is seen casting a console verdict, or a second person's confirmations must be told apart.
