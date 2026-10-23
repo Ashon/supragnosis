@@ -28,8 +28,8 @@
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
   [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, built -
   Section 10 steps 1-3),
-  [`remote-viewer.md`](remote-viewer.md) (the viewer on a remote profile and on the hub, specified -
-  Section 10 steps 0-1 built),
+  [`remote-viewer.md`](remote-viewer.md) (the viewer on the hub: Section 10 steps 0-1 built and
+  frozen, steps 2-4 withdrawn),
   [`settings-page.md`](settings-page.md) (the app's settings page, built),
   [`sync-correctness.md`](sync-correctness.md) (sync defects and their rules, built),
   [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the tripwire of

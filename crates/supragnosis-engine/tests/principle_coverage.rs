@@ -2848,18 +2848,18 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     (5, &[c(
         "the credential is read per request from its 0600 file and sent only as a header",
         Evidence::Deferred(
-            "the relay (`supragnosis bridge --viewer`, remote-viewer.md Section 10 step 2) is not \
-             built - no code reads a credential for the viewer, so nothing can be pinned; the hub \
-             side already takes it from `Authorization` only (principal.rs). Revisit when step 2 \
-             lands, with the profile's `token_file` guard (R6) as the model",
+            "there is no viewer relay: remote-viewer.md Section 10 steps 2-3 were built and \
+             withdrawn before release on 2026-10-23, when the hub was kept minimal. The hub side \
+             takes the credential from `Authorization` only (principal.rs). Revisit when a remote \
+             viewer is wanted again",
         ),
     )]),
     (6, &[c(
         "the relay verifies TLS, relays only GET, and cannot outlive the app that started it",
         Evidence::Deferred(
-            "step 2 of remote-viewer.md Section 10, not built: there is no `--viewer` relay in the \
-             CLI, so none of the three demands has code to hold to. The TLS half will reuse the \
-             profile rule R8 pins today. Revisit when step 2 lands",
+            "there is no viewer relay: remote-viewer.md Section 10 steps 2-3 were built and \
+             withdrawn before release on 2026-10-23, when the hub was kept minimal. Revisit when a \
+             remote viewer is wanted again",
         ),
     )]),
     (7, &[c(
@@ -2869,9 +2869,10 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     (8, &[c(
         "on a remote profile each failure state has its own page, never an empty graph",
         Evidence::Deferred(
-            "step 3 of remote-viewer.md Section 10, not built: the shell still serves the one \
-             placeholder page `remote_html` for every remote state, and no app case pins even that. \
-             Revisit when step 3 lands with the relay's `state` JSON",
+            "the app does not show a remote server: remote-viewer.md Section 10 step 3 was built and \
+             withdrawn before release on 2026-10-23, when the hub was kept minimal, and the window \
+             shows one placeholder page, `remote_html`, on a remote profile. Revisit when a remote \
+             viewer is wanted again",
         ),
     )]),
     (9, &[c(

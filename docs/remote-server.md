@@ -183,12 +183,12 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
   the daemon is not this machine's to run.
 - **AI Apps is unchanged.** It registers the same bridge whichever server is active - which is the
   point of the profile.
-- **The viewer cannot show a remote server yet.** It reads the local daemon over a unix socket.
-  Showing a remote server needs federation's network read tier (Phase 3.5): TLS, per-principal
-  grants filtering every read, no state-changing request, and the web hardening federation.md 6d
-  lists. That is Section 10's step 4, specified in [remote-viewer.md](remote-viewer.md). Until it
-  lands, the viewer window on a remote profile says which server the AI apps use and that browsing
-  it needs a newer release - not an empty graph, which would read as "no knowledge" (P5).
+- **The viewer does not show a remote server.** It reads the local daemon over a unix socket. On a
+  remote profile the window says which server the AI apps use, whether it answers, and how to switch
+  back - not an empty graph, which would read as "no knowledge" (P5). The hub's read tier exists
+  (Phase 3.5, [remote-viewer.md](remote-viewer.md)), but the app's way to it was withdrawn before
+  release on 2026-10-23, when the hub was kept minimal: a machine that wants the hub's knowledge in
+  its window joins the hub and syncs, and reads its own console.
 
 ## 6. The three cases, end to end
 

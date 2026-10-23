@@ -630,8 +630,9 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
 // window by while the splash is up, and its text covers the middle, which the bare attribute would
 // leave undraggable.
 /// What the viewer shows while a remote profile is active: which server the AI apps use, and that
-/// browsing it arrives with the network read tier (remote-server.md Section 5). Not an empty graph,
-/// which would read as "no knowledge" (P5).
+/// this window shows a Mac's own knowledge (remote-server.md Section 5 - the way to the hub's page
+/// was withdrawn before release, and a machine that wants that knowledge joins and syncs). Not an
+/// empty graph, which would read as "no knowledge" (P5).
 /// Its way back names the settings page, where the server choice lives (settings-page.md S4); the
 /// tray kept a Server submenu once and this line still pointed at it after the move.
 fn remote_html(r: &RemoteServer) -> String {
@@ -642,7 +643,7 @@ fn remote_html(r: &RemoteServer) -> String {
         (false, _) => "it does not answer right now",
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
+        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">this window shows a Mac's own knowledge / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
         name = esc(&r.name),
         url = esc(&r.url),
     )
