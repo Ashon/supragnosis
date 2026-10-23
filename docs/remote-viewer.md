@@ -5,8 +5,12 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **specified**. Steps 0-1 of Section 10 are built (step 0 shipped in v0.4.6); steps 2-4
-> are not. What building it changed is in Section 12.
+> Status: **steps 0-1 built and frozen; steps 2-4 withdrawn.** The hub's read tier (step 1)
+> shipped in v0.4.7 and takes no new work. The viewer relay and the app's remote window (steps 2-3)
+> were built and withdrawn before release on 2026-10-23, when the hub was kept minimal: the author's
+> machines sync with the hub and each reads its own console, so no one needs the hub's page in the
+> app ([CLAUDE.md](../CLAUDE.md), principles.md Appendix A, assurance against proportion). The rest
+> of this document is the design as it stood; revisit it when a remote viewer is wanted again.
 >
 > A bare R-number here is one of remote-server.md's invariants (its Section 8), not resolution.md's.
 
@@ -350,8 +354,8 @@ On a remote profile, the window shows the server instead of saying it cannot:
      still knows nothing of the sync crate or the config file (P20).
    - The CLI mounts it at `/viz/` beside `/mcp`, behind the same admission, with the ETag and audit
      of Section 3.8.
-2. **The relay**: `supragnosis bridge --viewer`.
-3. **The desktop app**:
+2. **The relay**: `supragnosis bridge --viewer`. [withdrawn 2026-10-23]
+3. **The desktop app**: [withdrawn 2026-10-23]
    - the relay's lifecycle, the socket switch and the failure pages;
    - in the page, `/api/surface` and the read-only controls.
 4. **Docs**: federation.md 6d and F19, remote-server.md Section 5, architecture.md, and the README's
