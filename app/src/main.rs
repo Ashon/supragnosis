@@ -90,7 +90,9 @@ struct MapItems(Vec<(&'static str, MenuItem<tauri::Wry>)>);
 /// without the selection history.
 fn map_items_enabled(url: &str, controls: &[String]) -> Vec<(&'static str, bool)> {
     let has = |c: &str| controls.iter().any(|x| x == c);
-    let viewer = url.starts_with("viz://") || url.starts_with("http://viz.localhost");
+    let viewer = ["viz://", "http://viz.localhost", "remote://", "http://remote.localhost"]
+        .iter()
+        .any(|o| url.starts_with(o));
     let app_page = url.contains("settings.html") || url.contains("welcome.html");
     let review = viewer && url.contains("#review");
     let graph = viewer && !review;
@@ -293,6 +295,8 @@ fn review_count(list: &serde_json::Value) -> usize {
 struct RemoteServer {
     name: String,
     url: String,
+    /// The CA bundle the profile names, if any: a change restarts the viewer relay.
+    ca: Option<String>,
     answering: bool,
     credential_refused: bool,
 }
@@ -473,6 +477,9 @@ struct Fetched {
     csp: Option<String>,
     /// The ETag of the graph and the hypergraph (design-system.md U33), so the viewer can ask with it.
     etag: Option<String>,
+    /// The viewer relay's mark on a state it reports (remote-viewer.md Section 5), which no hub's
+    /// answer can carry.
+    relay_state: Option<String>,
     body: Vec<u8>,
 }
 
@@ -533,6 +540,7 @@ async fn uds_request(
         ctype,
         csp: header("content-security-policy"),
         etag: header("etag"),
+        relay_state: header("x-supragnosis-relay"),
         body,
     })
 }
@@ -622,30 +630,533 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
         .unwrap_or_else(|_| http::Response::new(Vec::new()))
 }
 
-/// Served at `/` while the daemon's socket is not answering yet; refreshes itself into the real
-/// viewer once it is. Carries the LIVE daemon state so a failure is readable on the splash
-/// instead of an eternal "starting..." (the tray shows the same line, but the splash is what
-/// the user is looking at). Palette mirrors the viewer's candlelight theme.
-// data-tauri-drag-region="deep": with the overlay title bar there is no other chrome to drag the
-// window by while the splash is up, and its text covers the middle, which the bare attribute would
-// leave undraggable.
-/// What the viewer shows while a remote profile is active: which server the AI apps use, and that
-/// browsing it arrives with the network read tier (remote-server.md Section 5). Not an empty graph,
-/// which would read as "no knowledge" (P5).
-/// Its way back names the settings page, where the server choice lives (settings-page.md S4); the
-/// tray kept a Server submenu once and this line still pointed at it after the move.
-fn remote_html(r: &RemoteServer) -> String {
-    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-    let state = match (r.answering, r.credential_refused) {
-        (true, true) => "it answers, but refused this machine's credential",
-        (true, false) => "it answers",
-        (false, _) => "it does not answer right now",
+// The remote window (docs/design-system.md Section 29.31, remote-viewer.md Section 6): on a remote
+// profile the shell runs the viewer relay, `supragnosis bridge --viewer`, and shows the hub's page
+// through it, or a page of its own that says what failed.
+
+/// Where the viewer relay listens while a remote profile is active.
+fn relay_sock() -> PathBuf {
+    home().join(".supragnosis/remote-viz.sock")
+}
+
+/// How long the proxy waits for an answer through the relay: past the relay's own 70 seconds,
+/// which are past the hub's 60, so the answer that comes is the one that says why.
+const REMOTE_WAIT: Duration = Duration::from_secs(75);
+
+/// What a relay was started for. A change of any of the three starts it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RelayKey {
+    name: String,
+    url: String,
+    ca: Option<String>,
+}
+
+impl RelayKey {
+    fn of(r: &RemoteServer) -> RelayKey {
+        RelayKey { name: r.name.clone(), url: r.url.clone(), ca: r.ca.clone() }
+    }
+}
+
+/// The viewer relay the shell runs.
+enum Relay {
+    Idle,
+    Running {
+        key: RelayKey,
+        child: Child,
+        /// Held: dropping it is how the relay is told to stop, and it cannot outlive the app.
+        stdin: Option<std::process::ChildStdin>,
+        /// The last lines it wrote, for the page that says it could not start.
+        said: std::sync::Arc<Mutex<std::collections::VecDeque<String>>>,
+        /// When it started, and the thread that reads what it writes.
+        since: std::time::Instant,
+        reader: Option<std::thread::JoinHandle<()>>,
+    },
+    /// It ended on its own. One that had run for [`RELAY_RAN`] is started again once, by the next
+    /// read; one that ended sooner only by Retry or a change of profile, never in a loop.
+    Ended {
+        key: RelayKey,
+        said: String,
+        ran: bool,
+    },
+}
+
+/// How long a relay runs before an end is a break rather than a failure to start.
+const RELAY_RAN: Duration = Duration::from_secs(30);
+
+struct RelaySlot(Mutex<Relay>);
+
+/// The relay's state as the plan reads it.
+#[derive(Debug, PartialEq)]
+enum RelayNow {
+    Idle,
+    Running(RelayKey),
+    /// Ended, and whether it had run for [`RELAY_RAN`] first.
+    Ended(RelayKey, bool),
+}
+
+/// What to do with the relay.
+#[derive(Debug, PartialEq)]
+enum RelayPlan {
+    Keep,
+    Stop,
+    Start,
+    Restart,
+}
+
+/// What becomes of the relay, given what runs, what the active profile wants, and whether the
+/// person asked again. A relay that ended soon after it started, for the profile still wanted, is
+/// left ended unless they did - never started in a loop; one that had run for a while broke, and is
+/// started again once (its next run starts the count again).
+fn relay_plan(now: &RelayNow, wanted: Option<&RelayKey>, retry: bool) -> RelayPlan {
+    match (now, wanted) {
+        (RelayNow::Idle, None) => RelayPlan::Keep,
+        (RelayNow::Running(_) | RelayNow::Ended(..), None) => RelayPlan::Stop,
+        (RelayNow::Idle, Some(_)) => RelayPlan::Start,
+        (RelayNow::Running(k), Some(w)) if k == w => RelayPlan::Keep,
+        (RelayNow::Running(_), Some(_)) => RelayPlan::Restart,
+        (RelayNow::Ended(k, ran), Some(w)) if k == w && !retry && !ran => RelayPlan::Keep,
+        (RelayNow::Ended(..), Some(_)) => RelayPlan::Start,
+    }
+}
+
+impl Relay {
+    fn now(&self) -> RelayNow {
+        match self {
+            Relay::Idle => RelayNow::Idle,
+            Relay::Running { key, .. } => RelayNow::Running(key.clone()),
+            Relay::Ended { key, ran, .. } => RelayNow::Ended(key.clone(), *ran),
+        }
+    }
+
+    /// A relay that has exited is recorded as ended, with the last of what it wrote.
+    fn reap(&mut self) {
+        if let Relay::Running { key, child, said, since, reader, .. } = self {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                // Its last words are read in full before they are kept: the reader ends with them.
+                if let Some(r) = reader.take() {
+                    let _ = r.join();
+                }
+                let said = last_words(&said.lock().unwrap());
+                let ran = since.elapsed() >= RELAY_RAN;
+                *self = Relay::Ended { key: key.clone(), said, ran };
+            }
+        }
+    }
+}
+
+/// What a relay that ended said last, without the CLI's "Error: " prefix.
+fn last_words(lines: &std::collections::VecDeque<String>) -> String {
+    let line = lines
+        .iter()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(String::as_str)
+        .unwrap_or("");
+    let line = line.trim().trim_start_matches("Error: ").trim();
+    if line.is_empty() {
+        "it ended without saying why".to_string()
+    } else {
+        line.to_string()
+    }
+}
+
+fn start_relay(key: RelayKey) -> Relay {
+    use std::io::BufRead;
+    let Some(bin) = find_server_bin() else {
+        return Relay::Ended {
+            key,
+            said: "the supragnosis command was not found".into(),
+            ran: false,
+        };
     };
+    let mut cmd = Command::new(bin);
+    cmd.args(["bridge", "--viewer"])
+        .arg(relay_sock())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    with_login_env(&mut cmd);
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let stdin = child.stdin.take();
+            let said = std::sync::Arc::new(Mutex::new(std::collections::VecDeque::new()));
+            let mut reader = None;
+            if let Some(err) = child.stderr.take() {
+                let kept = said.clone();
+                reader = Some(std::thread::spawn(move || {
+                    for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
+                        tracing::info!(relay = %line, "viewer relay");
+                        let mut q = kept.lock().unwrap();
+                        if q.len() == 8 {
+                            q.pop_front();
+                        }
+                        q.push_back(line);
+                    }
+                }));
+            }
+            Relay::Running { key, child, stdin, said, since: std::time::Instant::now(), reader }
+        }
+        Err(e) => Relay::Ended {
+            key,
+            said: format!("could not run the supragnosis command: {e}"),
+            ran: false,
+        },
+    }
+}
+
+/// Stops a relay: its stdin closes, it is given three seconds to end, and then it is stopped.
+fn end_relay(relay: Relay) {
+    if let Relay::Running { mut child, stdin, .. } = relay {
+        drop(stdin);
+        let until = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < until {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Bumped whenever the socket the viewer reads changes, so the event bridge lets go of the old one.
+static VIEWER_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Brings the relay in line with the active profile (design-system.md Section 29.31): started on a
+/// remote profile, started again when its name, address or CA changes, stopped on this Mac. With
+/// `retry`, a relay that ended is started again. Returns whether anything changed.
+async fn sync_relay(app: &tauri::AppHandle, retry: bool) -> bool {
+    static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _one = ONE_AT_A_TIME.lock().await;
+    let Some(slot) = app.try_state::<RelaySlot>() else {
+        return false;
+    };
+    let wanted = active_remote(app).map(|r| RelayKey::of(&r));
+    let (plan, old) = {
+        let mut relay = slot.0.lock().unwrap();
+        relay.reap();
+        let plan = relay_plan(&relay.now(), wanted.as_ref(), retry);
+        let old = match plan {
+            RelayPlan::Keep => None,
+            _ => Some(std::mem::replace(&mut *relay, Relay::Idle)),
+        };
+        (plan, old)
+    };
+    if plan == RelayPlan::Keep {
+        return false;
+    }
+    // The old relay ends before the next starts: the next would be refused its live socket.
+    if let Some(old) = old {
+        let _ = tokio::task::spawn_blocking(move || end_relay(old)).await;
+    }
+    if let (RelayPlan::Start | RelayPlan::Restart, Some(key)) = (&plan, wanted) {
+        let started = tokio::task::spawn_blocking(move || start_relay(key)).await;
+        if let Ok(relay) = started {
+            *slot.0.lock().unwrap() = relay;
+        }
+    }
+    VIEWER_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    true
+}
+
+/// The socket the viewer reads: the relay's on a remote profile, the daemon's otherwise.
+fn viewer_sock(app: &tauri::AppHandle, daemon: &Path) -> PathBuf {
+    if active_remote(app).is_some() {
+        relay_sock()
+    } else {
+        daemon.to_path_buf()
+    }
+}
+
+/// The page Retry answers with: straight back to the window's address.
+const RETRY_HTML: &[u8] =
+    b"<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url=/\"><title>Supragnosis</title>";
+
+/// One answer through the relay, on a remote profile (design-system.md Section 29.31). At `/` a
+/// relay's state is a page of the shell's; anywhere else it passes to the page, whose poll says it.
+async fn remote_answer(
+    app: &tauri::AppHandle,
+    r: &RemoteServer,
+    target: &str,
+    if_none_match: Option<&str>,
+) -> http::Response<Vec<u8>> {
+    let index = target == "/" || target.starts_with("/?");
+    let page = |page: RemotePage| {
+        *SPLASH.lock().unwrap() = None;
+        remote_drawn(app, &page);
+        let html = remote_page_html(&page, &r.name, &settings_url());
+        resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
+    };
+    let said = |status: u16, error: String| {
+        let body = serde_json::json!({ "error": error }).to_string().into_bytes();
+        resp(status, "application/json", SHELL_CSP, body)
+    };
+    let state = app.try_state::<RelaySlot>().map(|slot| {
+        let mut relay = slot.0.lock().unwrap();
+        relay.reap();
+        match &*relay {
+            Relay::Idle | Relay::Ended { ran: true, .. } => Some(RemotePage::Connecting),
+            Relay::Ended { said, .. } => Some(RemotePage::CouldNotStart(said.clone())),
+            Relay::Running { .. } => None,
+        }
+    });
+    // A relay that is not there yet, or broke after it ran, is started (sync_relay decides, and
+    // never in a loop).
+    if matches!(state, Some(Some(RemotePage::Connecting))) {
+        let up = app.clone();
+        tauri::async_runtime::spawn(async move { sync_relay(&up, false).await });
+    }
+    match state.flatten() {
+        Some(p) if index => return page(p),
+        Some(RemotePage::CouldNotStart(why)) => {
+            return said(502, format!("the connection to {} could not start - {why}", r.name))
+        }
+        Some(_) => return said(502, format!("the connection to {} is starting", r.name)),
+        None => {}
+    }
+    let sock = relay_sock();
+    let fetch = uds_request(&sock, "GET", target, if_none_match);
+    match tokio::time::timeout(REMOTE_WAIT, fetch).await {
+        Ok(Ok(f)) => {
+            if index {
+                if let Some(p) = RemotePage::of_answer(f.status, f.relay_state.as_deref(), &f.body)
+                {
+                    return page(p);
+                }
+                *SPLASH.lock().unwrap() = None;
+                *REMOTE_DRAWN.lock().unwrap() = None;
+            }
+            let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
+            let mut out = resp(f.status, &f.ctype, &csp, f.body);
+            if let Some(v) = f.etag.and_then(|t| http::HeaderValue::from_str(&t).ok()) {
+                out.headers_mut().insert("etag", v);
+            }
+            out
+        }
+        Ok(Err(_)) if index => page(RemotePage::Connecting),
+        Ok(Err(_)) => said(502, format!("the connection to {} is starting", r.name)),
+        Err(_) if index => page(RemotePage::Unreachable("no answer came".into())),
+        Err(_) => said(504, format!("{} gave no answer within 75 seconds", r.name)),
+    }
+}
+
+/// What the window says on a remote profile when it is not the hub's page (Section 29.31).
+#[derive(Debug, Clone, PartialEq)]
+enum RemotePage {
+    Connecting,
+    CouldNotStart(String),
+    Unreachable(String),
+    CredentialRefused(String),
+    TooOld,
+}
+
+impl RemotePage {
+    /// The key the watcher compares: what the page says, not how.
+    fn key(&self) -> &'static str {
+        match self {
+            RemotePage::Connecting => "connecting",
+            RemotePage::CouldNotStart(_) => "ended",
+            RemotePage::Unreachable(_) => "unreachable",
+            RemotePage::CredentialRefused(_) => "credential_refused",
+            RemotePage::TooOld => "too_old",
+        }
+    }
+
+    /// The page a relay's answer stands for, when it is one of its states (remote-viewer.md
+    /// Section 5) rather than the hub's own answer: only an answer the relay marked, so a hub that
+    /// answers with a `state` of its own draws no page of the shell's.
+    fn of_answer(status: u16, mark: Option<&str>, body: &[u8]) -> Option<RemotePage> {
+        if status < 400 {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+        let text = |k: &str| v[k].as_str().unwrap_or("").to_string();
+        let state = v["state"].as_str()?;
+        if mark != Some(state) {
+            return None;
+        }
+        match state {
+            "unreachable" => Some(RemotePage::Unreachable(text("detail"))),
+            "credential_refused" => Some(RemotePage::CredentialRefused(text("credential_file"))),
+            "too_old" => Some(RemotePage::TooOld),
+            _ => None,
+        }
+    }
+}
+
+/// A remote page, in the starting page's form (Section 29.5), with Retry and Open Server. It has no
+/// script and no timer: the shell checks while it is shown and reloads the window on a change.
+fn remote_page_html(page: &RemotePage, name: &str, settings: &tauri::Url) -> String {
+    let esc = |t: &str| {
+        t.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    let n = esc(name);
+    const BUTTON: &str = "display:inline-block;margin:18px 4px 0;padding:7px 16px;border-radius:8px;font-weight:600;text-decoration:none";
+    let mut server = settings.clone();
+    server.set_query(None);
+    server.set_fragment(Some("server"));
+    let acts = format!(
+        r#"<a href="/__shell/retry" autofocus style="{BUTTON};background:#d9a544;color:#16181e">Retry</a><a class="b2" href="{}" style="{BUTTON};border:1px solid #3a3f4a;color:#e9e4d6">Open Server</a>"#,
+        esc(server.as_str())
+    );
+    let (head, detail) = match page {
+        RemotePage::Connecting => (
+            format!(r#"<span class="spin" aria-hidden="true"></span>Connecting to {n}..."#),
+            String::new(),
+        ),
+        RemotePage::CouldNotStart(said) => (
+            format!("The connection to {n} could not start"),
+            esc(said),
+        ),
+        RemotePage::Unreachable(detail) => (format!("{n} is not answering"), esc(detail)),
+        RemotePage::CredentialRefused(file) => (
+            format!("{n} refused this Mac's credential"),
+            format!(
+                "It may have been revoked or replaced. Its operator can issue another; Open Server is where {n} is removed and added again with it. It was read from {}.",
+                esc(&tilde(Path::new(file)))
+            ),
+        ),
+        RemotePage::TooOld => (
+            format!("{n} runs Supragnosis older than 0.4.7, which has no viewer to show"),
+            "Its operator can upgrade it. The AI apps here still use it.".to_string(),
+        ),
+    };
+    let acts = if *page == RemotePage::Connecting { String::new() } else { acts };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">browsing a remote server's knowledge here arrives with a later release / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
-        name = esc(&r.name),
-        url = esc(&r.url),
+        r#"<!doctype html><meta charset="utf-8"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2 {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{acts}</div></body>"#
     )
+}
+
+/// The remote page the window shows, as drawn; while one is, the shell asks again every two seconds
+/// and reloads the window when what it would say changes - the page itself has no timer.
+static REMOTE_DRAWN: Mutex<Option<&'static str>> = Mutex::new(None);
+
+fn remote_drawn(app: &tauri::AppHandle, page: &RemotePage) {
+    let watching = REMOTE_DRAWN.lock().unwrap().replace(page.key()).is_some();
+    if !watching {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { watch_remote(app).await });
+    }
+}
+
+async fn watch_remote(app: tauri::AppHandle) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let Some(drawn) = *REMOTE_DRAWN.lock().unwrap() else {
+            return;
+        };
+        let now = match remote_now(&app).await {
+            Some(page) => page.key(),
+            None => "page",
+        };
+        if now != drawn {
+            *REMOTE_DRAWN.lock().unwrap() = None;
+            reload_viewer(&app);
+            return;
+        }
+    }
+}
+
+/// What the window would show now on a remote profile: a remote page, or `None` for the hub's own.
+/// On this Mac's profile, `None` too - the window is the daemon's.
+async fn remote_now(app: &tauri::AppHandle) -> Option<RemotePage> {
+    active_remote(app)?;
+    let ended = app.try_state::<RelaySlot>().and_then(|slot| {
+        let mut relay = slot.0.lock().unwrap();
+        relay.reap();
+        match &*relay {
+            Relay::Ended { said, ran: false, .. } => {
+                Some(Some(RemotePage::CouldNotStart(said.clone())))
+            }
+            Relay::Idle | Relay::Ended { ran: true, .. } => Some(Some(RemotePage::Connecting)),
+            Relay::Running { .. } => None,
+        }
+    });
+    if let Some(page) = ended {
+        return page;
+    }
+    match tokio::time::timeout(Duration::from_secs(10), uds_fetch(&relay_sock(), "/api/surface"))
+        .await
+    {
+        Ok(Ok(f)) => RemotePage::of_answer(f.status, f.relay_state.as_deref(), &f.body),
+        Ok(Err(_)) => Some(RemotePage::Connecting),
+        Err(_) => Some(RemotePage::Unreachable("no answer came".into())),
+    }
+}
+
+/// Whether the main window's page is the hub's, as its own loads say (design-system.md Section 29.31).
+static WINDOW_ON_REMOTE: Mutex<bool> = Mutex::new(false);
+
+/// Where the main window may go (design-system.md Section 29.31): the viewer's address and the
+/// app's own pages; any other web or mail address opens in the browser; the rest are refused. On a
+/// remote profile a move to Settings keeps no `act`, since the viewer's address may be the hub's
+/// page.
+#[derive(Debug, PartialEq)]
+enum Nav {
+    Allow,
+    Browser,
+    Refuse,
+    Without(tauri::Url),
+}
+
+fn navigation(url: &tauri::Url, remote: bool) -> Nav {
+    let same =
+        |a: &tauri::Url, b: &tauri::Url| a.scheme() == b.scheme() && a.host_str() == b.host_str();
+    if is_viewer(url) || url.as_str() == "about:blank" {
+        return Nav::Allow;
+    }
+    if same(url, &own_page("settings.html")) {
+        if remote && url.query_pairs().any(|(k, _)| k == "act") {
+            let mut kept = url.clone();
+            let rest: Vec<(String, String)> = url
+                .query_pairs()
+                .filter(|(k, _)| k != "act")
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            if rest.is_empty() {
+                kept.set_query(None);
+            } else {
+                kept.query_pairs_mut().clear().extend_pairs(rest);
+            }
+            return Nav::Without(kept);
+        }
+        return Nav::Allow;
+    }
+    match url.scheme() {
+        "http" | "https" | "mailto" => Nav::Browser,
+        _ => Nav::Refuse,
+    }
+}
+
+/// The largest chunk the event bridge takes, and so what it holds waiting for one.
+const MAX_CHUNK: usize = 1 << 20;
+
+/// Undoes HTTP/1.1 chunked framing as bytes arrive: the relay streams `/api/events` chunked, and a
+/// frame split across chunks would otherwise carry the chunk sizes in its middle. Moves the decoded
+/// bytes to `out`; what does not yet make a whole chunk stays in `pending`. Returns false when the
+/// framing is broken - a size it cannot read or past [`MAX_CHUNK`] - and the stream should be let go.
+fn dechunk(pending: &mut Vec<u8>, out: &mut Vec<u8>) -> bool {
+    loop {
+        let Some(eol) = pending.windows(2).position(|w| w == b"\r\n") else {
+            return pending.len() <= 32;
+        };
+        let size = std::str::from_utf8(&pending[..eol])
+            .ok()
+            .and_then(|l| usize::from_str_radix(l.split(';').next().unwrap_or("").trim(), 16).ok());
+        let Some(size) = size.filter(|s| *s <= MAX_CHUNK) else {
+            return false;
+        };
+        let whole = eol + 2 + size + 2;
+        if pending.len() < whole {
+            return true;
+        }
+        out.extend_from_slice(&pending[eol + 2..eol + 2 + size]);
+        pending.drain(..whole);
+    }
 }
 
 /// What the starting page says (docs/design-system.md Section 29.5): one of three things, from the
@@ -739,6 +1250,14 @@ fn tilde(p: &Path) -> String {
     }
 }
 
+/// Served at `/` while the daemon's socket is not answering yet; the shell reloads it into the real
+/// viewer once it is (Section 29.5: the page has no timer). Carries the LIVE daemon state so a
+/// failure is readable on the splash instead of an eternal "starting..." (the tray shows the same
+/// line, but the splash is what the user is looking at). Palette mirrors the viewer's candlelight
+/// theme.
+// data-tauri-drag-region="deep": with the overlay title bar there is no other chrome to drag the
+// window by while the splash is up, and its text covers the middle, which the bare attribute would
+// leave undraggable.
 fn starting_html(
     page: &StartPage,
     conflict: Option<&Conflict>,
@@ -833,6 +1352,7 @@ fn starting_html(
 static SPLASH: Mutex<Option<String>> = Mutex::new(None);
 
 fn splash_drawn(app: &tauri::AppHandle, sock: PathBuf, key: String) {
+    *REMOTE_DRAWN.lock().unwrap() = None;
     let watching = SPLASH.lock().unwrap().replace(key).is_some();
     if !watching {
         let app = app.clone();
@@ -1222,6 +1742,10 @@ fn cli_server_list() -> Option<serde_json::Value> {
 /// said, for the settings window.
 async fn refresh_servers(app: &tauri::AppHandle) -> Option<serde_json::Value> {
     let list = tokio::task::spawn_blocking(cli_server_list).await.ok().flatten();
+    // A list that could not be read says nothing about which server is active: not "this Mac",
+    // which would stop the relay and turn the window (P5).
+    let list = list?;
+    let list = Some(list);
     let remote = list.as_ref().and_then(|list| {
         let active = list["active"].as_str().unwrap_or("local");
         let row = list["servers"].as_array()?.iter().find(|r| {
@@ -1230,12 +1754,18 @@ async fn refresh_servers(app: &tauri::AppHandle) -> Option<serde_json::Value> {
         Some(RemoteServer {
             name: active.to_string(),
             url: row["url"].as_str().unwrap_or("").to_string(),
+            ca: row["ca"].as_str().map(str::to_string),
             answering: list["check"]["answering"].as_bool().unwrap_or(false),
             credential_refused: list["check"]["credential"].as_bool() == Some(false),
         })
     });
     if let Some(state) = app.try_state::<ActiveRemote>() {
         *state.0.lock().unwrap() = remote;
+    }
+    // The viewer relay follows the active profile, however it changed (design-system.md Section
+    // 29.31); a change shows at once.
+    if sync_relay(app, false).await {
+        reload_viewer(app);
     }
     list
 }
@@ -1851,7 +2381,14 @@ fn settings_url() -> tauri::Url {
 /// anything else a page could put in `?from=` would make "< Graph" a redirect (settings-page.md
 /// Section 4, S1; design-system.md Section 29.4).
 fn is_viewer(url: &tauri::Url) -> bool {
-    let own = graph_url();
+    [graph_url(), remote_url()]
+        .iter()
+        .any(|own| url.scheme() == own.scheme() && url.host_str() == own.host_str())
+}
+
+/// Whether `url` is the hub's page's origin (design-system.md Section 29.31).
+fn is_remote_page(url: &tauri::Url) -> bool {
+    let own = remote_url();
     url.scheme() == own.scheme() && url.host_str() == own.host_str()
 }
 
@@ -1910,10 +2447,18 @@ fn own_page_caller(webview: &tauri::Webview) -> Result<(), String> {
 /// its own state after every change.
 fn reload_viewer(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        if w.url()
-            .is_ok_and(|u| u.scheme() == "viz" || u.host_str() == Some("viz.localhost"))
-        {
+        let Ok(at) = w.url() else {
+            return;
+        };
+        if !is_viewer(&at) {
+            return;
+        }
+        // The viewer the profile shows now: the same origin reloads, the other is gone to
+        // (design-system.md Section 29.31).
+        if is_remote_page(&at) == active_remote(app).is_some() {
             let _ = w.eval("location.reload()");
+        } else {
+            let _ = w.navigate(viewer_url(app));
         }
     }
 }
@@ -3036,6 +3581,31 @@ fn graph_url() -> tauri::Url {
     url.parse().expect("static url")
 }
 
+/// The hub's page on a remote profile, at an origin apart from the console's (design-system.md
+/// Section 29.31).
+fn remote_url() -> tauri::Url {
+    let url = if cfg!(windows) { "http://remote.localhost/" } else { "remote://localhost/" };
+    url.parse().expect("static url")
+}
+
+/// The viewer the window shows for the active profile: the hub's on a remote one.
+fn viewer_url(app: &tauri::AppHandle) -> tauri::Url {
+    if active_remote(app).is_some() {
+        remote_url()
+    } else {
+        graph_url()
+    }
+}
+
+/// A page that goes at once to `to`: the other origin's address, when the profile has moved the
+/// window's viewer there. It has no script; the window's guard allows only the two viewers.
+fn moved_html(to: &tauri::Url) -> String {
+    format!(
+        "<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url={}\"><title>Supragnosis</title>",
+        to.as_str().replace('"', "%22")
+    )
+}
+
 /// Turns the main window to the settings page (docs/settings-page.md Section 3.0), creating the
 /// window first if the app has retreated to the tray. With a section, opens that section; without
 /// one, a window already on the settings page stays where it is.
@@ -3110,25 +3680,62 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
         let _ = w.set_focus();
         return Ok(());
     }
-    let builder = WebviewWindowBuilder::new(
-        app,
-        "main",
-        WebviewUrl::External("viz://localhost/".parse().expect("static url")),
-    )
-    .title(&app.package_info().name)
-    .min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)
-    .initialization_script(include_str!("../assets/shell-init.js"))
-    // Each page the window loads - the viewer, Settings, Setup - takes the kept text size (U21).
-    .on_page_load(|w, payload| {
-        if payload.event() == tauri::webview::PageLoadEvent::Finished {
-            if let Some(state) = w.app_handle().try_state::<TextScale>() {
-                let scale = *state.0.lock().unwrap();
-                if scale != 1.0 {
-                    let _ = w.eval(text_scale_script(scale));
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(viewer_url(app)))
+        .title(&app.package_info().name)
+        .min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)
+        .initialization_script(include_str!("../assets/shell-init.js"))
+        // The window goes only to the viewer's address and the app's own pages (design-system.md
+        // Section 29.31): a hub's page is shown here, and must not take the window elsewhere.
+        .on_navigation({
+            let app = app.clone();
+            // From the hub's page, or while a remote profile is active, a Settings act is dropped:
+            // where the window is comes from its own page loads, which no page can forge.
+            move |url| match navigation(
+                url,
+                active_remote(&app).is_some() || *WINDOW_ON_REMOTE.lock().unwrap(),
+            ) {
+                Nav::Allow => true,
+                Nav::Browser => {
+                    // A page asks for the browser at most once in two seconds: a person's click, not a
+                    // page opening tabs on its own.
+                    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+                    let mut last = LAST.lock().unwrap();
+                    if last.is_none_or(|t| t.elapsed() >= Duration::from_secs(2)) {
+                        *last = Some(std::time::Instant::now());
+                        let _ = open_url(url.as_str());
+                    }
+                    false
+                }
+                Nav::Refuse => {
+                    tracing::warn!(%url, "the window refused an address that is not its own");
+                    false
+                }
+                Nav::Without(kept) => {
+                    // Not from inside the navigation it answers: after it.
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.navigate(kept);
+                        }
+                    });
+                    false
                 }
             }
-        }
-    });
+        })
+        // Each page the window loads - the viewer, Settings, Setup - takes the kept text size (U21).
+        .on_page_load(|w, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                *WINDOW_ON_REMOTE.lock().unwrap() = is_remote_page(payload.url());
+            }
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                if let Some(state) = w.app_handle().try_state::<TextScale>() {
+                    let scale = *state.0.lock().unwrap();
+                    if scale != 1.0 {
+                        let _ = w.eval(text_scale_script(scale));
+                    }
+                }
+            }
+        });
     // Merge the title bar into the viewer header: the macOS title bar becomes a transparent
     // overlay (traffic lights float over the content, no title text), and shell-init.js turns
     // the header into the drag region with its left edge padded clear of the lights.
@@ -3160,28 +3767,74 @@ fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Holds the daemon's /api/events SSE stream and re-emits each `data:` frame as a "viz-event"
+/// Holds the viewer's /api/events SSE stream and re-emits each `data:` frame as a "viz-event"
 /// Tauri event (the webview side is the EventSource facade injected at init). Reconnects forever -
 /// the daemon may not be up yet, or may restart underneath us; the viewer also polls, so a lost
-/// frame degrades liveness, never correctness.
+/// frame degrades liveness, never correctness. The stream is the daemon's, or on a remote profile
+/// the relay's (design-system.md Section 29.31): a switch of profile lets go of the old one, and the
+/// relay's arrives chunked.
 async fn sse_bridge(app: tauri::AppHandle, sock: PathBuf) {
+    use std::sync::atomic::Ordering;
     loop {
-        if let Ok(mut s) = UnixStream::connect(&sock).await {
-            if s.write_all(b"GET /api/events HTTP/1.1\r\n\r\n").await.is_ok() {
+        let generation = VIEWER_GENERATION.load(Ordering::SeqCst);
+        let at = viewer_sock(&app, &sock);
+        let mut refused = false;
+        if let Ok(mut s) = UnixStream::connect(&at).await {
+            if s.write_all(b"GET /api/events HTTP/1.1\r\nHost: viewer\r\n\r\n").await.is_ok() {
                 let mut buf: Vec<u8> = Vec::new();
+                let mut head: Option<bool> = None; // Some(chunked) once the header is read
+                let mut pending: Vec<u8> = Vec::new();
                 let mut chunk = [0u8; 4096];
                 // One quiet line per connection when the first real frame flows - the log-side
                 // proof that daemon events are reaching the webview bridge.
                 let mut streamed = false;
                 loop {
-                    let n = match s.read(&mut chunk).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
+                    let read =
+                        tokio::time::timeout(Duration::from_secs(1), s.read(&mut chunk)).await;
+                    if VIEWER_GENERATION.load(Ordering::SeqCst) != generation {
+                        break;
+                    }
+                    let n = match read {
+                        Err(_) => continue,
+                        Ok(Ok(0)) | Ok(Err(_)) => break,
+                        Ok(Ok(n)) => n,
                     };
-                    buf.extend_from_slice(&chunk[..n]);
-                    // SSE frames end with a blank line ("\n\n"). The response header block ends
-                    // with \r\n\r\n (no bare \n\n inside), so it is swept out with the first
-                    // frame, and non-"data:" lines (headers, ": ok" keepalive) fall through.
+                    match head {
+                        Some(true) => {
+                            pending.extend_from_slice(&chunk[..n]);
+                            if !dechunk(&mut pending, &mut buf) {
+                                break;
+                            }
+                        }
+                        Some(false) => buf.extend_from_slice(&chunk[..n]),
+                        None => {
+                            pending.extend_from_slice(&chunk[..n]);
+                            let Some(end) = pending.windows(4).position(|w| w == b"\r\n\r\n")
+                            else {
+                                continue;
+                            };
+                            let header =
+                                String::from_utf8_lossy(&pending[..end]).to_ascii_lowercase();
+                            // A stream that is not there - a hub that refuses, or has none - is
+                            // asked again after a while, not every second.
+                            if !header.starts_with("http/1.1 200") {
+                                refused = true;
+                                break;
+                            }
+                            let chunked = header.contains("transfer-encoding: chunked");
+                            pending.drain(..end + 4);
+                            head = Some(chunked);
+                            if chunked {
+                                if !dechunk(&mut pending, &mut buf) {
+                                    break;
+                                }
+                            } else {
+                                buf.append(&mut pending);
+                            }
+                        }
+                    }
+                    // SSE frames end with a blank line ("\n\n"); non-"data:" lines (": ok"
+                    // keepalives) fall through.
                     while let Some(pos) = buf.windows(2).position(|w| w == b"\n\n") {
                         let frame: Vec<u8> = buf.drain(..pos + 2).collect();
                         for line in String::from_utf8_lossy(&frame).lines() {
@@ -3197,7 +3850,104 @@ async fn sse_bridge(app: tauri::AppHandle, sock: PathBuf) {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        let wait = if refused { 15 } else { 1 };
+        for _ in 0..wait {
+            if VIEWER_GENERATION.load(Ordering::SeqCst) != generation {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+}
+
+/// One answer of the viewer's protocols: `viz` for this Mac's console, and `remote` for a hub's
+/// page on a remote profile (design-system.md Section 29.31). The two are origins apart, so a hub's
+/// script reads nothing the console keeps - its remembered layouts, visits and view - and reaches
+/// nothing but the relay.
+async fn viewer_answer(
+    app: tauri::AppHandle,
+    sock: PathBuf,
+    target: String,
+    if_none_match: Option<String>,
+    remote_origin: bool,
+) -> http::Response<Vec<u8>> {
+    if target.starts_with("/api/events") {
+        // SSE cannot ride a request/response protocol - the viz-event bridge covers it.
+        resp(
+            404,
+            "application/json",
+            SHELL_CSP,
+            br#"{"error":"SSE rides the Tauri event bridge (viz-event), not the proxy"}"#.to_vec(),
+        )
+    } else if let Some((ctype, bytes)) = shell_asset(&target) {
+        resp(200, ctype, SHELL_CSP, bytes.to_vec())
+    } else if remote_origin && target == "/__shell/retry" {
+        // Retry on a remote page (design-system.md Section 29.31): a relay that ended is
+        // started again, and the window goes back to its address - so a reload never
+        // asks again.
+        sync_relay(&app, true).await;
+        resp(200, "text/html; charset=utf-8", SHELL_CSP, RETRY_HTML.to_vec())
+    } else if target.starts_with("/__shell/") {
+        resp(404, "text/plain", SHELL_CSP, b"not a shell asset".to_vec())
+    } else if let (true, Some(r)) = (remote_origin, active_remote(&app)) {
+        // A remote profile: the hub's page, through the relay, at an origin of its own.
+        remote_answer(&app, &r, &target, if_none_match.as_deref()).await
+    } else if remote_origin || active_remote(&app).is_some() {
+        // The other origin's address: its page goes to the one the profile shows now, and a read
+        // from a page left behind reaches nothing - the hub's page never reaches this Mac's daemon.
+        if target == "/" || target.starts_with("/?") {
+            let to = if remote_origin { graph_url() } else { remote_url() };
+            resp(200, "text/html; charset=utf-8", SHELL_CSP, moved_html(&to).into_bytes())
+        } else {
+            let body = br#"{"error":"the window shows another server now"}"#.to_vec();
+            resp(502, "application/json", SHELL_CSP, body)
+        }
+    } else {
+        let fetch = uds_request(&sock, "GET", &target, if_none_match.as_deref());
+        match tokio::time::timeout(Duration::from_secs(15), fetch).await {
+            // The daemon's own policy governs the daemon's own page. An answer with no
+            // policy is forwarded with none, so a daemon that stopped sending one shows
+            // up as that rather than as a shell-authored guess (see SHELL_CSP).
+            Ok(Ok(f)) => {
+                // The graph's own page: the starting page is no longer on screen.
+                if target == "/" {
+                    *SPLASH.lock().unwrap() = None;
+                    *REMOTE_DRAWN.lock().unwrap() = None;
+                }
+                let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
+                let mut r = resp(f.status, &f.ctype, &csp, f.body);
+                // The graph's ETag goes back with it, so the poll can ask (U33).
+                if let Some(v) = f.etag.and_then(|t| http::HeaderValue::from_str(&t).ok()) {
+                    r.headers_mut().insert("etag", v);
+                }
+                r
+            }
+            // Socket not answering: the index gets a self-refreshing splash carrying
+            // the live daemon state (a Failed reason must be readable, not an eternal
+            // "starting..."); API calls get an honest 502 (Principle 5).
+            _ if target == "/" => {
+                let since = START_AT.lock().unwrap().map(|t| t.elapsed());
+                let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
+                let conflict = splash_conflict().await;
+                let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
+                splash_drawn(&app, sock.clone(), splash_key(&app, conflict.as_ref()));
+                resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
+            }
+            Ok(Err(e)) => resp(
+                502,
+                "application/json",
+                SHELL_CSP,
+                serde_json::json!({ "error": format!("viewer socket unreachable: {e}") })
+                    .to_string()
+                    .into_bytes(),
+            ),
+            Err(_) => resp(
+                504,
+                "application/json",
+                SHELL_CSP,
+                br#"{"error":"viewer socket timed out"}"#.to_vec(),
+            ),
+        }
     }
 }
 
@@ -3206,6 +3956,7 @@ fn main() {
     let sock = viz_sock();
 
     let proxy_sock = sock.clone();
+    let remote_proxy_sock = sock.clone();
     tauri::Builder::default()
         .manage(DaemonGuard(Mutex::new(Daemon::Starting)))
         .manage(RunningSteps(Mutex::new(std::collections::HashMap::new())))
@@ -3232,8 +3983,7 @@ fn main() {
             diagnostics
         ])
         .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
-            let sock = proxy_sock.clone();
-            let app = ctx.app_handle().clone();
+            let (sock, app) = (proxy_sock.clone(), ctx.app_handle().clone());
             let target = request
                 .uri()
                 .path_and_query()
@@ -3241,77 +3991,19 @@ fn main() {
                 .unwrap_or_else(|| "/".to_string());
             let if_none_match = forwarded_if_none_match(request.headers().get("if-none-match"));
             tauri::async_runtime::spawn(async move {
-                let r = if target.starts_with("/api/events") {
-                    // SSE cannot ride a request/response protocol - the viz-event bridge covers it.
-                    resp(
-                        404,
-                        "application/json",
-                        SHELL_CSP,
-                        br#"{"error":"SSE rides the Tauri event bridge (viz-event), not the proxy"}"#.to_vec(),
-                    )
-                } else if let Some((ctype, bytes)) = shell_asset(&target) {
-                    resp(200, ctype, SHELL_CSP, bytes.to_vec())
-                } else if target.starts_with("/__shell/") {
-                    resp(404, "text/plain", SHELL_CSP, b"not a shell asset".to_vec())
-                } else if let Some(r) = active_remote(&app) {
-                    // A remote profile: the local socket is not the knowledge the AI apps use.
-                    if target == "/" {
-                        resp(200, "text/html; charset=utf-8", SHELL_CSP, remote_html(&r).into_bytes())
-                    } else {
-                        resp(
-                            502,
-                            "application/json",
-                            SHELL_CSP,
-                            br#"{"error":"a remote server is active - this window does not browse it yet"}"#.to_vec(),
-                        )
-                    }
-                } else {
-                    let fetch = uds_request(&sock, "GET", &target, if_none_match.as_deref());
-                    match tokio::time::timeout(Duration::from_secs(15), fetch).await {
-                        // The daemon's own policy governs the daemon's own page. An answer with no
-                        // policy is forwarded with none, so a daemon that stopped sending one shows
-                        // up as that rather than as a shell-authored guess (see SHELL_CSP).
-                        Ok(Ok(f)) => {
-                            // The graph's own page: the starting page is no longer on screen.
-                            if target == "/" {
-                                *SPLASH.lock().unwrap() = None;
-                            }
-                            let csp = with_ipc_sources(f.csp.as_deref().unwrap_or(""));
-                            let mut r = resp(f.status, &f.ctype, &csp, f.body);
-                            // The graph's ETag goes back with it, so the poll can ask (U33).
-                            if let Some(v) = f.etag.and_then(|t| http::HeaderValue::from_str(&t).ok()) {
-                                r.headers_mut().insert("etag", v);
-                            }
-                            r
-                        }
-                        // Socket not answering: the index gets a self-refreshing splash carrying
-                        // the live daemon state (a Failed reason must be readable, not an eternal
-                        // "starting..."); API calls get an honest 502 (Principle 5).
-                        _ if target == "/" => {
-                            let since = START_AT.lock().unwrap().map(|t| t.elapsed());
-                            let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
-                            let conflict = splash_conflict().await;
-                            let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
-                            splash_drawn(&app, sock.clone(), splash_key(&app, conflict.as_ref()));
-                            resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
-                        }
-                        Ok(Err(e)) => resp(
-                            502,
-                            "application/json",
-                            SHELL_CSP,
-                            serde_json::json!({ "error": format!("viewer socket unreachable: {e}") })
-                                .to_string()
-                                .into_bytes(),
-                        ),
-                        Err(_) => resp(
-                            504,
-                            "application/json",
-                            SHELL_CSP,
-                            br#"{"error":"viewer socket timed out"}"#.to_vec(),
-                        ),
-                    }
-                };
-                responder.respond(r);
+                responder.respond(viewer_answer(app, sock, target, if_none_match, false).await);
+            });
+        })
+        .register_asynchronous_uri_scheme_protocol("remote", move |ctx, request, responder| {
+            let (sock, app) = (remote_proxy_sock.clone(), ctx.app_handle().clone());
+            let target = request
+                .uri()
+                .path_and_query()
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "/".to_string());
+            let if_none_match = forwarded_if_none_match(request.headers().get("if-none-match"));
+            tauri::async_runtime::spawn(async move {
+                responder.respond(viewer_answer(app, sock, target, if_none_match, true).await);
             });
         })
         .on_window_event(|window, event| match event {
@@ -3324,9 +4016,8 @@ fn main() {
                 keep_frame(window.app_handle());
                 let _ = window.hide();
                 #[cfg(target_os = "macos")]
-                let _ = window
-                    .app_handle()
-                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                let _ =
+                    window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             WindowEvent::Moved(_) => note_frame(window),
             WindowEvent::Resized(_) => {
@@ -3353,8 +4044,10 @@ fn main() {
             let name = app.package_info().name.clone();
             let status = MenuItem::with_id(app, "tray-status", "Starting...", false, None::<&str>)?;
             let open = MenuItem::with_id(app, "tray-open", "Open Graph", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "tray-quit", format!("Quit {name}"), true, None::<&str>)?;
+            let settings =
+                MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?;
+            let quit =
+                MenuItem::with_id(app, "tray-quit", format!("Quit {name}"), true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[
@@ -3369,6 +4062,7 @@ fn main() {
             app.manage(TrayKept(Mutex::new(None)));
             app.manage(FrameNow(Mutex::new(None)));
             app.manage(ActiveRemote(Mutex::new(None)));
+            app.manage(RelaySlot(Mutex::new(Relay::Idle)));
             app.manage(AppsHint(Mutex::new((false, false))));
             app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
@@ -3378,7 +4072,9 @@ fn main() {
             // app's pages, the map's commands and its help. Each item has its own id, apart from the
             // tray's, so an item does only its own act.
             let app_menu = Menu::default(app.handle())?;
-            let item = |id: &str, text: &str, key: Option<&str>| MenuItem::with_id(app, id, text, true, key);
+            let item = |id: &str, text: &str, key: Option<&str>| {
+                MenuItem::with_id(app, id, text, true, key)
+            };
             let mut map_items: Vec<(&'static str, MenuItem<tauri::Wry>)> = Vec::new();
             for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
                 let text = sub.text()?;
@@ -3399,7 +4095,9 @@ fn main() {
                     for (id, words, key) in mapped {
                         kept.push((id, item(id, words, key)?));
                     }
-                    let at = |id: &str| kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap();
+                    let at = |id: &str| {
+                        kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap()
+                    };
                     // Text that can grow (design-system.md Section 10, U21): the root's size, not the
                     // webview's zoom, so the title bar and its traffic lights stay put.
                     let items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
@@ -3567,6 +4265,11 @@ fn main() {
             }
             RunEvent::Exit => {
                 keep_frame(app);
+                // The relay would end with the pipe anyway; this ends it now.
+                if let Some(slot) = app.try_state::<RelaySlot>() {
+                    let relay = std::mem::replace(&mut *slot.0.lock().unwrap(), Relay::Idle);
+                    end_relay(relay);
+                }
                 let prev = std::mem::replace(
                     &mut *app.state::<DaemonGuard>().0.lock().unwrap(),
                     Daemon::Starting,
@@ -3581,10 +4284,7 @@ fn main() {
             // tray-only (Accessory), so without this arm "opening the app again" does nothing;
             // convention says it brings the main window back.
             #[cfg(target_os = "macos")]
-            RunEvent::Reopen {
-                has_visible_windows,
-                ..
-            } => {
+            RunEvent::Reopen { has_visible_windows, .. } => {
                 tracing::info!(has_visible_windows, "reopen - showing the viewer");
                 if let Err(e) = show_viewer(app) {
                     tracing::error!(error = %e, "failed to reopen the viewer window");
@@ -3999,6 +4699,7 @@ mod status_text_tests {
         let remote = super::RemoteServer {
             name: "work".into(),
             url: "https://hub.example".into(),
+            ca: None,
             answering: true,
             credential_refused: false,
         };
@@ -5618,6 +6319,7 @@ mod tray_tests {
         let r = |answering, refused| RemoteServer {
             name: "home".into(),
             url: "https://h".into(),
+            ca: None,
             answering,
             credential_refused: refused,
         };
@@ -5844,5 +6546,222 @@ mod cli_contract_tests {
         assert_eq!(cli_json(newer.as_bytes()), Err(CLI_SCHEMA + 1));
         assert!(cli_json(br#"{"situation": "one"}"#).expect("read").is_some());
         assert_eq!(cli_json(b"not json"), Ok(None));
+    }
+}
+
+/// docs/design-system.md Section 29.31 (step 65): the remote window - the viewer relay's life, the
+/// pages the shell draws for its states, the window's addresses, and the relay's chunked stream.
+#[cfg(test)]
+mod remote_window_tests {
+    use super::*;
+
+    fn key(name: &str, url: &str, ca: Option<&str>) -> RelayKey {
+        RelayKey { name: name.into(), url: url.into(), ca: ca.map(str::to_string) }
+    }
+
+    /// The relay follows the active profile: started on a remote one, started again when its name,
+    /// address or CA changes, stopped on this Mac. One that ended soon after it started is left ended
+    /// until Retry or a change of profile, so it is never started in a loop; one that broke after it
+    /// had run is started again once.
+    #[test]
+    fn the_relay_follows_the_profile_and_never_loops() {
+        let home = key("home", "https://hub.example:7420/mcp", None);
+        let moved = key("home", "https://hub.example:7421/mcp", None);
+        let ca = key("home", "https://hub.example:7420/mcp", Some("/ca.pem"));
+        let run = RelayNow::Running(home.clone());
+        let ended = RelayNow::Ended(home.clone(), false);
+        let broke = RelayNow::Ended(home.clone(), true);
+        assert_eq!(relay_plan(&RelayNow::Idle, None, false), RelayPlan::Keep);
+        assert_eq!(relay_plan(&RelayNow::Idle, Some(&home), false), RelayPlan::Start);
+        assert_eq!(relay_plan(&run, Some(&home), false), RelayPlan::Keep);
+        assert_eq!(relay_plan(&run, Some(&home), true), RelayPlan::Keep, "a running relay stays");
+        assert_eq!(relay_plan(&run, Some(&moved), false), RelayPlan::Restart, "a new address");
+        assert_eq!(relay_plan(&run, Some(&ca), false), RelayPlan::Restart, "a new CA");
+        assert_eq!(relay_plan(&run, None, false), RelayPlan::Stop, "this Mac again");
+        assert_eq!(relay_plan(&ended, Some(&home), false), RelayPlan::Keep, "no loop");
+        assert_eq!(relay_plan(&ended, Some(&home), true), RelayPlan::Start, "Retry starts it");
+        assert_eq!(relay_plan(&ended, Some(&moved), false), RelayPlan::Start, "a new profile");
+        assert_eq!(relay_plan(&ended, None, false), RelayPlan::Stop);
+        assert_eq!(relay_plan(&broke, Some(&home), false), RelayPlan::Start, "it ran, then broke");
+        assert_eq!(relay_plan(&broke, None, false), RelayPlan::Stop);
+        assert_eq!(RELAY_RAN, Duration::from_secs(30));
+
+        let said: std::collections::VecDeque<String> =
+            ["starting", "Error: the profile's URL does not end in /mcp", ""]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(last_words(&said), "the profile's URL does not end in /mcp");
+        assert_eq!(last_words(&Default::default()), "it ended without saying why");
+        assert!(REMOTE_WAIT > Duration::from_secs(70), "the proxy outwaits the relay");
+    }
+
+    /// Each relay state is a page in the starting page's form, with Retry and Open Server; it has no
+    /// script and no timer, says the server's name escaped, and names a refused credential's file,
+    /// never its contents. Any other answer is the hub's.
+    #[test]
+    fn each_relay_state_is_a_page_of_its_own() {
+        let answer = |status: u16, body: serde_json::Value| {
+            let mark = body["state"].as_str().map(str::to_string);
+            RemotePage::of_answer(status, mark.as_deref(), body.to_string().as_bytes())
+        };
+        assert_eq!(
+            answer(502, serde_json::json!({"state": "unreachable", "detail": "nothing accepted"})),
+            Some(RemotePage::Unreachable("nothing accepted".into()))
+        );
+        assert_eq!(
+            answer(
+                401,
+                serde_json::json!({"state": "credential_refused", "credential_file": "/f"})
+            ),
+            Some(RemotePage::CredentialRefused("/f".into()))
+        );
+        assert_eq!(answer(404, serde_json::json!({"state": "too_old"})), Some(RemotePage::TooOld));
+        assert_eq!(answer(404, serde_json::json!({"error": "no entity with that id"})), None);
+        assert_eq!(answer(403, serde_json::json!({"error": "not granted"})), None);
+        assert_eq!(RemotePage::of_answer(200, None, b"<!doctype html>"), None);
+        let forged = serde_json::json!({"state": "credential_refused", "credential_file": "/f"});
+        assert_eq!(
+            RemotePage::of_answer(401, None, forged.to_string().as_bytes()),
+            None,
+            "a hub's own state, unmarked by the relay, draws no page of the shell's"
+        );
+
+        let settings: tauri::Url = "tauri://localhost/settings.html?from=x".parse().unwrap();
+        let pages = [
+            (RemotePage::Connecting, "Connecting to h&lt;b&gt;..."),
+            (
+                RemotePage::CouldNotStart("no CA".into()),
+                "The connection to h&lt;b&gt; could not start",
+            ),
+            (RemotePage::Unreachable("refused".into()), "h&lt;b&gt; is not answering"),
+            (
+                RemotePage::CredentialRefused("/x/home.token".into()),
+                "h&lt;b&gt; refused this Mac's credential",
+            ),
+            (RemotePage::TooOld, "h&lt;b&gt; runs Supragnosis older than 0.4.7"),
+        ];
+        for (page, head) in pages {
+            let html = remote_page_html(&page, "h<b>", &settings);
+            assert!(html.contains(head), "{page:?}: {html}");
+            for never in ["<script", "http-equiv=\"refresh\"", "h<b>"] {
+                assert!(!html.contains(never), "{page:?} holds {never}");
+            }
+            let acts = html.contains(">Retry</a>") && html.contains(">Open Server</a>");
+            assert_eq!(acts, page != RemotePage::Connecting, "{page:?}");
+            if acts {
+                assert!(html.contains("href=\"/__shell/retry\""));
+                assert!(
+                    html.contains("settings.html#server\""),
+                    "Open Server, with no act: {html}"
+                );
+            }
+        }
+        let refused = remote_page_html(
+            &RemotePage::CredentialRefused("/x/home.token".into()),
+            "home",
+            &settings,
+        );
+        assert!(refused.contains("/x/home.token") && refused.contains("revoked"));
+        assert!(!String::from_utf8_lossy(RETRY_HTML).contains("retry"), "Retry goes back to /");
+    }
+
+    /// The main window goes only to the viewers' addresses - the console's and, apart from it, the
+    /// hub's - and the app's own pages; web and mail addresses open in the browser; and on a remote
+    /// profile, or from the hub's page, a move to Settings keeps no act.
+    #[test]
+    fn the_window_goes_only_to_its_own_pages() {
+        let u = |s: &str| -> tauri::Url { s.parse().unwrap() };
+        let graph = graph_url();
+        let settings = own_page("settings.html");
+        assert_eq!(navigation(&graph, true), Nav::Allow);
+        assert_eq!(navigation(&remote_url(), true), Nav::Allow);
+        assert_ne!(graph.scheme(), remote_url().scheme(), "two origins, not one");
+        assert!(
+            is_viewer(&remote_url()) && is_remote_page(&remote_url()) && !is_remote_page(&graph)
+        );
+        let moved = moved_html(&remote_url());
+        assert!(moved.contains(&format!("url={}", remote_url())) && !moved.contains("<script"));
+        assert_eq!(navigation(&graph.join("/?workspace=docs").unwrap(), true), Nav::Allow);
+        assert_eq!(navigation(&settings, true), Nav::Allow);
+        assert_eq!(navigation(&u("about:blank"), false), Nav::Allow);
+        let mut act = settings.clone();
+        act.set_query(Some("act=reveal-log&from=viz%3A%2F%2Flocalhost%2F"));
+        act.set_fragment(Some("daemon"));
+        assert_eq!(navigation(&act, false), Nav::Allow, "this Mac's starting page asks for acts");
+        let Nav::Without(kept) = navigation(&act, true) else {
+            panic!("the act is dropped")
+        };
+        assert!(!kept.as_str().contains("act="), "{kept}");
+        assert!(kept.as_str().contains("from=") && kept.fragment() == Some("daemon"), "{kept}");
+        for web in ["https://example.com/", "http://example.com/x", "mailto:a@example.com"] {
+            assert_eq!(navigation(&u(web), true), Nav::Browser, "{web}");
+        }
+        for other in ["file:///etc/passwd", "javascript:alert(1)", "tauri://elsewhere/x"] {
+            assert_eq!(navigation(&u(other), true), Nav::Refuse, "{other}");
+        }
+    }
+
+    /// The relay streams events chunked: a frame split across chunks comes out whole, a size line
+    /// with an extension is read, and a chunk not yet whole waits; a size it cannot read, or past the
+    /// largest chunk it takes, lets the stream go rather than overflow or grow without end.
+    #[test]
+    fn a_chunked_event_stream_comes_out_whole() {
+        let mut pending = b"7\r\ndata: {\r\n5\r\n\"a\":1\r\n".to_vec();
+        let mut out = Vec::new();
+        assert!(dechunk(&mut pending, &mut out));
+        assert_eq!(out, b"data: {\"a\":1");
+        assert!(pending.is_empty());
+        pending.extend_from_slice(b"3;ext=1\r\n}\n\n\r\n4\r\nda");
+        assert!(dechunk(&mut pending, &mut out));
+        assert_eq!(out, b"data: {\"a\":1}\n\n", "a whole frame");
+        assert_eq!(pending, b"4\r\nda", "the next chunk waits for the rest");
+        pending.extend_from_slice(b"ta\r\n");
+        assert!(dechunk(&mut pending, &mut out));
+        assert!(out.ends_with(b"data"));
+        for broken in [&b"ffffffffffffffff\r\nx"[..], b"zz\r\n", b"100001\r\n"] {
+            let (mut pending, mut out) = (broken.to_vec(), Vec::new());
+            assert!(!dechunk(&mut pending, &mut out), "{}", String::from_utf8_lossy(broken));
+        }
+        let (mut pending, mut out) = (vec![b'1'; 64], Vec::new());
+        assert!(!dechunk(&mut pending, &mut out), "a size line that never ends");
+    }
+
+    /// The pieces are wired where they act: the proxy answers a remote profile through the relay,
+    /// the event bridge reads the socket the profile says and decodes chunks, the window's builder
+    /// guards its addresses, the server list feeds the relay, and quitting ends it.
+    #[test]
+    fn the_remote_window_is_wired_where_it_acts() {
+        let src = include_str!("main.rs");
+        let body = |head: &str| {
+            let at = src.find(head).unwrap_or_else(|| panic!("no {head}"));
+            &src[at..at + src[at..].find("\n}\n").expect("it closes")]
+        };
+        assert!(src.contains("remote_answer(&app, &r, &target, if_none_match.as_deref()).await"));
+        let bridge = body("async fn sse_bridge(");
+        assert!(bridge.contains("viewer_sock(&app, &sock)") && bridge.contains("dechunk("));
+        assert!(bridge.contains("VIEWER_GENERATION"), "a switch lets go of the old stream");
+        assert!(body("fn show_viewer(")
+            .contains("active_remote(&app).is_some() || *WINDOW_ON_REMOTE.lock().unwrap(),"));
+        let servers = body("async fn refresh_servers(");
+        assert!(servers.contains("sync_relay(app, false)"));
+        assert!(servers.contains("let list = list?;"), "a list that failed is not \"this Mac\"");
+        assert!(src.contains("register_asynchronous_uri_scheme_protocol(\"remote\""));
+        assert!(src.contains("*WINDOW_ON_REMOTE.lock().unwrap() = is_remote_page(payload.url());"));
+        assert!(body("async fn viewer_answer(")
+            .contains("the hub's page never reaches this Mac's daemon"));
+        assert!(
+            bridge.contains("if !header.starts_with(\"http/1.1 200\")"),
+            "a refused stream backs off"
+        );
+        assert!(body("async fn remote_answer(").contains("REMOTE_WAIT"));
+        assert!(src.contains("app.manage(RelaySlot(Mutex::new(Relay::Idle)));"));
+        let init = include_str!("../assets/shell-init.js");
+        assert!(init.contains("window.supragnosisServer = SETTINGS + \"#server\";"));
+        // On the hub's page too the app's pages are reached at their own scheme, not as web pages
+        // the guard would send to the browser.
+        assert!(init.contains("var custom = /^(viz|tauri|remote):$/.test(location.protocol);"));
+        let kit = include_str!("../assets/kit.js");
+        assert!(kit.contains("for (const home of [new URL(GRAPH_HOME), new URL(REMOTE_HOME)])"));
     }
 }
