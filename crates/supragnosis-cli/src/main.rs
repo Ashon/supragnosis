@@ -62,7 +62,7 @@ enum Cmd {
     Status(StatusArgs),
     /// Stdio MCP server that relays to the running daemon - what an AI app launches. Opens no store
     /// and holds no token in the app's config (docs/client-connect.md)
-    Bridge(BridgeArgs),
+    Bridge,
     /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini, OpenCode) to
     /// this node through the bridge; with no app, list them and how each is connected
     Connect(ConnectArgs),
@@ -117,14 +117,6 @@ enum Cmd {
     Migrate(WorkspaceArgs),
     /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
     RekeyWorkspace(RekeyArgs),
-}
-
-#[derive(Args)]
-struct BridgeArgs {
-    /// Relay the active remote server's viewer to this unix socket instead, until stdin closes - what
-    /// the desktop app starts on a remote profile (docs/remote-viewer.md Section 5)
-    #[arg(long, value_name = "SOCKET")]
-    viewer: Option<std::path::PathBuf>,
 }
 
 #[derive(Args, Clone)]
@@ -418,7 +410,6 @@ mod lifecycle;
 mod pair;
 mod principal;
 mod profile;
-mod relay;
 mod setup;
 
 fn main() -> Result<()> {
@@ -428,8 +419,7 @@ fn main() -> Result<()> {
         Cmd::Stop => stop(),
         Cmd::Restart(a) => restart(resolve(a, true)),
         Cmd::Status(a) => status(a.json),
-        Cmd::Bridge(BridgeArgs { viewer: None }) => bridge_cmd(),
-        Cmd::Bridge(BridgeArgs { viewer: Some(socket) }) => viewer_relay_cmd(&socket),
+        Cmd::Bridge => bridge_cmd(),
         Cmd::Connect(a) => connect_cmd(a),
         Cmd::Setup(a) => setup_cmd(a),
         Cmd::Embed { cmd: EmbedCmd::Fetch { events } } => embed_fetch(true, events),
@@ -3070,28 +3060,6 @@ fn bridge_cmd() -> Result<()> {
     };
     let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
     rt.block_on(bridge::run(cfg, tokio::io::stdin(), tokio::io::stdout()))
-}
-
-/// `supragnosis bridge --viewer <socket>` (docs/remote-viewer.md Section 5): the active remote
-/// server's read tier on a 0600 unix socket, until stdin closes.
-fn viewer_relay_cmd(socket: &std::path::Path) -> Result<()> {
-    let home = connect::Env::from_process().home;
-    let target =
-        profile::active(&home, |k| std::env::var(k).ok()).map_err(|e| anyhow::anyhow!(e))?;
-    let cfg = relay::config(target, read_secret).map_err(|e| anyhow::anyhow!(e))?;
-    relay::check_socket_dir(socket).map_err(|e| anyhow::anyhow!(e))?;
-    let rt = tokio::runtime::Runtime::new().context("failed to build tokio runtime")?;
-    let served = rt.block_on(async {
-        let listener = supragnosis_viz::bind_uds(socket).await?;
-        if let Err(e) = relay::bound_privately(socket) {
-            let _ = std::fs::remove_file(socket);
-            anyhow::bail!(e);
-        }
-        relay::run(cfg, listener, tokio::io::stdin(), Some(socket.to_path_buf())).await
-    });
-    // Stdin's reader is a blocking thread; a relay that stopped for another reason must not wait on it.
-    rt.shutdown_background();
-    served
 }
 
 /// `supragnosis server` (docs/remote-server.md Section 3).

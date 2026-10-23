@@ -2801,8 +2801,8 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
-// docs/remote-viewer.md Section 8 - the hub's read tier (V rows). Steps 0-2 of Section 10 are
-// built; step 3 (the app) is not.
+// docs/remote-viewer.md Section 8 - the hub's read tier (V rows). Steps 0-1 of Section 10 are
+// built; steps 2 (the relay) and 3 (the app) are not.
 const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("a read-tier request without an admitted credential is answered 401 before any route",
@@ -2847,25 +2847,20 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (5, &[c(
         "the credential is read per request from its 0600 file and sent only as a header",
-        Evidence::Scenario(&[
-            // A replaced file is used by the next request; the page's own Authorization and cookies
-            // are not forwarded; a refused credential's file is named, never its contents.
-            "the_relay_forwards_gets_under_viz_with_a_credential_read_per_request",
-            "the_relay_names_each_failure_state",
-            "the_relay_carries_the_read_tier_within_the_grants",
-        ]),
+        Evidence::Deferred(
+            "the relay (`supragnosis bridge --viewer`, remote-viewer.md Section 10 step 2) is not \
+             built - no code reads a credential for the viewer, so nothing can be pinned; the hub \
+             side already takes it from `Authorization` only (principal.rs). Revisit when step 2 \
+             lands, with the profile's `token_file` guard (R6) as the model",
+        ),
     )]),
     (6, &[c(
-        "the relay verifies TLS or speaks plain HTTP to loopback only, relays only GETs of paths \
-         under /viz/, and cannot outlive the app that started it",
-        Evidence::Scenario(&[
-            "the_relay_reaches_a_server_only_over_verified_tls",
-            // Plain HTTP off this machine, and a URL carrying a password, are refused.
-            "a_relay_needs_a_remote_profile_a_viewer_address_and_a_private_socket",
-            "the_relay_forwards_gets_under_viz_with_a_credential_read_per_request",
-            "the_relay_follows_no_redirect",
-            "the_relay_streams_events_and_stops_with_its_stdin",
-        ]),
+        "the relay verifies TLS, relays only GET, and cannot outlive the app that started it",
+        Evidence::Deferred(
+            "step 2 of remote-viewer.md Section 10, not built: there is no `--viewer` relay in the \
+             CLI, so none of the three demands has code to hold to. The TLS half will reuse the \
+             profile rule R8 pins today. Revisit when step 2 lands",
+        ),
     )]),
     (7, &[c(
         "the remote stream carries knowledge changes in readable, servable workspaces only",
@@ -3460,7 +3455,6 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/invite.rs"),
     include_str!("../../supragnosis-cli/src/join.rs"),
     include_str!("../../supragnosis-cli/src/pair.rs"),
-    include_str!("../../supragnosis-cli/src/relay.rs"),
     include_str!("../../supragnosis-viz/tests/http.rs"),
     include_str!("../../supragnosis-viz/tests/design_tokens.rs"),
     include_str!("../../supragnosis-viz/tests/landing.rs"),
