@@ -8,7 +8,7 @@
       "arguments": [
         {
           "name": "workspace",
-          "description": "Workspace to brief. Omitted: the node default. '*' for all.",
+          "description": "Workspace to brief. Omitted or '*': every workspace.",
           "required": false
         },
         {
@@ -40,7 +40,7 @@
       "arguments": [
         {
           "name": "workspace",
-          "description": "Workspace to curate. Omitted: the node default. '*' for all.",
+          "description": "Workspace to curate. Omitted or '*': every workspace.",
           "required": false
         }
       ]

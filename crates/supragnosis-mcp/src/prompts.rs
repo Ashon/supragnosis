@@ -20,7 +20,7 @@ pub const PROMPTS: [(&str, &str, &[Arg]); 4] = [
         "Brief a workspace: what its knowledge says now, what is contested, what is weakly \
          supported, and what is waiting on your decision - written from current state, never stored.",
         &[
-            ("workspace", "Workspace to brief. Omitted: the node default. '*' for all.", false),
+            ("workspace", "Workspace to brief. Omitted or '*': every workspace.", false),
             ("focus", "Optional topic to center the brief on.", false),
         ],
     ),
@@ -36,7 +36,7 @@ pub const PROMPTS: [(&str, &str, &[Arg]); 4] = [
         "curate",
         "Improve the canon: draft proposals for the tidy-ups the curation signals point at, for you \
          to review in the console. Nothing is decided by the model.",
-        &[("workspace", "Workspace to curate. Omitted: the node default. '*' for all.", false)],
+        &[("workspace", "Workspace to curate. Omitted or '*': every workspace.", false)],
     ),
     (
         "review-proposal",
@@ -92,7 +92,7 @@ pub fn get(
         |k: &str| args.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
     let (task, digest) = match name {
         "brief" => {
-            let ws = scope(engine, arg("workspace"));
+            let ws = scope(arg("workspace"));
             let focus = arg("focus");
             let shown = ws.clone().unwrap_or_else(|| "*".into());
             let task = match focus {
@@ -104,12 +104,12 @@ pub fn get(
         "what-do-we-know-about" => {
             let topic =
                 arg("topic").ok_or_else(|| PromptError::Invalid("`topic` is required".into()))?;
-            let ws = arg("workspace").and_then(|w| (!is_all(w)).then(|| w.to_string()));
+            let ws = scope(arg("workspace"));
             let task = format!("Answer what the store knows about \"{topic}\".");
             (task + TOPIC, topic_digest(engine, topic, ws.as_deref())?)
         }
         "curate" => {
-            let ws = scope(engine, arg("workspace"));
+            let ws = scope(arg("workspace"));
             let shown = ws.clone().unwrap_or_else(|| "*".into());
             let task = format!("Improve the canon of workspace `{shown}`.");
             (
@@ -147,13 +147,9 @@ pub fn get(
     Ok(result)
 }
 
-/// A workspace argument as the tools read it: omitted is the node default, `*` is every workspace.
-fn scope(engine: &Engine, ws: Option<&str>) -> Option<String> {
-    match ws {
-        None => Some(engine.default_workspace().to_string()),
-        Some(w) if is_all(w) => None,
-        Some(w) => Some(w.to_string()),
-    }
+/// A workspace argument as the read tools take it: omitted or `*` is every workspace (`None`).
+fn scope(ws: Option<&str>) -> Option<String> {
+    ws.filter(|w| !is_all(w)).map(str::to_string)
 }
 
 fn is_all(w: &str) -> bool {

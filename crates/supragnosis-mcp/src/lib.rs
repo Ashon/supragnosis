@@ -29,14 +29,14 @@ use supragnosis_engine::{
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ObserveRequest {
     /// Knowledge fragment to ingest (natural language or structured text).
     pub content: String,
-    /// Workspace (defaults to the node default when omitted). Knowledge is organized into named workspaces,
-    /// so name the one this fragment belongs to: silently taking the node default splits a body of knowledge
-    /// across two workspaces, and later reads scoped to either will see only half.
-    #[serde(default)]
-    pub workspace: Option<String>,
+    /// The workspace this fragment belongs to. Name it after the project you work in - the
+    /// repository's name, also from a git worktree, never the worktree's directory - and keep using
+    /// that name, so one project's knowledge stays in one workspace.
+    pub workspace: String,
     /// Source reference (file path/URL/tool, etc.).
     #[serde(default)]
     pub source_ref: Option<String>,
@@ -45,10 +45,10 @@ pub struct ObserveRequest {
     #[serde(default)]
     #[schemars(range(min = 0.0, max = 1.0))]
     pub confidence: Option<f32>,
-    /// (Optional) Delegation subject - the person/principal this agent acts on behalf of (e.g. "ashon"). Principle 2.
+    /// (Optional) Delegation subject - the person/principal this agent acts on behalf of (e.g. "ashon").
     #[serde(default)]
     pub on_behalf_of: Option<String>,
-    /// (Optional) Source observation ids this knowledge was derived from - lineage for contamination tracking. Principle 18.
+    /// (Optional) Source observation ids this knowledge was derived from - lineage for contamination tracking.
     #[serde(default)]
     pub derived_from: Vec<String>,
     /// (Optional) Entities extracted by the client.
@@ -60,6 +60,7 @@ pub struct ObserveRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EntityInput {
     /// Canonical name of the entity.
     pub name: String,
@@ -73,6 +74,7 @@ pub struct EntityInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RelationInput {
     /// Name of the source entity.
     pub from: String,
@@ -97,14 +99,14 @@ pub struct RelationInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DefineTypeRequest {
-    /// Workspace (defaults to the node default when omitted). The T-Box is scoped to the workspace.
-    #[serde(default)]
-    pub workspace: Option<String>,
+    /// The workspace whose vocabulary this is, named as for observe. The T-Box is scoped to the workspace.
+    pub workspace: String,
     /// Source reference (file path/URL/tool, etc.).
     #[serde(default)]
     pub source_ref: Option<String>,
-    /// (Optional) Delegation subject this agent acts on behalf of. Principle 2.
+    /// (Optional) Delegation subject this agent acts on behalf of.
     #[serde(default)]
     pub on_behalf_of: Option<String>,
     /// The type definitions to record (at least one).
@@ -112,20 +114,21 @@ pub struct DefineTypeRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TypeDefItem {
     /// Which vocabulary: "entity" (a kind of thing, e.g. Driver) or "relation" (a kind of connection, e.g. depends_on).
     pub target: String,
     /// The type name being defined (e.g. Driver, depends_on).
     pub name: String,
-    /// Natural-language definition of what this type means. Required (Principle 8: a type has no meaning without it).
+    /// Natural-language definition of what this type means. Required: a type has no meaning without it.
     pub description: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ProposeRequest {
-    /// Workspace (defaults to the node default when omitted).
-    #[serde(default)]
-    pub workspace: Option<String>,
+    /// The workspace the proposal acts in, the one its targets live in.
+    pub workspace: String,
     /// Proposal kind, one of:
     /// - `entity_merge` - fold duplicate entities into one canonical id.
     /// - `entity_split` - reverse a merge. The folded entities separate again and the pair stops
@@ -152,7 +155,7 @@ pub struct ProposeRequest {
     /// For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |
     /// host_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.
     /// Note: a verdict cast through this MCP surface grants at most host_signed - human_confirmed
-    /// requires the human console (a human's direct act, Principle 18).
+    /// requires the human console (a human's direct act).
     #[serde(default)]
     pub tier: Option<String>,
     /// Why (natural language) - the proposal rationale. Required to re-merge a pair that was split:
@@ -173,6 +176,7 @@ pub struct ProposeRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AffectedTypeItem {
     /// Which vocabulary: "entity" (a node type, e.g. Driver) or "relation" (an edge type, e.g. depends_on).
     pub target: String,
@@ -181,6 +185,7 @@ pub struct AffectedTypeItem {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReviewRequest {
     /// The proposal's workspace, where the verdict is filed and counts. On this node it may be left
     /// out, or '*', and the proposal's own is used.
@@ -198,14 +203,17 @@ pub struct ReviewRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListProposalsRequest {
-    /// Scope to a workspace (node default when omitted; '*'/'all' means all workspaces).
+    /// Scope to a workspace (all workspaces when omitted or '*').
     #[serde(default)]
     pub workspace: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetProposalRequest {
+    /// Scope to a workspace (when omitted or '*', the proposal is read in the workspace it lives in).
     #[serde(default)]
     pub workspace: Option<String>,
     /// The proposal id.
@@ -213,6 +221,7 @@ pub struct GetProposalRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SyncStatusRequest {
     /// Workspace to report (node default when omitted).
     #[serde(default)]
@@ -220,6 +229,7 @@ pub struct SyncStatusRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SyncPullRequest {
     /// Workspace to pull (node default when omitted).
     #[serde(default)]
@@ -227,6 +237,7 @@ pub struct SyncPullRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SyncPushRequest {
     /// Workspace to push (node default when omitted; must be on the share whitelist).
     #[serde(default)]
@@ -234,12 +245,14 @@ pub struct SyncPushRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetEntityRequest {
     /// Entity id.
     pub id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SearchRequest {
     /// Search scope: "local" (this node only, default), "remote" (the configured sync servers'
     /// ontologies - federated retrieval), or "both". Local state can lag the remote store - use
@@ -258,6 +271,7 @@ pub struct SearchRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TraverseRequest {
     /// Start entity id.
     pub id: String,
@@ -270,10 +284,9 @@ pub struct TraverseRequest {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceMapRequest {
-    /// Workspace (defaults to the node default when omitted; '*'/'all' means all workspaces). Knowledge is
-    /// organized into named workspaces, so the node default is routinely empty by design - prefer '*' for a
-    /// cold-start survey, and read an empty default as a wrong scope rather than an absent ontology.
+    /// Scope to a workspace (all workspaces when omitted or '*').
     #[serde(default)]
     pub workspace: Option<String>,
     /// Maximum number of clusters (defaults to 20 when omitted). Truncated in descending order of size.
@@ -516,14 +529,9 @@ impl SupragnosisServer {
     /// On this node `*` is the all-workspaces view, and a write is filed in one workspace (design-system.md
     /// Section 29.15). The remote surface refuses `*` before a write reaches the tool (`admit_write`);
     /// this is the same answer for the local one, which used to file into a workspace named `*`.
-    fn all_is_no_place(&self, tool: &str, ws: Option<&str>) -> Option<String> {
-        match ws {
-            Some(w) if remote::current().is_none() && remote::is_all(w) => Some(format!(
-                "{tool} writes to one workspace - name it, or leave it out for {}",
-                self.engine.default_workspace()
-            )),
-            _ => None,
-        }
+    fn all_is_no_place(&self, tool: &str, ws: &str) -> Option<String> {
+        (remote::current().is_none() && remote::is_all(ws))
+            .then(|| format!("{tool} writes to one workspace - name it"))
     }
 
     fn remote_resource_ok(
@@ -652,17 +660,14 @@ impl SupragnosisServer {
         description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id, the linked entity/relation ids and the workspace written to; a write that makes a new workspace adds a note naming the ones that hold knowledge."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
-        if let Some(why) = self.all_is_no_place("observe", req.workspace.as_deref()) {
+        if let Some(why) = self.all_is_no_place("observe", &req.workspace) {
             return err_json(&why);
         }
-        // The workspace actually used (node default when omitted) - carried on the event so the viewer knows the scope.
-        let workspace = req
-            .workspace
-            .clone()
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        // Carried on the event so the viewer knows the scope.
+        let workspace = req.workspace.clone();
         let input = ObserveInput {
             content: req.content,
-            workspace: req.workspace,
+            workspace: Some(req.workspace),
             source_ref: req.source_ref,
             confidence: req.confidence,
             on_behalf_of: req.on_behalf_of,
@@ -1012,12 +1017,8 @@ impl SupragnosisServer {
         description = "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity. To solidify a recurring context into first-class structure, observe a group entity (e.g. type Context) with member_of relations from each member and derived_from listing the co-asserting observation ids - the assertion then carries provenance and trust like any other edge."
     )]
     async fn workspace_map(&self, Parameters(req): Parameters<WorkspaceMapRequest>) -> String {
-        // Workspace resolution: omitted -> node default, '*'/'all'/'' -> all (None) (same as the graph resource).
-        let ws_arg: Option<String> = match req.workspace.as_deref() {
-            None => Some(self.engine.default_workspace().to_string()),
-            Some("") | Some("*") | Some("all") => None,
-            Some(s) => Some(s.to_string()),
-        };
+        // Omitted, '*', 'all' or '' reads every workspace (None), as search_knowledge does.
+        let ws_arg = req.workspace.filter(|w| !remote::is_all(w));
         let limit = req.limit.unwrap_or(20);
         // The minimum size cannot go below 2 (size<2 is not a hyperedge).
         let min_size = req.min_size.unwrap_or(2).max(2);
@@ -1073,9 +1074,8 @@ impl SupragnosisServer {
                  search_knowledge by concept name"
             ));
         } else if shown == 0 && hg.stats.node_count == 0 {
-            // An empty scope is usually a wrong scope, not an absent ontology: the node default workspace is
-            // an addressing default, and knowledge is routinely organized into named workspaces instead. A
-            // reader who does not already know those names has no next move, so name them here - the dead end
+            // An empty named workspace is usually a wrong name, not an absent ontology. A reader who
+            // does not already know the names has no next move, so name them here - the dead end
             // corrects itself within the same call rather than requiring a lucky retry with '*'.
             let engine = self.engine.clone();
             let listed = tokio::task::spawn_blocking(move || engine.workspaces()).await;
@@ -1098,9 +1098,8 @@ impl SupragnosisServer {
             } else {
                 format!(
                     "{where_} holds no entities, but this node does hold knowledge - a scope miss, not \
-                     an absent ontology. The node default workspace is only an addressing default; \
-                     knowledge is organized into named workspaces. Knowledge exists in: {}. Re-run \
-                     scoped to one of those, or workspace '*' to survey all",
+                     an absent ontology. Knowledge exists in: {}. Re-run scoped to one of those, or \
+                     without a workspace to survey all",
                     elsewhere.join(", ")
                 )
             });
@@ -1120,7 +1119,7 @@ impl SupragnosisServer {
         description = "Define ontology types (T-Box) for a workspace: give an entity type or relation type a name and a natural-language definition of what it means. Use this to record the vocabulary of the ontology so a type is not just a bare label but has a stated meaning (e.g. entity type 'Driver' = 'a kernel module that ...'; relation type 'depends_on' = 'X requires Y at runtime'). A description is required. Scoped to the workspace. Read them back via the supragnosis://workspace/{ws}/types resource."
     )]
     async fn define_type(&self, Parameters(req): Parameters<DefineTypeRequest>) -> String {
-        if let Some(why) = self.all_is_no_place("define_type", req.workspace.as_deref()) {
+        if let Some(why) = self.all_is_no_place("define_type", &req.workspace) {
             return err_json(&why);
         }
         // Map the string target to the typed axis, rejecting anything else (self-correctable error).
@@ -1139,12 +1138,9 @@ impl SupragnosisServer {
             };
             defs.push(EngineTypeDefInput { target, name: d.name, description: d.description });
         }
-        let written = req
-            .workspace
-            .clone()
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let written = req.workspace.clone();
         let input = DefineTypeInput {
-            workspace: req.workspace,
+            workspace: Some(req.workspace),
             source_ref: req.source_ref,
             on_behalf_of: req.on_behalf_of,
             defs,
@@ -1166,10 +1162,10 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Open a proposal to change the canon (Principle 23: the gate to canon) - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs. Returns the proposal id, the workspace, its state and found - true when an identical proposal was already there, since a proposal is its content - with a note saying what is left."
+        description = "Open a proposal to change the canon - the one path by which anything enters shared knowledge. Use it to reshape what is already there rather than to add: entity_merge and entity_split for identity, claim_promotion and claim_demotion for trust, tbox_change for the type vocabulary, recall for retracting a contaminated derivation tree - those two have no commit effect yet, so neither can be merged until it has one. To state something new, use `observe` instead. A proposal is itself an observation and changes nothing until `review` accepts it; `get_proposal` shows where it stands, and `kind` describes what each one does and which arguments it needs. Returns the proposal id, the workspace, its state and found - true when an identical proposal was already there, since a proposal is its content - with a note saying what is left."
     )]
     async fn propose(&self, Parameters(req): Parameters<ProposeRequest>) -> String {
-        if let Some(why) = self.all_is_no_place("propose", req.workspace.as_deref()) {
+        if let Some(why) = self.all_is_no_place("propose", &req.workspace) {
             return err_json(&why);
         }
         // Map each affected type's string axis to the typed vocabulary (mirror define_type).
@@ -1194,7 +1190,7 @@ impl SupragnosisServer {
         // from the workspace and the content (remote-viewer.md Section 3.4). One answer for
         // "absent" and "elsewhere" keeps the two indistinguishable.
         if remote::current().is_some() && GATE_KINDS.contains(&req.kind.as_str()) {
-            let ws = req.workspace.clone().unwrap_or_default();
+            let ws = req.workspace.as_str();
             for t in &req.targets {
                 let here =
                     matches!(self.engine.get_observation(t), Ok(Some(o)) if o.workspace() == ws);
@@ -1208,7 +1204,7 @@ impl SupragnosisServer {
         }
         // A split names a merge of its own workspace, checked the same way.
         if remote::current().is_some() && req.kind == "entity_split" {
-            let ws = req.workspace.clone().unwrap_or_default();
+            let ws = req.workspace.as_str();
             for t in &req.targets {
                 let here = matches!(self.engine.proposal_workspace(t), Ok(Some(h)) if h == ws);
                 if !here {
@@ -1224,12 +1220,12 @@ impl SupragnosisServer {
         // was never granted. The engine's own refusal, which names the other workspace, is for the
         // local surfaces (design-system.md Section 29.15).
         if remote::current().is_some() && req.kind == "entity_merge" {
-            let ws = req.workspace.clone().unwrap_or_default();
+            let ws = req.workspace.as_str();
             for t in req.targets.iter().chain(req.into.iter()) {
                 let id = if t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit()) {
                     t.clone()
                 } else {
-                    supragnosis_core::Entity::make_id(&ws, t)
+                    supragnosis_core::Entity::make_id(ws, t)
                 };
                 let here = matches!(
                     self.engine.store().get_entity(&id),
@@ -1243,13 +1239,10 @@ impl SupragnosisServer {
                 }
             }
         }
-        let written = req
-            .workspace
-            .clone()
-            .unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let written = req.workspace.clone();
         let note = no_effect_note(&req.kind);
         let input = EngineProposeInput {
-            workspace: req.workspace,
+            workspace: Some(req.workspace),
             kind: req.kind,
             targets: req.targets,
             into: req.into,
@@ -1291,7 +1284,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal (Principle 23). decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it (Principle 18). A merge on a recall is refused here for the same reason (I17), and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect (Principle 23: no merge without a diff); comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
+        description = "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
@@ -1341,11 +1334,7 @@ impl SupragnosisServer {
         description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
-        let ws: Option<String> = match req.workspace.as_deref() {
-            None => Some(self.engine.default_workspace().to_string()),
-            Some("") | Some("*") | Some("all") => None,
-            Some(s) => Some(s.to_string()),
-        };
+        let ws = req.workspace.filter(|w| !remote::is_all(w));
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.list_proposals(ws.as_deref())).await {
             Ok(Ok(list)) => to_json(&list),
@@ -1358,11 +1347,7 @@ impl SupragnosisServer {
         description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
-        let ws: Option<String> = match req.workspace.as_deref() {
-            None => Some(self.engine.default_workspace().to_string()),
-            Some("") | Some("*") | Some("all") => None,
-            Some(s) => Some(s.to_string()),
-        };
+        let ws = req.workspace.filter(|w| !remote::is_all(w));
         let id = req.id.clone();
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.get_proposal(ws.as_deref(), &id)).await {
@@ -1852,14 +1837,11 @@ impl ServerHandler for SupragnosisServer {
                  into an ontology. Ingest knowledge with observe and explore it with \
                  search_knowledge/get_entity/traverse. Survey a workspace's main co-occurrence \
                  contexts (clusters) with workspace_map (orientation before searching). \
-                 Workspaces: knowledge is deliberately organized into named workspaces (e.g. one \
-                 per project), so the node default workspace is an addressing default and is \
-                 routinely empty by design - an empty default means 'wrong scope', never 'no \
-                 knowledge here'. Orient with workspace '*' (survey all) before concluding \
-                 anything is absent, and scope observe to the workspace the knowledge belongs to \
-                 so it is not split across two: name it after the project you work in - the \
-                 repository's top-level directory name - and keep using that name. \
-                 search_knowledge already spans all workspaces unless you narrow it. \
+                 Workspaces: knowledge is organized into named workspaces, one per project. A write \
+                 (observe, define_type, propose) names its workspace: name it after the project you \
+                 work in - the repository's name, also from a git worktree, never the worktree's \
+                 directory - and keep using that name, so one project's knowledge is not split \
+                 across two. A read that names no workspace reads every workspace. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
