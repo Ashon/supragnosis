@@ -142,6 +142,13 @@
 > curation report had offered the same name in two workspaces as a merge to propose, and such a
 > merge belonged to no workspace's canon: Blocked in its own workspace, Merged only in the
 > all-workspaces view (proposal-workflow.md I2).
+> Revision: 2026-10-23 (proportion review) - a review of the remote server, the viewer relay,
+> pairing and the remote window found each two to four times the size its users needed: defenses
+> against threats, accidents, releases and platforms no user met, heuristics no measurement asked
+> for, and every rule written three times. *Tightens* Appendix A with a tension, assurance against
+> proportion. *Loosens* Appendix B.1, forced by that review: a document names no tests of its own,
+> and a design step's check table lists only the rules the step changes or puts at risk. *Tightens*
+> Appendix B.2: a test reads behavior, not source text.
 
 ---
 
@@ -884,6 +891,7 @@ Principles can be in tension with each other. Guidance for judgment upon conflic
 | Un-merge must be possible (3, 15) vs merge as an absorbing state (23, I16) | **Both hold.** A split is a new proposal and is not absorbing (unmerge.md S1/S8); the merge stays in the log and only its forwarding is removed. |
 | Honesty about absence (5) vs no existence oracle (17) | **Unknown, not refused, for an id outside the grants.** Open world toward the caller is also what hides existence; a refusal is for a scope the caller named (Principle 5, remote-viewer.md 3.4). |
 | Human mediation at the protocol level (21) vs receiver-evaluated trust (18) | **The channel carries the question, the signature carries the answer.** An elicitation response alone grants nothing above the agent surface's ceiling (federation.md F20). |
+| Assurance (18, 24) vs proportion | **Guard what a person meets now.** A defense against a threat, an accident, an older release or a platform that no current user meets is written as owed, with the event that brings it due, and is not built: it costs every later change and protects no one yet. The exception is what keeps a secret, or knowledge a person did not share, from leaking - that is built with the surface it guards, in its smallest form. |
 | Convergence (16) vs node-local trust evaluation (18) | **Not a conflict.** Evaluation is a function of the attestation alone, and the surface marker and the canon policy are in the log (F16), so one log gives one canon; what differs between nodes is which events they admit (F6) - the set, not the fold. |
 
 The judgments above are norms, not a status report. Several of the mechanisms they name - the
@@ -980,7 +988,11 @@ Rules this imposes:
   to the clauses that answer it (or a clause to the principle's headline statement), in both
   directions, and a bullet added, removed or reordered fails the build until the mapping is read
   again. Every invariant table of the design documents is held the same way: a document whose rows
-  have no evidence state fails the build.
+  have no evidence state fails the build. The registry is the one place a rule meets its tests: a
+  document does not repeat their names in a "Guarded by" list of its own, which drifts from the
+  registry the first time a test is renamed, and a design step's check table lists the rules the
+  step changes or puts at risk, not each rule it agrees with. Lists written before 2026-10-23 go
+  when their document is next revised.
 - **A checklist item migrates to a scenario test once it becomes mechanizable.** Appendix B is where
   a question lives while it is still a judgment; the registry is where it goes when it stops being
   one. Items that stay judgments (is this tool really a recurring intent?) legitimately stay here.
@@ -1022,6 +1034,14 @@ what the principle actually claims.
 Two-step cases are the sharpest form. "A proposal alone changes nothing; only the verdict commits"
 is one act that must produce no delta followed by one that must - and the interesting assertion is
 the first, which a state-only test would never think to make.
+
+**A test reads behavior, not source.** A test that searches a file for a line of its code passes on
+code that is broken and fails on code that is only rewritten: it pins the spelling, not the rule.
+The viewer's script and the app's shell grew hundreds of them, and a refactor of either cost dozens
+of edits to tests that had caught nothing. A test of the rule - a pure function called, a page
+rendered, a request answered - is written instead. A text check stays only where the text is itself
+the contract: a document's words, a stylesheet's tokens, a wire format. Existing ones are replaced
+as their code is next changed, not all at once.
 
 ## Appendix C - References
 
