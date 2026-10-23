@@ -208,11 +208,12 @@ Two more cross machines within one exchange, between releases that may differ:
 
 - **Core's message signing bytes**: a fixed tag, a context, a zero byte, the message. They sign
   what is not an attestation, and their tag keeps either signature from passing for the other.
-- **The join's wire** ([pairing.md](pairing.md) Section 4.3.2): the code, the commitment, the
-  words, the seal and the signed answer. It is fixed by the code's prefix, `sgjoin1-`; a change to
-  any part is a new prefix, which an older release refuses by name rather than misreading.
+- **The join's wire** ([pairing.md](pairing.md) Section 4.3.2): the code, the words and the
+  request's proof. It is fixed by the code's prefix, `sgjoin2-`; a change to any part is a new
+  prefix, which an older release refuses by name rather than misreading, and a newer one names as
+  made by an older hub. `sgjoin1-`, with its seal and signed answer, ended with v0.10.0.
 
-Known-answer vectors pin the message signing bytes, the code, the commitment and the words, as
+Known-answer vectors pin the message signing bytes, the code, the words and the proof's bytes, as
 they do the two encodings above.
 
 ## 5. Golden stores
