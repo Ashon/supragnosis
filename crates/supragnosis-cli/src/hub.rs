@@ -780,11 +780,13 @@ mod tests {
             allowlist: Vec::new(),
             principals: Vec::new(),
         };
-        assert_eq!(hub.apply(&plain).await["listening"], true);
+        let opened = hub.apply(&plain).await;
+        assert_eq!(opened["listening"], true, "{opened}");
         let (cert, key) =
             invite::make_certificate(&paths.hub, &["localhost".into()], invite::now()).unwrap();
         let tls = fed::ServerSection { tls_cert: Some(cert.clone()), tls_key: Some(key), ..plain };
-        assert_eq!(hub.apply(&tls).await["listening"], true);
+        let reopened = hub.apply(&tls).await;
+        assert_eq!(reopened["listening"], true, "{reopened}");
         let pem = std::fs::read(&cert).unwrap();
         let client = reqwest::Client::builder()
             .use_preconfigured_tls(supragnosis_sync::http::tls_trusting(&pem).unwrap())
