@@ -12,7 +12,11 @@
 > Status: **specified; steps 1 to 3 built, 4 and 5 deferred** (Section 10, D16). The author decided its choices on
 > 2026-10-22 (Section 7, D1-D15), among
 > them a revision of Principle 24's bind rule (D5) and an interim key anchor in federation.md 6a
-> (D11).
+> (D11). *Simplified 2026-10-23* (the proportion review, CLAUDE.md): the code always pins the hub's
+> certificate, and with no way left to verify the hub by name, the pinned connection keeps the join
+> private and authentic by itself - the seal, the one-time key, the commitment and nonces and the
+> answer's signature went, and the request is signed by the joining machine's node key instead
+> (D13, D14).
 
 ## 1. Why this exists
 
@@ -103,11 +107,10 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
 - **The address.** `--address` names how the joining machine reaches the server - a DNS name, a
   Tailscale or VPN name, an address - and may be repeated. Without it the code carries the host's
   `.local` name where mDNS answers for it and the IPv4 address its default route leaves from.
-- **The certificate.** A server often has a certificate of its own from a public CA, renewed every
-  few months. When that certificate verifies against the root bundle built into supragnosis for
-  every name `--address` gives, the code says to verify the hub by name, so a renewal breaks
-  nothing; any other certificate - one the hub made, a private CA's, one self-signed by hand - is
-  pinned by its fingerprint (D13). An IP address is never verified by name.
+- **The certificate.** The code pins the hub's certificate by its fingerprint, whatever made it: the
+  one the hub made (D2), a private CA's, or a public CA's that `[server]` names. A certificate
+  renewed after the join - a public CA's, every few months - is a different certificate, and the
+  joined machine stops syncing until it joins again (D13).
 - **Staying up.** The daemon is the systemd user unit, which stops with the person's last session
   unless lingering is on (daemon-lifecycle.md, Linux). The invitation says so when it is off.
 - **The firewall.** An unreachable hub's message names the platform's firewall - the macOS
@@ -185,9 +188,8 @@ two require the code's secret, the last a joined machine's credential.
 - **One open at a time.** A new invitation cancels the open one, and the sheet says so.
   `supragnosis invite --cancel` ends the open one; a cancelled invitation stays a tombstone, as a
   used one does.
-- **The code.** `sgjoin1-` and a base32 body (Section 4.3.2) holding the hub's node id; the
-  expiry; the secret; how to verify its certificate - its SHA-256 fingerprint, or "by name"
-  (Section 3a, D13); and its addresses with the port (the `--address` names, or its `.local` name
+- **The code.** `sgjoin2-` and a base32 body (Section 4.3.2) holding the hub's node id; the
+  expiry; the secret; its certificate's SHA-256 fingerprint; and its addresses with the port (the `--address` names, or its `.local` name
   and the IPv4 address of its default route). Every address is reached over HTTPS. The page's
   Copy writes the pasteboard through NSPasteboard and marks the item concealed, so clipboard
   managers that honor it do not keep it.
@@ -200,63 +202,55 @@ two require the code's secret, the last a joined machine's credential.
   sits in a process list (settings-page.md S2).
 - **Who may join** (D6): not a machine that already syncs to a hub, by `[[sync.server]]` or the
   older `servers` key, and not one that admits a node of its own. Each is refused with what it is.
-- **It connects** to each address in turn. With a fingerprint it accepts exactly the certificate
-  whose SHA-256 is the code's, and a different one ends the attempt with "This is not the machine
-  that made the code."; the pin replaces the hostname check, so an address that changed since the
-  code was made still works if the certificate is the same. "By name" verifies the certificate
-  against the built-in root bundle and the address's name, and an address that fails tries the
-  next.
+- **It connects** to each address in turn and accepts exactly the certificate whose SHA-256 is the
+  code's; a different one ends the attempt with "This is not the machine that made the code.". The
+  pin replaces the hostname check, so an address that changed since the code was made still works
+  if the certificate is the same. Everything that follows travels over this connection, which no
+  one in the middle can read or change.
 - **`preview`**, with the secret, answers the hub's name, the workspaces the invitation keeps in
   step and whether the hub serves principals, and changes nothing.
-- **`join`** carries the secret, the joining machine's node public key and name, a one-time public
-  key made for this join, and a commitment to a random nonce of its own. The hub:
+- **`join`** carries the secret, the joining machine's node public key and name, and the request's
+  proof: that key's signature over the invitation (its secret's hash), the key and the name. The
+  hub:
   - checks the secret's hash against an open invitation in constant time, and refuses an expired,
     used or denied one with what happened;
+  - checks the proof, so a request and the answer it gets belong to the holder of that key;
   - derives the node id from the node key, as core derives every node id, rather than taking
     one, and refuses its own and one already admitted;
-  - checks the keys' form and cuts the name to 64 characters, shown as text;
-  - holds the request and answers "pending" at once with a random nonce of its own, so no call
-    waits on a person. The request's keys, its commitment and the hub's nonce are fixed by the
-    first request and kept in `invites.toml`, so a restart of the hub keeps them. The joining
-    machine asks again with its nonce revealed, and the hub, once the nonce matches the
-    commitment, shows the request with the three words on its Sync pane, in `invite`'s terminal
-    and through the admin socket. The joining machine keeps asking with the same secret, keys,
-    commitment and nonce until it has an answer; a repeat with all of them the same is the same
-    request. A request under the same code with other keys or another commitment, or a nonce that
-    does not match the commitment, ends the invitation, and both are told;
+  - cuts the name to 64 characters, shown as text;
+  - holds the request and answers "pending" at once, so no call waits on a person, and shows it
+    with the three words on its Sync pane, in `invite`'s terminal and through the admin socket. The
+    joining machine keeps asking with the same request until it has an answer; a repeat of it is
+    the same request. A request under the same code with another key ends the invitation, and
+    both are told;
   - takes Allow and Deny only for the request the person was shown: each names the invitation,
-    the machine and the words, and an answer to a request that has changed since - another
-    invitation, other words - is refused and admits no one. A request is checked, too, for a
-    node key on the curve and a one-time key not of small order before the hub shows it, and on
-    Allow the answer is made and signed before any file is written;
+    the machine and the words, and an answer to a request that has changed since is refused and
+    admits no one;
   - **on Allow**, mints a 32-byte bearer credential and adds the allowlist entry - the node id, the
     key, the credential's hash and the invitation's workspaces - and records it in
     `~/.supragnosis/hub/peers.toml` with the name, as an entry pairing made; swaps its live peer
-    directory so the entry admits at once; and keeps the answer for that request in
-    `invites.toml` until the invitation's expiry, so neither a dropped connection nor a restart
-    after Allow loses it - only the one-time key opens it;
-  - **answers**, signed with its node key: the credential sealed to the one-time key, its node
-    public key, the vouched keys (Section 4.3.1), the workspaces, and, for a pinned certificate,
-    the certificate in PEM;
+    directory so the entry admits at once; and keeps the answer in `invites.toml` (`0600`) until
+    the invitation's expiry, so neither a dropped connection nor a restart after Allow loses it. It
+    gives the answer only to the request with that key's proof;
+  - **answers**: the credential, its node public key, the vouched keys (Section 4.3.1), the
+    workspaces, whether it serves principals, and the certificate in PEM;
   - on Deny or expiry, answers that, and the invitation becomes a tombstone.
-- **The three words** come from the secret, the joining machine's node key and one-time key, and
-  both nonces, the same on both screens. Someone else holding the code makes a request the hub
-  shows with words the person never saw on their own machine, and only the hub's Allow admits
-  anyone. A party in the middle of a join verified by name, which sees the joining machine's
-  request, still cannot choose keys that make the hub show the person's words: the hub fixes its
-  nonce at the first request, the joining machine reveals the nonce that decides the words only
-  after it has the hub's, and it ends its join if the hub's nonce ever changes. The party gets one
-  guess in 2^24 (about 17 million), and a second request ends the invitation.
-- **The joining machine** checks the answer's signature against the hub key the code's node id
-  names, that it answers this request, a pinned PEM's fingerprint against the code's, and opens
-  the credential with its one-time key. A party in the middle, even one holding a valid
-  certificate for the name, can read neither the credential nor forge the answer. `preview` is not
-  signed, so what the person ticked counts only where the signed answer agrees: a ticked
-  workspace the answer does not name is not sent, and the serve question's yes is written only
-  when the answer says the hub serves principals. Then it writes, under the lock of Section 4.4:
+- **The three words** come from the secret and the joining machine's node key, the same on both
+  screens. Someone else holding the code makes a request the hub shows with words the person never
+  saw on their own machine, and only the hub's Allow admits anyone. *Accepted:* someone who has the
+  code and the joining machine's node key before that machine asks could search for a key of their
+  own with the same three words (one in 2^24 per key, a minute's work) and ask first. The code
+  lives ten minutes and goes from one of the person's screens to the other, so this is written
+  down rather than built against (principles.md Appendix A, assurance against proportion).
+- **The joining machine** checks that the hub key in the answer derives the node id the code names
+  and that the PEM's fingerprint is the code's. What the person ticked in the preview counts only
+  where the answer agrees: a ticked workspace the answer does not name is not sent, and the serve
+  question's yes is written only when the answer says the hub serves principals. A join run again
+  after the hub's Allow - the preview then says the code is used - asks for the answer first and
+  the person's choices after it. Then it writes, under the lock of Section 4.4:
   - in `supragnosis.toml`, only keys a release before pairing knows: a `[[sync.server]]` entry
     with the address it verified (a `.local` name or DNS name rather than an address DHCP may
-    change), the credential, and for a pinned certificate `ca` pointing at it saved as
+    change), the credential, and `ca` pointing at the pinned certificate saved as
     `~/.supragnosis/hubs/<hub's node id>.pem`; the hub's key in `origin_keys`; the ticked
     workspaces in `share_workspaces`, and in `serve_workspaces` if the person allowed it;
   - in `~/.supragnosis/hubs/<hub's node id>.toml` (`0600`): the hub's name, every invited
@@ -266,8 +260,9 @@ two require the code's secret, the last a joined machine's credential.
   daemon, since `[sync]` is read at start - the daemon that answered its admin socket, and only when
   that is the one its service manager runs. If the restart is refused (daemon-lifecycle.md L1), it
   says "Joined. Restart Supragnosis to start syncing." and the row says so until it has.
-- **The credential is never shown.** It goes, sealed, from the hub's answer to the joining
-  machine's config file; the hub keeps only its hash.
+- **The credential is never shown.** It goes from the hub's answer, over the pinned connection, to
+  the joining machine's config file; the hub keeps only its hash, and the plain answer only until
+  the invitation expires.
 
 #### 4.3.1 The vouched keys
 
@@ -289,45 +284,26 @@ two require the code's secret, the last a joined machine's credential.
 
 #### 4.3.2 The wire
 
-What both sides compute is fixed by the code's `sgjoin1` prefix. A change to any of it is a new
-prefix, which a release that does not know it refuses by name.
+What both sides compute is fixed by the code's `sgjoin2` prefix. A change to any of it is a new
+prefix, which a release that does not know it refuses by name, and a release that knows a newer one
+says the hub is older.
 
 Every hash this section derives is BLAKE3's `derive_key` under a context string of its own, so no
-two of them can be confused; the secret, the nonces and every key are 32 bytes.
+two of them can be confused; the secret and every key are 32 bytes.
 
 - **The code's body** holds, in this order, the hub's node id (16 bytes), the expiry (seconds,
-  8 bytes), the secret, the certificate check (a tag, then a SHA-256 fingerprint or nothing for
-  "by name") and the addresses with their ports (a count, then each with its length), then the
-  first 4 bytes of a hash of all that as a checksum. It is written in lowercase base32 without
-  padding. A code cut short or changed on the way is refused - "This code is incomplete or
-  changed. Copy it again." - before any connection is made.
-- **The commitment** is a hash of the node key, the one-time key and the joining machine's nonce.
-- **The words** are three from a fixed list of 256 in the source, one for each of the
-  first three bytes of a hash of the secret, the node key, the one-time key and both nonces.
-- **The seal.** The hub makes an X25519 key for each join, derives the seal's key by hashing the
-  shared secret and both public keys, and seals the credential with ChaCha20-Poly1305 under an
-  all-zero nonce, which a key used once allows. A shared secret of all zeros - a one-time key of
-  small order - seals and opens nothing. X25519 comes from curve25519-dalek, whose keys can be
-  saved, unlike ring's; ChaCha20-Poly1305 and the certificate's SHA-256 come from ring. Both are
-  already in the build through ed25519-dalek and rustls, and become direct dependencies of the
-  CLI; the built-in root bundle is webpki-roots, already there through reqwest.
-- **The signature.** The hub signs the answer's bytes with its node key under a context no
-  attestation uses: core's message signing puts a fixed tag before the context, and an
-  attestation's bytes can never start with it, so neither passes for the other. The signed bytes
-  name the invitation (its secret's hash), the joining node id, its one-time key and both nonces,
-  so an answer to one request, or one invitation, does not verify for another; and whether the
-  hub serves principals, so the serve question rests on a signed word.
-- **The one-time key** stays on the joining machine, with its nonce and the hub's, in
-  `~/.supragnosis/hubs/joining.toml` (`0600`) until the join ends or the code expires, so `join`
-  run again with the same code asks as the same request rather than ending the invitation. It
-  keeps what the person chose too, so a run after the hub's Allow - when the hub's preview already
-  says the code is used - finishes with the answer waiting for it and asks nothing twice. The
-  file names the code it belongs to, so another code starts afresh. The hub's nonce is written
-  there before the joining machine reveals its own or shows the words, so a run again that finds
-  no kept hub nonce has revealed nothing. A hub nonce other than the one kept ends the join, and
-  the person makes a new code.
-- **Known answers** pin the code, the words, the commitment and core's message signing bytes for
-  fixed inputs, as compatibility.md Section 4 does for the content id.
+  8 bytes), the secret, the certificate's SHA-256 fingerprint and the addresses with their ports
+  (a count, then each with its length), then the first 4 bytes of a hash of all that as a checksum.
+  It is written in lowercase base32 without padding. A code cut short or changed on the way is
+  refused - "This code is incomplete or changed. Copy it again." - before any connection is made.
+- **The words** are three from a fixed list of 256 in the source, one for each of the first three
+  bytes of a hash of the secret and the node key.
+- **The proof.** The joining machine signs the invitation's secret hash, its node key and its name
+  with its node key under a context no attestation uses: core's message signing puts a fixed tag
+  before the context, and an attestation's bytes can never start with it, so neither passes for the
+  other.
+- **Known answers** pin the code, the words and the proof's signed bytes for fixed inputs, as
+  compatibility.md Section 4 does for the content id.
 
 ### 4.4 Editing `supragnosis.toml`
 
@@ -396,15 +372,14 @@ as now (S6).
 | Threat | What holds |
 |---|---|
 | Someone on the network reaches the listener | TLS, and nothing answered without an admitted node, an admitted principal, or an open invitation's secret for `preview` and `join` (PA1) |
-| Someone copies the code | Only the hub's Allow admits anyone, beside three words the person compares with their own machine's; a request from other keys ends the invitation; ten minutes, one use (PA2, PA11) |
-| A machine pretends to be the hub | A pinned certificate is accepted from any address and no other; a certificate verified by name needs a public CA's certificate for that name, and even then the answer must be signed by the node key the code names (PA3, PA14) |
-| A party in the middle reads the join | The credential is sealed to the joining machine's one-time key, and the answer is signed by the hub's node key (PA14); it cannot make the hub show the person's words for keys of its own, since they depend on a nonce the joining machine reveals only after the hub has fixed its own (PA11) |
-| After the join, a link verified by name | It trusts the public CAs for that name, as any HTTPS does: someone with a valid certificate for it could read what the credential grants, and still could not forge events (P2, F6) |
+| Someone copies the code | Only the hub's Allow admits anyone, beside three words the person compares with their own machine's; a request from another key ends the invitation; the answer goes only to the request its key signed, so they cannot fetch the person's; ten minutes, one use (PA2, PA11, PA14). Accepted: with the joining machine's node key in hand before it asks, they could search for a key with the same words and ask first (Section 4.3) |
+| A machine pretends to be the hub | Only the certificate the code pins is accepted, from any address; the answer's hub key must derive the node id the code names (PA3, PA14) |
+| A party in the middle reads the join | It cannot: every call after the code travels over the connection pinned to the hub's certificate (PA3) |
 | A joining machine claims another node's identity | The hub derives the node id from the key and refuses its own and an admitted one (PA8) |
 | A machine pretends to be the joined one later | It has no credential: the bearer was minted at the join and never shown, and its events must be signed by the admitted key (P2, F6, PA4) |
 | The joined machine sends what it was not granted | The hub accepts only the workspaces the entry names (F9, 6c) and evaluates its writes' tiers itself (P18) |
 | The hub's answer widens what the joined machine pulls | It pulls only the receive list fixed at the join (PA12) |
-| A vouched key is wrong or reused | The hub vouches in a signed answer, each key checked against its node id and bounded by the last event the hub stored; a vouched key verifies events and admits nothing (PA13) |
+| A vouched key is wrong or reused | The hub vouches in its answer over the pinned connection, each key checked against its node id and bounded by the last event the hub stored; a vouched key verifies events and admits nothing (PA13) |
 | The code is guessed | 256 bits of secret, checked in constant time; the hub keeps only its hash |
 | An agent or a page opens the hub | Hub acts are calls on a `0600` admin socket, never MCP tools, never reachable through the bridge or the app's proxy (PA10) |
 | A browser on the network reaches the listener | Nothing answers it without a secret or a credential; `preview` tells a code holder only what `join` would grant |
@@ -442,18 +417,22 @@ as now (S6).
 - **D12 - The joining machine sends nothing it did not tick** (the author). It receives the invited
   workspaces, recorded as its receive list, which settles D4 and D7 on that side.
 - **D13 - A hub may be a Linux server, with its own certificate** (the author asked that a server
-  work as the hub). The CLI carries every scene, with Allow in the terminal; a certificate that
-  verifies against the built-in root bundle for the code's names is verified by name, since
-  pinning it would break at its renewal, and any other is pinned.
+  work as the hub). The CLI carries every scene, with Allow in the terminal. *Revised 2026-10-23
+  (the proportion review):* every certificate is pinned. A public CA's certificate had been verified
+  by name so that its renewal broke nothing, and that one mode kept the seal, the signature and the
+  commitment of D14; no hub uses such a certificate, and one that does joins again after a renewal.
 - **D14 - The join is signed and sealed** (the author). The hub signs its answer with its node key
   and seals the credential to a one-time key of the joining machine's, so verifying a hub by name
   does not let a party in the middle take the join. *Kept, 2026-10-22, when step 3 was split:* its
   aim also needs the words' commitment (Section 4.3), since without it a party in the middle that
   sees the request could have the hub show the person's words for its own one-time key and take
-  the credential on their Allow.
+  the credential on their Allow. *Revised 2026-10-23, with D13:* with every certificate pinned there
+  is no party in the middle to defend against, so the seal, the one-time key, the commitment and
+  the answer's signature went. What stays is that the stored answer goes only to its own request,
+  which the request's proof by the joining machine's node key now carries.
 - **D15 - Pairing's own records live beside `supragnosis.toml`** (the author). The receive list,
   the hub's name and the vouched keys go in `~/.supragnosis/hubs/`, beside the hub's pinned
-  certificate and, while a join is open, its one-time key, so a release before pairing, which
+  certificate, so a release before pairing, which
   refuses keys it does not know, still starts and syncs.
 - **D16 - A hub out of reach is a partition the node works through** (the author, 2026-10-22, on
   the Local Network finding above: "solve it as a distributed-systems problem"). A node that cannot
@@ -474,18 +453,18 @@ as now (S6).
 |---|---|
 | PA1 | The hub's listener is open only with TLS and an admitted node, an admitted principal or an open invitation; an open invitation admits only its holder's `preview` and `join`; a listener that cannot open leaves the rest of the node serving and says why. |
 | PA2 | An invitation is used at most once and not after its expiry; the hub keeps only its secret's hash, and a used, denied, cancelled or expired one is said as such for a day after its expiry. |
-| PA3 | The joining machine accepts only the certificate the code names - by fingerprint, or by the built-in root bundle and the code's DNS names when the code says so - during the join and after it. |
-| PA4 | The bearer credential a join mints is never displayed: it travels sealed in the join's answer to a `0600` file, and the hub keeps only its hash. |
+| PA3 | The joining machine accepts only the certificate whose fingerprint the code names, during the join and after it. |
+| PA4 | The bearer credential a join mints is never displayed: it travels in the join's answer, over the pinned connection, to a `0600` file, and the hub keeps only its hash. |
 | PA5 | A join grants exactly the invitation's workspaces; the joining machine sends only the ones it ticked; none chosen shares nothing (P17). |
 | PA6 | Every edit of `supragnosis.toml` keeps every line the person wrote and runs under one lock; it adds only what the act chose, removes only what pairing recorded, and writes no key an earlier release refuses. |
 | PA7 | Removing a machine refuses its next request and takes back nothing it holds, and the surface that removes says so before it acts. |
 | PA8 | The hub derives a joining machine's node id from its key, and refuses its own and one already admitted. |
 | PA9 | A hub admits one joined machine; a hub, or a machine admitting any node by hand, does not join one; a joined machine does not invite - in this version. |
 | PA10 | No MCP tool and no page reaches a hub act: they are calls on a `0600` admin socket. |
-| PA11 | A join completes only on the hub's Allow, for the keys whose request the hub showed with words drawn from both sides' nonces; a request under the same code with other keys or another commitment, or a nonce that does not match the commitment, ends the invitation. |
+| PA11 | A join completes only on the hub's Allow, for the key whose request the hub showed with its words; a request under the same code with another key ends the invitation. |
 | PA12 | A joined machine pulls only the workspaces recorded at the join. |
 | PA13 | A vouched key is accepted only for the node id derived from it, never for the joining machine's own, and verifies events only up to the bound the hub gave; it admits nothing. |
-| PA14 | The joining machine acts on a join's answer only if it is signed by the node key the code names, and the credential in it is sealed to the one-time key it sent. |
+| PA14 | The hub gives a join's answer only to the request signed by the key it showed, and the joining machine acts on it only if the hub key in it derives the node id the code names. |
 | PA15 | A node with a hub runs a sync round on its own, over its shared workspaces, one at a time whatever starts it, and says when the last ran, what it moved and why it failed. |
 
 ## 9. What this revises
@@ -560,6 +539,14 @@ as now (S6).
      a replaced machine receiving the removed one's events up to the bound and none after.
    - **3d. A Linux hub** [run] in a throwaway machine, invited over SSH with Allow in the terminal and
      joined from this Mac, with the run recorded in the pull request.
+   - **3e. The pinned join** [built] (2026-10-23, D13 and D14 revised): every code pins the
+     certificate; the by-name check, the seal and its one-time key, the commitment and both nonces,
+     the answer's signature and `joining.toml` are gone, and the request carries its node key's
+     proof. The code's prefix is `sgjoin2`, and a release that knows it names an `sgjoin1` code as
+     made by an older hub. Guarded by the cases above, rewritten: a code read back or refused, the
+     words and the proof's known answers, a request whose proof does not verify, a request from
+     another key ending the invitation, the answer given only to the proved request and checked
+     against the code's node id and certificate, and `join` run again after Allow.
 4. **Settings** [deferred]: the invitation and join sheets with Allow, the rows' Remove, Stop
    syncing and Sync now, and the hint. `invite --json`, `invite --show --json` and `peer list
    --json`, which the sheets read, join compatibility.md Section 6 then, with their schema and
@@ -599,7 +586,7 @@ as now (S6).
 
 | Principle | Where it holds here |
 |---|---|
-| P2 - provenance | The joined machine's id is derived from the key it signs with; vouched keys only verify, within their bounds; the answer is signed by the hub's node key (PA8, PA13, PA14) |
+| P2 - provenance | The joined machine's id is derived from the key it signs with, and its request is signed by that key; vouched keys only verify, within their bounds; the answer's hub key derives the code's node id (PA8, PA13, PA14) |
 | P5 - absence is not negation | A wrong, expired, used or denied code, an unreachable hub and a certificate mismatch are each said; a listener that cannot open says why (PA1, PA2) |
 | P17 - sharing | Only chosen workspaces; the joining machine sends only what it ticks and pulls only what it recorded; none chosen shares nothing; removal is not a takeback (PA5, PA7, PA12) |
 | P18 - writes are an attack surface | The hub evaluates the joined machine's tiers; a copied code needs the hub's Allow; the credential is never shown (PA4, PA11) |
