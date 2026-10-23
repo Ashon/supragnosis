@@ -287,10 +287,12 @@ fn the_landing_says_the_next_step_and_reads_on_a_phone() {
     let nav = &LANDING_CSS[LANDING_CSS.find(".site-head nav {").expect("the nav")..];
     let nav = &nav[..nav.find('}').expect("it closes")];
     assert!(nav.contains("gap: 8px 24px"), "the header's links are closer than a finger");
-    let act = &LANDING_CSS[LANDING_CSS.find(".snip.review .act {").expect("the Review picture")..];
+    // The govern step's Accept is a button since step 66, but not the page's call to action: that
+    // stays the install command's gold.
+    let act = &LANDING_CSS[LANDING_CSS.find(".snip.review .act {").expect("the Review row's Accept")..];
     let act = &act[..act.find('}').expect("it closes")];
     assert!(
         !act.contains("background: var(--accent)"),
-        "the picture's chip looks like a button to press"
+        "a Review row's Accept takes the install command's gold"
     );
 }

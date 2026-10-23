@@ -300,6 +300,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 2px 10px;
 }
 .snip.review .wait { color: var(--muted); }
+/* the steps' controls (step 66): shown where the stage draws, as the frames are; without it the step
+   keeps its words */
+.ctl { display: none; }
+.js .ctl { display: revert; }
+.js .noctl { display: none; }
+.js .snip .h.ctl { display: flex; align-items: center; }
+.js .pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.js .scrub { display: flex; align-items: center; gap: 10px; }
+.scrub input { flex: 1; min-width: 0; accent-color: var(--gold-bright); }
+.scrub output { color: var(--muted); }
+.snip button {
+  font: inherit;
+  font-weight: 500;
+  border: 0;
+  border-radius: var(--r-control);
+  padding: 2px 10px;
+  background: var(--panel-3);
+  color: var(--ink);
+}
+.snip button:hover { background: var(--select); }
+.snip button[aria-pressed="true"] { background: var(--select); color: var(--gold-bright); }
+.snip.review .act[aria-disabled="true"] { background: none; color: var(--muted); }
+.aside { font-size: var(--fs-small); color: var(--muted); }
 
 .stage-col { position: relative; }
 .stage { position: sticky; top: max(24px, calc(50svh - 260px)); }

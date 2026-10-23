@@ -101,8 +101,10 @@
   const REGION = ["hook", "idem", "inc"];
   // a search for webhook idempotency: what it finds, and the entries that say so (a verdict is
   // not a receipt; the entries it decided on are)
-  const MATCH = ["hook", "idem", "inc"], MATCH_EDGES = [2, 5, 6], RECEIPTS = [2, CLAIM];
+  const MATCH = ["hook", "idem", "inc"], MATCH_EDGES = [2, 5, 6];
   const asserts = LOG.map(o => [...new Set(o.edges.flatMap(e => EDGES[e]))]);
+  // a hit's receipts are the entries that assert it; a verdict asserts nothing, so it is never one
+  const receiptsOf = id => LOG.map((o, i) => i).filter(i => asserts[i].includes(id));
   const firstSeen = {};
   asserts.forEach((ids, i) => ids.forEach(id => { if (!(id in firstSeen)) firstSeen[id] = i; }));
 
@@ -119,7 +121,7 @@
 
   function blank() {
     const nodes = {};
-    for (const n of NODES) nodes[n.id] = { a: 0, s: 0, grow: 0, ring: "", ringP: 0, bad: 0, dim: 0, hi: 0, mu: 0, mv: 0 };
+    for (const n of NODES) nodes[n.id] = { a: 0, s: 0, grow: 0, mg: 0, ring: "", ringP: 0, bad: 0, dim: 0, hi: 0, mu: 0, mv: 0 };
     return {
       agents: AGENTS.map(() => 0), you: 0, youGlow: 0, nodes, sats: SATS.map(() => 0), satDim: 0,
       edges: EDGES.map(() => ({ p: 0, hi: 0, a: 1 })), ticks: [], fly: [], rise: [],
@@ -157,39 +159,54 @@
   // (resolution.md Section 6), so the second machine calls this exactly as the first does. The
   // confirmed entry's tick turns gold, as the viewer's Log draws a human-confirmed row, and the
   // entities it names take the gold ring (a node's trust is its best support's tier).
-  function settle(w, bad, merge, confirm) {
+  // tier "host" is a bare claim on the machine that receives it: an entry that only says a person
+  // checked it, which counts for what its signature proves (resolution.md R4).
+  function settle(w, bad, merge, confirm, tier) {
     w.nodes.retry.bad = bad;
     const pg = w.nodes.pg;
     pg.mu = (NODE.pgs.u - NODE.pg.u) * merge; pg.mv = (NODE.pgs.v - NODE.pg.v) * merge;
-    pg.a = Math.min(pg.a, 1 - merge); w.edges[9].a = 1 - merge; w.nodes.pgs.grow += 1.5 * merge; w.proposal *= 1 - merge;
-    for (const id of asserts[CLAIM]) { w.nodes[id].ring = confirm > 0 ? "gold" : ""; w.nodes[id].ringP = confirm; }
-    if (w.ticks[CLAIM]) w.ticks[CLAIM].conf = confirm;
+    pg.a = Math.min(pg.a, 1 - merge); w.edges[9].a = 1 - merge; w.nodes.pgs.mg = 1.5 * merge; w.proposal *= 1 - merge;
+    for (const id of asserts[CLAIM]) { w.nodes[id].ring = confirm > 0 ? tier || "gold" : ""; w.nodes[id].ringP = confirm; }
+    if (w.ticks[CLAIM]) w.ticks[CLAIM].conf = tier ? 0 : confirm;
   }
 
   // ---- scenes: each starts from the previous scene's resting frame ----
+  // A scene is a function of its time and the visitor's choices in it (ch): a verdict cast, the log
+  // replayed to k entries, a hit chosen, a bare claim. Each choice records the scene time it was made
+  // at (its key + "At"), so the scene plays what it changes from then. The next scene starts from the
+  // story's own choices: the verdicts it casts when the visitor scrolls on.
   const SCENES = [
     { id: "overview", dur: 0, run() {} },
     { id: "write", dur: 3.9, run(st, t) {
       for (let i = 0; i < 6; i++) write(st, t, i, .25 + i * .42);
       st.prov = seg(t, 1.15, .45);
     } },
-    { id: "structure", dur: 4.3, run(st, t) {
+    { id: "structure", dur: 4.3, run(st, t, ch) {
       st.prov *= 1 - seg(t, 0, .4);
-      for (let i = 0; i < 6; i++) { project(st, t, i, .2 + i * .48); st.ticks[i].flash = bump(t, .2 + i * .48, .5); }
-      st.region = seg(t, 3.3, .8);
+      if (ch.k == null) {
+        for (let i = 0; i < 6; i++) { project(st, t, i, .2 + i * .48); st.ticks[i].flash = bump(t, .2 + i * .48, .5); }
+        st.region = seg(t, 3.3, .8);
+        return;
+      }
+      // the log replayed by hand: the graph of its first k entries, the last of them rising
+      for (let i = 0; i < ch.k; i++) project(st, i === ch.k - 1 ? t - ch.kAt : Infinity, i, 0);
+      if (ch.k) st.ticks[ch.k - 1].flash = bump(t - ch.kAt, 0, .5);
+      st.region = REGION.every(id => firstSeen[id] < ch.k) ? 1 : 0;
     } },
-    { id: "govern", dur: 4.8, run(st, t) {
+    { id: "govern", dur: 2.6, run(st, t, ch) {
       project(st, t, 6, write(st, t, 6, .1));                               // pg arrives
       const l7 = write(st, t, 7, .45); project(st, t, 7, l7);               // retry-policy, typed twice
       const l8 = write(st, t, 8, 1.0); project(st, t, 8, l8);               // a merge is proposed
       st.proposal = seg(t, l8 + .3, .4);
       project(st, t, 9, write(st, t, 9, 1.3));                              // and a claim put up to confirm
       st.you = seg(t, 1.7, .4);
-      const l10 = write(st, t, 10, 2.3); project(st, t, 10, l10);           // you accept the merge
-      const l11 = write(st, t, 11, 2.9); project(st, t, 11, l11);           // and the claim
-      settle(st, seg(t, l7 + .35, .5, outBack), seg(t, l10 + .3, .8, inOut), seg(t, l11 + .3, .7, inOut));
+      // and both wait for you: a verdict lands when it is cast
+      let merge = 0, confirm = 0;
+      if (ch.merge != null) { const l10 = write(st, t, 10, ch.merge); project(st, t, 10, l10); merge = seg(t, l10 + .3, .8, inOut); }
+      if (ch.confirm != null) { const l11 = write(st, t, 11, ch.confirm); project(st, t, 11, l11); confirm = seg(t, l11 + .3, .7, inOut); }
+      settle(st, seg(t, l7 + .35, .5, outBack), merge, confirm);
     } },
-    { id: "recall", dur: 4.6, run(st, t) {
+    { id: "recall", dur: 4.6, run(st, t, ch) {
       st.agents[1] = Math.max(bump(t, 0, .9), bump(t, 3.85, .8));
       st.ask = seg(t, .1, .35);
       st.ripple = t > .45 && t < 1.85 ? seg(t, .45, 1.4, x => x) : 0;
@@ -197,14 +214,18 @@
       for (const n of NODES) { const hit = MATCH.includes(n.id); st.nodes[n.id].dim = hit ? 0 : dim; st.nodes[n.id].hi = hit ? dim : 0; }
       st.satDim = dim;
       MATCH_EDGES.forEach(e => { st.edges[e].hi = seg(t, 1.15, .5); });
-      st.trace = seg(t, 1.7, .6, inOut);
-      for (const i of RECEIPTS) st.ticks[i].hi = seg(t, 2.1, .3);
-      st.receipts = seg(t, 2.3, .4);
+      // the receipts of the chosen hit (idempotency until the visitor picks another)
+      const sel = st.sel = ch.sel || "idem", a0 = ch.sel ? ch.selAt : 1.7;
+      st.rcpt = receiptsOf(sel);
+      st.ticks.forEach(k => { if (k) k.hi = 0; });
+      st.trace = seg(t, a0, .6, inOut);
+      for (const i of st.rcpt) st.ticks[i].hi = seg(t, a0 + .4, .3);
+      st.receipts = seg(t, a0 + .6, .4);
       const ans = seg(t, 3.1, .8, inOut);
-      if (ans > 0 && ans < 1) st.fly.push({ from: { node: "idem" }, to: { agent: 1 }, p: ans, c: "ink", path: "arc" });
+      if (ans > 0 && ans < 1) st.fly.push({ from: { node: sel }, to: { agent: 1 }, p: ans, c: "ink", path: "arc" });
       st.answered = seg(t, 3.9, .3);
     } },
-    { id: "travel", dur: 5.0, run(st, t) {
+    { id: "travel", dur: 5.0, run(st, t, ch) {
       const out = 1 - seg(t, 0, .45);
       for (const n of NODES) { st.nodes[n.id].dim *= out; st.nodes[n.id].hi *= out; }
       st.satDim *= out; st.trace *= out; st.ask *= out; st.answered *= out; st.receipts *= out;
@@ -221,25 +242,33 @@
           if (asserts[i].length) project(b, t, i, land(i) - .3);
         }
       }
-      // your verdicts are entries too: they replay here, so the merge and the gold ring arrive with them
-      settle(b, seg(t, land(7) + .1, .4, outBack), seg(t, land(10) + .1, .5, inOut), seg(t, land(11) + .1, .5, inOut));
+      // your verdicts are entries too: they replay here, so the merge and the gold ring arrive with them.
+      // A bare claim in the confirming verdict's place is an agent's entry here, with no ring, and
+      // host signed there.
+      const ring = ch.bare ? seg(t, ch.bareAt, .5, inOut) : seg(t, land(11) + .1, .5, inOut);
+      if (ch.bare) { settle(st, 1, 1, 0); if (st.ticks[11]) st.ticks[11].kind = "obs"; }
+      settle(b, seg(t, land(7) + .1, .4, outBack), seg(t, land(10) + .1, .5, inOut), ring, ch.bare ? "host" : "");
+      if (ch.bare && b.ticks[11]) b.ticks[11].kind = "obs";
+      st.bare = !!ch.bare;
       b.region = seg(t, land(5), .6);
       st.signed = seg(t, land(11) + .5, .4);
     } },
   ];
 
+  // the verdicts the story casts when the visitor scrolls on without casting them
+  const STORY = { merge: 2.3, confirm: 2.9 };
   const rest = [];
   function resting(i) {
     if (rest[i]) return rest[i];
-    return (rest[i] = i === 0 ? resting(3) : run(i, Infinity));
+    return (rest[i] = i === 0 ? resting(3) : run(i, Infinity, STORY));
   }
-  function run(i, t) {
+  function run(i, t, ch) {
     const s = clone(i === 1 ? blank() : resting(i - 1));
     s.fly = []; s.rise = [];
-    SCENES[i].run(s, t);
+    SCENES[i].run(s, t, ch || {});
     return s;
   }
-  const stateAt = (i, t) => (t === Infinity || i === 0 ? resting(i) : run(i, t));
+  const stateAt = (i, t, ch) => (i === 0 || (t === Infinity && !ch) ? resting(i) : run(i, t, ch));
 
   // ---- layout: wide (16:10) or tall (4:5), chosen by the canvas's own shape ----
   function layout(w, h) {
@@ -310,7 +339,7 @@
     const d = NODE[id], n = w.nodes[id], g = L.g;
     return P(L, cam, g[0] + (d.u + n.mu) * (g[2] - g[0]), g[1] + (d.v + n.mv) * (g[3] - g[1]));
   }
-  const nodeR = (L, cam, id, w) => Math.max(2.6, (NODE[id].r + w.nodes[id].grow) * L.k * cam.s * (L.tall ? 1.2 : 1));
+  const nodeR = (L, cam, id, w) => Math.max(2.6, (NODE[id].r + w.nodes[id].grow + w.nodes[id].mg) * L.k * cam.s * (L.tall ? 1.2 : 1));
   function tickXY(L, cam, i) {
     const [x0, x1, y] = L.log, step = Math.min(30, (x1 - x0 - 40) / 11);
     return P(L, cam, x0 + 22 + i * step, y);
@@ -390,9 +419,12 @@
       ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
       ctx.lineWidth = clamp(r * .35, 1.5, 4); ctx.strokeStyle = C.bg; ctx.stroke();
       // human confirmed: the viewer's trust ring (viewer.js trustRing), drawn closing as it arrives
-      if (n.ring === "gold" && n.ringP > 0) {
+      // host signed: the viewer's ink ring, lighter, at the same offset
+      if (n.ring && n.ringP > 0) {
         ctx.beginPath(); ctx.arc(x, y, r + 3.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * n.ringP);
-        ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; ctx.stroke();
+        if (n.ring === "host") { ctx.lineWidth = 1.6; ctx.strokeStyle = C.ink; }
+        else { ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; }
+        ctx.stroke();
       }
       if (o.labels || d.key) {
         const l = d.side === "l";
@@ -467,7 +499,7 @@
     // on the receiver the ring came with the verdict, which says where it was cast
     if (st.signed > .01 && st.b) {
       const [x, y] = nodeXY(L, camB, "idem", st.b);
-      label(ctx, "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
+      label(ctx, st.bare ? "a claim signed by laptop: host signed" : "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
     }
     // in flight: entries into the log, the log into the graph, answers back, the log across machines
     const hub = P(L, ID, ...L.hubAt);
@@ -505,15 +537,15 @@
       ctx.beginPath(); ctx.arc(x, y, st.ripple * L.w * .9, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
     }
     if (st.trace > .01) {
-      const a = nodeXY(L, camA, "idem", st);
+      const a = nodeXY(L, camA, st.sel, st);
       ctx.strokeStyle = C.ink2; ctx.lineWidth = 1;
-      for (const i of RECEIPTS) {
+      for (const i of st.rcpt) {
         const b = tickXY(L, camA, i);
         ctx.globalAlpha = .75 * Math.min(1, st.trace * 2);
         ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(lerp(a[0], b[0], st.trace), lerp(a[1], b[1], st.trace)); ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      const b = tickXY(L, camA, RECEIPTS[RECEIPTS.length - 1]);
+      const b = tickXY(L, camA, st.rcpt[st.rcpt.length - 1]);
       label(ctx, "receipts", b[0] + 12, b[1] - 20, C.ink, st.receipts);
     }
   }
@@ -534,13 +566,15 @@
   function mount(canvas, opt = {}) {
     const ctx = canvas.getContext("2d"), reduce = global.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
     let scene = opt.scene || 0, start = 0, playing = false, raf = 0, snap = null, snapAt = 0, css = [1, 1], dpr = 1;
+    // the visitor's choices, per scene, and how long the last one plays
+    let chs = {}, until = 0;
     const FADE = 350;
     function frame(now) {
       raf = 0;
       let t = playing ? (now - start) / 1000 : Infinity;
-      if (playing && t >= SCENES[scene].dur) { playing = false; t = Infinity; }
+      if (playing && t >= Math.max(SCENES[scene].dur, until)) { playing = false; t = Infinity; }
       ctx.setTransform(canvas.width / css[0], 0, 0, canvas.height / css[1], 0, 0);
-      draw(ctx, layout(css[0], css[1]), stateAt(scene, t), dpr);
+      draw(ctx, layout(css[0], css[1]), stateAt(scene, t, chs[scene] || {}), dpr);
       const f = snap ? 1 - (now - snapAt) / FADE : 0;
       if (f > 0) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = f; ctx.drawImage(snap, 0, 0); ctx.globalAlpha = 1; }
       else snap = null;
@@ -567,8 +601,17 @@
         snap = snap || document.createElement("canvas"); snap.width = canvas.width; snap.height = canvas.height;
         snap.getContext("2d").drawImage(canvas, 0, 0); snapAt = performance.now();
       }
-      scene = i; start = performance.now();
+      if (replay) chs[i] = {};
+      scene = i; start = performance.now(); until = 0;
       playing = next && !reduce.matches && SCENES[i].dur > 0 && !document.hidden;
+      kick();
+    }
+    // a choice in the current scene plays only what it changes, from now, and rests; under reduced
+    // motion it cuts to its result
+    function choose(key, value) {
+      const c = chs[scene] = chs[scene] || {}, at = (performance.now() - start) / 1000;
+      c[key] = value === undefined ? at : value; c[key + "At"] = at;
+      if (!reduce.matches && !document.hidden) { playing = true; until = at + 2; }
       kick();
     }
     const ro = new ResizeObserver(es => resize(es[0]));
@@ -581,8 +624,16 @@
     document.addEventListener("visibilitychange", () => { if (document.hidden && playing) { playing = false; kick(); } });
     if (reduce.addEventListener) reduce.addEventListener("change", () => { playing = false; snap = null; kick(); });
     if (document.fonts && document.fonts.load) document.fonts.load(`11px ${SANS}`).then(kick, kick);
-    return { go, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
+    return { go, choose, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
   }
 
-  global.Stage = { mount, still, scenes: SCENES.map(s => ({ id: s.id, dur: s.dur })) };
+  // What the page's words say of the made-up project, from the same log the stage draws: the graph of
+  // the first k entries and whether its region has formed, and a hit's receipts (1-based) and whether one of them was confirmed.
+  function counts(k) {
+    const ids = NODES.filter(n => firstSeen[n.id] < k).length, sats = SATS.filter(s => firstSeen[s[0]] < k).length;
+    const edges = new Set(LOG.slice(0, k).flatMap(o => o.edges)).size;
+    return { entities: ids + sats, relations: edges + sats, region: REGION.every(id => firstSeen[id] < k) };
+  }
+  const receipts = id => ({ entries: receiptsOf(id).map(i => i + 1), confirmed: receiptsOf(id).includes(CLAIM) });
+  global.Stage = { mount, still, counts, receipts, scenes: SCENES.map(s => ({ id: s.id, dur: s.dur })) };
 })(window);

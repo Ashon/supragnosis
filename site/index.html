@@ -100,10 +100,11 @@
           </article>
 
           <article class="step" data-scene="1" id="step-1">
-            <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>1</b> / 5 write</p>
             <h3>Agents write as they work.</h3>
             <p>While they code, debug and decide, your agents call <code>observe</code> with a note and whatever structure they have. After a commit, Claude Code is asked for the decision behind it, so the why is kept without anyone asking. Each entry keeps its workspace, which machine wrote it, for whom, from what source and how sure. Entries are never edited, only superseded.</p>
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <button type="button" class="replay">Replay</button>
             <div class="snip">
               <p class="h">entry 1 <i>append-only</i></p>
               <span class="k">workspace</span><span>payments-api</span>
@@ -113,67 +114,69 @@
               <span class="k">confidence</span><span>0.9</span>
             </div>
             <p class="answers">Answers: <b>who said this?</b></p>
-            <button type="button" class="replay">Replay</button>
           </article>
 
           <article class="step" data-scene="2" id="step-2">
-            <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>2</b> / 5 structure</p>
             <h3>The log becomes a graph.</h3>
             <p>A deterministic projector turns entries into entities and relations, and what is said together gathers into a region. Delete the graph, replay the log, and the same graph comes back on any machine.</p>
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <button type="button" class="replay">Replay</button>
             <div class="snip">
               <span class="k">log</span><span>6 entries</span>
-              <span class="k">graph</span><span>18 entities, 18 relations</span>
-              <span class="k">region</span><span>webhooks + idempotency</span>
-              <span class="k">replay</span><span>same log, same graph</span>
+              <label class="k ctl" for="replay-k">replay</label><span class="ctl scrub"><input type="range" id="replay-k" min="0" max="6" value="6" aria-valuetext="all 6 entries"><output for="replay-k" id="replay-k-out">6 of 6</output></span>
+              <span class="k">graph</span><span id="replay-graph">18 entities, 18 relations</span>
+              <span class="k">region</span><span id="replay-region">webhooks + idempotency</span>
+              <span class="k noctl">replay</span><span class="noctl">same log, same graph</span>
             </div>
-            <button type="button" class="replay">Replay</button>
           </article>
 
           <article class="step" data-scene="3" id="step-3">
-            <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>3</b> / 5 govern</p>
             <h3>Disagreements wait for you.</h3>
             <p>When agents give one thing two different types, both stay and the conflict waits for you; nothing in the log is overwritten. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry, and Review can reverse it. Once merged, an agent asking about either name reads the one thing.</p>
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <button type="button" class="replay">Replay</button>
             <div class="snip review">
-              <p class="h">Needs you <i>3</i></p>
-              <span>Merge pg into postgres</span><span class="act">Accept</span>
-              <span>Confirm a claim: webhooks need an idempotency key</span><span class="act">Accept</span>
+              <p class="h">Needs you <i id="needs">3</i></p>
+              <span id="row-merge">Merge pg into postgres</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="merge">Accept</button>
+              <span id="row-confirm">Confirm a claim: webhooks need an idempotency key</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="confirm">Accept</button>
               <span>Contested: the type of retry-policy</span><span class="wait">waiting</span>
             </div>
+            <p class="aside ctl">Press Accept to cast a verdict. Scroll on, and the story accepts both.</p>
             <p class="answers">Answers: <b>has anyone checked it?</b></p>
-            <button type="button" class="replay">Replay</button>
           </article>
 
           <article class="step" data-scene="4" id="step-4">
-            <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>4</b> / 5 recall</p>
             <h3>Any agent can ask, and gets receipts.</h3>
             <p>Weeks later a different agent searches. Hits come back ranked, and reading one gives the entries behind it: which machine wrote them, for whom, when, and how far they are trusted.</p>
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <button type="button" class="replay">Replay</button>
             <div class="snip">
               <p class="h">search_knowledge "webhook idempotency" <i>hybrid</i></p>
-              <span class="k">hits</span><span>idempotency, webhooks, incident-912</span>
-              <p class="h">get_entity idempotency</p>
+              <span class="k">hits</span><span class="noctl">idempotency, webhooks, incident-912</span><span class="ctl pick" role="group" aria-label="Read a hit"><button type="button" data-hit="idem" aria-pressed="true">idempotency</button><button type="button" data-hit="hook" aria-pressed="false">webhooks</button><button type="button" data-hit="inc" aria-pressed="false">incident-912</button></span>
+              <p class="h"><span>get_entity <span id="hit-name">idempotency</span></span></p>
               <span class="k">said by</span><span>laptop, for you</span>
-              <span class="k">entries</span><span>3 and 4</span>
-              <span class="k">trust</span><span class="confirmed">human confirmed</span>
+              <span class="k">entries</span><span id="hit-entries">3 and 4</span>
+              <span class="k">trust</span><span id="hit-trust" class="confirmed">human confirmed</span>
             </div>
-            <button type="button" class="replay">Replay</button>
           </article>
 
           <article class="step" data-scene="5" id="step-5">
-            <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>5</b> / 5 travel</p>
             <h3>Your other machine gets the same memory.</h3>
             <p>A second machine joins a hub with a one-time code: <code>supragnosis invite</code> on the hub, <code>supragnosis join</code> on the machine, and three words to compare. Then the log syncs on its own, one workspace at a time, and is never flattened into merged state. Each machine checks every signature and replays the same graph, verdicts from Review included. An entry that only claims a person checked it counts for no more than its signature proves.</p>
+            <canvas class="frame" aria-hidden="true"></canvas>
+            <button type="button" class="replay">Replay</button>
             <div class="snip">
-              <span class="k">laptop</span><span><span class="confirmed">human confirmed</span>, in its Review</span>
-              <span class="k">desktop</span><span><span class="confirmed">human confirmed</span>, the same verdict</span>
+              <p class="h ctl">behind the ring <span class="pick" role="group" aria-label="What stands behind the ring"><button type="button" data-claim="verdict" aria-pressed="true">the verdict</button><button type="button" data-claim="bare" aria-pressed="false">a bare claim</button></span></p>
+              <span class="k">laptop</span><span id="claim-laptop"><span class="confirmed">human confirmed</span>, in its Review</span>
+              <span class="k">desktop</span><span id="claim-desktop"><span class="confirmed">human confirmed</span>, the same verdict</span>
               <span class="k">a bare claim</span><span>host signed at most</span>
               <span class="k">shared</span><span>only the workspaces you allow</span>
             </div>
             <p class="answers">Answers: <b>does my other machine know?</b></p>
-            <button type="button" class="replay">Replay</button>
           </article>
         </div>
 
@@ -378,6 +381,7 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
   </footer>
 
   <p id="copied" class="sr-only" aria-live="polite"></p>
+  <p id="stage-said" class="sr-only" aria-live="polite"></p>
 
   <script>
   (function () {
@@ -469,18 +473,114 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
         show(i);
       });
     });
-    document.getElementById('stage-replay').addEventListener('click', function () { stage.replay(); });
+    document.getElementById('stage-replay').addEventListener('click', function () { reset(stage.scene); stage.replay(); });
 
     // Below 900 pixels each step draws its own frame, which plays its scene once it is mostly in view.
+    var frames = {};
     steps.forEach(function (s) {
       var c = s.querySelector('.frame');
       if (!c) return;
-      var i = +s.dataset.scene, frame = Stage.mount(c, { scene: i - 1 });
-      s.querySelector('.replay').addEventListener('click', function () { frame.go(i, frame.scene === i); });
+      var i = +s.dataset.scene, frame = frames[i] = Stage.mount(c, { scene: i - 1 });
+      s.querySelector('.replay').addEventListener('click', function () {
+        if (frame.scene === i) reset(i);
+        frame.go(i, frame.scene === i);
+      });
       new IntersectionObserver(function (es) {
         if (es[0].isIntersecting && frame.scene !== i && !wide.matches) frame.go(i);
       }, { threshold: 0.6 }).observe(c);
     });
+
+    // The steps' controls (design-system.md Section 11, step 66). Each casts its choice on the stage
+    // that shows its step - beside the steps, or the step's own frame - and the step's words say the
+    // result, so a reader without the canvas reads it too.
+    var said = document.getElementById('stage-said');
+    function on(i) { var m = wide.matches ? stage : frames[i]; if (m.scene !== i) m.go(i); return m; }
+    function say(text) { said.textContent = ''; setTimeout(function () { said.textContent = text; }, 50); }
+    function byId(id) { return document.getElementById(id); }
+    function and(list) { return list.length > 1 ? list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1] : String(list[0]); }
+    function tier(el, gold, rest) {
+      el.textContent = '';
+      var t = document.createElement('span');
+      t.textContent = gold || 'agent';
+      if (gold) t.className = 'confirmed';
+      el.appendChild(t);
+      el.appendChild(document.createTextNode(rest));
+    }
+
+    // 2: the log replayed to k entries
+    var k = byId('replay-k');
+    function replayed(n) {
+      var c = Stage.counts(n);
+      k.value = n;
+      k.setAttribute('aria-valuetext', n === 6 ? 'all 6 entries' : n + ' of 6 entries');
+      byId('replay-k-out').textContent = n + ' of 6';
+      byId('replay-graph').textContent = c.entities + ' entities, ' + c.relations + ' relations';
+      byId('replay-region').textContent = c.region ? 'webhooks + idempotency' : 'not yet';
+      return c;
+    }
+    k.addEventListener('input', function () { replayed(+k.value); on(2).choose('k', +k.value); });
+
+    // 3: the verdicts wait for Accept
+    var acts = Array.prototype.slice.call(document.querySelectorAll('[data-act]')), waiting = 3;
+    var DONE = { merge: 'Merged pg into postgres', confirm: 'Confirmed: webhooks need an idempotency key' };
+    acts.forEach(function (b) {
+      var row = byId('row-' + b.dataset.act);
+      row.dataset.was = row.textContent;
+      b.addEventListener('click', function () {
+        if (b.getAttribute('aria-disabled')) return;
+        on(3).choose(b.dataset.act);
+        b.setAttribute('aria-disabled', 'true');
+        b.textContent = 'Accepted';
+        row.textContent = DONE[b.dataset.act];
+        byId('needs').textContent = String(--waiting);
+        say(DONE[b.dataset.act] + '. The verdict is an entry in the log.');
+      });
+    });
+
+    // 4: a hit's own receipts
+    var hits = Array.prototype.slice.call(document.querySelectorAll('[data-hit]'));
+    function read(b, cast) {
+      var r = Stage.receipts(b.dataset.hit);
+      hits.forEach(function (h) { h.setAttribute('aria-pressed', String(h === b)); });
+      byId('hit-name').textContent = b.textContent;
+      byId('hit-entries').textContent = and(r.entries);
+      tier(byId('hit-trust'), r.confirmed && 'human confirmed', '');
+      if (cast) {
+        on(4).choose('sel', b.dataset.hit);
+        say(b.textContent + ': entries ' + and(r.entries) + ', ' + (r.confirmed ? 'human confirmed' : 'agent') + '.');
+      }
+    }
+    hits.forEach(function (b) { b.addEventListener('click', function () { read(b, true); }); });
+
+    // 5: the verdict, or a bare claim, behind the ring
+    var claims = Array.prototype.slice.call(document.querySelectorAll('[data-claim]'));
+    function behind(bare, cast) {
+      claims.forEach(function (c) { c.setAttribute('aria-pressed', String((c.dataset.claim === 'bare') === bare)); });
+      tier(byId('claim-laptop'), !bare && 'human confirmed', bare ? ', an agent saying you checked it' : ', in its Review');
+      tier(byId('claim-desktop'), !bare && 'human confirmed', bare ? '' : ', the same verdict');
+      if (bare) byId('claim-desktop').firstChild.textContent = 'host signed, as far as the signature goes';
+      if (cast) {
+        on(5).choose('bare', bare);
+        say(bare ? 'A bare claim: agent on the laptop, host signed on the desktop.' : 'The verdict: human confirmed on both.');
+      }
+    }
+    claims.forEach(function (b) { b.addEventListener('click', function () { behind(b.dataset.claim === 'bare', true); }); });
+
+    // a replay starts its scene over, and its step's words with it
+    function reset(i) {
+      if (i === 2) replayed(6);
+      if (i === 3) {
+        waiting = 3;
+        byId('needs').textContent = '3';
+        acts.forEach(function (b) {
+          b.removeAttribute('aria-disabled');
+          b.textContent = 'Accept';
+          byId('row-' + b.dataset.act).textContent = byId('row-' + b.dataset.act).dataset.was;
+        });
+      }
+      if (i === 4) read(hits[0], false);
+      if (i === 5) behind(false, false);
+    }
   });
   </script>
 </body>
