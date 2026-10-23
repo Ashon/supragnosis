@@ -30,7 +30,8 @@ pub struct Config {
     /// A login job starting, or a restart repaying owed projections, takes seconds.
     pub wait: Duration,
     /// A private CA's PEM bundle, for a remote server whose certificate it issued (remote-server.md
-    /// Section 3). The system roots are trusted either way; nothing turns verification off.
+    /// Section 3), trusted instead of the root bundle built into supragnosis. Nothing turns
+    /// verification off.
     pub ca_pem: Option<Vec<u8>>,
     /// What a person can do when nothing answers - start the local daemon, or check the network.
     pub unreachable_hint: String,
@@ -74,22 +75,28 @@ enum Failure {
     Http(u16, String),
 }
 
+/// The HTTP client every relay to a server starts from - this bridge's, and the viewer relay's
+/// (docs/remote-viewer.md Section 5) - so one implementation decides how a server is reached (R8).
+/// The root bundle built into supragnosis is trusted, or with a private CA's bundle instead the
+/// certificates it names, trusted as themselves or as roots, so a self-signed hub certificate made
+/// with openssl's defaults (marked as a CA) works too (docs/sync-correctness.md Section 10). Nothing turns verification off. A proxy
+/// configured for the person's browsing never sees the credential.
+pub fn client_builder(ca_pem: Option<&[u8]>) -> anyhow::Result<reqwest::ClientBuilder> {
+    let mut builder = reqwest::Client::builder();
+    if let Some(pem) = ca_pem {
+        builder = builder.use_preconfigured_tls(supragnosis_sync::http::tls_trusting(pem)?);
+    }
+    Ok(builder.no_proxy())
+}
+
 /// Runs the bridge until `input` ends - how a client stops a stdio server.
 pub async fn run<R, W>(cfg: Config, input: R, output: W) -> anyhow::Result<()>
 where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    let mut builder = reqwest::Client::builder();
-    if let Some(pem) = &cfg.ca_pem {
-        // Trusted as itself or as a root, so a self-signed hub certificate made with openssl's
-        // defaults (marked as a CA) works too (docs/sync-correctness.md Section 10).
-        builder = builder.use_preconfigured_tls(supragnosis_sync::http::tls_trusting(pem)?);
-    }
-    let http = builder
+    let http = client_builder(cfg.ca_pem.as_deref())?
         .connect_timeout(Duration::from_secs(2))
-        // Loopback only, and a proxy configured for the person's browsing must not see this.
-        .no_proxy()
         // A fresh connection per request. A pooled one outlives a daemon restart, and a request sent
         // on it fails in a way that cannot tell "never delivered" from "delivered, then the daemon
         // died" - retrying the second would run a write twice. A refused connect is unambiguous, and

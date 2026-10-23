@@ -88,3 +88,7 @@ daemonize = "0.5"
 # Golden stores are checked in gzipped (a 1 MB redb file is about 6 KB); tests/golden_stores.rs
 # unpacks them. Already in the tree through the HTTP stack, so not a new compilation unit.
 flate2 = "1"
+# The viewer relay's TLS case (docs/remote-viewer.md V6) serves a stand-in hub over TLS. Both are in
+# the tree through the sync crate's listener, so these are not new compilation units.
+axum-server.workspace = true
+rustls.workspace = true
