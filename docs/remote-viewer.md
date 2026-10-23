@@ -5,8 +5,8 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **specified**. Steps 0-3 of Section 10 are built (step 0 shipped in v0.4.6); step 4 is
-> not. What building it changed is in Section 12.
+> Status: **specified**. Steps 0-2 of Section 10 are built (step 0 shipped in v0.4.6); steps 3-4
+> are not. What building it changed is in Section 12.
 >
 > A bare R-number here is one of remote-server.md's invariants (its Section 8), not resolution.md's.
 
@@ -153,7 +153,7 @@ both:
   - each granted workspace, whether it is servable and, if not, why.
 
 The relay adds what only the client knows: the profile's name, with the read tier's address. The page
-can then say "home (hub.example) as alice - read-only" without the hub knowing what this machine
+can then say "home (hub.example) as alice, read only" without the hub knowing what this machine
 calls it.
 
 ### 3.6 The event stream
@@ -279,11 +279,7 @@ viewer the way the bridge relays MCP, with `supragnosis bridge --viewer <socket>
   | `credential_refused` | 401 | The hub answered 401: no admitted principal holds the credential. | `credential_file`: the file it was read from, never its contents |
   | `too_old` | 404 | The hub answered 404 for the page or for `/api/surface`, meaning it is older than this tier. | |
 
-  Each also carries `error`, a sentence that says the state, for a page whose poll meets it in the
-  middle of a visit (design-system.md Section 29.31), and the header `X-Supragnosis-Relay`, naming
-  the state. The relay passes no hub header but the four above, so only it can mark an answer as a
-  state, and a hub cannot make the shell draw a state's page. Any other answer, a 403 or a 404 for an
-  unknown id included, is the hub's and is passed through.
+  Any other answer, a 403 or a 404 for an unknown id included, is the hub's and is passed through.
   The shell renders each state (Section 6).
 - **On the local profile it refuses to start.** The local viewer is the daemon's own socket, so
   there is nothing to relay.
@@ -294,12 +290,9 @@ On a remote profile, the window shows the server instead of saying it cannot:
 
 - **The shell starts the relay** as a child, and points its `viz://` proxy and its event bridge at
   the relay's socket, `~/.supragnosis/remote-viz.sock`:
-  - Switching to another remote profile restarts the relay: the shell closes the old one's stdin and
-    waits for it to end before it starts the next, which would otherwise refuse the live socket.
+  - Switching to another remote profile restarts the relay.
   - Switching to this Mac stops it and points both back at the daemon's socket.
   - The page reloads on every switch.
-  - While the relay starts, the window says it is connecting. A relay that ends on its own - it
-    could not start - is a page with the relay's own words.
 - **The page reads `/api/surface`.** On the read tier it:
   - shows a banner naming the server and the principal, and marks the view read-only;
   - offers nothing the tier refuses: no verdict or accept controls, no reify, no propose actions on
@@ -312,17 +305,6 @@ On a remote profile, the window shows the server instead of saying it cannot:
   - the credential was refused;
   - the server is too old;
   - the principal may read nothing.
-
-  The shell shows the first three, from the relay's `state` (Section 5), when the window loads. The
-  page shows the fourth, since it reads the grants from `/api/surface`. A state met in the middle of
-  a visit is said by the page's poll, and the window does not turn under the person. Their words and
-  acts are design-system.md Section 29.31's.
-- **The page is the hub's** (Section 7), so a hub older than step 3 shows its own page, without the
-  banner, the chips' reasons or the empty states. The relay, the failure pages and the window's
-  guard are the shell's, and hold for any hub.
-- **The window goes nowhere else.** A hub's page is shown in the app's own window, so the window
-  shows only the viewer's address and the app's own pages. Any other address a page goes to opens
-  in the browser.
 - **The tray is unchanged** from remote-server.md Section 5. The status line names the server and
   whether it answers, and the daemon controls stay disabled. *(Revised by design-system.md step 50b:
   the line reads "Server home - not answering", an act line "Check the Server..." follows it, and the
@@ -364,7 +346,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
 | **V5** | The credential never appears in a URL, the page or the shell. The relay reads it from its 0600 file per request and sends it as a header. |
 | **V6** | The relay reaches a remote server over verified TLS, or plain HTTP to loopback only (R8), relays only GETs of paths under `/viz/`, and cannot outlive the app that started it. |
 | **V7** | One principal's reads are not shown to another. The remote event stream carries knowledge changes in readable, servable workspaces, without session ids, the writing app's name (design-system.md Section 29.8), queries or lookups. |
-| **V8** | On a remote profile, the window never shows an empty graph for a failure. Unreachable, credential refused and server too old each have their own page, and a principal with no grants is told so where the map would be. |
+| **V8** | On a remote profile, the window never shows an empty graph for a failure. Unreachable, credential refused, server too old and no grants each have their own page. |
 | **V9** | The local viewer is unchanged: the daemon's unix socket, the full console, no credential. |
 
 ## 9. What this revises
@@ -401,7 +383,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
    - The CLI mounts it at `/viz/` beside `/mcp`, behind the same admission, with the ETag and audit
      of Section 3.8.
 2. **The relay**: `supragnosis bridge --viewer`. [built]
-3. **The desktop app** [built] (design-system.md step 65):
+3. **The desktop app**:
    - the relay's lifecycle, the socket switch and the failure pages;
    - in the page, `/api/surface` and the read-only controls.
 4. **Docs**: federation.md 6d and F19, remote-server.md Section 5, architecture.md, and the README's
@@ -447,8 +429,6 @@ Guarded by:
   - `a_relay_needs_a_remote_profile_a_viewer_address_and_a_private_socket`, and
     `a_relay_unlinks_its_socket_while_it_holds_it`;
   - `the_relay_carries_the_read_tier_within_the_grants`, end to end over the hub's own read tier.
-- **The desktop app and the page (Section 6, V8)**: design-system.md Section 29.31's guards, among them
-  `each_relay_state_is_a_page_of_its_own` and `a_grant_the_hub_may_not_serve_is_muted_and_says_why`.
 
 ## 12. What building it changed
 
@@ -482,16 +462,6 @@ Guarded by:
   so there is one implementation of how a server is reached (R8), as Section 7 decided. It trusts
   the root bundle built into supragnosis, not the system's trust store, or only the profile's CA
   when it names one; this document and remote-server.md had said "the system roots".
-- **The app needed the profile's CA.** The relay is started again when the active profile's CA
-  changes, and `server --json` did not say which CA a profile names. Each row now carries `ca`, a
-  path or null; the shell never reads the file.
-- **The first view on a read tier prefers knowledge.** When the omitted grant is one the hub may not
-  serve, the page opens on the first servable grant that holds knowledge, not merely the first in
-  name order, by design-system.md Section 29.21's rule.
-- **The hub's page needed an origin of its own.** Served at the console's `viz://localhost/`, a hub's
-  script could read what the console keeps in the page's storage - the layouts it remembers, keyed
-  by entity, and the last visit - and send it to the hub as a query. The app shows the hub's page at
-  `remote://localhost/` instead (design-system.md Section 29.31).
 - **The relay answers the page conditionally.** Section 3.8 had the relay ask the hub conditionally
   "so the page needs no change", written before the page learned to ask with the tag of what it
   holds (design-system.md U33). A relay that answered every poll in full would have made the remote
