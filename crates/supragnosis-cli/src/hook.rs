@@ -99,12 +99,22 @@ pub fn names_git_commit(command: &str) -> bool {
     })
 }
 
-/// The workspace the hook names, and the repository's name for the text: the top-level directory
-/// of the repository `cwd` is in, or `cwd` itself outside one; the override wins for the workspace.
+/// The workspace the hook names, and the repository's name for the text: the directory of the
+/// repository `cwd` is in, or `cwd` itself outside one; the override wins for the workspace.
+///
+/// A linked worktree is named by the repository it shares a `.git` with, not by its own directory,
+/// so work in a worktree lands in its project's workspace. A submodule's common directory sits
+/// under its parent's `.git/modules`, so its own top level names it.
 fn workspace_of(cwd: &Path, w: &World) -> (String, String) {
-    let top = (w.git)(cwd, &["rev-parse", "--show-toplevel"])
-        .map(|s| PathBuf::from(s.trim()))
-        .filter(|p| !p.as_os_str().is_empty())
+    let git_path = |args: &[&str]| {
+        (w.git)(cwd, args)
+            .map(|s| PathBuf::from(s.trim()))
+            .filter(|p| !p.as_os_str().is_empty())
+    };
+    let top = git_path(&["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .filter(|d| d.file_name().is_some_and(|n| n == ".git"))
+        .and_then(|d| d.parent().map(Path::to_path_buf))
+        .or_else(|| git_path(&["rev-parse", "--show-toplevel"]))
         .unwrap_or_else(|| cwd.to_path_buf());
     let repo = top
         .file_name()
@@ -376,6 +386,31 @@ mod tests {
             workspace_override: Some("my project".into()),
         };
         assert!(context_of(&answer(&input, &w).unwrap().unwrap()).contains("holds 1 entities"));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Work in a linked worktree is named by its repository, never by the worktree's directory.
+    #[test]
+    fn a_worktree_is_named_by_its_repository() {
+        let repo = repo_with_a_commit("worktree naming");
+        let tree = repo.with_file_name(format!(
+            "{}-agent-ab67762782df741b3",
+            repo.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&tree);
+        let added = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["worktree", "add", "-q", "--detach"])
+            .arg(&tree)
+            .output()
+            .expect("git runs");
+        assert!(added.status.success(), "{}", String::from_utf8_lossy(&added.stderr));
+        let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
+        let name = repo.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(workspace_of(&tree, &w), (name.clone(), name.clone()), "from the worktree");
+        assert_eq!(workspace_of(&repo.join("."), &w), (name.clone(), name), "from the checkout");
+        let _ = std::fs::remove_dir_all(&tree);
         let _ = std::fs::remove_dir_all(&repo);
     }
 }
