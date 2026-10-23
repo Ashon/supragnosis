@@ -336,7 +336,9 @@ fn on_a_phone_a_scene_waits_to_be_played() {
         "the button does not say Play scene"
     );
     assert!(
-        mount.contains("if (!PHONE.matches || fig.closest(\".pr.open\")) onceVisible(fig, () => run(0, END));"),
+        mount.contains(
+            "if (!PHONE.matches || fig.closest(\".pr.open\")) onceVisible(fig, () => run(0, END));"
+        ),
         "a phone plays a scene on scroll, or not one the reader opened"
     );
 }
