@@ -101,8 +101,16 @@ pub struct Invite {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Invites {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "readable")]
     invite: Vec<Invite>,
+}
+
+/// The invitations this release can read. One an older release kept in its own shape - v0.10.0's
+/// signed answer, or its request before the words - is dropped: its code is one this release
+/// refuses anyway, and keeping it would stop every later act on the file.
+fn readable<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Vec<Invite>, D::Error> {
+    let raw: Vec<toml::Value> = Deserialize::deserialize(d)?;
+    Ok(raw.into_iter().filter_map(|v| v.try_into().ok()).collect())
 }
 
 /// A machine pairing admitted (Section 4.3).
@@ -686,7 +694,7 @@ impl Pairing {
         Ok(json!({"state": state.name()}))
     }
 
-    /// Closes the invitation `hash` if it is still open and its expiry has come.
+    /// Closes the open invitation once its expiry has come, and drops the answers kept past theirs.
     pub fn expire(&self, now: u64) -> Result<()> {
         let _g = self.guard();
         let (book, closed) = self.invites(now)?;
@@ -1234,6 +1242,10 @@ mod tests {
         let credential = body.credential;
         let other = Joiner::new(10);
         assert_eq!(state(&p.join(&other.ask(&code), t).unwrap()), "used", "no other key's");
+        let unproved = JoinRequest { name: "x".into(), ..j.ask(&code) };
+        let refused = p.join(&unproved, t).unwrap();
+        assert_eq!(state(&refused), "refused", "nor the shown key's without its proof");
+        assert!(refused["answer"].is_null());
         let fc = crate::fed::load_at(&hub.paths.config).unwrap().unwrap();
         let entry = &fc.server.unwrap().allowlist[0];
         assert_eq!(entry.node_id, j.id.node_id(), "the id is derived from the key");
@@ -1349,7 +1361,8 @@ mod tests {
         let admitted = p.join(&a.ask(&code), t).unwrap();
         assert_eq!(admitted["said"], "This machine is already admitted to this hub.", "{admitted}");
         std::fs::write(&hub.paths.config, before).unwrap();
-        // A key that is not a usable key is refused before the hub shows anything.
+        // A request whose key is not a usable key - here one with another key's proof - is refused
+        // before the hub shows anything.
         let bent = JoinRequest { node_key: hex(&[0; 32]), ..a.ask(&code) };
         assert_eq!(state(&p.join(&bent, t).unwrap()), "refused");
         p.join(&a.ask(&code), t).unwrap();
@@ -1455,6 +1468,26 @@ mod tests {
         let kept = std::fs::read_to_string(hub.paths.invites()).unwrap();
         assert!(!kept.contains(&credential), "the credential is not kept past the expiry");
         assert_eq!(p.next_expiry(), None);
+    }
+
+    /// A hub upgraded from v0.10.0 reads its invitations file: the records that release kept in its
+    /// own shape - a signed answer, a request before its words - are dropped, and pairing goes on.
+    #[test]
+    fn an_older_releases_invitations_are_dropped() {
+        let hub = Hub::new("older");
+        let t = now();
+        let old = format!(
+            "[[invite]]\nsecret_hash = \"{h}\"\nworkspaces = []\nexpires = {e}\nstate = \"used\"\npinned = true\n\n[invite.request]\nnode_key = \"{k}\"\nname = \"MacBook\"\nonetime_key = \"{k}\"\ncommitment = \"{k}\"\nhub_nonce = \"{k}\"\nnonce = \"{k}\"\nwords = [\"a\", \"b\", \"c\"]\n\n[invite.answer]\nbody = \"{{}}\"\nsignature = \"00\"\n\n[[invite]]\nsecret_hash = \"{h}\"\nworkspaces = []\nexpires = {e}\nstate = \"open\"\npinned = false\n\n[invite.request]\nnode_key = \"{k}\"\nname = \"MacBook\"\nonetime_key = \"{k}\"\ncommitment = \"{k}\"\nhub_nonce = \"{k}\"\n",
+            h = hex(&[5; 32]),
+            k = hex(&[6; 32]),
+            e = t + VALID_FOR,
+        );
+        std::fs::create_dir_all(&hub.paths.hub).unwrap();
+        crate::write_secret(&hub.paths.invites(), old.as_bytes()).unwrap();
+        let p = hub.pairing();
+        assert!(p.status(t).unwrap()["open"].is_null(), "neither record is read");
+        let code = invite(&p, t);
+        assert_eq!(state(&p.preview(&hex(&code.secret), t).unwrap()), "open");
     }
 
     /// Removing a joined machine (Section 4.6) drops its entry and keeps its key verify-only, and

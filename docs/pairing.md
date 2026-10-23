@@ -83,10 +83,9 @@ Call them the **hub**, the machine that stays on and that others sync to, and th
    they match and presses Allow on the hub; Deny, or a request from any other machine with the
    same code, ends the invitation.
 5. **The two exchange keys.** On Allow, the hub admits the Mac with a credential of its own and
-   the chosen workspaces, and answers - signed with its node key, the credential sealed to the
-   joining Mac alone - with that credential, its own key, the keys it vouches for and, when it
-   made its certificate itself, that certificate (Section 4.3). The joining Mac writes them down
-   and restarts its daemon, which then syncs on its own (Section 4.5).
+   the chosen workspaces, and answers, over the connection pinned to its certificate, with that
+   credential, its own key, the keys it vouches for and the certificate (Section 4.3). The joining
+   Mac writes them down and restarts its daemon, which then syncs on its own (Section 4.5).
 6. **Both say so.** The hub's Sync pane lists the joined Mac by the name the person allowed, with
    what it keeps in step. The joining Mac's pane lists the hub with what is ahead on either side,
    received-only workspaces included, and Sync now.
@@ -180,11 +179,12 @@ two require the code's secret, the last a joined machine's credential.
   node, joined or written by hand. Each is refused with what it is: "This Mac already syncs with
   MacBook. In this version a Mac syncs with one other." Removing that one lifts it.
 - **The secret.** 32 random bytes; the daemon keeps their hash, never the secret, with the
-  workspaces chosen and the expiry - and, once a machine asks, its request and later the signed
-  answer (Section 4.3) - in `~/.supragnosis/hub/invites.toml` (`0600`), not in `supragnosis.toml`,
-  which the person edits. A used, denied, cancelled or expired invitation stays there as a
-  tombstone for a day after its expiry, so a code tried late is told "This code was already used."
-  or "This code has expired." rather than "no such code".
+  workspaces chosen and the expiry - and, once a machine asks, its request and after Allow the
+  answer until the expiry (Section 4.3) - in `~/.supragnosis/hub/invites.toml` (`0600`), not in
+  `supragnosis.toml`, which the person edits. A used, denied, cancelled or expired invitation stays
+  there as a tombstone for a day after its expiry, so a code tried late is told "This code was
+  already used." or "This code has expired." rather than "no such code". A record an older release
+  kept in its own shape is dropped when the file is read.
 - **One open at a time.** A new invitation cancels the open one, and the sheet says so.
   `supragnosis invite --cancel` ends the open one; a cancelled invitation stays a tombstone, as a
   used one does.
