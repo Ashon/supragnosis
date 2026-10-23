@@ -1043,16 +1043,19 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (3, &[c(
-        "the joining machine accepts only the certificate the code names - by fingerprint, or by the built-in roots and the code's DNS names - during the join and after it",
+        "the joining machine accepts only the certificate whose fingerprint the code names, during the join and after it",
         Evidence::Scenario(&[
-            "a_join_refuses_another_certificate_and_a_chain",
+            "a_join_refuses_another_certificate",
             "a_machine_joins_and_both_sync_with_no_call",
         ]),
     )]),
     (4, &[
         c(
-            "the bearer credential a join mints travels sealed to the one-time key, and the hub keeps only its hash",
-            Evidence::Scenario(&["a_join_is_allowed_and_answered_for_its_request_alone"]),
+            "the bearer credential a join mints travels in the answer over the pinned connection, and the hub keeps only its hash and the answer only until the invitation's expiry",
+            Evidence::Scenario(&[
+                "a_join_is_allowed_and_answered_for_its_request_alone",
+                "the_request_and_the_answer_survive_a_restart",
+            ]),
         ),
         c(
             "the joining machine writes it to a 0600 file and never displays it",
@@ -1065,7 +1068,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&["a_join_is_allowed_and_answered_for_its_request_alone"]),
         ),
         c(
-            "the joining machine sends only the ones it ticked that the signed answer names",
+            "the joining machine sends only the ones it ticked that the answer names",
             Evidence::Scenario(&["a_machine_joins_and_both_sync_with_no_call"]),
         ),
     ]),
@@ -1112,7 +1115,7 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "a hub, or a machine admitting a node, does not join one",
-            Evidence::Scenario(&["a_join_refuses_another_certificate_and_a_chain"]),
+            Evidence::Scenario(&["a_join_refuses_another_certificate"]),
         ),
     ]),
     (10, &[c(
@@ -1120,14 +1123,14 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["the_admin_socket_is_owner_only_and_says_what_it_cannot_do"]),
     )]),
     (11, &[c(
-        "a join completes only on the hub's Allow for the keys whose request it showed with words drawn from both nonces, and a request with other keys or another commitment, or a wrong nonce, ends the invitation",
+        "a join completes only on the hub's Allow for the key whose request it showed with its words, and a request under the same code with another key ends the invitation",
         Evidence::Scenario(&[
             "an_invitation_says_what_became_of_it",
             "a_join_is_allowed_and_answered_for_its_request_alone",
             "an_answer_counts_only_for_the_request_shown",
             "who_may_join_and_who_may_invite",
             "the_request_and_the_answer_survive_a_restart",
-            "the_words_depend_on_every_part_of_the_request",
+            "the_words_depend_on_the_secret_and_the_node_key",
         ]),
     )]),
     (12, &[c(
@@ -1147,19 +1150,20 @@ const PAIRING_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (14, &[
         c(
-            "an answer verifies only under the node key the code names and for its own request and invitation, and its credential opens only with the one-time key it was sealed to",
+            "the hub gives a join's answer only to the request signed by the key it showed",
             Evidence::Scenario(&[
-                "an_answer_verifies_only_from_the_codes_hub_for_this_request",
-                "a_seal_opens_only_with_its_key",
+                "a_proof_verifies_only_for_its_request",
+                "a_join_is_allowed_and_answered_for_its_request_alone",
                 "a_message_signature_is_not_an_attestation_signature",
                 "the_wire_holds_its_known_answers",
             ]),
         ),
         c(
-            "the joining machine acts on no other answer",
+            "the joining machine acts on an answer only when its hub key derives the node id the code names and its certificate is the one the code pins",
             Evidence::Scenario(&[
-                "a_tampered_answer_writes_nothing",
-                "a_join_run_again_is_the_same_request_and_a_changed_nonce_ends_it",
+                "an_answer_is_checked_against_the_code",
+                "an_answer_from_another_hub_writes_nothing",
+                "a_join_run_again_is_the_same_request",
             ]),
         ),
     ]),

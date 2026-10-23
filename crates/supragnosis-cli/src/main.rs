@@ -7645,7 +7645,7 @@ mod link_transport {
         );
         let t = invite::now();
         pairing
-            .invite(vec![], vec!["hub.local:7420".into()], pair::CertCheck::ByName, t)
+            .invite(vec![], vec!["hub.local:7420".into()], [0; 32], t)
             .expect("invites");
         let invited = listener.apply(&elsewhere).await;
         assert!(

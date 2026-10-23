@@ -367,11 +367,11 @@ async fn make_invitation(
         !addresses.is_empty(),
         "this machine has no address to put in the code - name one with --address"
     );
-    let check = invite::check_for(paths, &srv, &ask.addresses)?;
+    let fingerprint = invite::fingerprint_for(&srv)?;
     let pairing = hub.pairing.clone();
     let workspaces = ask.workspaces;
     let made = tokio::task::spawn_blocking(move || {
-        pairing.invite(workspaces, addresses, check, invite::now())
+        pairing.invite(workspaces, addresses, fingerprint, invite::now())
     })
     .await??;
     // The listener's loop opens it for the invitation and closes it at the expiry (`follow`).
@@ -700,9 +700,15 @@ mod tests {
         let made = make_invitation(&slot, &paths, ask).await.expect("invites");
         assert!(slot.get().is_some(), "the invitation built the hub");
         assert_eq!(made["addresses"], serde_json::json!(["hub.example.net:7420"]));
-        assert_eq!(made["check"], "fingerprint", "a certificate the hub made is pinned");
         let srv = fed::load_at(&paths.config).unwrap().unwrap().server.unwrap();
         assert_eq!(srv.listen, paths.listen);
+        let code = crate::pair::Code::decode(made["code"].as_str().unwrap()).unwrap();
+        let pem = std::fs::read_to_string(srv.tls_cert.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            code.fingerprint,
+            crate::pair::certificate_fingerprint(&pem).unwrap(),
+            "the code pins the certificate the hub made"
+        );
         let why = state.read().unwrap()["why"].as_str().unwrap_or_default().to_string();
         assert!(why.contains("could not start"), "the bind rule counted the invitation: {why}");
         assert!(made["notes"].to_string().contains("after Supragnosis restarts"), "{made}");
@@ -733,7 +739,7 @@ mod tests {
             pairing.invite(
                 vec![],
                 vec!["hub.local:7420".into()],
-                crate::pair::CertCheck::ByName,
+                [0; 32],
                 invite::now() + 2 - invite::VALID_FOR,
             )
         })
