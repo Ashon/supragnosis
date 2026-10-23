@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.10.1](docs/releases/v0.10.1.md) | Upgrade the server and the app, then restart once; a pinch follows the fingers, and a join pins. |
 | [v0.10.0](docs/releases/v0.10.0.md) | Upgrade the server and the app, then restart once; a second machine joins with a code. |
 | [v0.9.0](docs/releases/v0.9.0.md) | Upgrade the server and the app, then restart once; Review closes the loop, and every act says where. |
 | [v0.8.2](docs/releases/v0.8.2.md) | Upgrade the app and the server, then restart once; recover in one click, and drags follow. |
