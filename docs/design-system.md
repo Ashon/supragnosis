@@ -1165,17 +1165,22 @@ from a note to an answer instead of describing the model again.
 | Hero | Says what it is in the heading and a subhead of at most 25 words, and offers the install command as the one act | the 76-word lede, the constellation, two buttons and six badges |
 | How it works | Follows one fact through five steps beside the stage | agent-first, the guarantees, the pipeline and its two terminals |
 | The viewer | The screenshot, told in the marks the stage taught | the viewer section |
+| Check it yourself | One paste that shows a disagreement kept and a credential refused (step 66) | - |
 | Connect | The apps, the one command that connects them, the tools | the MCP surface |
 | Under the hood | Six one-line properties | the eight capability cards |
 | Status and questions | Shipped, next, who it is not for yet, four questions | the status ledger |
 | Get started | Three steps, with the install tabs | get started |
+
+*(Revised by step 66: eight sections, with Check it yourself after the viewer.)*
 
 The portability section goes with its three topology drawings, two of which drew meshes that have
 not shipped; moving between machines is the stage's fifth step.
 
 **The hero.** The heading stays: memory for AI agents that remembers who said it. The subhead names
 the clients and the split of the work - agents write as they work, a person decides what becomes
-canon. The act is the install command in two tabs, the macOS app (`brew install --cask
+canon. *(Revised by step 66: in the same 25 words it also says what only this product does, that each
+machine checks what it receives; "remembers who said it" is a claim other products now make, and the
+receiver's own evaluation of trust is not.)* The act is the install command in two tabs, the macOS app (`brew install --cask
 ashon/tap/supragnosis`, the one spelling the page uses; *revised by step 48*: followed by `&& open -a
 Supragnosis`, Section 29.10) and the script, with a copy button; beside it
 are the install script's source, GitHub and the docs. One line of facts follows: the version, Rust,
@@ -1193,46 +1198,69 @@ AI app it finds and downloads the search model. With the script, run `supragnosi
 ->", Section 29.10)*, which links to Get started, and the header gains Install beside its other links. Below 560 pixels the
 command wraps and its Copy button sits on its own line; a code block that still scrolls takes focus.
 The hero's picture of a question and an Accept chip is a picture: no pointer, no hover, nothing that
-looks pressable. The header's links stand at least 24 pixels apart, a finger's width (Section 10).
+looks pressable. *(Revised by step 66: the Review snippet in the govern step is no longer a picture -
+its Accept chips are buttons, and pressing one casts the verdict on the stage.)* The header's links stand at least 24 pixels apart, a finger's width (Section 10).
 
 **The stage** is one canvas beside the five steps. Each step is a sentence, a short paragraph and one
 snippet of the product's own text, and the scene beside it shows the same thing happen to a made-up
 project - a payments service, its webhooks and their idempotency, nothing from a real store:
 
-1. **Write.** Three agents' entries fly into one log; the first shows what an entry keeps - the
-   machine that wrote it, the person it acts for, its source and how sure it is. The log records the
-   machine and the person, not which agent app wrote an entry, so the agents' names are drawn beside
-   the log and never on it. It answers "who said this?".
+1. **Write.** Three agents' entries fly into one log; the first shows what an entry keeps - its
+   workspace, the machine that wrote it, the person it acts for, its source and how sure it is. The log
+   records the machine and the person, not which agent app wrote an entry, so the agents' names are
+   drawn beside the log and never on it. The words add that after a commit Claude Code is asked for
+   the decision behind it (client-connect.md Section 12), and the snippet's source is that commit. It
+   answers "who said this?". *(Revised by step 66.)*
 2. **Structure.** Each entry rises into the entities it names and draws its relations, and what was
-   said together gathers into a region.
+   said together gathers into a region. A range in the snippet replays the log: at k the stage draws
+   the graph of the first k entries, the entry it reaches rising as it does in the scene, and the
+   snippet's counts are recomputed from the same entries, so replaying the log is something the visitor
+   does rather than reads. *(Added by step 66.)*
 3. **Govern.** A second type for one entity raises the contested badge, and it stays: nothing settles
    it in this story. Two names for one thing become a merge proposal, and an agent asks a person to
-   confirm one of its claims (webhooks need an idempotency key). The person accepts both on the Review
-   page; the two verdicts land in the log; the merge folds one name into the other; the confirmed
-   entry's tick turns gold, as the viewer's Log draws a human-confirmed row, and the two entities it
-   names take the gold ring, since a node's trust is its best support's tier. It answers "has anyone
-   checked it?".
+   confirm one of its claims (webhooks need an idempotency key). *(Revised by step 66:)* The scene
+   stops there, with both waiting, and the step's snippet holds them as Review rows whose Accept is a
+   button. Pressing one casts that verdict: its tick flies from the person into the log, and the merge
+   folds one name into the other, or the confirmed entry's tick turns gold, as the viewer's Log draws a
+   human-confirmed row, and the two entities it names take the gold ring, since a node's trust is its
+   best support's tier. The row then says what was done. Scrolling on is accepting both: the later
+   steps start from the accepted graph, and the snippet says so. The words say what is flagged - a
+   second type, where trust ties; a description's latest wins (resolution.md Section 2.2) - that once
+   merged an agent's read of either name follows the merge, and that a verdict can be undone in
+   Review. It answers "has anyone checked it?".
 4. **Recall.** Another agent searches; what matches stays lit while the rest dims, as the viewer's
    search lights its answer, and a thin line runs from the answer back to the entries that say it -
-   the receipts. A verdict is not a receipt; the entry it confirmed is.
+   the receipts. A verdict is not a receipt; the entry it confirmed is. *(Revised by step 66:)* The
+   snippet is the two calls an agent makes: `search_knowledge`, whose three hits are buttons, and
+   `get_entity` of the chosen one - who said it, its entries and its trust, since a hit carries none of
+   them (the MCP answer names an entity's name, type and workspace). Choosing a hit lights it and
+   traces its own receipts.
 5. **Travel.** The log crosses a hub to a second machine, which checks the signatures (an entry is
    signed when it leaves the machine that wrote it) and replays the same graph: the same contested
    badge, the same merge, and the same gold rings, because a verdict is an entry and the tier it grants
    is read from the log (resolution.md Section 6). Only the workspaces the person allows travel. What
    cannot arrive as human confirmed is a bare claim: an entry that only says a person checked it counts
-   for no more than its signature proves (resolution.md R4). The step says that in words; the scene
-   has no such entry. It answers "does my other machine know?".
+   for no more than its signature proves (resolution.md R4). *(Revised by step 66:)* Two buttons in the
+   snippet choose what stands behind the gold ring: the verdict, which both machines draw gold, or a
+   bare claim - an agent's entry that only says a person checked it - which the laptop draws as Agent,
+   with no ring, and the desktop as host signed. The words say how a machine joins: a one-time code
+   from `supragnosis invite`, `supragnosis join`, and three words compared (pairing.md), after which
+   it syncs on its own. It answers "does my other machine know?".
 
 The words carry the whole meaning. The canvas is hidden from assistive technology and the page reads
 complete without it; what is worth reading - an entry's provenance, a Review row, a search answer's
 receipt, the two machines' tiers - is a snippet in the step, and the canvas draws only names and
-short labels, at 11 to 12 pixels.
+short labels, at 11 to 12 pixels. *(Added by step 66:)* A control a step adds is a button or a range
+in its snippet, reached by the keyboard as any other; the canvas draws its result, and the snippet's
+words change with it, so a reader without the canvas reads the same outcome. Hover means nothing.
 
 **The stage's marks are the viewer's** (U10). An entity is filled with its type's color, computed by
 the viewer's own functions of the type's name, copied into the stage; the stage's type names are
 chosen so their colors sit apart from each other and from gold, coral and teal. A node has a halo of
 the ground. A gold ring is human confirmed, at the viewer's width and offset; nothing on the stage is
-host signed or unverified, so it draws no other ring. The coral badge at the upper right is
+host signed or unverified, so it draws no other ring. *(Revised by step 66: the travel step's bare
+claim draws the viewer's host-signed ring on the desktop, ink at 1.6 pixels at the same offset, set in
+`settle()` with the other marks; nothing is unverified.)* The coral badge at the upper right is
 contested. A relation is the viewer's neutral line at its alpha, the one color the stage copies from
 the viewer's script rather than from a token. A merge waiting for a person is the viewer's proposal
 preview: an arrow from the name folded away into the one kept, in `--accent`, and the relation that
@@ -1242,7 +1270,9 @@ is an agent at work, as the viewer's footprint glow marks what an agent's sessio
 person and their verdicts are ink. Every other color the stage draws is a landing token.
 
 **Motion.** A scene plays when its step reaches the middle of the window, once, in at most five
-seconds, and then rests: at rest nothing moves and no frame is drawn. Each scene ends within the five
+seconds, and then rests: at rest nothing moves and no frame is drawn. *(Added by step 66:)* A press
+plays only what it changes, in under two seconds, and rests again; under reduced motion it cuts to its
+result. Each scene ends within the five
 seconds after which WCAG 2.2.2 asks for a pause, so the stage needs none, on the phone's frames as
 beside the steps. The page's scroll is never captured or tied to the drawing. Under the stage a rail
 of five buttons, each named "Step n of 5" with its scene, marks the current step with `aria-current`
@@ -1265,7 +1295,9 @@ cannot draw - no script, a script that did not load, or one that failed - and th
 
 **By width.** From 900 pixels the steps and the stage sit side by side, and the stage stays in view
 while the steps scroll past it. Below 900 each step carries its own 4:5 frame above its words, which
-plays when the frame comes into view, and the stage's column is not drawn.
+plays when the frame comes into view, and the stage's column is not drawn. *(Revised by step 66: the
+frame stands between the step's paragraph and its snippet, so it plays after the words that say it
+and beside the controls that drive it.)*
 
 **Type and surface.** Headings in Fraunces, reading and labels in Pretendard (step 10; the system
 sans until then), commands, identifiers and the uppercase eyebrows in IBM Plex Mono: Newsreader goes.
@@ -1287,10 +1319,16 @@ under `site/` alone did not start; step 9 adds `site/**` to its paths, and the f
 `site/*.js` as it covers the viewer's scripts.
 
 **Trust is earned with what can be checked.** The landing has no adoption to show yet, so it shows
-the status - what shipped, what is next and who it is not for yet - and answers four questions:
+the status - what shipped, what is owed and who it is not for yet - and answers four questions:
 whether anything leaves the machine, whether it needs a key or a model, what happens if you stop
 using it, and how it differs from a notes file. It names no other product: a claim about one would be
-ours to keep true, and we could not.
+ours to keep true, and we could not. *(Added by step 66:)* What is next is not scheduled - a person
+picks each bundle - so the list is what is owed. And the page offers one check a visitor can run:
+Check it yourself is a paste that runs `supragnosis serve --store mem --embed none`, a server on a store
+in memory that writes nothing to disk, sends it two entries giving one entity two types and one
+carrying AWS's published example key, and prints what comes back - the entity contested by the other
+type, and the refusal naming the credential's shape. It runs on the released binary; the page says
+what it should print.
 
 ## 11a. The principles page
 
@@ -6147,3 +6185,32 @@ handler keeps the notch step, a `ctrlKey` wheel scales by the delta through the 
 move and is not taken during a gesture, and the gesture events scale by the ratio and prevent the
 page's own zoom. A browser check sends ten small `ctrlKey` wheel events and a gesture through the
 viewer and reads the camera's scale.
+
+### 29.31 Step 66: the landing says what ships, and lets the visitor do it
+
+**What was found.** A read of the landing against v0.10.2 and three reviews (copy, the stage's
+interaction, and how comparable products present themselves):
+- It claimed more than ships. "A person checked it" and "your verdict" for a tier the console's socket
+  records (resolution.md Section 6); "the conflict is flagged" where only a second type is; remote
+  servers under Shipped, which are frozen; sync that "starts when you add a server", where it starts
+  when a machine joins.
+- It left out what a visitor would most want: the commit hook that keeps the why without being asked,
+  a second machine joining with a code, and that a verdict can be undone.
+- The stage only played back. The govern step's Accept was a picture, the scene accepted on the
+  visitor's behalf before anyone pressed it, and on a phone the frame played above words not yet
+  read.
+
+**Decisions** (the person's, 2026-10-24, from the recommendations):
+- D1. The heading stays; the subhead says what only this product does, in 25 words.
+- D2. The five interactions: the phone frame between a step's words and its snippet; Accept in the
+  govern step; the travel step's verdict or bare claim; the structure step's replay range; the recall
+  step's hits.
+- D3. The copy follows the product as released: every claim above corrected, and the hook, joining and
+  undo said where they belong.
+- D4. The viewer's screenshot is taken again, from a scratch daemon holding the stage's made-up
+  project, never from a real store.
+- D5. Check it yourself joins after the viewer.
+
+**Order.** This section and Section 11's revisions; then the copy and Check it yourself; then the
+interactions; then the screenshot. Each is its own change. Nothing the page says is main-only: what
+the next minor adds (a write names its workspace) waits for its release before the page says it.
