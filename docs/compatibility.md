@@ -435,6 +435,20 @@ added fields.
 resources gain an optional `last_said` on each node, in epoch milliseconds. It is an added field;
 resources have no golden file as the tools and prompts do, so this list is their record.
 
+**A merge reaches the agent's reads, and a blank search is refused** (the 2026-10-23 review of the
+read path). No input changed, and these answers did:
+- `get_entity` of a merged entity, by its canonical id or a merged-away one, lists every member's
+  relations as the graph draws them: endpoints forwarded to canonical ids, a merge's self-loops
+  dropped, one per (from, type, to). It listed the canonical row's own only.
+- `traverse` from a merged entity leaves by any member's edges and names each neighbor by its
+  canonical id.
+- A merged `claim_promotion` or `claim_demotion` rewrites the entity rows whose spelling or kind it
+  changes when it is cast, so `get_entity` and the graph name the winning spelling at once rather
+  than after the next reproject.
+- `search_knowledge` with a blank query answers an error; it answered the first rows of the store as
+  matches. Its hits are still not forwarded through merges, since forwarding folds the log and a
+  search never walks it; a merged-away id it names forwards at `get_entity` and `traverse`.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

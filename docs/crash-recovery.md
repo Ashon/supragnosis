@@ -76,6 +76,10 @@ store's `commit_projected`, which writes them in one transaction. So:
   The accepted exception Section 8 recorded is gone.
 - **One commit instead of many.** An `observe` paid one commit for its append and one for each
   touched row; it now pays one.
+- **A verdict calls for rows only when it moves a tier.** A merge of a `claim_promotion` or a
+  `claim_demotion` changes the tier the entity fold weighs its targets' assertions by, and with it
+  which spelling and kind those entities' rows hold, so those rows commit with it. Any other verdict
+  commits its row alone: proposal state and merge forwarding are read-time folds.
 
 The fold still reads under the engine's write lock, so no engine writer lands between its read and
 its commit; a sync `apply` can, and records its own entry, as before.
