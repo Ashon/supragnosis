@@ -1632,6 +1632,8 @@ fn p15_get_entity_and_traverse_follow_an_accepted_merge() {
             .collect();
         assert_eq!(hits, vec![(rocksdb.clone(), 1)], "traverse from {id}");
     }
+    // The walk ends where the graph does, however deep it was asked to go.
+    assert_eq!(engine.traverse(&cozo, usize::MAX, 10).expect("traverse").len(), 1);
 }
 
 /// guard (Principle 11 promotion path, P18 lineage): reifying a hyperedge asserts a group entity
