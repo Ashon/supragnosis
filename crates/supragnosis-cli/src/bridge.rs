@@ -519,7 +519,8 @@ mod tests {
                 2,
                 "tools/call",
                 serde_json::json!({"name":"observe","arguments":{
-                "content":"relayed through the bridge","entities":[{"name":"bridge"}]}}),
+                "content":"relayed through the bridge","workspace":"ws",
+                "entities":[{"name":"bridge"}]}}),
             )
             .await;
         assert!(observed["result"].is_object(), "{observed}");

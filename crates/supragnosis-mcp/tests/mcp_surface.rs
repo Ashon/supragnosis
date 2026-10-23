@@ -549,26 +549,36 @@ async fn mcp_resource_graph_surface() {
     let _ = server.await;
 }
 
-/// An empty node default workspace must read as a wrong scope, not as an absent ontology.
-///
-/// Knowledge is deliberately organized into named workspaces, so the node default is routinely empty by
-/// design. A reader who surveys it and is told only "nothing here" concludes the node holds no knowledge -
-/// the exact misreading this asserts against. The response must instead name the workspaces that do hold
-/// knowledge, so the dead end corrects itself in the same call (Principle 5: absence is not negation).
+/// A read that names no workspace reads every workspace, and an empty named one reads as a wrong
+/// name, not as an absent ontology: it names the workspaces that hold knowledge, so the dead end
+/// corrects itself in the same call (Principle 5: absence is not negation). A write names its
+/// workspace, and no tool takes an argument it does not declare (compatibility.md Section 7).
 #[tokio::test]
-async fn empty_default_workspace_names_where_knowledge_lives() {
+async fn reads_span_every_workspace_and_writes_name_theirs() {
+    use supragnosis_core::AssertionStore;
     // Node default is "default"; all knowledge is observed into the named workspace "supragnosis".
-    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "default"));
-    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "default"));
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
     let server = tokio::spawn(async move {
         let running =
             SupragnosisServer::new(engine).serve(server_io).await.expect("server handshake");
         let _ = running.waiting().await;
     });
     let client = ().serve(client_io).await.expect("client handshake");
+    let call = |name: &'static str, v: Value| {
+        let client = &client;
+        async move {
+            client
+                .call_tool(CallToolRequestParams::new(name).with_arguments(args(v)))
+                .await
+                .expect(name)
+        }
+    };
 
-    client
-        .call_tool(CallToolRequestParams::new("observe").with_arguments(args(json!({
+    call(
+        "observe",
+        json!({
             "content": "the proposal gate stands between free ingest and the shared canon",
             "workspace": "supragnosis",
             "entities": [
@@ -578,55 +588,76 @@ async fn empty_default_workspace_names_where_knowledge_lives() {
             "relations": [
                 {"from": "Proposal Gate", "type": "guards", "to": "Canon"}
             ]
-        }))))
-        .await
-        .expect("observe call");
+        }),
+    )
+    .await;
+    let observed = store.all_observations(None).unwrap().len();
 
-    // Survey with no workspace argument -> the node default, which is empty by design.
-    let res = client
-        .call_tool(CallToolRequestParams::new("workspace_map").with_arguments(args(json!({}))))
-        .await
-        .expect("workspace_map call");
-    let map = tool_json(&res);
+    // A write without a workspace, or with an argument no tool declares, is refused and writes
+    // nothing. A misspelled workspace used to be dropped and the write filed in the node default.
+    for (v, said) in [
+        (json!({ "content": "an unnamed write" }), "missing field `workspace`"),
+        (
+            json!({ "content": "a misspelled write", "ws": "supragnosis" }),
+            "unknown field `ws`",
+        ),
+        (
+            json!({
+                "content": "a nested misspelling",
+                "workspace": "supragnosis",
+                "entities": [{ "name": "Gate", "kind": "Mechanism" }]
+            }),
+            "unknown field `kind`",
+        ),
+    ] {
+        let res = call("observe", v).await;
+        assert_eq!(res.is_error, Some(true), "the call is not flagged as failed: {res:?}");
+        assert!(format!("{res:?}").contains(said), "the refusal does not say {said:?}: {res:?}");
+    }
+    assert_eq!(store.all_observations(None).unwrap().len(), observed, "a refused write wrote");
+
+    // No workspace reads every workspace, as search_knowledge does.
+    let map = tool_json(&call("workspace_map", json!({})).await);
     assert_eq!(
         map["stats"]["node_count"].as_u64(),
-        Some(0),
-        "the node default workspace is empty in this fixture: {map}"
+        Some(2),
+        "the survey missed a workspace: {map}"
+    );
+    let opened = tool_json(
+        &call(
+            "propose",
+            json!({
+                "workspace": "supragnosis",
+                "kind": "entity_merge",
+                "targets": ["Proposal Gate", "Canon"],
+                "into": "Canon"
+            }),
+        )
+        .await,
+    );
+    let id = opened["proposal_id"].as_str().expect("a proposal id").to_string();
+    let listed = tool_json(&call("list_proposals", json!({})).await);
+    assert_eq!(listed.as_array().map(Vec::len), Some(1), "the listing missed one: {listed}");
+    let got = tool_json(&call("get_proposal", json!({ "id": id })).await);
+    assert_eq!(
+        got["workspace"], "supragnosis",
+        "the proposal is not read where it lives: {got}"
     );
 
-    // The structured pointer: a machine reader must not have to parse prose to recover.
+    // An empty named workspace names where knowledge does live, for a machine reader and in prose.
+    let map = tool_json(&call("workspace_map", json!({ "workspace": "default" })).await);
+    assert_eq!(map["stats"]["node_count"].as_u64(), Some(0), "the default is not empty: {map}");
     let listed: Vec<&str> = map["knowledge_in_workspaces"]
         .as_array()
         .expect("an empty scope must report where knowledge does live")
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    assert_eq!(
-        listed,
-        vec!["supragnosis"],
-        "the populated workspace must be named, and the queried empty scope excluded: {map}"
-    );
-
-    // The prose must not let "empty default" be read as "no knowledge on this node".
+    assert_eq!(listed, vec!["supragnosis"], "the populated workspace is not named: {map}");
     let note = map["note"].as_str().unwrap_or_default();
     assert!(
         note.contains("supragnosis") && note.contains("scope miss"),
         "the note must name the populated workspace and frame the miss as scope, not absence: {map}"
-    );
-
-    // Scoping to the named workspace recovers the cluster that the default scope could not see.
-    let res = client
-        .call_tool(
-            CallToolRequestParams::new("workspace_map")
-                .with_arguments(args(json!({"workspace": "supragnosis"}))),
-        )
-        .await
-        .expect("workspace_map scoped call");
-    let scoped = tool_json(&res);
-    let clusters = scoped["clusters"].as_array().expect("clusters array");
-    assert!(
-        !clusters.is_empty(),
-        "the named workspace must expose the co-occurrence cluster: {scoped}"
     );
 
     client.cancel().await.expect("client shutdown");
@@ -1352,7 +1383,11 @@ async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
     let out = tool_json(
         &call(
             "observe",
-            json!({ "content": "the ledger is a table", "entities": [{ "name": "Ledger" }] }),
+            json!({
+                "content": "the ledger is a table",
+                "workspace": "ws",
+                "entities": [{ "name": "Ledger" }]
+            }),
         )
         .await,
     );
@@ -1952,7 +1987,7 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
         .and_then(|i| i.instructions.clone())
         .expect("the server's instructions");
     assert!(
-        instructions.contains("the repository's top-level directory name"),
+        instructions.contains("the repository's name, also from a git worktree"),
         "the instructions do not say how to name a workspace"
     );
     let failed = client
