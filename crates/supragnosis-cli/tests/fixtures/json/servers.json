@@ -6,13 +6,15 @@
       "name": "local",
       "url": "http://127.0.0.1:7373/mcp",
       "remote": false,
-      "active": false
+      "active": false,
+      "ca": null
     },
     {
       "name": "lab",
       "url": "https://lab.example:7420/mcp",
       "remote": true,
-      "active": true
+      "active": true,
+      "ca": "/Users/me/.supragnosis/lab-ca.pem"
     }
   ],
   "check": {

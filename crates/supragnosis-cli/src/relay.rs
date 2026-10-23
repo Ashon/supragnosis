@@ -20,6 +20,9 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
 use tokio::io::AsyncRead;
 
+/// The header the relay puts on a state it reports, and only there (Section 5).
+pub const RELAY_STATE: &str = "x-supragnosis-relay";
+
 /// How long one read may take before the relay says nothing answered. The hub stops a read at 60
 /// seconds and says so itself (remote-viewer.md Section 3.8); this is the backstop behind it.
 const READ_TIMEOUT: Duration = Duration::from_secs(70);
@@ -400,14 +403,22 @@ impl Relay {
     /// the read tier. Any other answer is the hub's, and passes through.
     fn failure_of(&self, status: StatusCode, path: &str) -> Option<Response> {
         if status == StatusCode::UNAUTHORIZED {
+            let name = &self.cfg.profile;
             return Some(self.failure(
                 StatusCode::UNAUTHORIZED,
                 "credential_refused",
-                json!({ "credential_file": self.cfg.token_source }),
+                json!({
+                    "credential_file": self.cfg.token_source,
+                    "error": format!("{name} refused this machine's credential"),
+                }),
             ));
         }
         if status == StatusCode::NOT_FOUND && (path == "/" || path == "/api/surface") {
-            return Some(self.failure(StatusCode::NOT_FOUND, "too_old", json!({})));
+            let error = format!(
+                "{} runs Supragnosis older than 0.4.7, which has no viewer to show",
+                self.cfg.profile
+            );
+            return Some(self.failure(StatusCode::NOT_FOUND, "too_old", json!({ "error": error })));
         }
         None
     }
@@ -429,9 +440,16 @@ impl Relay {
     }
 
     fn unreachable_said(&self, detail: &str) -> Response {
-        self.failure(StatusCode::BAD_GATEWAY, "unreachable", json!({ "detail": detail }))
+        let error = format!("{} is not answering - {detail}", self.cfg.profile);
+        self.failure(
+            StatusCode::BAD_GATEWAY,
+            "unreachable",
+            json!({ "detail": detail, "error": error }),
+        )
     }
 
+    /// A state the shell shows as a page (Section 5), with `error`, the sentence a page's poll says
+    /// when it meets the state in the middle of a visit (design-system.md Section 29.31).
     fn failure(&self, status: StatusCode, state: &str, extra: Value) -> Response {
         let mut body = json!({
             "state": state,
@@ -441,9 +459,13 @@ impl Relay {
         if let (Some(b), Value::Object(more)) = (body.as_object_mut(), extra) {
             b.extend(more);
         }
+        // The mark of an answer the relay made itself: the hub's answers pass with the headers KEPT
+        // names only, so no hub can make the shell draw a state's page (design-system.md 29.31).
+        let mark = HeaderValue::from_str(state).unwrap_or(HeaderValue::from_static("unreachable"));
         let headers = vec![
             (header::CONTENT_TYPE, HeaderValue::from_static("application/json")),
             (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (HeaderName::from_static(RELAY_STATE), mark),
         ];
         respond(status, headers, Body::from(body.to_string()))
     }
@@ -683,6 +705,10 @@ pub(crate) mod tests {
         (status, head.to_ascii_lowercase(), body.to_string())
     }
 
+    async fn head_of(socket: &Path, path: &str) -> String {
+        ask(socket, "GET", path, "").await.1
+    }
+
     fn state_of(body: &str) -> Value {
         serde_json::from_str(body).unwrap_or_else(|e| panic!("not JSON ({e}): {body}"))
     }
@@ -829,6 +855,8 @@ pub(crate) mod tests {
         assert_eq!(v["server"], "home");
         assert_eq!(v["url"], format!("http://{closed}/viz/"));
         assert!(v["detail"].as_str().unwrap().contains("nothing accepted"), "{body}");
+        assert!(v["error"].as_str().unwrap().starts_with("home is not answering - "), "{body}");
+        assert!(head_of(&nobody.socket, "/").await.contains("x-supragnosis-relay: unreachable"));
         drop(nobody);
 
         let dir = scratch("states-refused");
@@ -839,20 +867,24 @@ pub(crate) mod tests {
         assert_eq!((status, v["state"].as_str()), (401, Some("credential_refused")), "{body}");
         assert_eq!(v["credential_file"], refused.token_file.display().to_string());
         assert!(!body.contains("a-wrong-secret"), "the file is named, never its contents");
+        assert_eq!(v["error"], "home refused this machine's credential");
 
         let dir = scratch("states-old");
         let (mcp, _) = hub(false).await;
         let old = relay_to(&dir, &mcp, "good", None).await;
         for path in ["/", "/api/surface"] {
             let (status, _, body) = ask(&old.socket, "GET", path, "").await;
-            assert_eq!((status, state_of(&body)["state"].as_str()), (404, Some("too_old")));
+            let v = state_of(&body);
+            assert_eq!((status, v["state"].as_str()), (404, Some("too_old")));
+            assert!(v["error"].as_str().unwrap().contains("older than 0.4.7"), "{body}");
         }
 
         let dir = scratch("states-pass");
         let (mcp, _) = hub(true).await;
         let ok = relay_to(&dir, &mcp, "good", None).await;
-        let (status, _, body) = ask(&ok.socket, "GET", "/api/explain?entity=x", "").await;
+        let (status, head, body) = ask(&ok.socket, "GET", "/api/explain?entity=x", "").await;
         assert_eq!(status, 404);
+        assert!(!head.contains("x-supragnosis-relay"), "the hub's answer carries no relay mark");
         assert!(state_of(&body)["state"].is_null(), "an unknown id is the hub's answer: {body}");
         assert!(body.contains("no entity with that id"));
         for tag in ["states", "states-refused", "states-old", "states-pass"] {
