@@ -703,6 +703,10 @@ Each concern names what is built and what is owed; the milestone of an owed part
      multi-principal governance - the `tbox_change` gate and the log-borne canon-policy artifact
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.
+   - **Not scheduled (2026-10-23): the hub is kept minimal.** It does device sync, pairing and the
+     remote MCP surface, and nothing more. Phase 5 and every surface that serves several people on one
+     hub - browser access, signed acts, the remote viewer in the app - come due when a second person
+     uses a hub, and not before (CLAUDE.md, principles.md Appendix A, assurance against proportion).
 7. **M5 - Inference/extraction/contamination defense [ ]**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).
 8. **M6 - Forgetting/consolidation [ ]**: deterministic idle-time reprojection + retrieval demotion (Principle 7, sleep-time). Selection of consolidation targets is based on hyperedge stability/corroboration/cohesion metrics (Principle 11 second-order structure). Design -> [consolidation.md](consolidation.md), which also carries the retrieval half of M5's P18 clause and the commit effect M3.5 left `recall` without: all three wait on one mechanism, a per-item retrieval weight. It now exists as a fold and is reported (`demotion_candidates`), and the three clauses stay unmet because nothing consumes it - `fuse_rrf` still fuses by rank position and has nowhere for a weight to enter. A weight that ranks nothing forgets nothing.
 
