@@ -204,19 +204,19 @@
       <h2 id="viewer-title">See it in the viewer.</h2>
       <p class="lead">The marks above are the viewer's own. The desktop app draws your graph as agents write it: a gold ring is something confirmed in the app's Review, a coral badge a value agents disagree on, and Review counts what waits for you.</p>
       <figure class="shot">
-        <!-- Refreshing this capture: in a fresh HOME, run `supragnosis serve
-             --http <addr> --viz <sock>`, seed one workspace through MCP observe
-             (made-up content only - never a real store), open an entity_merge,
-             confirm a few observations from the viewer so rings show, proxy the
-             socket to TCP, then screenshot 1600x900 @2x (headless Chromium
-             works) and encode webp into assets/viewer.webp. -->
+        <!-- Refreshing this capture: in a fresh HOME, run `supragnosis serve --http <addr> --viz <sock>
+             --embed none`, seed the stage's made-up project through MCP observe (two workspaces, one
+             entity given two types, one merge proposed), confirm one claim with the console's
+             /api/resolve so rings show, proxy the socket to TCP, then screenshot 1600x900 @2x in the
+             dark scheme (headless Chrome works) and encode webp into assets/viewer.webp. Never from a
+             real store. -->
         <img src="assets/viewer.webp" width="1600" height="900" loading="lazy"
-             alt="The live ontology viewer: a force graph of entities and relations,
-                  gold rings on the nodes confirmed in Review and a mark on one
-                  whose type is contested; node and edge types and the trust legend
-                  on the left, the Log of observations on the right, and a status
-                  bar counting two items to review and one contested node.">
-        <figcaption>A made-up workspace in the desktop app. The viewer is served on an owner-only socket, never a network port.</figcaption>
+             alt="The viewer: two workspaces, payments-api and infra, drawn as regions;
+                  gold rings on webhooks and idempotency, confirmed in Review, and a mark on
+                  retry-policy, whose type is contested; entity and relation types on the left,
+                  the Log on the right, and a status bar counting two items that need you, one
+                  contested.">
+        <figcaption>A made-up project in the desktop app. The viewer is served on an owner-only socket, never a network port.</figcaption>
       </figure>
     </section>
 
