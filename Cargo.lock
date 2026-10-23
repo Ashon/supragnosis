@@ -3935,6 +3935,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "axum",
+ "axum-server",
  "blake3",
  "clap",
  "curve25519-dalek",
@@ -3946,6 +3947,7 @@ dependencies = [
  "reqwest",
  "ring",
  "rmcp",
+ "rustls",
  "serde",
  "serde_json",
  "supragnosis-core",
