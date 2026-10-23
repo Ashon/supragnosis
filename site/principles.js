@@ -597,7 +597,7 @@ function mountScene(p, fig) {
   // while a scene plays its control reads Stop, which ends it at its resting frame (WCAG 2.2.2)
   play.addEventListener("click", () => { if (playing) { stop(); t = END; show(B.length - 1); S.redraw(); rest(); } else run(0, END); });
   show(B.length - 1); S.redraw();
-  if (!PHONE.matches) onceVisible(fig, () => run(0, END));
+  if (!PHONE.matches || fig.closest(".pr.open")) onceVisible(fig, () => run(0, END));
 }
 
 // ---- P1 ----
@@ -1256,6 +1256,67 @@ function tensions() {
   pick(sel, false);
 }
 
+// ---- one principle at a time (Section 11a, step 67): the chapters are an index of rows, each title
+// opens its principle, and an opened one is the only one on the screen, with a bar that says where it
+// is and steps through the others in the document's order. The anchors are the page's own, so a link
+// to #p3 opens P3 and the back button goes back. ----
+function reader() {
+  const main = $("main"), arts = $$("article.pr");
+  if (!main || !arts.length) return;
+  const TITLE = document.title, title = a => $("h3", a).textContent;
+  arts.forEach(a => {
+    const h = $("h3", a), open = el("a", {href: "#" + a.id, class: "open"});
+    open.append(...h.childNodes); h.append(open); h.setAttribute("tabindex", "-1");
+  });
+  const bar = el("nav", {class: "reader", "aria-label": "Principles"});
+  const back = el("a", {class: "back"}, "All principles"), where = el("span", {class: "where"});
+  const prev = el("a", {class: "turn", rel: "prev"}), next = el("a", {class: "turn", rel: "next"});
+  bar.append(back, where, prev, next);
+  let last = null;
+  function to(link, a, word) {
+    link.hidden = !a;
+    if (!a) return;
+    link.href = "#" + a.id;
+    link.replaceChildren(el("b", null, word), el("span", null, "P" + a.id.slice(1) + " " + title(a)));
+  }
+  function route() {
+    const id = location.hash.slice(1), i = arts.findIndex(a => a.id === id), a = arts[i];
+    arts.forEach(x => x.classList.toggle("open", x === a));
+    $$("section.chap").forEach(c => c.classList.toggle("here", !!a && c.contains(a)));
+    if (!a) {
+      main.dataset.view = "index";
+      document.title = TITLE;
+      bar.remove();
+      // back from a principle, the index shows it where the reader left it
+      const target = last || (id && document.getElementById(id));
+      if (target) setTimeout(() => target.scrollIntoView({block: last ? "center" : "start"}), 0);
+      if (last) $("h3 a.open", last).focus({preventScroll: true});
+      last = null;
+      return;
+    }
+    main.dataset.view = "one";
+    where.textContent = "P" + a.id.slice(1) + " of " + arts.length;
+    back.href = "#" + a.closest("section.chap").id;
+    to(prev, arts[i - 1], "Previous");
+    to(next, arts[i + 1], "Next");
+    $(".chap-head", a.closest("section.chap")).before(bar);
+    // the browser scrolls to the anchor after this runs, so the page goes to its top just after
+    setTimeout(() => window.scrollTo(0, 0), 0);
+    $("h3", a).focus({preventScroll: true});
+    document.title = title(a) + " - " + TITLE;
+    last = a;
+  }
+  window.addEventListener("hashchange", route);
+  // the arrow keys step and Escape goes back, unless a control has the focus
+  document.addEventListener("keydown", e => {
+    if (main.dataset.view !== "one" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (e.target.closest("button, input, select, textarea, summary")) return;
+    const k = e.key === "ArrowRight" ? next : e.key === "ArrowLeft" ? prev : e.key === "Escape" ? back : null;
+    if (k && !k.hidden) { e.preventDefault(); location.hash = k.getAttribute("href"); }
+  });
+  route();
+}
+
 // ---- boot: each demo and scene is set up as it nears the window; one that cannot draw reads as text ----
 function nearView(elm, fn) {
   const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); fn(); } }, {rootMargin: "600px 0px"});
@@ -1270,6 +1331,7 @@ function listenAfterPress(fig) {
 }
 function boot() {
   if (!window.ResizeObserver || !window.IntersectionObserver || !document.createElement("canvas").getContext) { document.documentElement.classList.remove("js"); return; }
+  try { reader(); } catch (e) { /* the whole page reads as it does without a script */ }
   try { ledger(); } catch (e) { /* the columns stay links to their principles */ }
   $$("figure.scene").forEach(fig => { const p = +fig.dataset.scene; if (SCENE[p]) nearView(fig, guarded(fig, () => { mountScene(p, fig); listenAfterPress(fig); })); else fig.classList.add("still"); });
   $$("figure.demo").forEach(fig => { const p = +fig.dataset.demo; if (MOUNT[p]) nearView(fig, guarded(fig, () => { listenAfterPress(fig); MOUNT[p](fig); })); else fig.classList.add("still"); });

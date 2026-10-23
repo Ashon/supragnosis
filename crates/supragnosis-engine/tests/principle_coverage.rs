@@ -5115,6 +5115,17 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
     ));
     ledger.push("<ul class=\"legend\"><li><i class=\"cell t\"></i>Tested by name</li><li><i class=\"cell s\"></i>Holds by construction</li><li><i class=\"cell p\"></i>Owed, today's behavior pinned</li><li><i class=\"cell o\"></i>Owed</li></ul>".to_string());
     out.push(("ledger".to_string(), ledger));
+    // the hero's count, beside the link to the ledger that lists them (design-system.md step 67)
+    out.push((
+        "count".to_string(),
+        vec![format!(
+            "<p class=\"p-count\"><b>{}</b> clauses: <b>{}</b> tested by name, <b>{}</b> hold by construction, <b>{}</b> owed. <a href=\"#how-held\">How each one is held</a></p>",
+            all.len(),
+            count(&[0]),
+            count(&[1]),
+            count(&[2, 3])
+        )],
+    ));
     for (n, ps) in &chapters {
         let cols: String = ps.iter().map(|p| format!("<span>{}</span>", cells(*p, "i"))).collect();
         out.push((

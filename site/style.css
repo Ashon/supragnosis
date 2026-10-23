@@ -536,6 +536,37 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* a scene: its canvas, its beats and one caption; without a script the beats read as a list */
 .scene, .demo { margin: 0; background: var(--panel-2); border-radius: var(--r-window); padding: 14px; min-width: 0; }
 .pr > .scene { margin-bottom: 4px; }
+/* ---- one principle at a time (Section 11a, step 67) ---- */
+main[data-view] .pr h3 a.open { color: inherit; }
+main[data-view="index"] .prs { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+main[data-view="index"] .pr { position: relative; padding: 14px 20px; border-radius: var(--r-surface); }
+main[data-view="index"] .pr.big { display: block; }
+main[data-view="index"] .pr > :not(.ph):not(.line):not(.pt),
+main[data-view="index"] .pr .pt > :not(.ph):not(.line) { display: none; }
+main[data-view="index"] .pr .line { margin: 4px 0 0; color: var(--ink2); max-width: 72ch; }
+main[data-view="index"] .pr h3 a.open::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-surface); }
+main[data-view="index"] .pr:hover { background: var(--panel-3); }
+main[data-view="one"] > :not(.chap.here), main[data-view="one"] .chap.here .pr:not(.open),
+main[data-view="one"] .chap-head .mini { display: none; }
+main[data-view="one"] .prs { grid-template-columns: minmax(0, 1fr); }
+main[data-view="one"] .pr.open { display: flex; flex-direction: column; max-width: 820px; }
+main[data-view="one"] .pr.open .pt { display: contents; }
+main[data-view="one"] .pr.open .ph { order: 0; }
+main[data-view="one"] .pr.open .line { order: 1; }
+main[data-view="one"] .pr.open .why { order: 2; }
+main[data-view="one"] .pr.open figure { order: 3; }
+main[data-view="one"] .pr.open .clauses { order: 4; }
+main[data-view="one"] .pr.open .refs { order: 5; }
+main[data-view="one"] .pr.open h3:focus { outline: none; }
+.reader { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: var(--surface); padding-block: 10px; margin-bottom: 18px; }
+.reader a { font-size: var(--fs-label); color: var(--ink2); background: var(--panel); padding: 9px 12px; border-radius: var(--r-capsule); }
+.reader a:hover { background: var(--panel-3); color: var(--ink); text-decoration: none; }
+.reader a b { font-weight: 500; color: var(--muted); margin-right: 6px; }
+.reader .back { margin-right: auto; }
+.reader .where { font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
+.reader [hidden] { display: none; }
+.p-hero .p-count { margin: 14px 0 0; }
+@media (max-width: 559px) { .reader a.turn span { display: none; } }
 .scene canvas, .demo canvas { display: none; width: 100%; border-radius: var(--r-surface); background: var(--panel); }
 .demo canvas.bare { background: transparent; }
 .js .scene canvas, .js .demo canvas { display: block; }

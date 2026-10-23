@@ -324,7 +324,8 @@ fn the_principles_page_says_what_its_words_mean_and_reads_on_a_phone() {
 }
 
 /// Section 11a: on a phone a scene does not play only because it scrolled into view; its button says
-/// Play scene until it is pressed.
+/// Play scene until it is pressed. Since step 67 one whose principle the reader opened plays, since
+/// opening it is asking to watch.
 #[test]
 fn on_a_phone_a_scene_waits_to_be_played() {
     assert!(SCRIPT.contains("const PHONE = matchMedia(\"(max-width: 559px)\");"));
@@ -335,7 +336,7 @@ fn on_a_phone_a_scene_waits_to_be_played() {
         "the button does not say Play scene"
     );
     assert!(
-        mount.contains("if (!PHONE.matches) onceVisible(fig, () => run(0, END));"),
-        "a phone plays a scene on scroll"
+        mount.contains("if (!PHONE.matches || fig.closest(\".pr.open\")) onceVisible(fig, () => run(0, END));"),
+        "a phone plays a scene on scroll, or not one the reader opened"
     );
 }
