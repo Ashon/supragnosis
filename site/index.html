@@ -139,8 +139,8 @@
             <button type="button" class="replay">Replay</button>
             <div class="snip review">
               <p class="h">Needs you <i id="needs">3</i></p>
-              <span id="row-merge">Merge pg into postgres</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="merge">Accept</button>
-              <span id="row-confirm">Confirm a claim: webhooks need an idempotency key</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="confirm">Accept</button>
+              <span id="row-merge">Merge pg into postgres</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="merge" aria-describedby="row-merge">Accept</button>
+              <span id="row-confirm">Confirm a claim: webhooks need an idempotency key</span><span class="act noctl">Accept</span><button type="button" class="act ctl" data-act="confirm" aria-describedby="row-confirm">Accept</button>
               <span>Contested: the type of retry-policy</span><span class="wait">waiting</span>
             </div>
             <p class="aside ctl">Press Accept to cast a verdict. Scroll on, and the story accepts both.</p>
@@ -155,7 +155,7 @@
             <button type="button" class="replay">Replay</button>
             <div class="snip">
               <p class="h">search_knowledge "webhook idempotency" <i>hybrid</i></p>
-              <span class="k">hits</span><span class="noctl">idempotency, webhooks, incident-912</span><span class="ctl pick" role="group" aria-label="Read a hit"><button type="button" data-hit="idem" aria-pressed="true">idempotency</button><button type="button" data-hit="hook" aria-pressed="false">webhooks</button><button type="button" data-hit="inc" aria-pressed="false">incident-912</button></span>
+              <span class="k">hits</span><span class="noctl">idempotency, webhooks, incident-912</span><span class="ctl pick" role="radiogroup" aria-label="Read a hit"><label><input type="radio" name="hit" value="idem" checked><span>idempotency</span></label><label><input type="radio" name="hit" value="hook"><span>webhooks</span></label><label><input type="radio" name="hit" value="inc"><span>incident-912</span></label></span>
               <p class="h"><span>get_entity <span id="hit-name">idempotency</span></span></p>
               <span class="k">said by</span><span>laptop, for you</span>
               <span class="k">entries</span><span id="hit-entries">3 and 4</span>
@@ -170,7 +170,7 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <button type="button" class="replay">Replay</button>
             <div class="snip">
-              <p class="h ctl">behind the ring <span class="pick" role="group" aria-label="What stands behind the ring"><button type="button" data-claim="verdict" aria-pressed="true">the verdict</button><button type="button" data-claim="bare" aria-pressed="false">a bare claim</button></span></p>
+              <p class="h ctl">behind the ring <span class="pick" role="radiogroup" aria-label="What stands behind the ring"><label><input type="radio" name="claim" value="verdict" checked><span>the verdict</span></label><label><input type="radio" name="claim" value="bare"><span>an agent saying so</span></label></span></p>
               <span class="k">laptop</span><span id="claim-laptop"><span class="confirmed">human confirmed</span>, in its Review</span>
               <span class="k">desktop</span><span id="claim-desktop"><span class="confirmed">human confirmed</span>, the same verdict</span>
               <span class="k">a bare claim</span><span>host signed at most</span>
@@ -494,7 +494,17 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     // that shows its step - beside the steps, or the step's own frame - and the step's words say the
     // result, so a reader without the canvas reads it too.
     var said = document.getElementById('stage-said');
-    function on(i) { var m = wide.matches ? stage : frames[i]; if (m.scene !== i) m.go(i); return m; }
+    // what the visitor chose, per scene, so a stage that comes into use (crossing 900 pixels) shows it
+    var picked = {};
+    function pick(i, key, value) { (picked[i] = picked[i] || {})[key] = value; picked[i][key + 'At'] = 0; }
+    function on(i) {
+      if (wide.matches) { if (stage.scene !== i) show(i); return stage; }
+      if (frames[i].scene !== i) frames[i].go(i);
+      return frames[i];
+    }
+    wide.addEventListener('change', function () {
+      Object.keys(picked).forEach(function (i) { (wide.matches ? stage : frames[i]).set(+i, picked[i]); });
+    });
     function say(text) { said.textContent = ''; setTimeout(function () { said.textContent = text; }, 50); }
     function byId(id) { return document.getElementById(id); }
     function and(list) { return list.length > 1 ? list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1] : String(list[0]); }
@@ -518,7 +528,7 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
       byId('replay-region').textContent = c.region ? 'webhooks + idempotency' : 'not yet';
       return c;
     }
-    k.addEventListener('input', function () { replayed(+k.value); on(2).choose('k', +k.value); });
+    k.addEventListener('input', function () { replayed(+k.value); pick(2, 'k', +k.value); on(2).choose('k', +k.value); });
 
     // 3: the verdicts wait for Accept
     var acts = Array.prototype.slice.call(document.querySelectorAll('[data-act]')), waiting = 3;
@@ -528,6 +538,7 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
       row.dataset.was = row.textContent;
       b.addEventListener('click', function () {
         if (b.getAttribute('aria-disabled')) return;
+        pick(3, b.dataset.act, 0);
         on(3).choose(b.dataset.act);
         b.setAttribute('aria-disabled', 'true');
         b.textContent = 'Accepted';
@@ -538,36 +549,38 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     });
 
     // 4: a hit's own receipts
-    var hits = Array.prototype.slice.call(document.querySelectorAll('[data-hit]'));
+    var hits = Array.prototype.slice.call(document.querySelectorAll('input[name="hit"]'));
     function read(b, cast) {
-      var r = Stage.receipts(b.dataset.hit);
-      hits.forEach(function (h) { h.setAttribute('aria-pressed', String(h === b)); });
-      byId('hit-name').textContent = b.textContent;
+      var r = Stage.receipts(b.value), name = b.nextElementSibling.textContent;
+      b.checked = true;
+      byId('hit-name').textContent = name;
       byId('hit-entries').textContent = and(r.entries);
       tier(byId('hit-trust'), r.confirmed && 'human confirmed', '');
       if (cast) {
-        on(4).choose('sel', b.dataset.hit);
-        say(b.textContent + ': entries ' + and(r.entries) + ', ' + (r.confirmed ? 'human confirmed' : 'agent') + '.');
+        pick(4, 'sel', b.value);
+        on(4).choose('sel', b.value);
+        say(name + ': entries ' + and(r.entries) + ', ' + (r.confirmed ? 'human confirmed' : 'agent') + '.');
       }
     }
-    hits.forEach(function (b) { b.addEventListener('click', function () { read(b, true); }); });
+    hits.forEach(function (b) { b.addEventListener('change', function () { read(b, true); }); });
 
     // 5: the verdict, or a bare claim, behind the ring
-    var claims = Array.prototype.slice.call(document.querySelectorAll('[data-claim]'));
+    var claims = Array.prototype.slice.call(document.querySelectorAll('input[name="claim"]'));
     function behind(bare, cast) {
-      claims.forEach(function (c) { c.setAttribute('aria-pressed', String((c.dataset.claim === 'bare') === bare)); });
-      tier(byId('claim-laptop'), !bare && 'human confirmed', bare ? ', an agent saying you checked it' : ', in its Review');
-      tier(byId('claim-desktop'), !bare && 'human confirmed', bare ? '' : ', the same verdict');
-      if (bare) byId('claim-desktop').firstChild.textContent = 'host signed, as far as the signature goes';
+      claims.forEach(function (c) { c.checked = (c.value === 'bare') === bare; });
+      tier(byId('claim-laptop'), !bare && 'human confirmed', bare ? ', words in an entry are not a verdict' : ', in its Review');
+      tier(byId('claim-desktop'), !bare && 'human confirmed', bare ? ', the same entry' : ', the same verdict');
       if (cast) {
+        pick(5, 'bare', bare);
         on(5).choose('bare', bare);
-        say(bare ? 'A bare claim: agent on the laptop, host signed on the desktop.' : 'The verdict: human confirmed on both.');
+        say(bare ? 'An agent saying so: agent on both machines. Only a verdict in Review confirms.' : 'The verdict: human confirmed on both machines.');
       }
     }
-    claims.forEach(function (b) { b.addEventListener('click', function () { behind(b.dataset.claim === 'bare', true); }); });
+    claims.forEach(function (b) { b.addEventListener('change', function () { behind(b.value === 'bare', true); }); });
 
     // a replay starts its scene over, and its step's words with it
     function reset(i) {
+      delete picked[i];
       if (i === 2) replayed(6);
       if (i === 3) {
         waiting = 3;

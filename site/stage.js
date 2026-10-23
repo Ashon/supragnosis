@@ -159,15 +159,13 @@
   // (resolution.md Section 6), so the second machine calls this exactly as the first does. The
   // confirmed entry's tick turns gold, as the viewer's Log draws a human-confirmed row, and the
   // entities it names take the gold ring (a node's trust is its best support's tier).
-  // tier "host" is a bare claim on the machine that receives it: an entry that only says a person
-  // checked it, which counts for what its signature proves (resolution.md R4).
-  function settle(w, bad, merge, confirm, tier) {
+  function settle(w, bad, merge, confirm) {
     w.nodes.retry.bad = bad;
     const pg = w.nodes.pg;
     pg.mu = (NODE.pgs.u - NODE.pg.u) * merge; pg.mv = (NODE.pgs.v - NODE.pg.v) * merge;
     pg.a = Math.min(pg.a, 1 - merge); w.edges[9].a = 1 - merge; w.nodes.pgs.mg = 1.5 * merge; w.proposal *= 1 - merge;
-    for (const id of asserts[CLAIM]) { w.nodes[id].ring = confirm > 0 ? tier || "gold" : ""; w.nodes[id].ringP = confirm; }
-    if (w.ticks[CLAIM]) w.ticks[CLAIM].conf = tier ? 0 : confirm;
+    for (const id of asserts[CLAIM]) { w.nodes[id].ring = confirm > 0 ? "gold" : ""; w.nodes[id].ringP = confirm; }
+    if (w.ticks[CLAIM]) w.ticks[CLAIM].conf = confirm;
   }
 
   // ---- scenes: each starts from the previous scene's resting frame ----
@@ -202,8 +200,8 @@
       st.you = seg(t, 1.7, .4);
       // and both wait for you: a verdict lands when it is cast
       let merge = 0, confirm = 0;
-      if (ch.merge != null) { const l10 = write(st, t, 10, ch.merge); project(st, t, 10, l10); merge = seg(t, l10 + .3, .8, inOut); }
-      if (ch.confirm != null) { const l11 = write(st, t, 11, ch.confirm); project(st, t, 11, l11); confirm = seg(t, l11 + .3, .7, inOut); }
+      if (ch.merge != null) { const l10 = write(st, t, 10, Math.max(ch.merge, 2.2)); project(st, t, 10, l10); merge = seg(t, l10 + .3, .8, inOut); }
+      if (ch.confirm != null) { const l11 = write(st, t, 11, Math.max(ch.confirm, 2.2)); project(st, t, 11, l11); confirm = seg(t, l11 + .3, .7, inOut); }
       settle(st, seg(t, l7 + .35, .5, outBack), merge, confirm);
     } },
     { id: "recall", dur: 4.6, run(st, t, ch) {
@@ -243,11 +241,10 @@
         }
       }
       // your verdicts are entries too: they replay here, so the merge and the gold ring arrive with them.
-      // A bare claim in the confirming verdict's place is an agent's entry here, with no ring, and
-      // host signed there.
-      const ring = ch.bare ? seg(t, ch.bareAt, .5, inOut) : seg(t, land(11) + .1, .5, inOut);
+      // An agent saying a person checked it, in the confirming verdict's place, is an agent's entry on
+      // both machines: words are not a verdict, and a local writer's tier is the default.
       if (ch.bare) { settle(st, 1, 1, 0); if (st.ticks[11]) st.ticks[11].kind = "obs"; }
-      settle(b, seg(t, land(7) + .1, .4, outBack), seg(t, land(10) + .1, .5, inOut), ring, ch.bare ? "host" : "");
+      settle(b, seg(t, land(7) + .1, .4, outBack), seg(t, land(10) + .1, .5, inOut), ch.bare ? 0 : seg(t, land(11) + .1, .5, inOut));
       if (ch.bare && b.ticks[11]) b.ticks[11].kind = "obs";
       st.bare = !!ch.bare;
       b.region = seg(t, land(5), .6);
@@ -419,12 +416,9 @@
       ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
       ctx.lineWidth = clamp(r * .35, 1.5, 4); ctx.strokeStyle = C.bg; ctx.stroke();
       // human confirmed: the viewer's trust ring (viewer.js trustRing), drawn closing as it arrives
-      // host signed: the viewer's ink ring, lighter, at the same offset
-      if (n.ring && n.ringP > 0) {
+      if (n.ring === "gold" && n.ringP > 0) {
         ctx.beginPath(); ctx.arc(x, y, r + 3.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * n.ringP);
-        if (n.ring === "host") { ctx.lineWidth = 1.6; ctx.strokeStyle = C.ink; }
-        else { ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; }
-        ctx.stroke();
+        ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi; ctx.stroke();
       }
       if (o.labels || d.key) {
         const l = d.side === "l";
@@ -499,7 +493,7 @@
     // on the receiver the ring came with the verdict, which says where it was cast
     if (st.signed > .01 && st.b) {
       const [x, y] = nodeXY(L, camB, "idem", st.b);
-      label(ctx, st.bare ? "a claim signed by laptop: host signed" : "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
+      label(ctx, st.bare ? "an agent's words, not a verdict" : "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
     }
     // in flight: entries into the log, the log into the graph, answers back, the log across machines
     const hub = P(L, ID, ...L.hubAt);
@@ -604,6 +598,7 @@
       if (replay) chs[i] = {};
       scene = i; start = performance.now(); until = 0;
       playing = next && !reduce.matches && SCENES[i].dur > 0 && !document.hidden;
+      if (!playing) start -= SCENES[i].dur * 1000;   // a cut scene has played: a choice plays only itself
       kick();
     }
     // a choice in the current scene plays only what it changes, from now, and rests; under reduced
@@ -611,9 +606,11 @@
     function choose(key, value) {
       const c = chs[scene] = chs[scene] || {}, at = (performance.now() - start) / 1000;
       c[key] = value === undefined ? at : value; c[key + "At"] = at;
-      if (!reduce.matches && !document.hidden) { playing = true; until = at + 2; }
+      if (!reduce.matches && !document.hidden) { playing = true; until = Math.max(at, SCENES[scene].dur) + 2; }
       kick();
     }
+    // choices made on another stage, as the page holds them, set without playing
+    function set(i, c) { chs[i] = Object.assign({}, c); kick(); }
     const ro = new ResizeObserver(es => resize(es[0]));
     try { ro.observe(canvas, { box: "device-pixel-content-box" }); } catch (e) { ro.observe(canvas); }
     // a window moved to a screen of another density: Safari reports no device-pixel box
@@ -624,7 +621,7 @@
     document.addEventListener("visibilitychange", () => { if (document.hidden && playing) { playing = false; kick(); } });
     if (reduce.addEventListener) reduce.addEventListener("change", () => { playing = false; snap = null; kick(); });
     if (document.fonts && document.fonts.load) document.fonts.load(`11px ${SANS}`).then(kick, kick);
-    return { go, choose, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
+    return { go, choose, set, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
   }
 
   // What the page's words say of the made-up project, from the same log the stage draws: the graph of

@@ -305,10 +305,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ctl { display: none; }
 .js .ctl { display: revert; }
 .js .noctl { display: none; }
-.js .snip .h.ctl { display: flex; align-items: center; }
+.snip .h.ctl { display: none; }
+.js .snip .h.ctl { display: flex; flex-wrap: wrap; align-items: center; row-gap: 6px; }
 .js .pick { display: flex; flex-wrap: wrap; gap: 6px; }
 .js .scrub { display: flex; align-items: center; gap: 10px; }
-.scrub input { flex: 1; min-width: 0; accent-color: var(--gold-bright); }
+.scrub input { flex: 1; min-width: 0; height: 24px; accent-color: var(--gold-bright); }
 .scrub output { color: var(--muted); }
 .snip button {
   font: inherit;
@@ -320,7 +321,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--ink);
 }
 .snip button:hover { background: var(--select); }
-.snip button[aria-pressed="true"] { background: var(--select); color: var(--gold-bright); }
+/* a choice of one among a few is a radio group (U19): the native radio, drawn as a chip */
+.pick label { position: relative; cursor: pointer; }
+.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.pick span { display: inline-block; font-weight: 500; border-radius: var(--r-control); padding: 2px 10px; background: var(--panel-3); color: var(--ink); }
+.pick label:hover span { background: var(--select); }
+.pick input:checked + span { background: var(--select); color: var(--gold-bright); }
+.pick input:focus-visible + span { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
 .snip.review .act[aria-disabled="true"] { background: none; color: var(--muted); }
 .aside { font-size: var(--fs-small); color: var(--muted); }
 
