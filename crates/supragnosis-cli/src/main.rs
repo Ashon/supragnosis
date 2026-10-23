@@ -3735,14 +3735,18 @@ fn check_server(target: &profile::Target) -> ServerCheck {
         },
         profile::Target::Remote { url, ca, token_file, .. } => {
             let probe = async {
-                let mut b = reqwest::Client::builder().timeout(std::time::Duration::from_secs(4));
-                if let Some(p) = ca {
-                    let pem = std::fs::read(p).map_err(|e| e.to_string())?;
-                    let tls =
-                        supragnosis_sync::http::tls_trusting(&pem).map_err(|e| e.to_string())?;
-                    b = b.use_preconfigured_tls(tls);
-                }
-                let client = b.build().map_err(|e| e.to_string())?;
+                // The bridge's own client (R8): the credential goes to no proxy and follows no
+                // redirect, here as on every request the bridge makes.
+                let pem = match ca {
+                    Some(p) => Some(std::fs::read(p).map_err(|e| e.to_string())?),
+                    None => None,
+                };
+                let client = bridge::client_builder(pem.as_deref())
+                    .map_err(|e| e.to_string())?
+                    .timeout(std::time::Duration::from_secs(4))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .map_err(|e| e.to_string())?;
                 let mut req = client.get(url).header("Accept", "text/event-stream");
                 if let Some(t) = read_secret(token_file) {
                     req = req.bearer_auth(t);
