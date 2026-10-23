@@ -56,7 +56,7 @@ function appRow(row) {
 // in carried in `?from=`, followed only when it is the viewer's own - its scheme and host - since
 // anything else would make "< Graph" a redirect (docs/settings-page.md Section 4, S1). Without one,
 // the bare graph.
-const GRAPH_HOME = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
+const GRAPH_HOME = "viz://localhost/";
 function graphBack() {
   try {
     const from = new URL(new URLSearchParams(location.search).get("from"));

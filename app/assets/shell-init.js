@@ -23,14 +23,11 @@
 (function () {
   if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
 
-  // The two pages' addresses. macOS and Linux reach the app's schemes as scheme://localhost;
-  // Windows' webview reaches them as http://<scheme>.localhost.
-  var custom = location.protocol === "viz:" || location.protocol === "tauri:";
-  var GRAPH = custom ? "viz://localhost/" : "http://viz.localhost/";
-  var SETTINGS = custom ? "tauri://localhost/settings.html" : "http://tauri.localhost/settings.html";
-  var onSettings = /settings\.html$/.test(location.pathname) &&
-    (location.protocol === "tauri:" || location.hostname === "tauri.localhost");
-  window.supragnosisSetup = custom ? "tauri://localhost/welcome.html" : "http://tauri.localhost/welcome.html";
+  // The two pages' addresses, on the app's own schemes.
+  var GRAPH = "viz://localhost/";
+  var SETTINGS = "tauri://localhost/settings.html";
+  var onSettings = /settings\.html$/.test(location.pathname) && location.protocol === "tauri:";
+  window.supragnosisSetup = "tauri://localhost/welcome.html";
 
   // The graph's gear - the viewer's settings button, in its status bar - is where settings have
   // always been opened. In the app it opens the app's Settings page, which holds what the viewer's

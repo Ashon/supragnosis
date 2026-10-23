@@ -584,7 +584,6 @@ pub fn vouched_keys(
 /// `supragnosis.toml` holds the credential once a join has written it: owner-only, wherever
 /// SUPRAGNOSIS_CONFIG puts it (Section 4.3).
 fn owner_only(path: &std::path::Path) -> Result<()> {
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))

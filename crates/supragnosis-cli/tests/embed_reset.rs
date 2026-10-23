@@ -1,8 +1,6 @@
 //! `supragnosis embed reset` (docs/semantic-retrieval.md Section 13): the product's binary against a
 //! daemon in a home of its own, through the scenario harness (docs/e2e.md Section 3).
 
-#![cfg(unix)]
-
 #[path = "scenario/harness.rs"]
 mod harness;
 

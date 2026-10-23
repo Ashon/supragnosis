@@ -270,8 +270,6 @@ enum ServiceCmd {
     Uninstall,
 }
 
-// Read by the macOS and Linux implementations; elsewhere `service` refuses before looking at them.
-#[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Args, Clone, Default)]
 struct ServiceInstallArgs {
     /// Retire every other manager first (a brew services job, a pidfile daemon, a retired label) and
@@ -625,7 +623,6 @@ fn embedder_refusal(recorded: &str, opened: &str) -> String {
 /// The environment the login job runs the daemon with, when one is installed: launchd and systemd
 /// start it with that and none of this shell's (semantic-retrieval.md Section 13). `None` when no
 /// job is installed, or its environment cannot be read.
-#[cfg(unix)]
 fn job_env() -> Option<std::collections::BTreeMap<String, String>> {
     if canonical_service_state() == "absent" {
         return None;
@@ -640,10 +637,6 @@ fn job_env() -> Option<std::collections::BTreeMap<String, String>> {
         let home = std::env::var("HOME").unwrap_or_default();
         lifecycle::parse_unit_env(&text, &home, &current_user().unwrap_or_default()).ok()
     }
-}
-#[cfg(not(unix))]
-fn job_env() -> Option<std::collections::BTreeMap<String, String>> {
-    None
 }
 
 /// A variable of the daemon's environment: the login job's when one is installed, this process's
@@ -764,7 +757,6 @@ fn embed_reset() -> Result<()> {
 /// whose pidfile is this home's, or the login job whose file is in this home - and refuses every
 /// other holder with nothing changed: a login job is per user, not per home, so a job loaded from
 /// another home's file is not this store's to stop.
-#[cfg(unix)]
 #[derive(Debug, PartialEq, Eq)]
 enum RebuildPlan {
     /// Nothing runs: reset the store, and start the login job when this home installs one.
@@ -775,7 +767,6 @@ enum RebuildPlan {
     Refuse(String),
 }
 
-#[cfg(unix)]
 fn rebuild_plan(s: &lifecycle::Situation, service_state: &str) -> RebuildPlan {
     use lifecycle::{LabelKind, Manager, Situation};
     let installed = service_state != "absent";
@@ -809,7 +800,6 @@ fn rebuild_plan(s: &lifecycle::Situation, service_state: &str) -> RebuildPlan {
 /// from the log by the model the daemon runs. It stops the daemon this CLI manages, resets the store
 /// (SR9) and starts the daemon again, whose backfill embeds every row; with no daemon running it
 /// resets the store and starts the login job when one is installed.
-#[cfg(unix)]
 fn embed_rebuild() -> Result<()> {
     clear_stale_pidfile();
     let plan = rebuild_plan(&lifecycle::classify(&observe()), canonical_service_state());
@@ -843,13 +833,6 @@ fn embed_rebuild() -> Result<()> {
         println!("No daemon runs here; the next `supragnosis start` embeds the store.");
     }
     Ok(())
-}
-#[cfg(not(unix))]
-fn embed_rebuild() -> Result<()> {
-    anyhow::bail!(
-        "`embed rebuild` stops and starts the daemon, which this platform's build does not manage - \
-         stop it, run `supragnosis embed reset`, and start it again"
-    )
 }
 
 /// The model the daemon's store recorded and the one it runs, when the daemon does not answer
@@ -2395,13 +2378,11 @@ fn unix_now() -> u64 {
 
 /// Where setup writes: one JSON object per line for the app, or rows for a person. A test keeps the
 /// lines instead of printing them.
-#[cfg(unix)]
 struct SetupOut {
     events: bool,
     kept: Option<std::cell::RefCell<Vec<String>>>,
 }
 
-#[cfg(unix)]
 impl SetupOut {
     fn new(events: bool) -> Self {
         SetupOut { events, kept: None }
@@ -2429,7 +2410,6 @@ impl SetupOut {
 }
 
 /// An act setup can take for a step that is `todo`.
-#[cfg(unix)]
 #[derive(Clone, Debug, PartialEq)]
 enum SetupAct {
     Server,
@@ -2437,7 +2417,6 @@ enum SetupAct {
     Model,
 }
 
-#[cfg(unix)]
 impl SetupAct {
     fn describe(&self, o: &setup::Observed) -> String {
         match self {
@@ -2456,7 +2435,6 @@ impl SetupAct {
 
 /// The plan: every step the checklist says setup can do, in the order a terminal runs them - the
 /// model last, since nothing waits for it (Section 4.3).
-#[cfg(unix)]
 fn setup_plan(list: &[setup::Event]) -> Vec<SetupAct> {
     use setup::State;
     let mut plan = Vec::new();
@@ -2472,7 +2450,6 @@ fn setup_plan(list: &[setup::Event]) -> Vec<SetupAct> {
     plan
 }
 
-#[cfg(unix)]
 fn setup_cmd(a: SetupArgs) -> Result<()> {
     let out = SetupOut::new(a.events);
     if a.events {
@@ -2540,7 +2517,6 @@ fn setup_cmd(a: SetupArgs) -> Result<()> {
 
 /// Shows the plan and asks, as rustup's installer does: Enter applies it, `n` leaves, `c` asks act by
 /// act. Asking needs a terminal; without one, `--yes` or `--check` says which the caller meant.
-#[cfg(unix)]
 fn setup_ask(o: &setup::Observed, plan: Vec<SetupAct>) -> Result<Vec<SetupAct>> {
     use std::io::{BufRead, IsTerminal, Write};
     if !std::io::stdin().is_terminal() {
@@ -2587,7 +2563,6 @@ fn setup_ask(o: &setup::Observed, plan: Vec<SetupAct>) -> Result<Vec<SetupAct>> 
 }
 
 /// What to do next in a terminal, once the acts are done: the question to ask, and how to wait.
-#[cfg(unix)]
 fn setup_next(out: &SetupOut, list: &[setup::Event]) {
     if out.events {
         return;
@@ -2603,7 +2578,6 @@ fn setup_next(out: &SetupOut, list: &[setup::Event]) {
 /// One step, applied: `server`, `app=<id>`, `model` or `wait`. Re-reads the state first, does
 /// nothing to a step that is not `todo`, and ends with the step's state as it is afterwards. `false`
 /// when the step failed or could not be applied (O2).
-#[cfg(unix)]
 fn setup_step(a: &SetupArgs, out: &SetupOut, step: &str) -> Result<bool> {
     use setup::{Event, State};
     let observed = setup_observe(a.app_daemon)?;
@@ -2684,7 +2658,6 @@ fn setup_step(a: &SetupArgs, out: &SetupOut, step: &str) -> Result<bool> {
 /// read as it comes; with `--events` each line of it is an event naming the command, and a child that
 /// writes events itself (`embed fetch --events`) has them passed on as they are. `Err` carries why
 /// it failed: the child's last error line, or its exit status.
-#[cfg(unix)]
 fn setup_run(
     out: &SetupOut,
     exe: &std::path::Path,
@@ -2759,7 +2732,6 @@ fn setup_run(
 
 /// `--step wait` (Section 4.4): polls until the store holds an entry, for `--timeout` seconds. Exits
 /// 0 when one is there and 2 when none came, which is not a failure; it writes nothing (O1).
-#[cfg(unix)]
 fn setup_wait(a: &SetupArgs, out: &SetupOut, o: &setup::Observed) -> Result<bool> {
     use setup::{Event, FirstEntry, State};
     if let Some(r) = &o.remote {
@@ -2834,7 +2806,6 @@ fn setup_wait(a: &SetupArgs, out: &SetupOut, o: &setup::Observed) -> Result<bool
 }
 
 /// What setup reads before it decides anything, every time (O3).
-#[cfg(unix)]
 fn setup_observe(app_daemon: Option<u32>) -> Result<setup::Observed> {
     let env = connect::Env::from_process();
     // An unreadable profile is reported, never read as "local" (P5).
@@ -2971,7 +2942,6 @@ fn local_model() -> setup::Model {
 
 /// The newest entry in the store, read through the viewer socket across every workspace. A socket
 /// that does not answer, or answers with an error, is unknown, never empty (P5).
-#[cfg(unix)]
 fn newest_entry() -> setup::FirstEntry {
     let Some(body) = viz_get_within("/api/observations?workspace=*&limit=1", 10_000) else {
         return setup::FirstEntry::Unknown;
@@ -3004,11 +2974,6 @@ fn newest_entry() -> setup::FirstEntry {
         app,
         entity,
     }
-}
-
-#[cfg(not(unix))]
-fn setup_cmd(_a: SetupArgs) -> Result<()> {
-    anyhow::bail!("setup is supported only on unix (macOS/Linux)")
 }
 
 /// `supragnosis bridge`: stdout carries JSON-RPC and nothing else, so nothing here logs to it.
@@ -3942,7 +3907,6 @@ fn write_listening(
 /// connection would never end. The daemon then exits normally, which is also what lets an
 /// instrumented build write its coverage profile (docs/e2e.md Section 7).
 async fn sigterm() {
-    #[cfg(unix)]
     {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(mut s) => {
@@ -3960,8 +3924,6 @@ async fn sigterm() {
             }
         }
     }
-    #[cfg(not(unix))]
-    std::future::pending::<()>().await;
 }
 
 /// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
@@ -4150,7 +4112,6 @@ fn mcp_token_path() -> std::path::PathBuf {
 /// Closing the directory closes everything under it at once, whatever mode a file was written with.
 fn private_dir(dir: &std::path::Path) -> Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(dir)?.permissions().mode();
@@ -4176,7 +4137,6 @@ fn write_secret(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     let _ = std::fs::remove_file(&tmp);
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
@@ -4440,25 +4400,20 @@ mod daemon_guard_tests {
 // --- Background daemon lifecycle (start/stop/restart/status) -------------------------
 // Self-managed via a pidfile + logs. Uses only kill (-0/SIGTERM)/TcpStream, so no unsafe/libc is needed.
 
-#[cfg(unix)]
 fn base_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
         .join(".supragnosis")
 }
-#[cfg(unix)]
 fn pid_path() -> std::path::PathBuf {
     base_dir().join("supragnosis.pid")
 }
-#[cfg(unix)]
 fn log_dir() -> std::path::PathBuf {
     base_dir().join("log")
 }
-#[cfg(unix)]
 fn read_pid() -> Option<i32> {
     std::fs::read_to_string(pid_path()).ok().and_then(|s| s.trim().parse().ok())
 }
 /// Checks whether the process is alive via `kill -0` (portable, without unsafe/libc).
-#[cfg(unix)]
 fn pid_alive(pid: i32) -> bool {
     std::process::Command::new("kill")
         .arg("-0")
@@ -4470,7 +4425,6 @@ fn pid_alive(pid: i32) -> bool {
         .unwrap_or(false)
 }
 /// Whether a listener is at the address (a successful connection attempt = in use).
-#[cfg(unix)]
 fn port_open(addr: &str) -> bool {
     use std::net::ToSocketAddrs;
     addr.to_socket_addrs()
@@ -4523,7 +4477,6 @@ fn launchd_jobs() -> Vec<lifecycle::Job> {
 /// Every systemd user unit under a name the product runs the daemon as (L2) that manages it now:
 /// enabled, or active (daemon-lifecycle.md Section 4, "On Linux"). Empty where there is no user
 /// manager to ask, and everywhere but Linux.
-#[cfg(unix)]
 fn systemd_units() -> Vec<lifecycle::Job> {
     if !cfg!(target_os = "linux") {
         return Vec::new();
@@ -4543,7 +4496,6 @@ fn systemd_units() -> Vec<lifecycle::Job> {
 }
 
 /// What the person's systemd manager says about one unit; `None` when it cannot be asked.
-#[cfg(unix)]
 fn unit_show(unit: &str) -> Option<lifecycle::UnitShow> {
     let out = std::process::Command::new("systemctl")
         .args(["--user", "show", unit])
@@ -4558,7 +4510,6 @@ fn unit_show(unit: &str) -> Option<lifecycle::UnitShow> {
 
 /// Whether this session can reach a systemd user manager, and why not when it cannot - no systemctl,
 /// or no user bus, as in many containers.
-#[cfg(unix)]
 fn systemd_user_available() -> std::result::Result<(), String> {
     match std::process::Command::new("systemctl")
         .args(["--user", "show-environment"])
@@ -4574,7 +4525,6 @@ fn systemd_user_available() -> std::result::Result<(), String> {
 }
 
 /// The user name, for lingering and a unit's `%u`.
-#[cfg(unix)]
 fn current_user() -> Option<String> {
     let out = std::process::Command::new("id").arg("-un").output().ok()?;
     let name = String::from_utf8(out.stdout).ok()?.trim().to_string();
@@ -4583,14 +4533,12 @@ fn current_user() -> Option<String> {
 
 /// Whether the person's systemd manager outlives their sessions: logind keeps one file per lingering
 /// user. `None` when the user name is not known.
-#[cfg(unix)]
 fn linger_state() -> Option<bool> {
     let user = current_user()?;
     Some(std::path::Path::new("/var/lib/systemd/linger").join(user).exists())
 }
 
 /// Runs `systemctl --user` with these arguments; a failure carries systemctl's own words (L4).
-#[cfg(unix)]
 fn systemctl_user(args: &[&str]) -> Result<()> {
     let out = std::process::Command::new("systemctl")
         .arg("--user")
@@ -4609,7 +4557,6 @@ fn systemctl_user(args: &[&str]) -> Result<()> {
 
 /// What the lifecycle commands decide from. Reads only - a stale pidfile is cleared by the commands
 /// that act, never by `status`.
-#[cfg(unix)]
 fn observe() -> lifecycle::Observed {
     observe_with(daemon_store_path(|k| std::env::var(k).ok()).as_deref())
 }
@@ -4664,7 +4611,6 @@ fn pid_is_supragnosis(pid: i32) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(unix)]
 fn clear_stale_pidfile() {
     if let lifecycle::Pidfile::Stale(_) = pidfile_now() {
         let _ = std::fs::remove_file(pid_path());
@@ -4673,7 +4619,6 @@ fn clear_stale_pidfile() {
 
 /// The running daemon's version, from the viewer's `/api/about` over its unix socket. `None` when
 /// the socket does not answer - and then the version is unknown, never assumed (Section 5).
-#[cfg(unix)]
 fn running_version() -> Option<String> {
     lifecycle::parse_about_version(&viz_get("/api/about")?)
 }
@@ -4802,7 +4747,6 @@ fn launchd_bootout(job: &lifecycle::Job) -> Result<()> {
 
 /// Restart a systemd user unit in place. Its program is the path an upgrade repoints, so the new
 /// binary is what starts (daemon-lifecycle.md Section 4, "On Linux").
-#[cfg(unix)]
 fn systemd_restart(job: &lifecycle::Job) -> Result<()> {
     systemctl_user(&["restart", job.label])?;
     println!("restarted systemd unit {} (MCP server + viewer).", job.label);
@@ -4811,7 +4755,6 @@ fn systemd_restart(job: &lifecycle::Job) -> Result<()> {
 
 /// Stop a systemd user unit. It stays enabled, so it starts again at the next login - said here,
 /// because "stopped" alone would be true only until then.
-#[cfg(unix)]
 fn systemd_stop(job: &lifecycle::Job) -> Result<()> {
     systemctl_user(&["stop", job.label])?;
     match job.kind {
@@ -4828,7 +4771,6 @@ fn systemd_stop(job: &lifecycle::Job) -> Result<()> {
 }
 
 /// Start the installed canonical unit - `restart` when it is installed but neither enabled nor active.
-#[cfg(unix)]
 fn systemd_start_canonical() -> Result<()> {
     systemctl_user(&["start", lifecycle::CANONICAL_UNIT])?;
     println!("started systemd unit {} (MCP server + viewer).", lifecycle::CANONICAL_UNIT);
@@ -4852,7 +4794,6 @@ fn print_client_command(http: &str) {
 }
 
 /// Resolved MCP http address for status/lifecycle checks (env var or default).
-#[cfg(unix)]
 fn status_http_addr() -> String {
     std::env::var("SUPRAGNOSIS_HTTP_ADDR")
         .ok()
@@ -4860,7 +4801,6 @@ fn status_http_addr() -> String {
         .unwrap_or_else(|| "127.0.0.1:7373".to_string())
 }
 
-#[cfg(unix)]
 fn start(cfg: Config) -> Result<()> {
     let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
     if let Some(pid) = live_pidfile() {
@@ -4898,7 +4838,6 @@ fn start(cfg: Config) -> Result<()> {
 }
 
 /// Sends SIGTERM to the self-managed (pidfile) daemon and waits for graceful exit.
-#[cfg(unix)]
 fn stop_pidfile(pid: i32) -> Result<()> {
     std::process::Command::new("kill")
         .arg(pid.to_string())
@@ -4919,7 +4858,6 @@ fn stop_pidfile(pid: i32) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn stop() -> Result<()> {
     use lifecycle::Manager;
     clear_stale_pidfile();
@@ -4935,7 +4873,6 @@ fn stop() -> Result<()> {
     }
 }
 
-#[cfg(unix)]
 fn restart(cfg: Config) -> Result<()> {
     use lifecycle::{Manager, Restart};
     clear_stale_pidfile();
@@ -4973,7 +4910,6 @@ fn restart(cfg: Config) -> Result<()> {
 /// one being restarted shows its previous exit only for a moment. A slow start that is still running
 /// is reported as slow, not failed: a daemon repaying owed projections before it binds
 /// (crash-recovery.md K3) can take a while.
-#[cfg(unix)]
 fn await_daemon(label: &str) -> Result<()> {
     let here = env!("CARGO_PKG_VERSION");
     let mut watch = lifecycle::StartWatch::default();
@@ -5021,7 +4957,6 @@ fn await_daemon(label: &str) -> Result<()> {
 
 /// Everything `status --json` reports, already gathered. [`status_document`] only shapes it, so a
 /// test can build the document without a daemon (docs/compatibility.md Section 6).
-#[cfg(unix)]
 struct StatusFacts<'a> {
     situation: &'a lifecycle::Situation,
     answering: bool,
@@ -5077,7 +5012,6 @@ fn semantic_line(report: Option<&serde_json::Value>) -> String {
 }
 
 /// `status --json`, which the desktop app reads for its tray line and its Settings page.
-#[cfg(unix)]
 fn status_document(f: &StatusFacts) -> serde_json::Value {
     use lifecycle::{Manager, Situation};
     let managers: Vec<&Manager> = match f.situation {
@@ -5151,7 +5085,6 @@ fn status_document(f: &StatusFacts) -> serde_json::Value {
     })
 }
 
-#[cfg(unix)]
 fn status(json: bool) -> Result<()> {
     use lifecycle::{Drift, Situation};
     let http = status_http_addr();
@@ -5321,7 +5254,6 @@ fn status(json: bool) -> Result<()> {
 // --- The canonical LaunchAgent and user unit (docs/daemon-lifecycle.md Section 4) ------------
 
 /// The canonical manager's name: the LaunchAgent's label, or the user unit's name on Linux.
-#[cfg(unix)]
 fn canonical_service_label() -> &'static str {
     if cfg!(target_os = "linux") {
         lifecycle::CANONICAL_UNIT
@@ -5332,7 +5264,6 @@ fn canonical_service_label() -> &'static str {
 
 /// Where the canonical plist lives - or on Linux the canonical user unit, under `$XDG_CONFIG_HOME`
 /// when it is set, as systemd reads it.
-#[cfg(unix)]
 fn canonical_service_path() -> std::path::PathBuf {
     let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     if cfg!(target_os = "linux") {
@@ -5348,7 +5279,6 @@ fn canonical_service_path() -> std::path::PathBuf {
 }
 
 /// absent | generated | hand_written - the state the app's Start at Login item reflects.
-#[cfg(unix)]
 fn canonical_service_state() -> &'static str {
     match std::fs::read_to_string(canonical_service_path()) {
         Err(_) => "absent",
@@ -5357,7 +5287,6 @@ fn canonical_service_state() -> &'static str {
     }
 }
 
-#[cfg(unix)]
 fn unix_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -5400,7 +5329,6 @@ fn move_aside(path: &std::path::Path, label: &str) -> Result<std::path::PathBuf>
 }
 
 /// Move a file the product did not write to `dst`, keeping it (L5).
-#[cfg(unix)]
 fn move_file_aside(path: &std::path::Path, dst: std::path::PathBuf) -> Result<std::path::PathBuf> {
     if let Some(dir) = dst.parent() {
         std::fs::create_dir_all(dir)?;
@@ -5424,7 +5352,6 @@ fn launchctl_quiet(args: &[&str]) -> bool {
 /// Wait for the MCP port to close and the store to be released after a job is booted out, so the
 /// next owner does not race the last one for the store lock. False when either is still held after
 /// ten seconds.
-#[cfg(unix)]
 fn wait_until_released(store: Option<&std::path::Path>) -> bool {
     let mut first = true;
     lifecycle::released(std::iter::from_fn(|| {
@@ -5440,7 +5367,6 @@ fn wait_until_released(store: Option<&std::path::Path>) -> bool {
 
 /// A Homebrew job is retired by Homebrew: the plist or the unit is its file, and only `brew services
 /// stop` removes it (a bootout or a `systemctl stop` alone would let it start again at the next login).
-#[cfg(unix)]
 fn brew_services_stop(token: &str) -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_default();
     let brew = [
@@ -5468,7 +5394,6 @@ fn brew_services_stop(token: &str) -> Result<()> {
 }
 
 /// `service install`: the LaunchAgent on macOS, the user unit on Linux.
-#[cfg(unix)]
 fn service_install(args: ServiceInstallArgs) -> Result<()> {
     if cfg!(target_os = "linux") {
         systemd_install(args)
@@ -5478,7 +5403,6 @@ fn service_install(args: ServiceInstallArgs) -> Result<()> {
 }
 
 /// `service uninstall`: the LaunchAgent on macOS, the user unit on Linux.
-#[cfg(unix)]
 fn service_uninstall() -> Result<()> {
     if cfg!(target_os = "linux") {
         systemd_uninstall()
@@ -5653,17 +5577,8 @@ fn launchd_install(_args: ServiceInstallArgs) -> Result<()> {
 fn launchd_uninstall() -> Result<()> {
     anyhow::bail!("service uninstall manages a macOS LaunchAgent or a Linux systemd user unit, and this system has neither")
 }
-#[cfg(not(unix))]
-fn service_install(_args: ServiceInstallArgs) -> Result<()> {
-    anyhow::bail!("service install manages a macOS LaunchAgent or a Linux systemd user unit; use 'supragnosis serve --http <ADDR>' here")
-}
-#[cfg(not(unix))]
-fn service_uninstall() -> Result<()> {
-    anyhow::bail!("service uninstall manages a macOS LaunchAgent or a Linux systemd user unit")
-}
 
 /// Why there is no user manager to install into, and what runs the daemon instead.
-#[cfg(unix)]
 fn no_user_manager(why: &str) -> anyhow::Error {
     anyhow::anyhow!(
         "systemctl --user does not work here ({why}) - as in many containers, or a session without a user bus - so there is no user manager to keep the daemon running. `supragnosis serve` runs it in the foreground, and `supragnosis start` runs it until you log out"
@@ -5673,7 +5588,6 @@ fn no_user_manager(why: &str) -> anyhow::Error {
 /// The directories a unit's daemon writes outside `~/.supragnosis`, which `ProtectSystem=strict` and
 /// `ProtectHome=read-only` would otherwise refuse it: a data directory or viewer socket its
 /// environment moved elsewhere.
-#[cfg(unix)]
 fn unit_writable_paths(
     env: &std::collections::BTreeMap<String, String>,
     home: &str,
@@ -5697,7 +5611,6 @@ fn unit_writable_paths(
 /// generated, enabled and started, with lingering asked for. The rules are the LaunchAgent's - refuse
 /// to share, refuse a holder nothing names, never overwrite a file it did not write, carry the
 /// environment, add no exposure - read for a unit.
-#[cfg(unix)]
 fn systemd_install(args: ServiceInstallArgs) -> Result<()> {
     use lifecycle::{LabelKind, Manager};
     systemd_user_available().map_err(|why| no_user_manager(&why))?;
@@ -5833,7 +5746,6 @@ fn systemd_install(args: ServiceInstallArgs) -> Result<()> {
 /// `service uninstall` on Linux: the canonical unit is disabled and stopped, and its file removed -
 /// or moved aside when this command did not write it (L5). Lingering is left as it is, since other
 /// units may need it.
-#[cfg(unix)]
 fn systemd_uninstall() -> Result<()> {
     use lifecycle::LabelKind;
     systemd_user_available().map_err(|why| no_user_manager(&why))?;
@@ -5879,22 +5791,6 @@ fn systemd_uninstall() -> Result<()> {
 }
 
 // Non-unix: daemon lifecycle unsupported - point to serve --http.
-#[cfg(not(unix))]
-fn start(_cfg: Config) -> Result<()> {
-    anyhow::bail!("the background daemon (start) is supported only on unix (macOS/Linux). Use 'supragnosis serve --http <ADDR>'.")
-}
-#[cfg(not(unix))]
-fn stop() -> Result<()> {
-    anyhow::bail!("the background daemon is unix-only.")
-}
-#[cfg(not(unix))]
-fn restart(_cfg: Config) -> Result<()> {
-    anyhow::bail!("the background daemon is unix-only.")
-}
-#[cfg(not(unix))]
-fn status(_json: bool) -> Result<()> {
-    anyhow::bail!("the background daemon is unix-only.")
-}
 
 // --- Federation configuration + node identity (M4 Phase 4, docs/federation.md Section 9) ---------
 
@@ -6208,7 +6104,6 @@ mod fed {
             let _ = std::fs::remove_file(&tmp);
             let mut options = std::fs::OpenOptions::new();
             options.write(true).create_new(true);
-            #[cfg(unix)]
             {
                 use std::os::unix::fs::OpenOptionsExt;
                 options.mode(0o600);
@@ -6639,7 +6534,6 @@ mod legacy_store_guard_tests {
     /// architecture.md's "0700 ~/.supragnosis" as behavior rather than description: a directory found
     /// open is closed, and a secret is written 0600 without ever existing at another mode - which is
     /// also why a rewrite leaves no temp file behind.
-    #[cfg(unix)]
     #[test]
     fn the_state_directory_and_its_secrets_are_closed_to_other_accounts() {
         use std::os::unix::fs::PermissionsExt;
@@ -6842,7 +6736,7 @@ mod legacy_store_guard_tests {
 /// must have the same keys at every level and the same kind of value wherever both hold one. A
 /// field this side renames or drops fails here; a field the app reads that the example lacks fails
 /// on the app's side.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod service_files {
     use super::*;
 
@@ -7067,12 +6961,10 @@ mod json_contract {
         assert_eq!(semantic_line(Some(&done)), "semantic on (m-384)");
     }
 
-    #[cfg(unix)]
     /// SR10 (semantic-retrieval.md Section 13): the rebuild stops only a daemon this CLI manages for
     /// this home - a `start` daemon, or the login job whose file is here - and refuses every other
     /// holder with nothing changed; with nothing running it resets, and starts the login job if this
     /// home installs one.
-    #[cfg(unix)]
     #[test]
     fn rebuild_stops_only_a_daemon_this_home_manages() {
         use lifecycle::{Job, LabelKind, Manager, Situation};
@@ -7136,7 +7028,6 @@ mod json_contract {
     /// SR8 (semantic-retrieval.md Section 13): a store the daemon cannot open for its model says so,
     /// with both models and both ways on - in the refusal at open, in `status`'s line, and in
     /// `status --json`'s field - and a store read for it is read without being held or written.
-    #[cfg(unix)]
     #[test]
     fn a_refused_store_names_both_ways_on() {
         let dir = std::env::temp_dir().join(format!(
@@ -7768,7 +7659,7 @@ mod listening_file {
 }
 
 /// docs/onboarding.md: what setup reads, what it runs, and what it says when an act fails.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod first_run {
     use super::*;
 
