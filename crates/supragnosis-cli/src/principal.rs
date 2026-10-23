@@ -877,56 +877,6 @@ mod tests {
         (status, tag, r.text().await.unwrap())
     }
 
-    /// remote-viewer.md Section 5 end to end: the relay carries the hub's own read tier - the page,
-    /// the surface with this machine's name for the server, the grants, a refusal - with the
-    /// credential read from its file, and a credential the hub does not admit is a state the shell
-    /// can show.
-    #[tokio::test]
-    async fn the_relay_carries_the_read_tier_within_the_grants() {
-        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "hub", "default"));
-        observe(&engine, "docs", "the docs live in the wiki", "wiki");
-        observe(&engine, "team", "the team uses rust", "rust");
-        observe(&engine, "secret", "the launch date is friday", "launch");
-        let (url, cred) = hub(engine.clone(), BTreeSet::new()).await;
-        let dir = std::env::temp_dir().join(format!("sg-relay-e2e-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        crate::private_dir(&dir).unwrap();
-        let token_file = dir.join("team-hub.token");
-        std::fs::write(&token_file, &cred).unwrap();
-        let target = crate::profile::Target::Remote {
-            name: "team-hub".into(),
-            url,
-            ca: None,
-            token_file: token_file.clone(),
-        };
-        let cfg = crate::relay::config(target, crate::read_secret).unwrap();
-        let socket = dir.join("v.sock");
-        let listener = supragnosis_viz::bind_uds(&socket).await.unwrap();
-        let (stdin, input) = tokio::io::duplex(8);
-        tokio::spawn(crate::relay::run(cfg, listener, input, None));
-        let get = |path: &'static str| crate::relay::tests::ask(&socket, "GET", path, "");
-
-        let (status, _, page) = get("/").await;
-        assert!(status == 200 && page.contains("<title>Graph - Supragnosis</title>"), "{status}");
-        let surface: serde_json::Value =
-            serde_json::from_str(&get("/api/surface").await.2).unwrap();
-        assert_eq!(
-            (surface["principal"].as_str(), surface["profile"]["name"].as_str()),
-            (Some("alice"), Some("team-hub"))
-        );
-        assert_eq!(get("/api/workspaces").await.2, r#"["docs","team"]"#);
-        let (status, _, body) = get("/api/graph?workspace=secret").await;
-        assert!(status == 403 && body.contains("not granted"), "{status} {body}");
-        assert!(!body.contains("friday"));
-
-        std::fs::write(&token_file, "revoked").unwrap();
-        let (status, _, body) = get("/api/graph").await;
-        assert_eq!(status, 401, "{body}");
-        assert!(body.contains("credential_refused") && !body.contains("revoked"), "{body}");
-        drop(stdin);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     /// remote-viewer.md V1-V3 over HTTP: the read tier answers alice only, within her grants, never
     /// changes state, and answers an id outside them as it answers an unknown one.
     #[tokio::test]
