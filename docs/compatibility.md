@@ -451,6 +451,12 @@ cross that gap:
   `secrets` and each contradiction's `contested`, and degrades to the count it could read when a
   field or a read is missing. *(Added by design-system.md step 42: the tray read the proposal list
   before, and this section did not name it.)*
+- **The remote window** (design-system.md step 65). On a remote profile the shell reads the relay's
+  `state` JSON (remote-viewer.md Section 5) to choose a failure page, and sets
+  `window.supragnosisServer`, Settings' Server address, for the page's banner. The page is the
+  hub's: a hub older than step 65 serves a page that has no banner and ignores the global, and
+  shows its chips and reads as it always did. The shell's failure pages and its guard on the
+  window's addresses hold for any hub.
 - **The viewer page the shell decorates.** `shell-init.js` comes from the app and runs inside the
   page the daemon serves. It finds `#settingsBtn`, `header` and `h1` there, and stands in for
   `EventSource("/api/events")` through `onmessage` alone. A viz test pins those as the page's
