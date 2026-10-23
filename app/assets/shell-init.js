@@ -16,26 +16,21 @@
 //    shell's starting splash); the shell's only observable for "the proxy + webview path works".
 // 5. The machine's name (docs/design-system.md Section 9, D2) - the viewer calls the machine it runs
 //    on "this machine"; in the app on a Mac the shell says "this Mac", the word the app's pages use.
-//    Beside it, Setup's address (Section 29.10), which the viewer offers on an empty store, and
-//    Settings' Server address (Section 29.31), which a read tier's banner offers; a viewer without
-//    them shows no button.
+//    Beside it, Setup's address (Section 29.10), which the viewer offers on an empty store; a viewer
+//    without it shows no button.
 //
 // Everything is built with DOM calls - no markup strings - like the settings page (S5).
 (function () {
   if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
 
   // The two pages' addresses. macOS and Linux reach the app's schemes as scheme://localhost;
-  // Windows' webview reaches them as http://<scheme>.localhost. The hub's page has a scheme of its
-  // own, `remote` (docs/design-system.md Section 29.31).
-  var custom = /^(viz|tauri|remote):$/.test(location.protocol);
+  // Windows' webview reaches them as http://<scheme>.localhost.
+  var custom = location.protocol === "viz:" || location.protocol === "tauri:";
   var GRAPH = custom ? "viz://localhost/" : "http://viz.localhost/";
   var SETTINGS = custom ? "tauri://localhost/settings.html" : "http://tauri.localhost/settings.html";
   var onSettings = /settings\.html$/.test(location.pathname) &&
     (location.protocol === "tauri:" || location.hostname === "tauri.localhost");
   window.supragnosisSetup = custom ? "tauri://localhost/welcome.html" : "http://tauri.localhost/welcome.html";
-  // Settings' Server section, which the read tier's banner offers (docs/design-system.md Section
-  // 29.31): the viewer shows the button only where this is set.
-  window.supragnosisServer = SETTINGS + "#server";
 
   // The graph's gear - the viewer's settings button, in its status bar - is where settings have
   // always been opened. In the app it opens the app's Settings page, which holds what the viewer's

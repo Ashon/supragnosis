@@ -3773,16 +3773,15 @@ fn check_server(target: &profile::Target) -> ServerCheck {
 }
 
 /// `server --json`: the server profiles, which one is active, and whether it answers.
-/// One row of `server --json`: a profile's name, its MCP URL, whether it is remote, and the CA bundle
-/// it names, if any. The app restarts its viewer relay when the active one's address or CA changes
-/// (design-system.md Section 29.31).
-type ServerRow = (String, String, bool, Option<String>);
-
-fn servers_document(active: &str, rows: &[ServerRow], check: &ServerCheck) -> serde_json::Value {
+fn servers_document(
+    active: &str,
+    rows: &[(String, String, bool)],
+    check: &ServerCheck,
+) -> serde_json::Value {
     let servers: Vec<_> = rows
         .iter()
-        .map(|(n, u, remote, ca)| {
-            serde_json::json!({"name": n, "url": u, "remote": remote, "active": n == active, "ca": ca})
+        .map(|(n, u, remote)| {
+            serde_json::json!({"name": n, "url": u, "remote": remote, "active": n == active})
         })
         .collect();
     serde_json::json!({
@@ -3797,12 +3796,11 @@ fn server_list(home: &std::path::Path, file: &profile::ClientFile, json: bool) -
     let target =
         profile::active(home, |k| std::env::var(k).ok()).map_err(|e| anyhow::anyhow!(e))?;
     let local_url = format!("http://{}/mcp", status_http_addr());
-    let mut rows: Vec<ServerRow> = vec![(profile::LOCAL.to_string(), local_url, false, None)];
-    rows.extend(file.servers.iter().map(|(n, e)| (n.clone(), e.url.clone(), true, e.ca.clone())));
-    if let profile::Target::Remote { name, url, ca, .. } = &target {
+    let mut rows = vec![(profile::LOCAL.to_string(), local_url, false)];
+    rows.extend(file.servers.iter().map(|(n, e)| (n.clone(), e.url.clone(), true)));
+    if let profile::Target::Remote { name, url, .. } = &target {
         if name == "env" {
-            let ca = ca.as_ref().map(|p| p.display().to_string());
-            rows.push((name.clone(), url.clone(), true, ca));
+            rows.push((name.clone(), url.clone(), true));
         }
     }
     let check = check_server(&target);
@@ -3811,7 +3809,7 @@ fn server_list(home: &std::path::Path, file: &profile::ClientFile, json: bool) -
         return Ok(());
     }
     println!("servers - the bridge sends this machine's AI apps to the active one (*)");
-    for (n, u, remote, _) in &rows {
+    for (n, u, remote) in &rows {
         let mark = if n == target.name() { "*" } else { " " };
         let what = if *remote { "" } else { "  this machine's daemon" };
         println!("{mark} {n:<12} {u}{what}");
@@ -7579,13 +7577,8 @@ mod json_contract {
     #[test]
     fn server_json_matches_its_example() {
         let rows = vec![
-            ("local".to_string(), "http://127.0.0.1:7373/mcp".to_string(), false, None),
-            (
-                "lab".to_string(),
-                "https://lab:7420/mcp".to_string(),
-                true,
-                Some("/Users/me/.supragnosis/lab-ca.pem".to_string()),
-            ),
+            ("local".to_string(), "http://127.0.0.1:7373/mcp".to_string(), false),
+            ("lab".to_string(), "https://lab:7420/mcp".to_string(), true),
         ];
         let check = ServerCheck { answering: true, credential: Some(true), detail: None };
         let doc = servers_document("lab", &rows, &check);
