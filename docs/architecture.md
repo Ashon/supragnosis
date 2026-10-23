@@ -705,8 +705,14 @@ Each concern names what is built and what is owed; the milestone of an owed part
      human mediation as **elicitation** (Principle 21) - see Section 7.
    - **Not scheduled (2026-10-23): the hub is kept minimal.** It is a hub-and-spoke meeting point for
      one person's machines: device sync and pairing, and nothing more. Each machine uses its own
-     daemon and console. The remote MCP surface (server profiles, principals) and the hub's read tier
-     are frozen as built: no new work, bug fixes only. Phase 5 and every surface that serves several people on one
+     daemon and console, and its AI apps reach that daemon through the bridge as before. The remote MCP
+     surface (server profiles that send AI apps to a server elsewhere, principals) and the hub's read
+     tier are frozen as built: no new work, bug fixes only.
+   - **Open (2026-10-23): a hub as the ledger.** The author asked whether a hub should be the ledger,
+     with a conflict resolved by choosing local or hub to overwrite. Not adopted for now: sync is an
+     append-only union with no replication-level conflict, the one conflict is a contested belief
+     the console already decides, and an overwrite would contradict Principles 3, 6 and 16. It waits
+     for a concrete case where the union does not serve. Phase 5 and every surface that serves several people on one
      hub - browser access, signed acts, the remote viewer in the app - come due when a second person
      uses a hub, and not before (CLAUDE.md, principles.md Appendix A, assurance against proportion).
 7. **M5 - Inference/extraction/contamination defense [ ]**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).
