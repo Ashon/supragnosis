@@ -750,8 +750,9 @@ pub const GATE_KINDS: [&str; 2] = ["claim_promotion", "claim_demotion"];
 /// grant ceiling from the log-borne marker, so the cap is deterministic (I2, P16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerdictSurface {
-    /// The human console (viz unix socket - reachable only by the local OS principal). Grants up to
-    /// HumanConfirmed (Principle 18: a human's direct act).
+    /// The local console (the viz unix socket, 0600: every process of the owning OS user, the app
+    /// among them). Grants up to HumanConfirmed, which records the path and not a person
+    /// (resolution.md Section 6).
     Console,
     /// The agent-facing MCP tool path. Grants cap at HostSigned.
     Agent,

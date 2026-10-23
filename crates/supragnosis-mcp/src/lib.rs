@@ -154,8 +154,8 @@ pub struct ProposeRequest {
     pub into: Option<String>,
     /// For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |
     /// host_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.
-    /// Note: a verdict cast through this MCP surface grants at most host_signed - human_confirmed
-    /// requires the human console (a human's direct act).
+    /// Note: a verdict cast through this surface grants at most host_signed. human_confirmed is the
+    /// person's own act in the Supragnosis app: never cast it yourself, by this tool or any other way.
     #[serde(default)]
     pub tier: Option<String>,
     /// Why (natural language) - the proposal rationale. Required to re-merge a pair that was split:
@@ -1291,7 +1291,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
+        description = "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is the person's own act in the Supragnosis app: never cast it yourself, by this tool or any other way. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
@@ -1848,7 +1848,9 @@ impl ServerHandler for SupragnosisServer {
                  (observe, define_type, propose) names its workspace: name it after the project you \
                  work in - the repository's name, also from a git worktree, never the worktree's \
                  directory - and keep using that name, so one project's knowledge is not split \
-                 across two. A read that names no workspace reads every workspace. \
+                 across two. A read that names no workspace reads every workspace. Confirming \
+                 knowledge as human_confirmed is the person's act in the Supragnosis app: never \
+                 do it yourself, by any tool or other way. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
                  (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
                  second-order structure (hyperedges), supragnosis://observation/{id} is the \
