@@ -62,8 +62,8 @@ The client side holds a list of servers and one active profile:
   - `supragnosis server use <name|local>` switches; `supragnosis server remove <name>` deletes.
 - **The bridge** reads the active profile on every connect, as it already reads the token. Switching
   profiles therefore takes effect at the next session with no change in any AI app. A remote profile
-  is reached over HTTPS, verified against the system roots or the profile's CA; plain HTTP is
-  accepted only to a loopback host, where no network sits between the two ends. There is no option
+  is reached over HTTPS, verified against the root bundle built into supragnosis, or against the
+  profile's CA instead when it names one; plain HTTP is accepted only to a loopback host, where no network sits between the two ends. There is no option
   to skip verification, because a skipped check hands the credential to whoever sits on the path.
 - **Headless use (c).** `SUPRAGNOSIS_SERVER_URL` and `SUPRAGNOSIS_SERVER_TOKEN_FILE` select a server
   without a profile file. This is for a container that runs the bridge. An agent whose MCP client
