@@ -703,8 +703,10 @@ Each concern names what is built and what is owed; the milestone of an owed part
      multi-principal governance - the `tbox_change` gate and the log-borne canon-policy artifact
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.
-   - **Not scheduled (2026-10-23): the hub is kept minimal.** It does device sync, pairing and the
-     remote MCP surface, and nothing more. Phase 5 and every surface that serves several people on one
+   - **Not scheduled (2026-10-23): the hub is kept minimal.** It is a hub-and-spoke meeting point for
+     one person's machines: device sync and pairing, and nothing more. Each machine uses its own
+     daemon and console. The remote MCP surface (server profiles, principals) and the hub's read tier
+     are frozen as built: no new work, bug fixes only. Phase 5 and every surface that serves several people on one
      hub - browser access, signed acts, the remote viewer in the app - come due when a second person
      uses a hub, and not before (CLAUDE.md, principles.md Appendix A, assurance against proportion).
 7. **M5 - Inference/extraction/contamination defense [ ]**: lightweight inference, the `Extractor` port, mandatory `derived_from` lineage/quarantine/cleanup (Principle 18).

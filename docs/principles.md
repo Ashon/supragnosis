@@ -149,9 +149,10 @@
 > proportion. *Loosens* Appendix B.1, forced by that review: a document names no tests of its own,
 > and a design step's check table lists only the rules the step changes or puts at risk. *Tightens*
 > Appendix B.2: a test reads behavior, not source text. *Corrects a fact* in Appendix A's closing
-> paragraph: the hub is kept minimal - device sync, pairing and the remote MCP surface - so the owed
-> mechanisms that serve several people on one hub are due when a second person uses one, not on a
-> schedule (architecture.md Section 14).
+> paragraph: the hub is kept minimal - a hub-and-spoke meeting point for device sync and pairing,
+> with the remote MCP surface and the read tier frozen as built - so the owed mechanisms that serve
+> several people on one hub are due when a second person uses one, not on a schedule (architecture.md
+> Section 14).
 
 ---
 
