@@ -363,7 +363,7 @@
           },
           "tier": {
             "default": null,
-            "description": "For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |\nhost_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.\nNote: a verdict cast through this MCP surface grants at most host_signed - human_confirmed\nrequires the human console (a human's direct act).",
+            "description": "For claim_promotion/claim_demotion: the requested trust tier - unverified | agent_extracted |\nhost_signed | human_confirmed. Required for those kinds; targets are then OBSERVATION ids.\nNote: a verdict cast through this surface grants at most host_signed. human_confirmed is the\nperson's own act in the Supragnosis app: never cast it yourself, by this tool or any other way.",
             "type": [
               "string",
               "null"
@@ -384,7 +384,7 @@
     },
     {
       "name": "review",
-      "description": "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is a human's direct act and only the human console can grant it. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own.",
+      "description": "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is the person's own act in the Supragnosis app: never cast it yourself, by this tool or any other way. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,

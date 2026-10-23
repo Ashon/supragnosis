@@ -165,7 +165,7 @@ fn a_confirmation_says_what_it_confirms() {
         "the tiers are not defined under the legend"
     );
     for line in [
-        "A person confirmed it in this app, on one of your machines. No agent's claim outranks it; a later review can lower it.",
+        "Confirmed in this app on one of your machines, by you or a program running as you; agents are told to leave it to you. No agent's claim outranks it; a later review can lower it.",
         "Above Agent, but not by a person: a trusted machine's signed claim, or a review an agent accepted.",
         "What an AI app writes, and what this app writes for you, until a review raises or lowers it.",
         "Trusted less than an agent's claim: a review lowered it, or its sender marked it so.",

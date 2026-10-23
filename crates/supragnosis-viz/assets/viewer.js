@@ -1329,7 +1329,7 @@ function activeSet() {
 const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
 // What each tier means, said of a source (Section 29.2); under the Trust legend and in the ask.
 const TIER_MEANS = {
-  human_confirmed: "A person confirmed it in this app, on one of your machines. No agent's claim outranks it; a later review can lower it.",
+  human_confirmed: "Confirmed in this app on one of your machines, by you or a program running as you; agents are told to leave it to you. No agent's claim outranks it; a later review can lower it.",
   host_signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an agent accepted.",
   agent_extracted: "What an AI app writes, and what this app writes for you, until a review raises or lowers it.",
   unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it so.",
