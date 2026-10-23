@@ -826,7 +826,8 @@ input, not nondeterminism - F16).
   finality (7a, F16); and the **hub human surface write tier** (6d, F19/F20: session-attributed acts
   `host = hub, on_behalf_of = principal`, plus **principal-signed acts** - client-side user-key
   signatures required for recall/`HumanConfirmed` - with the user whitelist unified into the
-  canon-policy principal binding).
+  canon-policy principal binding). [not scheduled: due when a second person uses a hub - the hub is
+  kept minimal, 2026-10-23]
 - **Phase 6** - deploy knowledge.vm as the hub (systemd unit, config with server role, TLS, allowlist),
   register a client, verify end-to-end convergence. May go live after Phase 4 **restricted to
   single-principal workspaces** (the P23 solo exception - one principal across many machines); onboarding a

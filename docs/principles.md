@@ -148,7 +148,10 @@
 > for, and every rule written three times. *Tightens* Appendix A with a tension, assurance against
 > proportion. *Loosens* Appendix B.1, forced by that review: a document names no tests of its own,
 > and a design step's check table lists only the rules the step changes or puts at risk. *Tightens*
-> Appendix B.2: a test reads behavior, not source text.
+> Appendix B.2: a test reads behavior, not source text. *Corrects a fact* in Appendix A's closing
+> paragraph: the hub is kept minimal - device sync, pairing and the remote MCP surface - so the owed
+> mechanisms that serve several people on one hub are due when a second person uses one, not on a
+> schedule (architecture.md Section 14).
 
 ---
 
@@ -899,7 +902,10 @@ quarantine tier, the tombstone, retrieval demotion, the auto-merge band, the inf
 route review - are owed, and the registry (Appendix B.1) and [architecture.md](architecture.md)
 Section 14 say which. A tension whose resolving mechanism is unbuilt is resolved on paper only, and
 until the mechanism exists the conservative side holds by default: nothing is removed, demoted or
-merged automatically, and "privacy wins" is a promise the system cannot yet keep.
+merged automatically, and "privacy wins" is a promise the system cannot yet keep. The mechanisms that
+serve several people on one hub - the multi-principal gate and canon policy, signed acts, excision's
+cross-principal path - are due when a second person uses a hub: the hub is kept minimal, and until
+then deployment is one person's machines (architecture.md Section 14).
 
 ## Appendix B - Review Checklist
 

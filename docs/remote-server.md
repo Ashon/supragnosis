@@ -257,7 +257,8 @@ The tray gains a **Server** submenu listing the profiles, with the active one ch
 4. **The remote viewer**: federation's Phase 3.5 network read tier, and the desktop app browsing a
    remote server ([remote-viewer.md](remote-viewer.md)).
 5. **Signed acts**: principal keys held by the bridge, and with them remote verdicts and T-Box
-   changes (federation.md 6d level ii).
+   changes (federation.md 6d level ii). [not scheduled: due when a second person uses a hub - the hub
+   is kept minimal, 2026-10-23]
 
 Owed beyond these: per-principal rate limits, and credential rotation without removal and re-adding.
 
