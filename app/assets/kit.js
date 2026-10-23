@@ -57,14 +57,11 @@ function appRow(row) {
 // anything else would make "< Graph" a redirect (docs/settings-page.md Section 4, S1). Without one,
 // the bare graph.
 const GRAPH_HOME = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
-// The hub's page, on a remote profile, is a viewer too, at an origin of its own (Section 29.31).
-const REMOTE_HOME = location.protocol === "tauri:" ? "remote://localhost/" : "http://remote.localhost/";
 function graphBack() {
   try {
     const from = new URL(new URLSearchParams(location.search).get("from"));
-    for (const home of [new URL(GRAPH_HOME), new URL(REMOTE_HOME)]) {
-      if (from.protocol === home.protocol && from.host === home.host) { from.hash = ""; return from.href; }
-    }
+    const home = new URL(GRAPH_HOME);
+    if (from.protocol === home.protocol && from.host === home.host) { from.hash = ""; return from.href; }
   } catch (_) { /* no address, or not one */ }
   return GRAPH_HOME;
 }
