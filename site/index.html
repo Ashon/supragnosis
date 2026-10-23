@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>supragnosis - memory for AI agents that remembers who said it</title>
-  <meta name="description" content="Memory for AI agents that remembers who said it. A local knowledge server for Claude Code, Cursor, Codex and any MCP client: your agents write as they work, you decide what becomes canon, and every machine you use gets the same memory.">
+  <meta name="description" content="Memory for AI agents that remembers who said it. A local knowledge server for Claude Code, Cursor, Codex and any MCP client: your agents write as they work, you decide what becomes canon, and each machine checks what it receives.">
   <link rel="canonical" href="https://supragnosis.dev/">
   <meta name="theme-color" content="#08090d">
   <meta property="og:title" content="supragnosis">
-  <meta property="og:description" content="Memory for AI agents that remembers who said it. Your agents write as they work, you decide what becomes canon, and every entry keeps which machine wrote it, for whom, and whether a person checked it.">
+  <meta property="og:description" content="Memory for AI agents that remembers who said it. Your agents write as they work, you decide what becomes canon, and every entry keeps which machine wrote it, for whom, and whether it was confirmed in Review.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://supragnosis.dev/">
   <meta property="og:site_name" content="supragnosis">
@@ -50,7 +50,7 @@
     <section class="hero wrap" id="top">
       <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span></p>
       <h1>Memory for AI agents that remembers <em>who said it</em>.</h1>
-      <p class="sub">A local knowledge server for Claude Code, Cursor, Codex and any MCP client. Your agents write as they work; you decide what becomes canon.</p>
+      <p class="sub">A local knowledge server for Claude Code, Cursor and Codex. Agents write, you decide what becomes canon, and each machine checks what it receives.</p>
       <div class="install" id="install">
         <div class="tabs" role="tablist" aria-label="Install method">
           <button type="button" role="tab" id="hero-tab-app" aria-controls="hero-pane-app" aria-selected="true">macOS app</button>
@@ -103,12 +103,13 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>1</b> / 5 write</p>
             <h3>Agents write as they work.</h3>
-            <p>While they code, debug and decide, your agents call <code>observe</code> with a note and whatever structure they have. Each entry keeps which machine wrote it, for whom, from what source and how sure. Entries are never edited, only superseded.</p>
+            <p>While they code, debug and decide, your agents call <code>observe</code> with a note and whatever structure they have. After a commit, Claude Code is asked for the decision behind it, so the why is kept without anyone asking. Each entry keeps its workspace, which machine wrote it, for whom, from what source and how sure. Entries are never edited, only superseded.</p>
             <div class="snip">
               <p class="h">entry 1 <i>append-only</i></p>
+              <span class="k">workspace</span><span>payments-api</span>
               <span class="k">host</span><span>laptop</span>
               <span class="k">for</span><span>you</span>
-              <span class="k">source</span><span>docs/payments.md</span>
+              <span class="k">source</span><span>git:4f2a9c1</span>
               <span class="k">confidence</span><span>0.9</span>
             </div>
             <p class="answers">Answers: <b>who said this?</b></p>
@@ -133,7 +134,7 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>3</b> / 5 govern</p>
             <h3>Disagreements wait for you.</h3>
-            <p>When agents disagree, the conflict is flagged, never quietly settled. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry.</p>
+            <p>When agents give one thing two different types, both stay and the conflict waits for you; nothing in the log is overwritten. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry, and Review can undo it. Once merged, an agent asking about either name reads the one thing.</p>
             <div class="snip review">
               <p class="h">Needs you <i>3</i></p>
               <span>Merge pg into postgres</span><span class="act">Accept</span>
@@ -148,10 +149,11 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>4</b> / 5 recall</p>
             <h3>Any agent can ask, and gets receipts.</h3>
-            <p>Weeks later a different agent searches. Hits come back ranked, and each points to the entries behind it: which machine wrote them, for whom, when, and how far they are trusted.</p>
+            <p>Weeks later a different agent searches. Hits come back ranked, and reading one gives the entries behind it: which machine wrote them, for whom, when, and how far they are trusted.</p>
             <div class="snip">
               <p class="h">search_knowledge "webhook idempotency" <i>hybrid</i></p>
-              <span class="k">hit</span><span>idempotency</span>
+              <span class="k">hits</span><span>idempotency, webhooks, incident-912</span>
+              <p class="h">get_entity idempotency</p>
               <span class="k">said by</span><span>laptop, for you</span>
               <span class="k">entries</span><span>3 and 4</span>
               <span class="k">trust</span><span class="confirmed">human confirmed</span>
@@ -162,10 +164,10 @@
           <article class="step" data-scene="5" id="step-5">
             <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>5</b> / 5 travel</p>
-            <h3>Your other machines get the same memory.</h3>
-            <p>The log syncs through a hub to the machines you choose, one workspace at a time, and is never flattened into merged state. Each machine checks every signature and replays the same graph, your verdicts included. An entry that only claims a person checked it counts for no more than its signature proves.</p>
+            <h3>Your other machine gets the same memory.</h3>
+            <p>A second machine joins a hub with a one-time code: <code>supragnosis invite</code> on the hub, <code>supragnosis join</code> on the machine, and three words to compare. Then the log syncs on its own, one workspace at a time, and is never flattened into merged state. Each machine checks every signature and replays the same graph, verdicts from Review included. An entry that only claims a person checked it counts for no more than its signature proves.</p>
             <div class="snip">
-              <span class="k">laptop</span><span><span class="confirmed">human confirmed</span>, your verdict</span>
+              <span class="k">laptop</span><span><span class="confirmed">human confirmed</span>, in its Review</span>
               <span class="k">desktop</span><span><span class="confirmed">human confirmed</span>, the same verdict</span>
               <span class="k">a bare claim</span><span>host signed at most</span>
               <span class="k">shared</span><span>only the workspaces you allow</span>
@@ -207,12 +209,37 @@
              works) and encode webp into assets/viewer.webp. -->
         <img src="assets/viewer.webp" width="1600" height="900" loading="lazy"
              alt="The live ontology viewer: a force graph of entities and relations,
-                  gold rings on the nodes a person has confirmed and a mark on one
+                  gold rings on the nodes confirmed in Review and a mark on one
                   whose type is contested; node and edge types and the trust legend
                   on the left, the Log of observations on the right, and a status
                   bar counting two items to review and one contested node.">
         <figcaption>A made-up workspace in the desktop app. The viewer is served on an owner-only socket, never a network port.</figcaption>
       </figure>
+    </section>
+
+    <!-- Check it yourself (design-system.md Section 11, step 66): one paste against a store held in
+         memory, so it keeps nothing, and what it prints is said under it. -->
+    <section class="section wrap" id="check" aria-labelledby="check-title">
+      <h2 id="check-title">Check it yourself in a minute.</h2>
+      <p class="lead">With supragnosis and <code>jq</code> installed, paste this into a terminal. It runs a server on a store held in memory, so nothing is kept, and sends it three entries: two that give <code>retry-policy</code> different types, and one that carries AWS's published example access key.</p>
+      <pre class="code" tabindex="0"><code id="check-cmd">{ printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"observe","arguments":{"workspace":"check","content":"retry-policy is a pattern","entities":[{"name":"retry-policy","type":"Pattern"}]}}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"observe","arguments":{"workspace":"check","content":"retry-policy is a setting","entities":[{"name":"retry-policy","type":"Config"}]}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"observe","arguments":{"workspace":"check","content":"deploy key AKIAIOSFODNN7EXAMPLE"}}}'
+  sleep 1
+  printf '%s\n' '{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"supragnosis://workspace/check/graph"}}'
+} | supragnosis serve --store mem --embed none 2&gt;/dev/null | jq -r '
+  if .id == 4 then .result.content[0].text | fromjson | .error | split(". ")[0]
+  elif .id == 5 then .result.contents[0].text | fromjson | .nodes[]
+    | "\(.name): \([.type] + [.competitors[].value] | sort | join(" or ")), contested: \(.contested)"
+  else empty end'</code></pre>
+      <p class="check-copy"><button type="button" class="copy quiet" data-copy="#check-cmd">Copy</button></p>
+      <p>It prints:</p>
+      <pre class="code" tabindex="0"><code>refusing to store this: the content contains something shaped like a credential (aws-access-key-id, at byte 11)
+retry-policy: Config or Pattern, contested: true</code></pre>
+      <p class="note">Both types stay side by side until you pick one in Review, and the key never reaches the log, which is append-only and could not give it back.</p>
     </section>
 
     <section class="section wrap" id="connect" aria-labelledby="connect-title">
@@ -222,6 +249,7 @@
           <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI and OpenCode connect with one command and no token to copy, or with Connect in the app's Settings.</p>
           <pre class="code" tabindex="0"><code>supragnosis connect claude-code
 <span class="c"># or claude-desktop, cursor, vscode, codex, gemini, opencode</span></code></pre>
+          <p class="note">With Claude Code, <code>connect</code> also adds a hook: after a commit the agent made, the agent is asked for the decision behind the change, and each session starts knowing what the project's workspace holds. The hook itself writes nothing.</p>
           <p class="note">Every search hit points back to the entry it came from, at <code>supragnosis://observation/{id}</code>.</p>
         </div>
         <dl class="tools">
@@ -255,19 +283,20 @@
           <h3>Shipped</h3>
           <ul>
             <li>Keyword and semantic search</li>
-            <li>Conflicts flagged, not hidden</li>
+            <li>Type conflicts flagged, not hidden</li>
             <li>Proposals and the Review page</li>
-            <li>Signed sync through a hub</li>
-            <li>Remote servers with per-workspace grants</li>
+            <li>Signed sync through a hub, joined with a one-time code</li>
+            <li>The commit hook for Claude Code</li>
+            <li>Undo for every verdict</li>
             <li>MCP prompts: brief, curate and two more</li>
             <li>The desktop app, Homebrew and an install script</li>
           </ul>
         </div>
         <div>
-          <h3>Next</h3>
+          <h3>Owed, not scheduled</h3>
           <ul>
             <li>Questions about time: "true until last month"</li>
-            <li>Verdicts signed by people, and from teammates</li>
+            <li>Verdicts signed by the person who cast them</li>
             <li>Tracing and recalling a bad source</li>
             <li>Forgetting and consolidation</li>
           </ul>
@@ -277,6 +306,7 @@
           <ul>
             <li>you need Windows or an Intel Mac</li>
             <li>several people cast verdicts on one hub</li>
+            <li>a Mac should sync with a hub on your local network, which macOS keeps its daemon from reaching</li>
           </ul>
         </div>
       </div>
@@ -284,10 +314,10 @@
 
       <h3 class="faq-title">Questions</h3>
       <dl class="faq">
-        <div><dt>Does anything leave my machine?</dt><dd>Only what you share. Sync is off until you add a server, and then it carries only the workspaces you allow.</dd></div>
+        <div><dt>Does anything leave my machine?</dt><dd>Only what you share. Sync is off until this machine joins a hub, and then it carries only the workspaces you allow.</dd></div>
         <div><dt>Do I need an API key or a model?</dt><dd>No. Search uses a local embedding model fetched once (224 MB); until then, keyword search works and says so.</dd></div>
         <div><dt>What if I stop using it?</dt><dd>Your knowledge is a directory, and its log replays into the same graph on any node.</dd></div>
-        <div><dt>How is this different from a notes file?</dt><dd>A notes file keeps what someone wrote. This keeps which machine and person said each thing and whether a person checked it, and shares it with every agent and machine you use.</dd></div>
+        <div><dt>How is this different from a notes file?</dt><dd>A notes file keeps what someone wrote. This keeps which machine and person said each thing and whether it was confirmed in Review, and shares it with every agent and machine you use.</dd></div>
       </dl>
     </section>
 
@@ -380,8 +410,9 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
     // Copy a command; where the clipboard is refused, select it so it can be copied by hand.
     document.querySelectorAll('.copy').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        // Counted, with which command it was, as the Privacy page says (analytics.js).
-        if (window.gtag) window.gtag('event', 'copy_install', { method: btn.dataset.method });
+        // An install command's copy is counted, with which command it was, as the Privacy page says
+        // (analytics.js); the check's is not, since it installs nothing.
+        if (window.gtag && btn.dataset.method) window.gtag('event', 'copy_install', { method: btn.dataset.method });
         var el = document.querySelector(btn.dataset.copy);
         var pick = function () { getSelection().selectAllChildren(el); };
         var done = function () {

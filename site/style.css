@@ -212,6 +212,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0 20px;
 }
 .copy:hover { background: var(--gold-bright); }
+/* a second copy on the page is not its call to action: the check's copy is quiet (step 66) */
+.copy.quiet { color: var(--ink); background: var(--panel-3); padding: 8px 16px; border-radius: var(--r-control); }
+.copy.quiet:hover { background: var(--select); }
+.check-copy { margin: 10px 0 20px; }
 .links {
   display: flex;
   flex-wrap: wrap;

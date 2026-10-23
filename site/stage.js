@@ -464,10 +464,10 @@
       label(ctx, "laptop, for you, 0.9 sure", x - 3, y - 34, C.ink, st.prov);
       label(ctx, "never edited, only superseded", x - 3, y - 19, C.muted, st.prov);
     }
-    // on the receiver the ring came with your verdict, which says where it was cast
+    // on the receiver the ring came with the verdict, which says where it was cast
     if (st.signed > .01 && st.b) {
       const [x, y] = nodeXY(L, camB, "idem", st.b);
-      label(ctx, "confirmed by you, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
+      label(ctx, "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
     }
     // in flight: entries into the log, the log into the graph, answers back, the log across machines
     const hub = P(L, ID, ...L.hubAt);
