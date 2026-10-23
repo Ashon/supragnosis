@@ -53,9 +53,6 @@
        toolbar is --hud-h tall and --hud-w wide - 32-pixel buttons, 44 under a finger - and what
        clears it reads them (Section 29.24). */
     --foot:calc(var(--bar) + 8px); --hud-h:38px; --hud-w:230px;
-    /* The frame's top edge: the header, and on a read tier the banner under it, which the page
-       measures (design-system.md Section 29.31). */
-    --top:49px;
     /* Six corners (Section 3, U22): a window, a surface that floats or groups, a control, an inset
        tag, a mark of data, and a capsule. An inner corner is the outer less the space between. */
     --r-window:16px; --r-surface:12px; --r-control:8px; --r-inset:4px; --r-mark:2px; --r-capsule:999px;
@@ -248,7 +245,7 @@
      inspector at the bottom (whose acts most writes come from). The anatomy and the clock are the app
      pages' too (design-system.md Section 28.4, U42): the kind's icon, the words, one action, a
      28-pixel dismiss. A surface with no edge (U9); an error tints the whole of it, never one side. */
-  #toasts { position:fixed; left:50%; top:calc(var(--top) + 12px); transform:translateX(-50%); z-index:12;
+  #toasts { position:fixed; left:50%; top:61px; transform:translateX(-50%); z-index:12;
             display:grid; gap:8px; width:min(420px, calc(100vw - 32px)); pointer-events:none; }
   /* On the Review page the stack sits at the foot of the list column, so it does not cover the
      selected item's heading; under 760 pixels the page is one column and the stack stays on top. */
@@ -257,22 +254,14 @@
   }
   /* A map preview opened from Review: what it shows and its way back (Section 29.3). At the top
      centre, clear of the camera toolbar and the minimap; the notices hang under it meanwhile. */
-  body.previewing #toasts { top:calc(var(--top) + 64px); }
-  #previewBar { position:fixed; left:50%; top:calc(var(--top) + 12px); transform:translateX(-50%); z-index:12;
+  body.previewing #toasts { top:113px; }
+  #previewBar { position:fixed; left:50%; top:61px; transform:translateX(-50%); z-index:12;
                 display:flex; align-items:center; gap:8px; max-width:calc(100vw - 32px); padding:6px 6px 6px 14px;
                 border-radius:var(--r-surface); background:var(--panel-2); color:var(--ink);
                 box-shadow:0 12px 32px var(--shadow-soft); font:var(--text-body)/1.4 var(--sans); }
   #previewBar[hidden] { display:none; }
   #previewBar .pv-t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   #previewBar .btn { flex:none; min-height:28px; padding:4px 12px; border-radius:var(--r-capsule); }
-  /* On a read tier, under the title bar, the window's full width: which server, as whom, read-only
-     (design-system.md Section 29.31, D1). The preview's surface and capsule; its words wrap. */
-  #tierBar { position:fixed; top:49px; left:0; right:0; z-index:12; display:flex; align-items:center; gap:10px;
-             padding:6px 8px 6px 14px; background:var(--panel-2); color:var(--ink); font:var(--text-body)/1.4 var(--sans); }
-  #tierBar[hidden] { display:none; }
-  #tierBar .tb-t { flex:1; min-width:0; overflow-wrap:anywhere; }
-  #tierBar .tb-ro { white-space:nowrap; }
-  #tierBar .btn { flex:none; min-height:28px; padding:4px 12px; border-radius:var(--r-capsule); }
   .toast { display:flex; gap:10px; align-items:flex-start; padding:8px 6px 8px 12px; border-radius:var(--r-surface);
            background:var(--panel-2); color:var(--ink);
            box-shadow:0 12px 32px var(--shadow-soft); font:var(--text-body)/1.45 var(--sans); pointer-events:auto;
@@ -385,7 +374,7 @@
   body.dr { --win-r:300px; }
   body.sheet { --win-r:360px; }
   /* List (Section 6, U24): the map's window as a table, over the canvas and under the camera toolbar. */
-  #listwin { position:fixed; top:var(--top); bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:4;
+  #listwin { position:fixed; top:49px; bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:4;
              overflow:auto; background:var(--surface); border-radius:var(--r-window); padding:16px 16px 72px; }
   #listwin[hidden] { display:none; }
   body.listing #minimap { display:none !important; }
@@ -410,7 +399,7 @@
     background-color:currentColor; -webkit-mask:var(--i) center / contain no-repeat; mask:var(--i) center / contain no-repeat; }
   .ltable th[aria-sort="ascending"] .lsort::after { --i:url("/icons/lucide-1.52.0/chevron-up.svg"); }
   .ltable th[aria-sort="descending"] .lsort::after { --i:url("/icons/lucide-1.52.0/chevron-down.svg"); }
-  #mapwin { position:fixed; top:var(--top); bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:3;
+  #mapwin { position:fixed; top:49px; bottom:var(--bar); left:var(--win-l); right:var(--win-r); z-index:3;
             pointer-events:none; border-radius:var(--r-window); box-shadow:0 0 0 100vmax var(--panel);
             transition:left .18s ease, right .18s ease; }
   /* The camera is one toolbar at the window's lower right; the minimap, off until View turns it
@@ -441,8 +430,6 @@
   #empty .e-title { color:var(--ink); font-size:var(--text-section); font-weight:600; }
   #empty .e-ws { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:8px; max-width:560px; }
   #empty .e-ws .chip { pointer-events:auto; }
-  /* A hub's reason, which names machines, beneath the sentence that says what to do (Section 29.31). */
-  #empty .e-why { font:var(--text-caption)/1.45 var(--mono); max-width:560px; overflow-wrap:anywhere; }
   /* Layout loader: shown while the simulation is violently rearranging (alpha high). The graph is
      hidden until it settles, so the user sees a calm spinner instead of nodes flying around. */
   #loader { position:fixed; inset:0; display:none; flex-direction:column; align-items:center;
@@ -457,7 +444,7 @@
   button.tog { color:var(--ink2); }
   button.tog.on { color:var(--ink); }
   /* The activity feed's passing rows, inside the map's window at its upper left (Section 6). */
-  #log { position:fixed; left:calc(var(--win-l) + 16px); top:calc(var(--top) + 16px); z-index:6; width:280px; max-width:38vw;
+  #log { position:fixed; left:calc(var(--win-l) + 16px); top:65px; z-index:6; width:280px; max-width:38vw;
          display:flex; flex-direction:column; gap:4px; pointer-events:none; }
   #log .row { background:var(--panel); border-radius:var(--r-control); box-shadow:0 6px 18px var(--shadow-soft);
               padding:5px 10px; font-size:var(--text-small); color:var(--ink2); animation:logfade 8s forwards; }
@@ -470,7 +457,7 @@
      status bar, in place of the Log while a node is focused - at the bottom it covered the part of the
      map being inspected. Header block (name / meta / description) stays put; relations then evidence
      stack and scroll. Part of the frame, like the panels (Section 6): no edge, no shadow. */
-  #detail { position:fixed; top:var(--top); right:0; bottom:var(--bar); width:360px; margin:0;
+  #detail { position:fixed; top:49px; right:0; bottom:var(--bar); width:360px; margin:0;
             z-index:8; overflow:hidden; display:none; background:var(--panel);
             padding:14px 18px 16px; font-size:var(--text-body); color:var(--ink2); }
   #detail.on { display:flex; flex-direction:column; }
@@ -541,7 +528,7 @@
      the header to above the status bar, each opened and closed by its title-bar toggle or [ and ]. */
   /* A panel slides off instead of popping (visibility flips after the transform settles, so a
      hidden panel takes no clicks); the window's edge follows on the same curve. */
-  .dock { position:fixed; top:var(--top); bottom:var(--bar); z-index:7; display:flex; flex-direction:column;
+  .dock { position:fixed; top:49px; bottom:var(--bar); z-index:7; display:flex; flex-direction:column;
           background:var(--panel); padding:8px 16px 16px;
           visibility:hidden; opacity:0;
           transition:transform .18s ease, opacity .18s ease, visibility 0s linear .18s; }
@@ -584,8 +571,6 @@
              max-height:calc(100vh - var(--bar) - var(--hud-h) - 92px); overflow-y:auto; }
   #viewpop.on { display:flex; }
   #viewpop .btns, #keysDlg .btns { display:flex; flex-direction:column; gap:1px; }
-  /* Off the console the Peers switch is not offered (design-system.md Section 29.31). */
-  #viewpop #peersBtn[hidden], #viewpop #dPeers[hidden] { display:none; }
   /* A line under each of View's options that says what it shows (Section 4, U25). */
   #viewpop .vdesc, #keysDlg .vdesc { margin:0 3px 6px; color:var(--muted); font-size:var(--text-small); line-height:1.4; }
   #viewpop .vdesc:empty { display:none; }
@@ -994,7 +979,7 @@
   #kept .kx .i { width:14px; height:14px; }
   /* The Review page (design-system.md Section 7): over the canvas, between the header and the status
      bar - a queue on the left, the selected item on the right. */
-  #reviewPage { position:fixed; top:var(--top); bottom:var(--bar); left:0; right:0; z-index:11; display:grid;
+  #reviewPage { position:fixed; top:49px; bottom:var(--bar); left:0; right:0; z-index:11; display:grid;
                 grid-template-columns:360px minmax(0,1fr); background:var(--panel); font-family:var(--sans); }
   #reviewPage[hidden] { display:none; }
   .rv-queue { display:flex; flex-direction:column; min-height:0; padding:14px 16px; gap:12px; }
@@ -1090,12 +1075,12 @@
     body.dl, body.dr, body.sheet { --win-l:0px; --win-r:0px; }
     /* A floating panel ends above the camera toolbar - the status bar, 16, the toolbar, 8 - so neither
        covers the other, under a finger and at any text size (Section 29.24). */
-    .dock { top:calc(var(--top) + 12px); bottom:auto; max-height:calc(100vh - var(--top) - 12px - var(--bar) - var(--hud-h) - 24px);
-            max-height:calc(100dvh - var(--top) - 12px - var(--bar) - var(--hud-h) - 24px); border-radius:var(--r-surface);
+    .dock { top:61px; bottom:auto; max-height:calc(100vh - 61px - var(--bar) - var(--hud-h) - 24px);
+            max-height:calc(100dvh - 61px - var(--bar) - var(--hud-h) - 24px); border-radius:var(--r-surface);
             box-shadow:0 16px 40px var(--shadow); }
     #dockL { left:12px; }
     #dockR { right:12px; }
-    #detail { top:calc(var(--top) + 12px); right:12px; bottom:calc(var(--bar) + var(--hud-h) + 24px); border-radius:var(--r-surface); box-shadow:0 16px 40px var(--shadow); }
+    #detail { top:61px; right:12px; bottom:calc(var(--bar) + var(--hud-h) + 24px); border-radius:var(--r-surface); box-shadow:0 16px 40px var(--shadow); }
     /* A panel floats over the map's right side here, where the minimap sits: the minimap gives way. */
     body.dr #minimap, body.sheet #minimap { display:none !important; }
   }

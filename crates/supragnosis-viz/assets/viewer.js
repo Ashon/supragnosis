@@ -470,7 +470,7 @@ function zoomAt(sx, sy, f) {
   camT.s = Math.max(scaleFloor(), Math.min(4, camT.s * f));
   camT.x = sx - wx * camT.s; camT.y = sy - wy * camT.s; userMoved = true;
 }
-let TOP_INSET = 49;        // the frame's header (viewer.css), and a read tier's banner - compensated in centering/fit
+const TOP_INSET = 49;      // the frame's header (viewer.css) - compensated in centering/fit
 let BOTTOM_INSET = 28;     // the frame's status bar, which grows with the root's text size
 function readBarHeight() {
   const bar = document.getElementById("statusbar");
@@ -563,7 +563,7 @@ let surfaceNode = null;     // this node's host id on the local console, null el
 // The page's own machine, in words (design-system.md Section 9, D2): "this machine", or the word the
 // app's shell gives - "this Mac" - since the viewer stays browser-neutral; and only on the local
 // console, the one surface whose machine it is. Any other surface names the server.
-function here() { return surfaceNode ? (window.supragnosisHere || "this machine") : serverName(); }
+function here() { return surfaceNode ? (window.supragnosisHere || "this machine") : "this server"; }
 function hereTitle() { const w = here(); return w.charAt(0).toUpperCase() + w.slice(1); }
 let layoutScope = null;     // the storage key the current positions belong to
 let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
@@ -575,71 +575,8 @@ async function loadSurface() {
     if (s && s.surface) surfaceKind = String(s.surface);
     if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
     if (s && s.default_workspace) defaultWs = String(s.default_workspace);
-    surfaceInfo = s && s.surface && s.surface !== "local" ? s : null;
   } catch (_) { /* no surface answer - nothing is remembered */ }
   loadVisit();
-  renderTierBar();
-  // A node's own peers are not a reader's (remote-viewer.md Section 6): no Peers switch on a read
-  // tier. A surface that did not answer leaves the console as it was.
-  if (surfaceInfo) for (const id of ["peersBtn", "dPeers"]) { const el = document.getElementById(id); if (el) el.hidden = true; }
-  surfaceAnswered();
-}
-// Settled once the first surface read has answered, or failed: what waits on knowing the surface.
-let surfaceAnswered = () => {};
-const surfaceReady = new Promise(r => { surfaceAnswered = r; });
-
-// --- The read tier's own words (design-system.md Section 29.31, step 65) ---------------------------
-// What /api/surface said on a read tier: the principal, each grant and whether the hub may serve it,
-// and, through the app's relay, the profile - this machine's name for the server. Null on the console.
-let surfaceInfo = null;
-function tierGrants() { return surfaceInfo && Array.isArray(surfaceInfo.workspaces) ? surfaceInfo.workspaces : null; }
-function serverName() { const p = surfaceInfo && surfaceInfo.profile; return p && p.name ? String(p.name) : "this server"; }
-function unservable(ws) { const g = tierGrants(); const w = g && g.find(x => x.name === ws); return w && w.servable === false ? w : null; }
-// The banner (D1): "home (hub.example:7420) as alice - read-only", and Open Server where the shell
-// gave its address. The frame's top edge moves down by its height, which wraps at a narrow width.
-function renderTierBar() {
-  const bar = document.getElementById("tierBar");
-  if (!bar) return;
-  bar.hidden = !surfaceInfo;
-  if (surfaceInfo) {
-    const p = surfaceInfo.profile || {};
-    let host = "";
-    try { host = p.url ? new URL(String(p.url)).host : ""; } catch (_) { host = ""; }
-    const who = surfaceInfo.principal ? " as " + surfaceInfo.principal : "";
-    // "read-only" stays whole where the words wrap.
-    const ro = document.createElement("span"); ro.className = "tb-ro"; ro.textContent = "read-only";
-    bar.querySelector(".tb-t").replaceChildren((p.name ? String(p.name) : "This server") + (host ? " (" + host + ")" : "") + who + " - ", ro);
-    const go = document.getElementById("tierServer");
-    go.hidden = !window.supragnosisServer;
-    go.onclick = () => { location.href = window.supragnosisServer; };
-  }
-  TOP_INSET = 49 + (surfaceInfo ? bar.offsetHeight : 0);
-  document.documentElement.style.setProperty("--top", TOP_INSET + "px");
-}
-addEventListener("resize", () => { if (surfaceInfo) renderTierBar(); });
-// What the read tier says where the map would be, or null when the map is what it shows (D2): the
-// principal may read nothing; or the scope is a grant the hub may not serve, or All while any is -
-// a union is refused whole, never shown in part (remote-viewer.md V4).
-function tierRefusal(cur) {
-  const grants = tierGrants();
-  if (surfaceKind === "local" || !grants) return null;
-  const name = serverName();
-  if (!grants.length) return { title: (surfaceInfo.principal || "This reader") + " may read nothing on " + name, sub: "Its operator grants workspaces.", why: [] };
-  const all = cur === "*" || cur === "all";
-  const closed = all ? grants.filter(g => g.servable === false) : [unservable(cur || defaultName())].filter(Boolean);
-  if (!closed.length) return null;
-  return {
-    title: name + " may not serve " + closed.map(g => g.name).join(", "),
-    sub: "Its operator can ask the machines that wrote it to share it.",
-    why: closed.map(g => g.name + ": " + (g.reason || "no reason was given")),
-  };
-}
-function showRefusal(r) {
-  const line = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
-  const kids = [line(r.title, "e-title"), line(r.sub, "e-sub"), ...r.why.map(t => line(t, "e-why"))];
-  kids[0].id = "emptyTitle";
-  emptyEl.replaceChildren(...kids);
-  emptyEl.style.display = "flex";
 }
 function loadLayout() {
   storedLayout = null;
@@ -1071,10 +1008,7 @@ async function renderSettings() {
   const host = document.getElementById("settingsBody");
   strip.textContent = "";
   let selected = null;
-  // The Sync tab is a node's own (remote-viewer.md Section 6): not on a read tier.
-  const tabs = SETTINGS_TABS.filter(t => t.id !== "sync" || !surfaceInfo);
-  if (!tabs.some(t => t.id === settingsTab)) settingsTab = tabs[0].id;
-  for (const t of tabs) {
+  for (const t of SETTINGS_TABS) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "stab" + (t.id === settingsTab ? " on" : "");
@@ -1086,7 +1020,7 @@ async function renderSettings() {
   markTabs(strip, [...strip.children], selected);
   host.setAttribute("role", "tabpanel");
   host.textContent = "";
-  const tab = tabs.find(t => t.id === settingsTab) || tabs[0];
+  const tab = SETTINGS_TABS.find(t => t.id === settingsTab) || SETTINGS_TABS[0];
   // The tab owns its own fetch and its own failure, so an unreachable surface empties one tab rather
   // than the dialog.
   await tab.render(host);
@@ -1594,14 +1528,11 @@ function hold(held, url, r) { held.url = url; held.tag = r.headers.get("ETag") |
 async function poll() {
   const ws = wsInput.value.trim();
   const url = "/api/graph" + (ws ? "?workspace=" + encodeURIComponent(ws) : "");
-  // A scope the read tier would refuse is said where the map would be, not asked for (D2).
-  if (tierRefusal(ws)) { heldGraph.url = heldGraph.tag = ""; applyGraph({ nodes: [], edges: [], stats: {} }); return; }
   try {
     const r = await fetch(url, askedWith(heldGraph, url));
     if (r.status === 304) heardBack();
     else {
-      // A refused or failed read says the answer's own reason - the server's error, or the relay's.
-      if (!r.ok) { let why = ""; try { why = (await r.json()).error || ""; } catch (_) { why = ""; } sayLate(why || "the server answered HTTP " + r.status); return; }
+      if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
       const g = await r.json();
       if (g.error) { sayLate(g.error); return; }
       await commonTypesRead;   // answered once, beside the first graph read (Section 29.9)
@@ -1698,13 +1629,9 @@ function syncSearchScope() {
 }
 async function loadWorkspaces() {
   try {
-    // On a read tier the chips are the grants /api/surface lists, holding knowledge or not (D2).
-    let list = tierGrants() && tierGrants().map(g => String(g.name));
-    if (!list) {
-      const r = await fetch("/api/workspaces", { cache: "no-store" });
-      if (!r.ok) return;
-      list = await r.json();
-    }
+    const r = await fetch("/api/workspaces", { cache: "no-store" });
+    if (!r.ok) return;
+    const list = await r.json();
     wsListed = list;
     const cur = currentWs();
     const mk = (label, val, cls) => {
@@ -1725,11 +1652,7 @@ async function loadWorkspaces() {
     // A workspace the address names and the list does not still shows its chip, selected and muted
     // (Section 29.9): the page is in that scope, and nothing is filed under it.
     const unlisted = wsUnlisted(cur) ? [mk(cur, cur, "unlisted")] : [];
-    // A grant the hub may not serve is muted; its reason is shown where the map would be (U25).
-    const muted = (c, w) => { if (unservable(w)) { c.classList.add("unlisted"); c.title = tipText("Not served by " + serverName()); } return c; };
-    // A reader granted nothing has no scope to choose: the refusal where the map would be says so.
-    const none = tierGrants() && !tierGrants().length;
-    const chips = none ? [] : [mk("All", "*"), ...(cur === "" && !named ? [muted(mk(defaultName(), ""), defaultName())] : []), ...list.map(w => muted(mk(w, w), w)), ...unlisted];
+    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk(defaultName(), "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
     const note = [];
     if (openedAll && (cur === "*" || cur === "all")) {
       const n = document.createElement("div"); n.className = "wsnote";
@@ -1755,15 +1678,6 @@ let openedHeld = null;   // { d, t } when it opened on All because the default h
 // workspaces hold entities and the default holds at most half of them. Unread counts keep the default.
 async function decideFirstView() {
   if (!firstView || currentWs() !== "") return;
-  // On a read tier the first view is a grant the hub may serve: the omitted one when it may, else
-  // the first that it may (Section 29.31); All only while every grant is, as the union read decides.
-  if (tierGrants() && unservable(defaultName())) {
-    const servable = tierGrants().filter(g => g.servable !== false).map(g => String(g.name));
-    let held = [];
-    try { const r = await fetch("/api/workspaces", { cache: "no-store" }); if (r.ok) held = await r.json(); } catch (_) { held = []; }
-    const open = servable.find(w => held.includes(w)) || servable[0];
-    if (open) { firstView = false; wsInput.value = open; renderChipsActive(); return; }
-  }
   try {
     const r = await fetch("/api/graph?workspace=*", { cache: "no-store" });
     if (!r.ok) return;
@@ -1782,8 +1696,6 @@ async function anyEntry(ws) {
   return Array.isArray(l) && l.length > 0;
 }
 async function refreshEmpty() {
-  const refused = tierRefusal(currentWs());
-  if (refused) { showRefusal(refused); return; }
   const scopeNow = currentWs();
   if (entriesOf !== scopeNow) wsCountsAt = 0;   // a new scope asks again at once
   if (Date.now() - wsCountsAt > 30000) {
@@ -1822,10 +1734,7 @@ async function refreshEmpty() {
     ? [line("Nothing on the map yet.", "e-title"), line("The entries here name no entity - the Log holds them.", "e-sub")]
     : [...(unknown ? [line("No workspace is called " + cur + ".", "e-title")] : []),
       line("Nothing here yet.", unknown ? "e-sub" : "e-title"),
-      // A reader asks no AI app of the server's (Section 29.31): what is written appears here.
-      surfaceKind !== "local" && surfaceInfo
-        ? line("What is written to " + (cur && cur !== "*" && cur !== "all" ? cur : defaultName()) + " appears here.", "e-sub")
-        : line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
+      line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
   // The camera's idle buttons are described by the map's first sentence.
   kids[0].id = "emptyTitle";
   if (others.length) {
@@ -3955,9 +3864,6 @@ function seedPeers(f) {
 // A hub gathers peers - auto-enter server mode: draw peer cursors and stop the camera from chasing
 // remote hits (the owner can still toggle either). On a client/loopback viewer this is a no-op.
 async function detectServerMode() {
-  await surfaceReady;
-  // A node's own federation is not a reader's: the read tier refuses it, and the page does not ask.
-  if (surfaceInfo) return;
   try {
     const f = await (await fetch("/api/federation", { cache: "no-store" })).json();
     if (!f || f.role !== "hub") return;
