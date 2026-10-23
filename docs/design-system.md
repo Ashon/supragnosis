@@ -1347,16 +1347,30 @@ each beside the principle it summarizes (a log that never forgets, P3; no model 
 is not falsehood, P5; private by default, P17), with a line after them that names the page; and from
 the status section's note. The footer's Principles link moves from the document to the page.
 
-**Six parts**, in this order:
+**Six parts**, in this order *(revised by step 67)*:
 
 | Part | What it does |
 |---|---|
-| Hero and ledger | The heading, a subhead saying that each principle is split into clauses and each clause names its test or says it is owed, and the ledger |
+| Hero | The heading, a subhead saying that each principle is split into clauses and each clause names its test or says it is owed, and the ledger's count with a link to it |
 | Chapter navigation | The six chapters of principles.md, held at the top while the page scrolls |
-| Six chapters | Each chapter's name, a one-line thesis and its part of the ledger, then its principles |
+| Six chapters | Each chapter's name, a one-line thesis and its part of the ledger, then its principles - an index, one row a principle, until one is opened |
 | Tensions | Appendix A's rulings, as a map and a list |
-| How a principle is held | The four evidence states, a rule about change tested as change, and links to the registry and the policy cases |
+| How a principle is held | The ledger, its legend and glossary, the four evidence states, a rule about change tested as change, and links to the registry and the policy cases |
 | Closing | The normative text, what is owed and when (architecture.md Section 14), and the install |
+
+**One principle at a time** *(added by step 67)*. With a script, the chapters are an index: each
+principle is a row of its number, its title and its line, and its title opens it. An opened principle
+(`#pN`) is the only one on the screen, under its chapter's name and thesis, with a bar that says where
+it is ("P3 of 24"), steps to the previous and the next in the document's order, and leads back to its
+chapter in the index; the arrow keys step and Escape goes back, unless a control has the focus. It
+reads in one order whatever its kind: the line, the reason, the animation or demo, the clauses, the
+links. Opening one moves the focus to its title and names it in the window's title. The other parts
+stand below the index and leave the screen while a principle is open. Without a script the page is
+the whole of it, as before, and every anchor still lands where it points. The ledger leaves the hero
+for How a principle is held, where its words - clause, tested, by construction, pinned, owed - are
+defined beside it; the hero keeps its count. Before step 67 a reader passed the ledger, its legend, a
+glossary and the chapters' navigation, about 300 words and 40 stops for the keyboard, before the
+first principle, and the ledger chose P3, whose clauses use words the page never defines.
 
 **The ledger** draws a column for each principle and a block for each of its clauses, stacked from
 the bottom: tested by name, holding by construction, owed with today's behavior pinned, and owed.
@@ -1378,7 +1392,8 @@ whole page.
 
 **On a phone.** Below 900 pixels the ledger is six rows, one per chapter, and pressing a principle
 moves to its block (`#pN`) instead of changing a panel below the screen. Each scene has "Play scene",
-and none plays only because it scrolled into view. A separator such as "/" is drawn by CSS with empty
+and none plays only because it scrolled into view. *(Revised by step 67: one the reader opened plays
+when it first comes into view, since opening it is asking to watch.)* A separator such as "/" is drawn by CSS with empty
 alternative text, so a screen reader does not read it, and "Copied" is announced.
 
 **A principle** is a block with its number, a short title, one line, a reason of a sentence or two,
@@ -6214,3 +6229,18 @@ interaction, and how comparable products present themselves):
 **Order.** This section and Section 11's revisions; then the copy and Check it yourself; then the
 interactions; then the screenshot. Each is its own change. Nothing the page says is main-only: what
 the next minor adds (a write names its workspace) waits for its release before the page says it.
+
+### 29.32 Step 67: the principles, one at a time
+
+**What was found.** The principles page put 111 clauses in front of its first principle, then two
+principles a screen with about eleven parts each, and on a desktop two scenes played at once on half
+its screens. It was 17 screens tall on a desktop and 28 on a phone, and a reader had to parse the
+ledger's vocabulary before meeting one principle in plain words.
+
+**Decisions** (the person's, 2026-10-24, from the recommendations): an index, then one principle at a
+time, rather than a short "start here" path, which would rank principles that principles.md does
+not, or an accordion with no previous and next; and on a phone a principle the reader opened plays.
+
+**Order.** Section 11a's revisions and this section; then the reader in `site/principles.js`, the
+page's markup moved (the ledger into How a principle is held, its markers with it, so the generator
+writes the same regions), and the rules in `site/style.css`.
