@@ -6454,6 +6454,9 @@ impl Engine {
                     }
                 }
             }
+            if next.is_empty() {
+                break; // nothing left to walk, whatever depth was asked for
+            }
             frontier = next.into_iter().collect();
         }
         Ok(out)
