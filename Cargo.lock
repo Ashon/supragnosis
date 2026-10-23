@@ -3937,7 +3937,6 @@ dependencies = [
  "axum",
  "blake3",
  "clap",
- "curve25519-dalek",
  "daemonize",
  "flate2",
  "futures-util",
@@ -4058,7 +4057,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "webpki-roots",
 ]
 
 [[package]]

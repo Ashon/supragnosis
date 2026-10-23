@@ -104,38 +104,6 @@ pub fn certificate_der(pem: &[u8]) -> Result<Vec<u8>, TransportError> {
         .map_err(|e| TransportError::Tls(format!("the certificate is not PEM: {e}")))
 }
 
-/// Whether the certificate chain in `chain_pem` verifies, now, against the root bundle built into
-/// supragnosis for every one of `names` - so a joining machine can check the hub by name and a
-/// renewal breaks nothing (docs/pairing.md Section 3a, D13). An IP address is never checked by
-/// name, and an empty list verifies nothing.
-pub fn verifies_by_name(chain_pem: &[u8], names: &[String]) -> bool {
-    use rustls::client::danger::ServerCertVerifier;
-    use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName, UnixTime};
-    let Ok(chain) = CertificateDer::pem_slice_iter(chain_pem).collect::<Result<Vec<_>, _>>() else {
-        return false;
-    };
-    let Some((leaf, intermediates)) = chain.split_first() else {
-        return false;
-    };
-    let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let Ok(verifier) =
-        rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider)
-            .build()
-    else {
-        return false;
-    };
-    !names.is_empty()
-        && names.iter().all(|n| {
-            n.parse::<std::net::IpAddr>().is_err()
-                && ServerName::try_from(n.as_str()).is_ok_and(|name| {
-                    verifier
-                        .verify_server_cert(leaf, intermediates, &name, &[], UnixTime::now())
-                        .is_ok()
-                })
-        })
-}
-
 #[derive(Debug)]
 struct NamedCertificates {
     pinned: Vec<rustls::pki_types::CertificateDer<'static>>,
@@ -203,37 +171,24 @@ pub const NOT_THE_CODES_HUB: &str = "the certificate is not the one the join cod
 /// Says yes to the DER of the one certificate a pin names.
 pub type AcceptCertificate = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
 
-/// How a joining machine checks the hub before it holds the hub's certificate (docs/pairing.md
-/// Section 4.3): exactly the certificate the code's fingerprint names, from any address - `accept`
-/// says yes to its DER - or the built-in roots and the address's name.
-pub enum JoinTls {
-    Pinned(AcceptCertificate),
-    ByName,
-}
-
-/// The HTTP client a join uses (docs/pairing.md Section 4.3).
-pub fn join_client(check: JoinTls) -> Result<reqwest::Client, TransportError> {
+/// The HTTP client a join uses (docs/pairing.md Section 4.3): it accepts exactly the certificate the
+/// code's fingerprint names, from any address - `accept` says yes to its DER.
+pub fn join_client(accept: AcceptCertificate) -> Result<reqwest::Client, TransportError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     // A first address that drops packets - the LAN one, off the LAN - is given up on quickly, so
     // the next is tried well inside the code's ten minutes.
     let builder = reqwest::Client::builder()
         .timeout(CALL_TIMEOUT)
         .connect_timeout(std::time::Duration::from_secs(5));
-    let builder = match check {
-        JoinTls::ByName => builder,
-        JoinTls::Pinned(accept) => {
-            let provider = Arc::new(rustls::crypto::ring::default_provider());
-            let verifier = Arc::new(PinnedBy { accept, provider: provider.clone() });
-            let tls = rustls::ClientConfig::builder_with_provider(provider)
-                .with_safe_default_protocol_versions()
-                .map_err(|e| TransportError::Tls(e.to_string()))?
-                .dangerous()
-                .with_custom_certificate_verifier(verifier)
-                .with_no_client_auth();
-            builder.use_preconfigured_tls(tls)
-        }
-    };
-    Ok(builder.build()?)
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let verifier = Arc::new(PinnedBy { accept, provider: provider.clone() });
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| TransportError::Tls(e.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth();
+    Ok(builder.use_preconfigured_tls(tls).build()?)
 }
 
 /// Accepts the one certificate a pin names, whatever address presented it; the handshake's

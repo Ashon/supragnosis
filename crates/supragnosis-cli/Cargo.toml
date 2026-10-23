@@ -72,12 +72,10 @@ toml = "1.1"
 toml_edit = "0.25"
 getrandom = "0.4"
 # Pairing (docs/pairing.md Sections 4.1 and 4.3.2): the certificate a hub makes for itself, and the
-# join's seal - X25519 from curve25519-dalek, ChaCha20-Poly1305 from ring. All three are already in
-# the build, through the sync crate's tests, ed25519-dalek and rustls, so these are direct
-# dependencies rather than new compilation units.
+# SHA-256 a code pins it by. Both are already in the build, through the sync crate's tests and
+# rustls, so these are direct dependencies rather than new compilation units.
 rcgen.workspace = true
 ring = "0.17"
-curve25519-dalek = "5"
 
 # Background daemon (start): fork/setsid/pidfile/log redirect. Since unsafe_code=forbid, we do not
 # implement it directly but delegate to a crate (internal unsafe is the dependency crate's concern). unix only.

@@ -1,10 +1,10 @@
 //! The joining machine's side of pairing (docs/pairing.md Sections 4.3, 4.4 and 4.6): `join`, which
-//! reads a hub's code, asks to join, shows the words and writes what the hub's signed answer grants,
-//! and `hub leave`.
+//! reads a hub's code, asks to join, shows the words and writes what the hub's answer grants, and
+//! `hub leave`.
 //!
 //! What a join records beside `supragnosis.toml` lives in `~/.supragnosis/hubs/`, keyed by the hub's
 //! node id (D15): the receive list, what the join added to the sharing lists, and the hub's pinned
-//! certificate. An open join keeps its one-time key there too, so `join` run again with the same
+//! certificate. A request is this machine's node key and name, so `join` run again with the same
 //! code asks as the same request.
 
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ use serde_json::json;
 use supragnosis_core::NodeIdentity;
 
 use crate::invite::JoinRequest;
-use crate::pair::{self, hex, hex32, CertCheck, Code, OneTime};
+use crate::pair::{self, hex, hex32, Code};
 
 /// Where a join keeps its records, and the configuration it edits.
 #[derive(Debug, Clone)]
@@ -37,10 +37,6 @@ impl Paths {
         self.base.join("hubs")
     }
 
-    fn joining(&self) -> PathBuf {
-        self.hubs().join("joining.toml")
-    }
-
     fn sidecar(&self, hub: &str) -> PathBuf {
         self.hubs().join(format!("{hub}.toml"))
     }
@@ -48,28 +44,6 @@ impl Paths {
     fn pem(&self, hub: &str) -> PathBuf {
         self.hubs().join(format!("{hub}.pem"))
     }
-}
-
-/// An open join (Section 4.3.2): the code it belongs to, the one-time key, this machine's nonce, and
-/// the hub's once it has it - written before this machine reveals its own - and what the person
-/// chose, so a join run again after the hub's Allow finishes without asking twice.
-#[derive(Debug, Serialize, Deserialize)]
-struct Joining {
-    invitation: String,
-    expires: u64,
-    onetime: String,
-    nonce: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    hub_nonce: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    chosen: Option<Chosen>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Chosen {
-    hub_name: String,
-    send: Vec<String>,
-    serve: bool,
 }
 
 /// What a join recorded beside `supragnosis.toml` (Section 4.3, D15).
@@ -304,18 +278,13 @@ enum Failure {
     Final(anyhow::Error),
 }
 
-/// The hub at the first of the code's addresses that answers, checked as the code says (Section
-/// 4.3), with its preview.
+/// The hub at the first of the code's addresses that answers with the certificate the code pins
+/// (Section 4.3), with its preview.
 async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Value)> {
-    use supragnosis_sync::http::{join_client, JoinTls, NOT_THE_CODES_HUB};
-    let client = match &code.check {
-        CertCheck::Fingerprint(pin) => {
-            let pin = *pin;
-            join_client(JoinTls::Pinned(Arc::new(move |der| pair::sha256(der) == pin)))?
-        }
-        CertCheck::ByName => join_client(JoinTls::ByName)?,
-    };
-    let (mut other_certificate, mut not_by_name) = (Vec::new(), Vec::new());
+    use supragnosis_sync::http::{join_client, NOT_THE_CODES_HUB};
+    let pin = code.fingerprint;
+    let client = join_client(Arc::new(move |der| pair::sha256(der) == pin))?;
+    let mut other_certificate = Vec::new();
     let mut no_route = false;
     for address in &code.addresses {
         let sent = client
@@ -332,9 +301,6 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
             Err(e) if format!("{e:?}").contains(NOT_THE_CODES_HUB) => {
                 other_certificate.push(address.clone())
             }
-            Err(e) if format!("{e:?}").contains("InvalidCertificate") => {
-                not_by_name.push(address.clone())
-            }
             Err(e) => {
                 let why = chain(&e);
                 no_route |= why.contains("os error 65") || why.contains("No route to host");
@@ -346,14 +312,6 @@ async fn reach(code: &Code) -> Result<(String, reqwest::Client, serde_json::Valu
         anyhow::bail!(
             "This is not the machine that made the code: {} presented another certificate.",
             other_certificate.join(", ")
-        );
-    }
-    if !not_by_name.is_empty() {
-        anyhow::bail!(
-            "The certificate at {} does not verify for its name against the roots built into \
-             supragnosis, as the code says it should. This is not the machine that made the code, \
-             or its certificate changed - make a new code on the hub.",
-            not_by_name.join(", ")
         );
     }
     let port = code.addresses.first().map(|a| crate::invite::port_of(a)).unwrap_or(7420);
@@ -412,8 +370,8 @@ fn pinned_block(pem: &str, pin: &[u8; 32]) -> Option<String> {
 const SLACK: u64 = 60;
 
 /// `join` (Section 4.3): asks the hub the code names to admit this machine, shows the words while it
-/// waits for the hub's Allow, and on its signed answer writes what it grants. The person's ticks
-/// count only where the answer agrees.
+/// waits for the hub's Allow, and writes what the answer grants. The person's ticks count only where
+/// the answer agrees.
 pub async fn join(
     paths: &Paths,
     me: &NodeIdentity,
@@ -422,72 +380,43 @@ pub async fn join(
     person: &mut dyn Person,
     poll: Duration,
 ) -> Result<Joined> {
-    let invitation = pair::secret_hash(&code.secret);
-    let kept = read_toml::<Joining>(&paths.joining())?;
     if code.expires <= crate::invite::now() {
-        // The open join's one-time key goes with its code.
-        if kept.as_ref().is_some_and(|j| j.invitation == invitation) {
-            let _ = std::fs::remove_file(paths.joining());
-        }
         anyhow::bail!("This code has expired. Make a new code on the hub.");
     }
     may_join(paths)?;
     crate::private_dir(&paths.hubs())?;
-    let mut open = match kept {
-        Some(j) if j.invitation == invitation => j,
-        _ => Joining {
-            invitation,
-            expires: code.expires,
-            onetime: hex(&pair::random32()?),
-            nonce: hex(&pair::random32()?),
-            hub_nonce: None,
-            chosen: None,
-        },
-    };
-    write_toml(&paths.joining(), &open)?;
-    let end = |why: String| -> anyhow::Error {
-        let _ = std::fs::remove_file(paths.joining());
-        anyhow::anyhow!(why)
-    };
-    let onetime = OneTime::from_secret(hex32(&open.onetime).context("the kept one-time key")?);
-    let nonce = hex32(&open.nonce).context("the kept nonce")?;
     let node_key = hex32(&me.public_key_hex()).context("this machine's key")?;
-    let commitment = pair::commitment(&node_key, &onetime.public(), &nonce);
-
     let (address, client, preview) = reach(code).await?;
-    // A join run again keeps what the person chose: the hub may have allowed it since, and then its
-    // preview says the code is used while the answer waits for this request.
-    let chosen = match open.chosen.clone() {
-        Some(kept) => kept,
-        None => {
-            if preview["state"] != "open" {
-                return Err(end(said(&preview)));
-            }
+    // An open invitation: the person chooses, then this machine asks. A join run again after the
+    // hub's Allow finds the code used, and asks for its answer first and the person after it.
+    let mut chosen = None;
+    match preview["state"].as_str() {
+        Some("open") => {
             let hub_name = preview["hub_name"].as_str().unwrap_or("the hub").to_string();
             let offered: Vec<String> = serde_json::from_value(preview["workspaces"].clone())?;
             let serves = preview["serves_principals"] == true;
             let choices = person.preview(&hub_name, &offered, serves)?;
-            let kept = Chosen { hub_name, send: choices.send, serve: choices.serve };
-            open.chosen = Some(kept.clone());
-            write_toml(&paths.joining(), &open)?;
-            kept
+            chosen = Some((hub_name, choices));
         }
-    };
-    let (hub_name, choices) = (chosen.hub_name, Choices { send: chosen.send, serve: chosen.serve });
+        Some("used") => {}
+        _ => anyhow::bail!(said(&preview)),
+    }
     let url = format!("https://{address}");
-    let ask = |reveal: bool| JoinRequest {
+    let invitation = pair::secret_hash_bytes(&code.secret);
+    let req = JoinRequest {
         secret: hex(&code.secret),
         node_key: me.public_key_hex(),
         name: name.to_string(),
-        onetime_key: hex(&onetime.public()),
-        commitment: hex(&commitment),
-        nonce: reveal.then(|| hex(&nonce)),
+        proof: me.sign_message(
+            pair::REQUEST_CONTEXT,
+            &pair::request_bytes(&invitation, &node_key, name),
+        ),
     };
     let deadline = code.expires + SLACK;
     // One call to the hub, asked again while the connection fails and the code is good: the hub
     // keeps a request and its answer until then. An answer it gives is never asked again.
-    let call = |reveal: bool| {
-        let (client, url, req) = (client.clone(), format!("{url}/pair/join"), ask(reveal));
+    let call = || {
+        let (client, url, req) = (client.clone(), format!("{url}/pair/join"), req.clone());
         async move {
             loop {
                 let failure = match client.post(&url).json(&req).send().await {
@@ -511,98 +440,50 @@ pub async fn join(
             }
         }
     };
-    // The hub's nonce is kept before this machine reveals its own (Section 4.3.2).
-    let hub_nonce = match open.hub_nonce.clone() {
-        Some(kept) => kept,
-        None => {
-            let first = call(false)
-                .await
-                .map_err(|e| end(format!("The hub stopped answering: {e:#}")))?;
-            if first["state"] != "pending" {
-                return Err(end(said(&first)));
-            }
-            let theirs = first["hub_nonce"]
-                .as_str()
-                .filter(|n| hex32(n).is_some())
-                .context("the hub sent no usable nonce")?
-                .to_string();
-            open.hub_nonce = Some(theirs.clone());
-            write_toml(&paths.joining(), &open)?;
-            theirs
-        }
-    };
-    let words = pair::words(
-        &code.secret,
-        &node_key,
-        &onetime.public(),
-        &nonce,
-        &hex32(&hub_nonce).context("the kept hub nonce")?,
-    );
+    let words = pair::words(&code.secret, &node_key);
     let mut shown = false;
     let answer = loop {
         let reply =
-            call(true).await.map_err(|e| end(format!("The hub stopped answering: {e:#}")))?;
+            call().await.map_err(|e| anyhow::anyhow!("The hub stopped answering: {e:#}"))?;
         match reply["state"].as_str() {
             Some("pending") => {
-                if reply["hub_nonce"].as_str() != Some(hub_nonce.as_str()) {
-                    return Err(end(
-                        "The hub's answer changed during the join, so this join stops. Make a \
-                         new code on the hub."
-                            .into(),
-                    ));
-                }
                 if crate::invite::now() > deadline {
-                    return Err(end(
+                    anyhow::bail!(
                         "The hub did not answer before the code expired. Make a new code on the \
                          hub."
-                            .into(),
-                    ));
+                    );
                 }
                 if !shown {
-                    person.words(&hub_name, &words);
+                    let hub = chosen.as_ref().map_or("the hub", |(h, _)| h.as_str());
+                    person.words(hub, &words);
                     shown = true;
                 }
                 tokio::time::sleep(poll).await;
             }
             Some("allowed") => break reply["answer"].clone(),
-            _ => return Err(end(said(&reply))),
+            _ => anyhow::bail!(said(&reply)),
         }
     };
-    let signed: pair::SignedAnswer =
-        serde_json::from_value(answer).map_err(|e| end(format!("the hub's answer: {e}")))?;
-    let expect = pair::Expected {
-        code,
-        joining_node: &me.node_id(),
-        onetime_key: &onetime.public(),
-        joiner_nonce: &nonce,
-        hub_nonce: &hex32(&hub_nonce).unwrap_or_default(),
+    let body: pair::AnswerBody =
+        serde_json::from_value(answer).context("the hub's answer does not parse")?;
+    pair::check_answer(code, &body)?;
+    let choices = match chosen {
+        Some((_, choices)) => choices,
+        None => person.preview(&body.hub_name, &body.workspaces, body.serves_principals)?,
     };
-    let body = pair::verify_answer(&expect, &signed).map_err(|e| end(format!("{e:#}")))?;
     let vouched = accept_vouched(&body.vouched, &me.node_id(), &code.hub);
-    let credential =
-        String::from_utf8(onetime.open(&body.credential).map_err(|e| end(format!("{e:#}")))?)
-            .map_err(|_| end("the credential is not text".into()))?;
-    // Ticks count only where the signed answer agrees, since the preview is not signed.
+    let credential = body.credential.clone();
+    // Ticks count only where the answer agrees: the preview was read before the person was asked.
     let send: Vec<String> =
         choices.send.into_iter().filter(|w| body.workspaces.contains(w)).collect();
     let serve = choices.serve && body.serves_principals;
     let hub = code.hub.clone();
-    // A pinned hub is trusted as the one certificate the code names; one checked by name stays
-    // checked by name, so a renewal breaks nothing (D13).
-    let ca = match (&code.check, &body.certificate) {
-        (CertCheck::Fingerprint(pin), Some(pem)) => {
-            let one = pinned_block(pem, pin).ok_or_else(|| {
-                end("the answer's certificate is not the one the code names".into())
-            })?;
-            let path = paths.pem(&hub);
-            crate::write_secret(&path, one.as_bytes())?;
-            Some(path.display().to_string())
-        }
-        (CertCheck::Fingerprint(_), None) => {
-            return Err(end("the answer carries no certificate".into()));
-        }
-        (CertCheck::ByName, _) => None,
-    };
+    // The hub is trusted as the one certificate the code names (D13).
+    let one = pinned_block(&body.certificate, &code.fingerprint)
+        .context("the answer's certificate is not the one the code names")?;
+    let pem_path = paths.pem(&hub);
+    crate::write_secret(&pem_path, one.as_bytes())?;
+    let ca = pem_path.display().to_string();
     // The file holds the credential from here on: owner-only before the edit, so the copy the edit
     // writes is too.
     if paths.config.exists() {
@@ -611,7 +492,7 @@ pub async fn join(
     let write = JoinWrite {
         url: &url,
         credential: &credential,
-        ca: ca.as_deref(),
+        ca: Some(&ca),
         hub: &hub,
         hub_key: &body.hub_key,
         send: &send,
@@ -638,7 +519,6 @@ pub async fn join(
             vouched: vouched.clone(),
         },
     )?;
-    let _ = std::fs::remove_file(paths.joining());
     tracing::info!(hub = %hub, url = %url, "joined a hub");
     Ok(Joined {
         hub_name: body.hub_name,
@@ -724,6 +604,7 @@ pub fn joined(paths: &Paths) -> Result<Vec<(String, Sidecar)>> {
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
             continue;
         };
+        // `joining.toml` is an open join's, as v0.10.0 kept it, and no hub's.
         if path.extension().and_then(|e| e.to_str()) != Some("toml") || stem == "joining" {
             continue;
         }
@@ -931,7 +812,7 @@ mod tests {
             .invite(
                 workspaces.iter().map(|w| w.to_string()).collect(),
                 vec![format!("127.0.0.1:{port}")],
-                CertCheck::Fingerprint(pair::sha256(&der)),
+                pair::sha256(&der),
                 invite::now(),
             )
             .unwrap();
@@ -1068,7 +949,6 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&m.paths.config).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "the file holding the credential is owner-only");
-        assert!(!m.paths.joining().exists(), "the open join is gone");
         let sidecar = std::fs::read_to_string(m.paths.sidecar(&code.hub)).unwrap();
         let fc = crate::fed::load_at(&m.paths.config).unwrap().unwrap();
         assert!(
@@ -1107,25 +987,18 @@ mod tests {
         assert!(client.ping().await.is_err(), "another certificate is refused after the join");
     }
 
-    /// A code whose pin is not the certificate the address presents ends there, said as such; one
-    /// that says "by name" refuses a certificate that does not verify against the built-in roots; and
+    /// A code whose pin is not the certificate the address presents ends there, said as such, and
     /// a machine that already syncs with a hub, or admits one, does not join (PA3, PA9).
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_join_refuses_another_certificate_and_a_chain() {
+    async fn a_join_refuses_another_certificate() {
         let hub = Hub::new("join-cert");
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("cert", 22);
         let mut person = Scripted::new(&[], false);
-        let wrong = Code { check: CertCheck::Fingerprint([7; 32]), ..code.clone() };
+        let wrong = Code { fingerprint: [7; 32], ..code.clone() };
         let e = m.join(&wrong, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("not the machine that made the code"), "{e}");
-        let by_name = Code { check: CertCheck::ByName, ..code.clone() };
-        let e = m.join(&by_name, &mut person).await.unwrap_err().to_string();
-        assert!(
-            e.contains("does not verify for its name"),
-            "a self-made certificate is not one by name: {e}"
-        );
         let expired = Code { expires: invite::now() - 1, ..code.clone() };
         let e = m.join(&expired, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("expired"), "{e}");
@@ -1154,46 +1027,30 @@ mod tests {
     }
 
     /// `join` run again with the same code asks as the same request - the invitation stays open -
-    /// and finishes with an answer the hub gave while it was not running; a hub nonce other than
-    /// the one kept ends the join (Section 4.3.2).
+    /// and finishes with an answer the hub gave while it was not running, asking the person after
+    /// it (Section 4.3).
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_join_run_again_is_the_same_request_and_a_changed_nonce_ends_it() {
+    async fn a_join_run_again_is_the_same_request() {
         let hub = Hub::new("join-again");
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("again", 23);
-        // A first run that stopped after the hub answered "pending" with its nonce.
-        let first = Joining {
-            invitation: pair::secret_hash(&code.secret),
-            expires: code.expires,
-            onetime: hex(&pair::random32().unwrap()),
-            nonce: hex(&pair::random32().unwrap()),
-            hub_nonce: Some(hex(&[9; 32])),
-            chosen: None,
-        };
-        crate::private_dir(&m.paths.hubs()).unwrap();
-        write_toml(&m.paths.joining(), &first).unwrap();
-        // The hub never sent that nonce: the request it holds is not this one, so the join ends.
-        let e = m.join(&code, &mut Scripted::new(&[], false)).await.unwrap_err().to_string();
-        assert!(e.contains("Make a new code"), "{e}");
-        assert!(!m.paths.joining().exists(), "an ended join leaves nothing to reuse");
-
-        // A run that stops before Allow and runs again keeps the request, and joins.
-        let code = invite_at(&listener.pairing, port, &["acme"]);
         until_words(&m, &code, &mut Scripted::new(&[], false)).await;
-        let kept: Joining = read_toml(&m.paths.joining()).unwrap().expect("kept");
-        assert!(kept.hub_nonce.is_some() && kept.chosen.is_some());
+        let mut second = Scripted::new(&[], false);
+        until_words(&m, &code, &mut second).await;
+        assert_eq!(second.words.len(), 3, "the same request, still pending");
         // Allowed on the hub while no `join` ran; the next run finds the answer waiting.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
-        let mut again = Scripted::new(&[], false);
-        m.join(&code, &mut again).await.expect("the same request, allowed");
-        assert!(again.offered.is_empty(), "nothing was asked twice");
+        let mut again = Scripted::new(&["acme"], false);
+        let joined = m.join(&code, &mut again).await.expect("the same request, allowed");
+        assert_eq!(again.offered, vec!["acme".to_string()], "asked after the answer");
+        assert_eq!(joined.sent, vec!["acme".to_string()]);
     }
 
-    /// An answer whose signature does not verify under the key the code names is not acted on:
-    /// nothing is written, and the join ends (PA14).
+    /// An answer whose hub key is not the one the code names is not acted on: nothing is written,
+    /// and the join ends (PA14).
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_tampered_answer_writes_nothing() {
+    async fn an_answer_from_another_hub_writes_nothing() {
         let hub = Hub::new("join-tamper");
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
@@ -1201,16 +1058,16 @@ mod tests {
         let before = m.config();
         let mut person = Scripted::new(&["acme"], false);
         until_words(&m, &code, &mut person).await;
-        // Allowed, and the kept answer's signature bent: the right length, the wrong bytes.
+        // Allowed, and the kept answer's hub key swapped for another machine's.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
         let invites = hub.paths.hub.join("invites.toml");
         let text = std::fs::read_to_string(&invites).unwrap();
-        let at = text.find("signature = \"").unwrap() + 13;
-        let mut bent = text.clone();
-        bent.replace_range(at..at + 2, if &text[at..at + 2] == "00" { "01" } else { "00" });
-        crate::write_secret(&invites, bent.as_bytes()).unwrap();
+        let hub_key = NodeIdentity::from_secret_bytes(HUB_SECRET).public_key_hex();
+        let other = NodeIdentity::from_secret_bytes([99; 32]).public_key_hex();
+        assert!(text.contains(&hub_key), "the answer is kept");
+        crate::write_secret(&invites, text.replace(&hub_key, &other).as_bytes()).unwrap();
         let e = m.join(&code, &mut person).await.unwrap_err().to_string();
-        assert!(e.contains("signature does not verify"), "{e}");
+        assert!(e.contains("not from the hub the code names"), "{e}");
         assert_eq!(m.config(), before, "nothing was written");
         assert!(joined(&m.paths).unwrap().is_empty());
     }
