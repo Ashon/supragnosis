@@ -157,9 +157,12 @@ pub fn active(home: &Path, env: impl Fn(&str) -> Option<String>) -> Result<Targe
                     client_path(home).display()
                 )
             })?;
+            // Checked again on every read, not only when `server add` wrote it: a hand-edited
+            // `http://` address to another machine would send the credential in the clear (R8).
+            let url = normalize_url(&e.url).map_err(|why| format!("profile {name:?}: {why}"))?;
             Ok(Target::Remote {
                 name: name.to_string(),
-                url: e.url.clone(),
+                url,
                 ca: e.ca.as_ref().map(PathBuf::from),
                 token_file: PathBuf::from(&e.token_file),
             })
@@ -184,6 +187,30 @@ mod tests {
         assert_eq!(normalize_url("http://127.0.0.1:17420").unwrap(), "http://127.0.0.1:17420/mcp");
         assert!(normalize_url("http://hub.example:7420").unwrap_err().contains("unencrypted"));
         assert!(normalize_url("ftp://hub.example").is_err());
+
+        // The same rule for a profile written by hand, which `server add` never checked: the
+        // active profile is refused rather than sent the credential in the clear.
+        let home = std::env::temp_dir().join(format!("sg-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".supragnosis")).unwrap();
+        let none = |_: &str| None;
+        for (url, ok) in
+            [("http://hub.example:7420/mcp", false), ("https://hub.example:7420", true)]
+        {
+            let toml = format!(
+                "active = \"home\"\n[servers.home]\nurl = \"{url}\"\ntoken_file = \"/t\"\n"
+            );
+            std::fs::write(client_path(&home), toml).unwrap();
+            match active(&home, none) {
+                Ok(Target::Remote { url, .. }) => {
+                    assert!(ok, "{url} was let through");
+                    assert_eq!(url, "https://hub.example:7420/mcp");
+                }
+                Err(why) => assert!(!ok && why.contains("unencrypted"), "{why}"),
+                Ok(other) => panic!("{other:?}"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
