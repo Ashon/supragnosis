@@ -37,7 +37,8 @@
 > the camera, is built, and so is step 59, Un-merge opens what it proposed. Step 60, a person can
 > demote a claim, is built. Step 61, the band says what it held back, is built. Step 62, the
 > ladder says what it held back, is built. Step 63, the window's pages get only what they use, is
-> built. Step 64, a pinch zooms as far as the fingers spread, is built.
+> built. Step 64, a pinch zooms as far as the fingers spread, is built. Step 65, the window shows a
+> remote server, is built.
 
 ## 1. Why this exists
 
@@ -2037,6 +2038,11 @@ and it fails when one of them appears in the viewer's source other than as an ar
 64. **A pinch zooms as far as the fingers spread** [built] (Section 29.30; step 52's rule carried to
    the trackpad): a trackpad pinch scales the map with the fingers, 1:1 around the pointer, as a
    touch screen's pinch already does, and the mouse wheel keeps its step of 12% a notch.
+65. **The window shows a remote server** [built] (Section 29.31; remote-viewer.md Section 10 step 3, D1-D3):
+   on a remote profile the shell runs the viewer relay and shows the hub's page, under a banner that
+   names the server and the principal and says read-only; each failure is its own page; a grant the
+   hub may not serve is a muted chip whose reason is shown where the map would be; and the window
+   goes nowhere but its own pages.
 
 Steps 18 and 19 change the landing's stylesheet and step 22 is the site's own, so like step 16 they
 merge on the author's word, right before the release that carries steps 17-21 and 23.
@@ -6144,3 +6150,175 @@ handler keeps the notch step, a `ctrlKey` wheel scales by the delta through the 
 move and is not taken during a gesture, and the gesture events scale by the ratio and prevent the
 page's own zoom. A browser check sends ten small `ctrlKey` wheel events and a gesture through the
 viewer and reads the camera's scale.
+
+
+### 29.31 Step 65: the window shows a remote server
+
+**What was found.** remote-viewer.md Section 10 step 3, with steps 1 and 2 built: the hub serves its
+read tier at `/viz/`, and `supragnosis bridge --viewer` relays it to a unix socket. On a remote
+profile the window still shows one placeholder for every state. It says which server the AI apps
+use, and that browsing it arrives later. It reloads itself every 30 seconds, and no test pins it
+(remote-viewer.md V8, deferred). The page, read against the tier it would be shown on:
+
+- Nothing names the server or the principal. Nothing says the view is read-only until a refused
+  act's notice does, and the page calls the server "this server".
+- The Peers switch is offered on the read tier, and so is the Sync tab of the viewer's own settings
+  dialog. The dialog is reachable where no shell takes the gear over. Its Sync tab reads
+  `/api/federation`, which the tier refuses, and draws the 403 as a node called "This server" with
+  an empty id, a spoke.
+- `/api/surface` gives each grant, with whether the hub may serve it and why not, and the page reads
+  none of it:
+  - An unservable grant is a plain chip.
+  - Choosing it, or All while any grant is unservable, says only "the server answered HTTP 403",
+    and the reason is dropped.
+  - The first view can land on such a grant: the hub's `default_workspace` is the first grant,
+    servable or not.
+- A principal who may read nothing gets an empty map and the same "HTTP 403".
+- The shell waits 15 seconds for an answer through its proxy, where the relay waits 70 and the hub
+  60. Its event bridge splits the stream on blank lines, which the relay sends chunked.
+
+**Decisions.** The author took the recommended option of each, 2026-10-23:
+
+- **D1 - where the window says what it shows.** A strip under the title bar, the window's full
+  width, in the form of the map preview's banner (Section 29.3). It does not close, because the
+  state it names lasts as long as the profile. It reads "home (hub.example:7420) as alice -
+  read-only", with Open Server.
+  - Rejected: a pill in the status bar, which says less, where the eye goes last.
+  - Rejected: the server's name in the title, which would make the title name two things (U26).
+- **D2 - a grant the hub may not serve.** Its chip is shown muted, as an unlisted workspace's is.
+  Choosing it shows the hub's reason where the map would be. While any grant is unservable, All says
+  the same of each, since a union is refused whole rather than shown in part (remote-viewer.md V4).
+  - Rejected: leaving the chip out, which reads as "you were granted nothing there" (P5).
+  - The chip's hover says only "Not served by home". The reason is a sentence that names nodes, so
+    it is shown where it can be read in full (U25, Section 10).
+- **D3 - a failure page's acts.** What happened, what to do, Retry, and Open Server. The page offers
+  no way back to this Mac's daemon: switching the server changes the server every AI app here uses,
+  and Settings > Server is where that is done and said. The labels are the ones these acts already
+  have (Section 29.5's Open This Mac, the late notice's Retry).
+
+**The check.**
+
+| Rule | What it asks | Standing |
+|---|---|---|
+| remote-viewer.md Section 6, V8 | Each failure on a remote profile is said, never shown as an empty graph | repays - for a hub at this release or later; see below for an older hub |
+| remote-viewer.md Section 6 | The page offers nothing the tier refuses, and names the server and the principal | repays - the Peers switch and the dialog's Sync tab were offered, and nothing named either |
+| remote-viewer.md Section 7 | The hub serves the page, so the page is the hub's version | agrees, with a cost - the banner, the chips and the empty states are the page's, and a hub older than this release shows its own page without them; the relay, the failure pages and the window's guard are the shell's and hold for any hub |
+| P5 | Unknown is not absent | agrees - an unservable grant is shown with its reason, and a principal who may read nothing is told so, not shown an empty map |
+| P17 | A reader sees what they were granted; a node's own knowledge is its own | agrees - the page shows what `/api/surface` and the grants say, the banner names the principal to that principal, and the hub's page lives at an origin apart from the console's, so it reads nothing this Mac's console keeps |
+| P24 | Degrade loudly; be loud where it is read | agrees - each failure says what happened and what to do, and a refused read says the server's reason instead of its status |
+| Section 29.5, WCAG 2.2.1 and 3.2.5 | A starting page has no timer, and the window does not change under the person | repays - the remote placeholder reloaded itself every 30 seconds; the failure pages are checked by the shell and change only when the state does |
+| Section 29.21 | The first view is where the knowledge is | agrees - on the read tier it is a grant the hub may serve; All only while every grant is |
+| Section 6 and U8 | A pill's absence means one thing; "the read tier's banner already says why" | agrees - this is that banner; no pill is added, and the review and sync pills stay absent |
+| U25 and Section 10 | A tooltip is at most five words with nothing to act on; cut text is never only in a tooltip | agrees - a chip's hover is "Not served by home", and the reason is shown in full where the map would be |
+| U26 | The title bar names the place on screen | agrees - the banner is under the title bar, not in it |
+| U42 | A notice's anatomy, and its leaving | agrees - the banner is not a notice: it names a lasting state and does not leave |
+| Section 9 and Section 29.6 | One name for one thing; Supragnosis in a sentence; ids in footers | agrees - "read-only" and "refused" as the page and the tray say them, and the hub's reason, which names nodes, under the sentence that says what to do |
+| Section 29.29 (step 63) | A hub's page in the app is not trusted with the app's surfaces | agrees, and carried on - the window goes only to the viewer's address and the app's own pages, and on a remote profile no page can ask Settings for an act |
+| settings-page.md S1 | The app's commands answer only the app's own pages | agrees - unchanged; and Settings' `?act=` no longer runs while the viewer's address may be a hub's page |
+| Section 29.18 | The page holds at 390 pixels | agrees - the banner's words wrap and its button stays whole |
+
+No row needs a principle changed.
+
+**Behaviour.**
+- **The relay's life.** On a remote profile the shell starts `supragnosis bridge --viewer
+  ~/.supragnosis/remote-viz.sock`. It holds the relay's stdin, keeps the last lines the relay wrote
+  to stderr, and points the `viz://` proxy and the event bridge at that socket.
+  - The relay is started again whenever the active profile's name, address or CA changes, whether
+    Settings or the CLI changed it. The shell closes the old relay's stdin, waits up to three
+    seconds for it to end, and stops it if it has not. A server list the CLI could not give changes
+    nothing: it is not "this Mac".
+  - **The hub's page has an origin of its own**, `remote://localhost/`, apart from the console's
+    `viz://localhost/`. A hub's script then reads nothing the console keeps in the page's storage -
+    the layouts it remembers, the last visit, the view - and its reads reach nothing but the relay.
+    The window goes to the origin the profile shows; an address of the other one goes there.
+  - A switch to this Mac stops the relay and points both back at the daemon's socket.
+  - The page reloads on every switch. Quitting the app closes the pipe, so the relay ends with it.
+- **While it starts**, the window says "Connecting to home...". A relay that ends on its own within
+  30 seconds of starting is "The connection to home could not start", with the last words it
+  wrote. It may end because a CA file cannot be read, the profile URL does not end in `/mcp`, or
+  the CLI is too old for `--viewer`. One that ends after running longer broke rather than failed,
+  and the next read starts it again once.
+- **The failure pages** are in the starting page's form (Section 29.5), each with Retry and Open
+  Server:
+  - `unreachable`: "home is not answering", and the relay's detail: nothing accepted the
+    connection, the certificate did not verify, or no answer came.
+  - `credential_refused`: "home refused this Mac's credential". It may have been revoked or
+    replaced. Its operator can issue another, and Open Server is where the server is removed and
+    added again with it. The file it was read from is named; its contents never are.
+  - `too_old`: "home runs Supragnosis older than 0.4.7, which has no viewer to show". Its operator
+    can upgrade it, and the AI apps here still use it.
+
+  While one is shown the shell asks the relay again every two seconds, and the window changes only
+  when the state does. Retry loads the window again at once. A relay that could not start is
+  started again only by Retry or a change of profile, never in a loop. A page of a state is drawn
+  only for an answer the relay marked as one (remote-viewer.md Section 5): a hub that answers with
+  a `state` of its own draws no page of the shell's. The tray is unchanged by these states. It says
+  whether the server the AI apps use answers them, and a hub too old for a viewer still does.
+- **A state in the middle of a visit** - a credential revoked, a hub gone - reaches the page's poll,
+  which says it in the late notice with Retry, as for any read that fails. The window does not turn
+  to a failure page under the person. The relay gives each state an `error` sentence for this.
+- **The proxy's wait** on a remote profile is 75 seconds, past the relay's 70. The event bridge
+  reads a chunked stream, lets go of one whose framing breaks, and asks again 15 seconds after a
+  stream the hub does not give, rather than every second.
+- **The banner** (D1): "<profile> (<host>) as <principal> - read-only", the host as the profile's
+  address writes it, with its port. Open Server opens Settings at Server. The page offers the button
+  only where the shell gave it the address, as it offers Setup (Section 29.10): the shell sets
+  `window.supragnosisServer`.
+- **The server's name.** Where the page names the server, as in "a person at home", it uses the
+  profile's name. It says "this server" only where no profile is given.
+- **The chips** (D2). On the read tier the chips are the grants `/api/surface` lists, holding
+  knowledge or not.
+  - A grant the hub may not serve is muted, and its hover says "Not served by home".
+  - Choosing it shows "home may not serve docs" where the map would be, under it "Its operator can
+    ask the machines that wrote it to share it", and the hub's reason beneath in the footer's face.
+  - While any grant is unservable, All says the same of each.
+  - A granted workspace that holds nothing yet says "Nothing here yet." with "What is written to
+    docs appears here." under it. The local console's advice to ask an AI app is not given there.
+- **The first view** on the read tier is the omitted workspace when the hub may serve it, else the
+  first grant it may that holds knowledge, else the first it may, else the page of reasons. It
+  opens on All only when every grant is servable, by Section 29.21's rule.
+- **A principal who may read nothing**: "alice may read nothing on home", and "Its operator grants
+  workspaces", where the map would be.
+- **A refused or failed read** on the poll says the answer's own reason: the hub's `error`, or the
+  relay's. It says "the server answered HTTP 403" only when the answer gives none.
+- **Not offered on the read tier**: the Peers switch and the dialog's Sync tab. The page does not ask
+  for `/api/federation` there.
+- **The window's addresses.** The main window shows the two viewers' addresses and the app's own
+  pages.
+  - Any other web or mail address a page goes to opens in the browser, at most once in two seconds,
+    and the rest are refused.
+  - On a remote profile, or from the hub's page, a move to Settings keeps no `act`. Where the window
+    is comes from its own page loads, which no page can forge. The shell's own pages there ask for
+    none: Retry and Open Server need no act. On the local profile the starting page's acts are
+    kept, as before.
+
+**What this step does not do.** No act is taken from the remote window: proposals and verdicts wait
+for remote-server.md step 5's signed acts. The tray is as remote-viewer.md Section 6 leaves it. No
+browser reaches the read tier. A hub older than this release keeps its own page, and only an upgrade
+of the hub brings it the banner, the chips and the empty states (compatibility.md Section 8).
+
+**Guarded by:**
+- in the relay's tests: the `error` sentence of each state, in `the_relay_names_each_failure_state`;
+- in the app's tests:
+  - `the_relay_follows_the_profile_and_never_loops`: its start, switch and stop, no restart loop,
+    and the proxy's wait;
+  - `each_relay_state_is_a_page_of_its_own`;
+  - `the_window_goes_only_to_its_own_pages`, its acts included;
+  - `a_chunked_event_stream_comes_out_whole`;
+  - `the_remote_window_is_wired_where_it_acts`;
+- in the viewer's tests:
+  - `the_banner_names_the_server_and_says_read_only`;
+  - `a_grant_the_hub_may_not_serve_is_muted_and_says_why`;
+  - `the_first_view_is_a_grant_the_hub_may_serve`;
+  - `the_read_tier_says_its_own_words`;
+  - `sync_and_peers_are_the_consoles_alone`.
+
+A browser check put the page in front of a stand-in read tier that answered `/api/surface` as the
+relay does, at 1280 and 390 pixels:
+- The banner read "home (hub.example:7420) as alice - read-only", and "read-only" stayed whole
+  where the words wrapped.
+- The chip for an unservable grant was muted, with "Not served by home".
+- Choosing it, and All, said the hub's reason where the map would be.
+- The first view skipped the unservable default for the grant that held knowledge.
+- A reader granted nothing saw no chips and "alice may read nothing on home".
+- The Peers switch was gone, and Open Server showed only with the shell's address.

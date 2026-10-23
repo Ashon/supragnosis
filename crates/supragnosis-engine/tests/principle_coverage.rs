@@ -2872,7 +2872,7 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["the_read_tier_streams_knowledge_not_activity"]),
     )]),
     (8, &[c(
-        "on a remote profile each failure state has its own page, never an empty graph",
+        "on a remote profile each failure state is said, never shown as an empty graph",
         Evidence::Deferred(
             "step 3 of remote-viewer.md Section 10, not built: the shell still serves the one \
              placeholder page `remote_html` for every remote state, and no app case pins even that. \
