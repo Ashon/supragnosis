@@ -185,7 +185,8 @@ Extract only what this note supports.{hint}";
 /// Schema hint (EVAL_SCHEMA_HINT=1, default). The header comment records the measurement where,
 /// without the hint, small models made up field names and were wiped out.
 const SCHEMA_HINT: &str = "\n\nThe observe tool expects exactly this argument shape (field \
-names matter):\n{\"content\": \"...\", \"entities\": [{\"name\": \"rigid body\", \
+names matter):\n{\"content\": \"...\", \"workspace\": \"physics\", \"entities\": \
+[{\"name\": \"rigid body\", \
 \"type\": \"Concept\"}], \"relations\": [{\"from\": \"integrator\", \"type\": \
 \"uses\", \"to\": \"rigid body\"}]}\nUse exactly the field names name, type, from, to. \
 relations must reference entity names from the entities list.";
