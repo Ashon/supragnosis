@@ -593,6 +593,47 @@ fn p18_a_merged_demotion_never_raises_its_target() {
     assert_eq!(tier_of(&engine, &id), TrustTier::AgentExtracted, "a demotion raised its target");
 }
 
+/// guard (P18, resolution.md Section 4.2): a merged promotion rewrites the entity rows it changes
+/// when it is cast. The tier it grants decides which spelling the fold picks, and `get_entity` and
+/// the graph read the stored row's name, which used to wait for the next reproject.
+#[test]
+fn p18_a_merged_promotion_rewrites_the_rows_it_changes() {
+    let (store, engine) = stepped_engine();
+    let said = |spelling: &str| {
+        engine
+            .observe(ObserveInput {
+                content: format!("the database is {spelling}"),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![EntityInput {
+                    name: spelling.into(),
+                    kind: None,
+                    description: None,
+                }],
+                relations: vec![],
+            })
+            .expect("observe")
+            .observation_id
+    };
+    let first = said("Postgres");
+    said("postgres");
+    let id = Entity::make_id(WS, "postgres");
+    let name = || store.get_entity(&id).unwrap().expect("a row").canonical_name;
+    assert_eq!(name(), "postgres", "the later spelling wins at one tier");
+
+    gate(&engine, "claim_promotion", &first, "host_signed", VerdictSurface::Agent);
+    assert_eq!(name(), "Postgres", "the promoted spelling waited for a reproject");
+    assert_eq!(
+        engine.get_entity(&id).unwrap().expect("a view").entity.canonical_name,
+        "Postgres"
+    );
+    engine.reproject(Some(WS)).expect("reproject");
+    assert_eq!(name(), "Postgres", "the verdict's rows differ from a replay's");
+}
+
 /// guard (R5 revised): a merged claim_promotion that requests a lower tier than its target holds
 /// leaves the target where it was - a promotion is not a way to demote.
 #[test]
