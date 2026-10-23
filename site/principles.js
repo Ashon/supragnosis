@@ -1266,7 +1266,11 @@ function reader() {
   const TITLE = document.title, title = a => $("h3", a).textContent;
   arts.forEach(a => {
     const h = $("h3", a), open = el("a", {href: "#" + a.id, class: "open"});
-    open.append(...h.childNodes); h.append(open); h.setAttribute("tabindex", "-1");
+    open.append(...h.childNodes); h.append(open); a.setAttribute("tabindex", "-1");
+    // a demo stands beside its text on the two-column page; read alone it comes before the clauses,
+    // in the markup too, so the focus goes in the order the eye does
+    const pt = $(".pt", a), fig = $(":scope > figure", a);
+    if (pt && fig) pt.insertBefore(fig, $(".clauses, .refs", pt));
   });
   const bar = el("nav", {class: "reader", "aria-label": "Principles"});
   const back = el("a", {class: "back"}, "All principles"), where = el("span", {class: "where"});
@@ -1281,16 +1285,20 @@ function reader() {
   }
   function route() {
     const id = location.hash.slice(1), i = arts.findIndex(a => a.id === id), a = arts[i];
+    const named = id ? document.getElementById(id) : null;
+    // the skip link, or a link inside the open principle, leaves it open
+    if (!a && last && named && (named === main || last.contains(named))) return;
     arts.forEach(x => x.classList.toggle("open", x === a));
     $$("section.chap").forEach(c => c.classList.toggle("here", !!a && c.contains(a)));
     if (!a) {
       main.dataset.view = "index";
       document.title = TITLE;
       bar.remove();
-      // back from a principle, the index shows it where the reader left it
-      const target = last || (id && document.getElementById(id));
-      if (target) setTimeout(() => target.scrollIntoView({block: last ? "center" : "start"}), 0);
-      if (last) $("h3 a.open", last).focus({preventScroll: true});
+      // back from a principle, the index shows it where the reader left it, unless the address names
+      // another place; the page is replaced, so it does not glide there
+      const target = last && (!named || named.contains(last)) ? last : named;
+      if (target) setTimeout(() => target.scrollIntoView({block: target === last ? "center" : "start", behavior: "instant"}), 0);
+      if (target && target === last) $("h3 a.open", last).focus({preventScroll: true});
       last = null;
       return;
     }
@@ -1300,9 +1308,11 @@ function reader() {
     to(prev, arts[i - 1], "Previous");
     to(next, arts[i + 1], "Next");
     $(".chap-head", a.closest("section.chap")).before(bar);
-    // the browser scrolls to the anchor after this runs, so the page goes to its top just after
-    setTimeout(() => window.scrollTo(0, 0), 0);
-    $("h3", a).focus({preventScroll: true});
+    // the focus goes to the principle, named by its title, which is where the browser's own jump to
+    // the anchor puts it too; that jump lands at the top of the page (style.css), and a step from
+    // another principle goes there at once rather than gliding over a page that was replaced
+    a.focus({preventScroll: true});
+    setTimeout(() => window.scrollTo({top: 0, behavior: "instant"}), 0);
     document.title = title(a) + " - " + TITLE;
     last = a;
   }

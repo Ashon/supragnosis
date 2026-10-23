@@ -1364,7 +1364,8 @@ principle is a row of its number, its title and its line, and its title opens it
 it is ("P3 of 24"), steps to the previous and the next in the document's order, and leads back to its
 chapter in the index; the arrow keys step and Escape goes back, unless a control has the focus. It
 reads in one order whatever its kind: the line, the reason, the animation or demo, the clauses, the
-links. Opening one moves the focus to its title and names it in the window's title. The other parts
+links. Opening one, from the index or from a link to `#pN`, puts it at the top of the page, moves the
+focus to it (it is named by its title) and names it in the window's title. The other parts
 stand below the index and leave the screen while a principle is open. Without a script the page is
 the whole of it, as before, and every anchor still lands where it points. The ledger leaves the hero
 for How a principle is held, where its words - clause, tested, by construction, pinned, owed - are
@@ -6244,3 +6245,12 @@ not, or an accordion with no previous and next; and on a phone a principle the r
 **Order.** Section 11a's revisions and this section; then the reader in `site/principles.js`, the
 page's markup moved (the ledger into How a principle is held, its markers with it, so the generator
 writes the same regions), and the rules in `site/style.css`.
+
+**What this step does not do.** Its review left four things owed, none of them a wrong reading:
+- The arrow keys still step while a link inside the principle has the focus; only the form controls
+  and a disclosure keep them. Revisit when a reader reports a step they did not ask for.
+- A reader that fails after it has opened a principle leaves the one principle on the screen without
+  its bar. Revisit when the page's markup changes shape.
+- An open principle's title is still a link to itself. Revisit with the next change to the reader.
+- The phone's test of when a scene plays reads the script's text, as it did before. Revisit when the
+  page gets a test that runs it.

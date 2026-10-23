@@ -549,15 +549,11 @@ main[data-view="index"] .pr:hover { background: var(--panel-3); }
 main[data-view="one"] > :not(.chap.here), main[data-view="one"] .chap.here .pr:not(.open),
 main[data-view="one"] .chap-head .mini { display: none; }
 main[data-view="one"] .prs { grid-template-columns: minmax(0, 1fr); }
-main[data-view="one"] .pr.open { display: flex; flex-direction: column; max-width: 820px; }
-main[data-view="one"] .pr.open .pt { display: contents; }
-main[data-view="one"] .pr.open .ph { order: 0; }
-main[data-view="one"] .pr.open .line { order: 1; }
-main[data-view="one"] .pr.open .why { order: 2; }
-main[data-view="one"] .pr.open figure { order: 3; }
-main[data-view="one"] .pr.open .clauses { order: 4; }
-main[data-view="one"] .pr.open .refs { order: 5; }
-main[data-view="one"] .pr.open h3:focus { outline: none; }
+/* an open principle is read from the top of the page, under its chapter, so the browser's jump to its
+   anchor goes there: the margin is more than the page above it, and the scroll stops at the top */
+main[data-view="one"] .pr.open { display: block; max-width: 820px; scroll-margin-top: 200vh; }
+main[data-view="one"] .pr.open:focus { outline: none; }
+main[data-view="one"] .pr.open .pt { max-width: none; }
 .reader { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: var(--surface); padding-block: 10px; margin-bottom: 18px; }
 .reader a { font-size: var(--fs-label); color: var(--ink2); background: var(--panel); padding: 9px 12px; border-radius: var(--r-capsule); }
 .reader a:hover { background: var(--panel-3); color: var(--ink); text-decoration: none; }
