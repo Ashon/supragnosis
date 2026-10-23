@@ -7,6 +7,10 @@
 >
 > Status: **built** (Section 10 steps 1-3); step 4 is specified in [remote-viewer.md](remote-viewer.md),
 > and step 5 here. What building it changed is in Section 12.
+>
+> **Frozen (2026-10-23).** The hub is kept minimal: each machine joins it, syncs, and uses its own
+> daemon, so nothing needs AI apps pointed at a server elsewhere. Profiles, the bridge's remote mode
+> and the principal surface stay as built, with bug fixes only; step 5 is not scheduled.
 
 ## 1. Why this exists
 
