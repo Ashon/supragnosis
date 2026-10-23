@@ -1240,10 +1240,11 @@ project - a payments service, its webhooks and their idempotency, nothing from a
    badge, the same merge, and the same gold rings, because a verdict is an entry and the tier it grants
    is read from the log (resolution.md Section 6). Only the workspaces the person allows travel. What
    cannot arrive as human confirmed is a bare claim: an entry that only says a person checked it counts
-   for no more than its signature proves (resolution.md R4). *(Revised by step 66:)* Two buttons in the
-   snippet choose what stands behind the gold ring: the verdict, which both machines draw gold, or a
-   bare claim - an agent's entry that only says a person checked it - which the laptop draws as Agent,
-   with no ring, and the desktop as host signed. The words say how a machine joins: a one-time code
+   for no more than its signature proves (resolution.md R4). *(Revised by step 66:)* Two choices in the
+   snippet say what stands behind the gold ring: the verdict, which both machines draw gold, or an agent
+   saying a person checked it - an entry whose words claim it, which both machines draw as Agent, with
+   no ring, since words in an entry are not a verdict and a local writer's tier is the default. A
+   claimed tier arriving from a peer is the snippet's own row: host signed at most. The words say how a machine joins: a one-time code
    from `supragnosis invite`, `supragnosis join`, and three words compared (pairing.md), after which
    it syncs on its own. It answers "does my other machine know?".
 
@@ -1258,9 +1259,8 @@ words change with it, so a reader without the canvas reads the same outcome. Hov
 the viewer's own functions of the type's name, copied into the stage; the stage's type names are
 chosen so their colors sit apart from each other and from gold, coral and teal. A node has a halo of
 the ground. A gold ring is human confirmed, at the viewer's width and offset; nothing on the stage is
-host signed or unverified, so it draws no other ring. *(Revised by step 66: the travel step's bare
-claim draws the viewer's host-signed ring on the desktop, ink at 1.6 pixels at the same offset, set in
-`settle()` with the other marks; nothing is unverified.)* The coral badge at the upper right is
+host signed or unverified, so it draws no other ring. *(Step 66 keeps this: an agent saying a person
+checked it draws no ring on either machine.)* The coral badge at the upper right is
 contested. A relation is the viewer's neutral line at its alpha, the one color the stage copies from
 the viewer's script rather than from a token. A merge waiting for a person is the viewer's proposal
 preview: an arrow from the name folded away into the one kept, in `--accent`, and the relation that
@@ -1325,7 +1325,7 @@ using it, and how it differs from a notes file. It names no other product: a cla
 ours to keep true, and we could not. *(Added by step 66:)* What is next is not scheduled - a person
 picks each bundle - so the list is what is owed. And the page offers one check a visitor can run:
 Check it yourself is a paste that runs `supragnosis serve --store mem --embed none`, a server on a store
-in memory that writes nothing to disk, sends it two entries giving one entity two types and one
+in memory that stores none of what it is sent, sends it two entries giving one entity two types and one
 carrying AWS's published example key, and prints what comes back - the entity contested by the other
 type, and the refusal naming the credential's shape. It runs on the released binary; the page says
 what it should print.
@@ -6203,8 +6203,8 @@ interaction, and how comparable products present themselves):
 **Decisions** (the person's, 2026-10-24, from the recommendations):
 - D1. The heading stays; the subhead says what only this product does, in 25 words.
 - D2. The five interactions: the phone frame between a step's words and its snippet; Accept in the
-  govern step; the travel step's verdict or bare claim; the structure step's replay range; the recall
-  step's hits.
+  govern step; the travel step's verdict or an agent saying so; the structure step's replay range; the
+  recall step's hits. A choice of one among a few is a radio group (U19).
 - D3. The copy follows the product as released: every claim above corrected, and the hook, joining and
   undo said where they belong.
 - D4. The viewer's screenshot is taken again, from a scratch daemon holding the stage's made-up

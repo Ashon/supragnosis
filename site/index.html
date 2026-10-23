@@ -134,7 +134,7 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <p class="num"><b>3</b> / 5 govern</p>
             <h3>Disagreements wait for you.</h3>
-            <p>When agents give one thing two different types, both stay and the conflict waits for you; nothing in the log is overwritten. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry, and Review can undo it. Once merged, an agent asking about either name reads the one thing.</p>
+            <p>When agents give one thing two different types, both stay and the conflict waits for you; nothing in the log is overwritten. Changes to what counts as true, like merging two names for one thing or confirming a claim, arrive as proposals you accept or reject on the Review page. Your verdict goes into the log like any entry, and Review can reverse it. Once merged, an agent asking about either name reads the one thing.</p>
             <div class="snip review">
               <p class="h">Needs you <i>3</i></p>
               <span>Merge pg into postgres</span><span class="act">Accept</span>
@@ -221,7 +221,7 @@
          memory, so it keeps nothing, and what it prints is said under it. -->
     <section class="section wrap" id="check" aria-labelledby="check-title">
       <h2 id="check-title">Check it yourself in a minute.</h2>
-      <p class="lead">With supragnosis and <code>jq</code> installed, paste this into a terminal. It runs a server on a store held in memory, so nothing is kept, and sends it three entries: two that give <code>retry-policy</code> different types, and one that carries AWS's published example access key.</p>
+      <p class="lead">With supragnosis and <code>jq</code> installed, paste this into a terminal. It runs a server on a store held in memory, so none of the entries is stored, and sends it three entries: two that give <code>retry-policy</code> different types, and one that carries AWS's published example access key.</p>
       <pre class="code" tabindex="0"><code id="check-cmd">{ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -287,7 +287,7 @@ retry-policy: Config or Pattern, contested: true</code></pre>
             <li>Proposals and the Review page</li>
             <li>Signed sync through a hub, joined with a one-time code</li>
             <li>The commit hook for Claude Code</li>
-            <li>Undo for every verdict</li>
+            <li>Verdicts reversible from Review</li>
             <li>MCP prompts: brief, curate and two more</li>
             <li>The desktop app, Homebrew and an install script</li>
           </ul>
