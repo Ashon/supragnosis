@@ -771,6 +771,13 @@ impl SupragnosisServer {
         description = "Search knowledge (entities/observations). The response mode reports the surface actually used: hybrid (semantic+keyword) or keyword (keyword-only degrade - an empty result in this mode may be a recall failure). score is for rank comparison only - its scale differs per mode, so the absolute value is not a confidence."
     )]
     async fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
+        // The keyword rule takes an empty query for a phrase every text contains, so a blank one
+        // would answer the first rows of the store as if they matched.
+        if req.query.trim().is_empty() {
+            return err_json(
+                "query is empty - search for words; to see what a workspace holds, use workspace_map",
+            );
+        }
         let scope = req.scope.as_deref().unwrap_or("local");
         // Federated retrieval (scope remote/both): query the configured sync servers' ontologies -
         // local state can lag the remote store, so a local miss may just mean "not synced yet".

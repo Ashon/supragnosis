@@ -2008,6 +2008,18 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
         .expect("the call answers");
     assert_ne!(unknown.is_error, Some(true), "a not-found answer is flagged as a failure");
     assert_eq!(tool_json(&unknown)["found"], false);
+    // A blank query is refused: the keyword rule would take it for a phrase every row contains.
+    let blank = client
+        .call_tool(
+            CallToolRequestParams::new("search_knowledge".to_string())
+                .with_arguments(args(json!({ "query": "  " }))),
+        )
+        .await
+        .expect("the call answers");
+    assert_eq!(blank.is_error, Some(true), "a blank query answered as a search");
+    assert!(tool_json(&blank)["error"]
+        .as_str()
+        .is_some_and(|e| e.contains("query is empty")));
     client.cancel().await.expect("client shutdown");
     server.await.expect("server task");
 }
