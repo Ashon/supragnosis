@@ -2801,8 +2801,8 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
-// docs/remote-viewer.md Section 8 - the hub's read tier (V rows). Steps 0-3 of Section 10 are
-// built.
+// docs/remote-viewer.md Section 8 - the hub's read tier (V rows). Steps 0-2 of Section 10 are
+// built; step 3 (the app) is not.
 const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("a read-tier request without an admitted credential is answered 401 before any route",
@@ -2873,13 +2873,11 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (8, &[c(
         "on a remote profile each failure state is said, never shown as an empty graph",
-        Evidence::Scenario(&[
-            // The shell's pages for the relay's states, and the page's for a reader granted nothing
-            // or a grant the hub may not serve.
-            "each_relay_state_is_a_page_of_its_own",
-            "the_relay_names_each_failure_state",
-            "a_grant_the_hub_may_not_serve_is_muted_and_says_why",
-        ]),
+        Evidence::Deferred(
+            "step 3 of remote-viewer.md Section 10, not built: the shell still serves the one \
+             placeholder page `remote_html` for every remote state, and no app case pins even that. \
+             Revisit when step 3 lands with the relay's `state` JSON",
+        ),
     )]),
     (9, &[c(
         "the local viewer is unchanged: a 0600 unix socket, the full console, no credential",
@@ -3482,7 +3480,6 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/icons.rs"),
     include_str!("../../supragnosis-viz/tests/notices.rs"),
     include_str!("../../supragnosis-viz/tests/review.rs"),
-    include_str!("../../supragnosis-viz/tests/remote_window.rs"),
     include_str!("../../supragnosis-viz/tests/place.rs"),
     include_str!("../../supragnosis-viz/tests/key.rs"),
     include_str!("../../supragnosis-viz/tests/empty.rs"),
