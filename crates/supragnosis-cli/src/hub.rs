@@ -74,7 +74,7 @@ impl HubListener {
             Err(e) => format!("the config could not be read: {e:#}"),
         };
         let _applying = self.applying.lock().await;
-        self.stop();
+        self.stop().await;
         let state = serde_json::json!({"listening": false, "address": null, "why": why});
         if let Ok(mut s) = self.state.write() {
             *s = state.clone();
@@ -134,7 +134,7 @@ impl HubListener {
             .and_then(|r| r.as_ref().map(|(a, tls, _)| (*a, tls.clone())));
         let state = match wanted {
             Err(why) => {
-                self.stop();
+                self.stop().await;
                 let why = match unread {
                     Some(e) => format!("{why}; the invitations could not be read: {e}"),
                     None => why,
@@ -147,7 +147,7 @@ impl HubListener {
                 serde_json::json!({"listening": true, "address": addr.to_string(), "why": null})
             }
             Ok((addr, tls)) => {
-                self.stop();
+                self.stop().await;
                 // Beside the sync API: the principals' surface, and the pairing calls an open
                 // invitation answers (D5). Both count toward the bind rule.
                 let mut hooks = self.hooks.clone();
@@ -221,12 +221,14 @@ impl HubListener {
         Ok((addr, tls))
     }
 
-    fn stop(&self) {
-        if let Ok(mut r) = self.running.lock() {
-            if let Some((addr, _, task)) = r.take() {
-                task.abort();
-                tracing::info!(listen = %addr, "federation sync API closed");
-            }
+    /// Closes the listener and waits for its task to end, so its socket is released before the
+    /// same address is bound again - an abort alone lets a reopen race the old socket and fail.
+    async fn stop(&self) {
+        let running = self.running.lock().ok().and_then(|mut r| r.take());
+        if let Some((addr, _, task)) = running {
+            task.abort();
+            let _ = task.await;
+            tracing::info!(listen = %addr, "federation sync API closed");
         }
     }
 }
