@@ -399,8 +399,8 @@ macOS refuses a process without Local Network access that way. The text is in th
 `sync_status`'s `last_round` and the `sync_*` tools' per-server `error`; no field changed.
 
 **Pairing adds no key to `supragnosis.toml`** (pairing.md, decision D15, specified). A joined machine's
-receive list, the hub's name, the vouched keys, the hub's pinned certificate and an open join's
-one-time key live in `~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in
+receive list, the hub's name, the vouched keys and the hub's pinned certificate live in
+`~/.supragnosis/hubs/`, and a hub's invitations and pairing's peer records in
 `~/.supragnosis/hub/`, so a release before pairing still
 starts on a paired node and syncs without the receive list's cap or the vouched keys.
 
