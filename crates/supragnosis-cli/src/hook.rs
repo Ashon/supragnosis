@@ -106,10 +106,13 @@ pub fn names_git_commit(command: &str) -> bool {
 /// so work in a worktree lands in its project's workspace. A submodule's common directory sits
 /// under its parent's `.git/modules`, so its own top level names it.
 fn workspace_of(cwd: &Path, w: &World) -> (String, String) {
+    // A git that does not know an option echoes it and exits 0 (rev-parse before 2.31 with
+    // `--path-format`), so an answer that is not one path is no answer.
     let git_path = |args: &[&str]| {
         (w.git)(cwd, args)
-            .map(|s| PathBuf::from(s.trim()))
-            .filter(|p| !p.as_os_str().is_empty())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && !s.contains('\n') && !s.starts_with('-'))
+            .map(PathBuf::from)
     };
     let top = git_path(&["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .filter(|d| d.file_name().is_some_and(|n| n == ".git"))
@@ -409,7 +412,23 @@ mod tests {
         let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
         let name = repo.file_name().unwrap().to_string_lossy().into_owned();
         assert_eq!(workspace_of(&tree, &w), (name.clone(), name.clone()), "from the worktree");
-        assert_eq!(workspace_of(&repo.join("."), &w), (name.clone(), name), "from the checkout");
+        assert_eq!(
+            workspace_of(&repo.join("."), &w),
+            (name.clone(), name.clone()),
+            "from the checkout"
+        );
+        // A git too old for --path-format echoes it beside a relative path, as from a subdirectory;
+        // the top level answers.
+        let old_git = |dir: &Path, args: &[&str]| -> Option<String> {
+            match args {
+                [_, "--path-format=absolute", "--git-common-dir"] => {
+                    Some("--path-format=absolute\n../.git\n".to_string())
+                }
+                _ => real_git(dir, args),
+            }
+        };
+        let w = World { now: now(), git: &old_git, daemon: &no_daemon, workspace_override: None };
+        assert_eq!(workspace_of(&repo, &w), (name.clone(), name), "with an old git");
         let _ = std::fs::remove_dir_all(&tree);
         let _ = std::fs::remove_dir_all(&repo);
     }
