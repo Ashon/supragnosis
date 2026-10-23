@@ -1445,24 +1445,20 @@ fn co_asserted_members(
     node_ids: &HashSet<&str>,
     fwd: &HashMap<String, String>,
 ) -> Vec<String> {
-    let ws = obs.workspace();
-    let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
-    let mut members: BTreeSet<String> = BTreeSet::new();
-    for e in &obs.assertions.entities {
-        let id = canon(Entity::make_id(ws, &e.name));
-        if node_ids.contains(id.as_str()) {
-            members.insert(id);
-        }
-    }
-    for r in &obs.assertions.relations {
-        for name in [&r.from, &r.to] {
-            let id = canon(Entity::make_id(ws, name));
-            if node_ids.contains(id.as_str()) {
-                members.insert(id);
-            }
-        }
-    }
+    let members: BTreeSet<String> = asserted_ids(obs)
+        .map(|id| fwd.get(&id).cloned().unwrap_or(id))
+        .filter(|id| node_ids.contains(id.as_str()))
+        .collect();
     members.into_iter().collect()
+}
+
+/// The entity ids an observation asserts, as entities and as both ends of its relations, as
+/// written - not forwarded through merges, the ids the entity fold keys its rows by.
+fn asserted_ids(obs: &Observation) -> impl Iterator<Item = String> + '_ {
+    let ws = obs.workspace();
+    let names = obs.assertions.entities.iter().map(|e| e.name.as_str());
+    let ends = obs.assertions.relations.iter().flat_map(|r| [r.from.as_str(), r.to.as_str()]);
+    names.chain(ends).map(move |name| Entity::make_id(ws, name))
 }
 
 /// A stable string label for TrustTier (matching the serialized snake_case). Used as metric keys.
@@ -3334,9 +3330,30 @@ impl Engine {
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;
         let app_key = obs.provenance.first().map(|p| attestation_key(&obs.id, p));
-        // Proposal state is a read-time fold over the log; no materialized row waits on it, so the
-        // row commits whole with no projection (crash-recovery.md Section 3a).
-        self.store.commit_projected(obs, Vec::new(), Vec::new())?;
+        // Proposal state is a read-time fold over the log, but a merged gate verdict changes the
+        // tier the entity fold weighs its targets' assertions by, and with it the spelling and kind
+        // their rows hold. Those rows commit with the verdict, folded from the log as it will read
+        // with the verdict in it (crash-recovery.md Section 3a); a sync apply reprojects instead.
+        let entities = if decision == "merge" && GATE_KINDS.contains(&view.kind.as_str()) {
+            let mut touched = HashSet::new();
+            for target in &view.targets {
+                if let Some(o) = self.store.get_observation(target)? {
+                    touched.extend(asserted_ids(&o));
+                }
+            }
+            let row = match self.store.get_observation(&obs.id)? {
+                Some(mut stored) => {
+                    stored.absorb(obs.clone());
+                    stored
+                }
+                None => obs.clone(),
+            };
+            let cx = &ReadCtx::over(row);
+            self.materialize_entities(&workspace, Some(&touched), cx, &HashMap::new())?
+        } else {
+            Vec::new()
+        };
+        self.store.commit_projected(obs, entities, Vec::new())?;
         self.note_app(app_key.as_deref());
         self.log_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(id)
