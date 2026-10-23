@@ -5,7 +5,7 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **specified**. Steps 0-2 of Section 10 are built (step 0 shipped in v0.4.6); steps 3-4
+> Status: **specified**. Steps 0-1 of Section 10 are built (step 0 shipped in v0.4.6); steps 2-4
 > are not. What building it changed is in Section 12.
 >
 > A bare R-number here is one of remote-server.md's invariants (its Section 8), not resolution.md's.
@@ -152,9 +152,8 @@ both:
   - the workspace an omitted one resolves to;
   - each granted workspace, whether it is servable and, if not, why.
 
-The relay adds what only the client knows: the profile's name, with the read tier's address. The page
-can then say "home (hub.example) as alice, read only" without the hub knowing what this machine
-calls it.
+The relay adds what only the client knows: the profile's name and URL. The page can then say "home
+(hub.example) as alice, read only" without the hub knowing what this machine calls it.
 
 ### 3.6 The event stream
 
@@ -230,57 +229,26 @@ viewer the way the bridge relays MCP, with `supragnosis bridge --viewer <socket>
 
 - **It binds a 0600 unix socket** inside the 0700 `~/.supragnosis`, and accepts what the shell
   already speaks: HTTP over a unix socket. A live socket at that path is refused rather than taken
-  over, as the daemon refuses one, and so is a path in a directory that other users can enter or
-  that another user owns. On the way out it unlinks the socket while it still holds it: until then
-  the next profile's relay is refused the live path, so the file removed is always this relay's.
+  over, as the daemon refuses one.
 - **It forwards GETs only** to the active profile's server. The address is the profile's MCP URL
   with its last path segment `mcp` replaced by `viz`: `https://hub.example:7420/mcp` becomes
   `https://hub.example:7420/viz/`. A profile URL that does not end in `mcp` is refused with the URL
-  named, rather than guessed at. Any other method is answered 405 and nothing is sent.
-- **Every path stays under `/viz/`.** A path with a `.` or `..` segment, as typed or
-  percent-encoded, a backslash, or an encoded slash or backslash, is answered 400 before anything is
-  sent. A page cannot reach `/mcp` or the sync API through the relay with the principal's credential
-  attached, and neither can a proxy in front of the hub that decodes what the relay sent. The query
-  is passed as it came.
-- **It sends only what the hub needs**: the credential, `Accept`, and its own conditional header.
-  The page's cookies and `Authorization` stay on this machine, and its `If-None-Match` is answered by
-  the relay itself (below). It answers with the hub's status, body and content type, and the hub's
-  `Content-Security-Policy`, `X-Content-Type-Options` and `Cache-Control`. It follows no redirect:
-  one is reported as `unreachable` with its target named, so the credential goes nowhere but the
-  profile's address.
-- **It asks conditionally** (Section 3.8). It keeps the last body and `ETag` of each successful
-  answer that carries one, keyed by path and query, for at most 64 request targets and 32 MiB of
-  bodies, dropping the least recently used first. It sends that `ETag` as `If-None-Match`, and a
-  304 is answered from the body it held.
-- **It answers the page conditionally too.** An answer carries the hub's `ETag`, and a page that
-  asks with the tag of what it holds is answered 304 with no body. So a poll that finds nothing new
-  costs the page nothing through a relay either (design-system.md U33). `/api/surface` is the
-  exception: the relay changes it on the way (below), so the hub's tag does not describe it, and it
-  goes with none.
-- **It adds the profile to `/api/surface`** (Section 3.5): the answer gains `profile`, the profile's
-  name and the `/viz/` URL the relay reads, so the page can name the server as this machine calls
-  it. Nothing else in an answer is changed.
+  named, rather than guessed at.
 - **It reads the credential from its 0600 file on every request**, and sends it as
   `Authorization: Bearer`. The credential is never written anywhere else, never put in a URL, and
   never handed to the shell or the page (V5).
-- **It verifies TLS** against the root bundle built into supragnosis, or the profile's CA instead
-  when it names one, with no way to skip the check. Plain HTTP is allowed to loopback only (R8). A
-  profile URL carrying a username or password is refused: the credential belongs in its file.
+- **It verifies TLS** against the system roots or the profile's CA, with no way to skip the check.
+  Plain HTTP is allowed to loopback only (R8).
 - **It streams `/api/events` through** as events arrive.
 - **It runs until its stdin closes.** The shell starts it with a pipe, so the relay cannot outlive
   the app that started it, whether the app quits or crashes.
 - **It reports failures in a form the shell can show.** Three cases come back as JSON with a
-  `state`, never as an empty graph. Each also names the profile (`server`) and the `/viz/` URL
-  (`url`):
+  `state`, never as an empty graph:
+  - nothing answered;
+  - the credential was refused, with the credential file named;
+  - the server answered 404 at `/viz/`, meaning it is older than this tier.
 
-  | `state` | Status | When | Also carries |
-  |---|---|---|---|
-  | `unreachable` | 502 | Nothing answered, the connection did not verify (R8), the hub redirected, or no answer came within 70 seconds, the backstop behind the hub's own 60. | `detail`: what failed, in words |
-  | `credential_refused` | 401 | The hub answered 401: no admitted principal holds the credential. | `credential_file`: the file it was read from, never its contents |
-  | `too_old` | 404 | The hub answered 404 for the page or for `/api/surface`, meaning it is older than this tier. | |
-
-  Any other answer, a 403 or a 404 for an unknown id included, is the hub's and is passed through.
-  The shell renders each state (Section 6).
+  The shell renders each one (Section 6).
 - **On the local profile it refuses to start.** The local viewer is the daemon's own socket, so
   there is nothing to relay.
 
@@ -344,7 +312,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
 | **V3** | A principal reads only granted workspaces. This covers enumeration, omitted and `*` workspaces, id-based reads and the event stream. `*` is the union of grants, computed per workspace. An id outside the grants is answered as an unknown id is, on both the read tier and the agent surface. |
 | **V4** | A workspace is shown only when the hub may serve it (R5). A union that includes one it may not serve is refused with the reason, never shown in part. |
 | **V5** | The credential never appears in a URL, the page or the shell. The relay reads it from its 0600 file per request and sends it as a header. |
-| **V6** | The relay reaches a remote server over verified TLS, or plain HTTP to loopback only (R8), relays only GETs of paths under `/viz/`, and cannot outlive the app that started it. |
+| **V6** | The relay reaches a remote server over verified TLS, or plain HTTP to loopback only (R8), relays only GET, and cannot outlive the app that started it. |
 | **V7** | One principal's reads are not shown to another. The remote event stream carries knowledge changes in readable, servable workspaces, without session ids, the writing app's name (design-system.md Section 29.8), queries or lookups. |
 | **V8** | On a remote profile, the window never shows an empty graph for a failure. Unreachable, credential refused, server too old and no grants each have their own page. |
 | **V9** | The local viewer is unchanged: the daemon's unix socket, the full console, no credential. |
@@ -382,7 +350,7 @@ On a remote profile, the window shows the server instead of saying it cannot:
      still knows nothing of the sync crate or the config file (P20).
    - The CLI mounts it at `/viz/` beside `/mcp`, behind the same admission, with the ETag and audit
      of Section 3.8.
-2. **The relay**: `supragnosis bridge --viewer`. [built]
+2. **The relay**: `supragnosis bridge --viewer`.
 3. **The desktop app**:
    - the relay's lifecycle, the socket switch and the failure pages;
    - in the page, `/api/surface` and the read-only controls.
@@ -418,17 +386,6 @@ Guarded by:
 - **The event stream (V7)**: `the_read_tier_streams_knowledge_not_activity`.
 - **The union's arithmetic**: `a_union_sums_counts_and_keeps_the_larger_max`.
 - **Reads by id on the agent surface (Section 3.4)**: `an_id_outside_the_grants_reads_as_an_unknown_one`.
-- **The relay (Section 5, V5, V6)**:
-  - `the_relay_forwards_gets_under_viz_with_a_credential_read_per_request`;
-  - `the_relay_reaches_a_server_only_over_verified_tls`, and `the_relay_follows_no_redirect`;
-  - `the_relay_streams_events_and_stops_with_its_stdin`;
-  - `the_relay_names_each_failure_state`;
-  - `the_relay_asks_conditionally_and_answers_the_page_so`, with the cache's bounds in
-    `the_cache_keeps_at_most_64_targets_and_32_mib`;
-  - `the_relay_adds_the_profile_to_the_surface`;
-  - `a_relay_needs_a_remote_profile_a_viewer_address_and_a_private_socket`, and
-    `a_relay_unlinks_its_socket_while_it_holds_it`;
-  - `the_relay_carries_the_read_tier_within_the_grants`, end to end over the hub's own read tier.
 
 ## 12. What building it changed
 
@@ -453,17 +410,3 @@ Guarded by:
   owed with the agent surface's (remote-server.md Section 12).
 - **`/viz` without the trailing slash also serves the page**, so a client that types the hub's
   address gets the viewer rather than a 404.
-- **The relay's cache is bounded in bytes too.** 64 targets alone could hold 64 large graphs, so the
-  relay also stops at 32 MiB of bodies, and a body larger than that is not kept.
-- **The relay waits 70 seconds, not 60.** The hub stops a read at 60 seconds and answers 504 with
-  the reason, which the relay passes through; the relay's own limit only catches a hub that says
-  nothing at all.
-- **The relay and the MCP bridge build their HTTPS client in one place** (`bridge::client_builder`),
-  so there is one implementation of how a server is reached (R8), as Section 7 decided. It trusts
-  the root bundle built into supragnosis, not the system's trust store, or only the profile's CA
-  when it names one; this document and remote-server.md had said "the system roots".
-- **The relay answers the page conditionally.** Section 3.8 had the relay ask the hub conditionally
-  "so the page needs no change", written before the page learned to ask with the tag of what it
-  holds (design-system.md U33). A relay that answered every poll in full would have made the remote
-  map parse and apply the graph every 2.5 seconds, so the relay passes the hub's `ETag` on and
-  answers 304 itself.
