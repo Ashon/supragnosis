@@ -3400,12 +3400,12 @@ repays this first.
   If it cannot be read, the button stays disabled and the ask says so (P23).
 - **The tiers are defined where trust is decided.** Under the Trust legend, beside its note on
   rings, a disclosure "What these mean" gives one line per tier, describing a source:
-  - Human confirmed: "Confirmed in this app on one of your machines, by you or a program running as
-    you; agents are told to leave it to you. No agent's claim outranks it; a later review can lower
-    it." *(Revised 2026-10-23: it read "A person confirmed it", which the console cannot tell from a
-    program of the same user - resolution.md Section 6.)*
-  - Host signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an
-    agent accepted."
+  - Human confirmed: "Confirmed through this app on one of your machines, by you or another program
+    on your account; agents are told to leave it to you. No agent's claim outranks it; a later review
+    can lower it." *(Revised 2026-10-23: it read "A person confirmed it", which the console cannot
+    tell from a program of the same user - resolution.md Section 6.)*
+  - Host signed: "Above Agent, but not confirmed through this app: a trusted machine's signed claim, or
+    a review an agent accepted." *(Revised 2026-10-23: "but not by a person".)*
   - Agent: "What an AI app writes, and what this app writes for you, until a review raises or
     lowers it."
   - Unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it
@@ -4082,11 +4082,12 @@ No row needs a principle changed.
     characters. A host name is not a machine's identity - every unconfigured node is `localhost` - so
     it never decides "here".
   - "for alex" when that attestation names a principal: "Agent - this Mac, for alex - 11:27 AM".
-  - A verdict cast at this console and written here (`surface:console`) is "Agent - you at this
-    console - 11:38 AM": the row's tier is the verdict's own, and its sentence says what it granted.
-    A merge or split opened at this console reads the same way (Section 29.17). *(Revised by step
-    51c.)*
-    One cast at another machine's console is "Agent - a person at 4a1b2c3d - ...".
+  - A verdict cast at this console and written here (`surface:console`) is "Agent - this console -
+    11:38 AM": the row's tier is the verdict's own, and its sentence says what it granted. A merge or
+    split opened at this console reads the same way (Section 29.17). *(Revised by step 51c.)*
+    One cast at another machine's console is "Agent - the console at 4a1b2c3d - ...". The console
+    names where the act was cast, not who cast it: any program of the user can reach it (resolution.md
+    Section 6). *(Revised 2026-10-23: they read "you at this console" and "a person at 4a1b2c3d".)*
   - Where two values of one contested field were written in the same minute, both their who-lines
     show seconds; the Log keeps its time once per minute (Section 9).
 - **The card** leads with what grounds it and resolves every id:
@@ -4094,7 +4095,7 @@ No row needs a principle changed.
     is not a citation and is said in the who-line;
   - each attestation in the who-line grammar, with "the agent's confidence: 0.9";
   - when a merged gate event set the effective tier, the act that did, from the engine: "Human
-    confirmed by you at this console, 11:38 AM - Open in Review", or "Lowered to Agent by ..." for a
+    confirmed from this console, 11:38 AM - Open in Review", or "Lowered to Agent by ..." for a
     demotion - each observation's answer names the gate event that last moved it in the gate fold's
     verdict order (resolution.md R5): its proposal, and its verdict's time, surface and sync origin,
     read by the rule above;

@@ -333,8 +333,8 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
     let writer = body("writerOf");
     for part in [
         "writtenHere(a)",
-        "\"you at this console\"",
-        "\"a person at \"",
+        "\"this console\"",
+        "\"the console at \"",
         "String(a.origin_node).slice(0, 8)",
     ] {
         assert!(writer.contains(part), "writerOf does not say {part}");
