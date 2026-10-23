@@ -3400,8 +3400,10 @@ repays this first.
   If it cannot be read, the button stays disabled and the ask says so (P23).
 - **The tiers are defined where trust is decided.** Under the Trust legend, beside its note on
   rings, a disclosure "What these mean" gives one line per tier, describing a source:
-  - Human confirmed: "A person confirmed it in this app, on one of your machines. No agent's claim
-    outranks it; a later review can lower it."
+  - Human confirmed: "Confirmed in this app on one of your machines, by you or a program running as
+    you; agents are told to leave it to you. No agent's claim outranks it; a later review can lower
+    it." *(Revised 2026-10-23: it read "A person confirmed it", which the console cannot tell from a
+    program of the same user - resolution.md Section 6.)*
   - Host signed: "Above Agent, but not by a person: a trusted machine's signed claim, or a review an
     agent accepted."
   - Agent: "What an AI app writes, and what this app writes for you, until a review raises or

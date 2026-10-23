@@ -477,6 +477,12 @@ read path). No input changed, and these answers did:
   matches. Its hits are still not forwarded through merges, since forwarding folds the log and a
   search never walks it; a merged-away id it names forwards at `get_entity` and `traverse`.
 
+**The human tier says what it proves** (resolution.md Section 6). No input or answer changed. The
+server's instructions and the descriptions of `review` and `propose` say that `human_confirmed` is
+the person's own act in the Supragnosis app, not to be cast by this tool or any other way; they said
+only the human console could grant it, which the console's socket does not enforce against a program
+of the same user.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

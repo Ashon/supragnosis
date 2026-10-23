@@ -254,12 +254,20 @@ the distinction by **surface**:
   acts demand it. The surface marker remains the local-trust fallback exactly as the solo
   self-attested marker does.
 
-Honesty note: within the local trust surface, "Console = human" rests on the OS access control
-of the unix socket (the same argument the viewer already stands on - architecture.md Section
-10). A local agent with shell access as the owning user could curl the socket; that party
-already owns the store file outright, so this draws no new boundary - the ceiling's job is to
-stop the *protocol-level* path (a well-behaved MCP client cannot mint `HumanConfirmed`), not to
-defend against the local user's own processes.
+Honesty note: `Console` means a verdict reached the console's socket, which is 0600 and so open
+to every process of the owning OS user - the app, and equally a coding agent with a shell, which is
+how the agents this product serves run. `HumanConfirmed` therefore records where a confirmation was
+made, not that a person made it. The ceiling stops the protocol path: no MCP client can mint
+`HumanConfirmed`, and the agent-facing text (the server's instructions, `review` and `propose`)
+tells every agent that the act is the person's and not to cast it by any other way. It does not
+stop a local process that writes to the socket. Telling a person from their own processes takes an
+act only the person can perform - a socket peer that must be the signed app, or a key behind Touch
+ID that signs each confirmation - and it is owed (architecture.md Section 14). The viewer says what
+the tier proves where it defines it.
+*(Revised 2026-10-23. The note argued that such a process already owns the store file outright, so
+the socket draws no new boundary. That holds for the file and not for the act: a write to the store
+needs the daemon stopped and a valid record built, while a console verdict is one request, and the
+agents that would make it are the product's own users.)*
 
 ## 7. Determinism and convergence (Principle 16)
 
