@@ -2,8 +2,6 @@
 //! port it got, and a daemon asked to stop with SIGTERM exits normally. Both run the real binary in
 //! a home of its own, from an environment built for it (J2).
 
-#![cfg(unix)]
-
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

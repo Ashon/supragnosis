@@ -2,8 +2,6 @@
 //! in a home of its own, used the way an AI app and a person at the console use it. Each test's
 //! name begins with the id of the scenario it tells (J8).
 
-#![cfg(unix)]
-
 #[path = "scenario/harness.rs"]
 mod harness;
 

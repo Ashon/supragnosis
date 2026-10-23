@@ -8,9 +8,8 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
-// The graph's address: the shell serves the viewer on its own scheme (viz://localhost), which
-// Windows' webview reaches as http://viz.localhost.
-const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
+// The graph's address: the shell serves the viewer on its own scheme.
+const GRAPH = "viz://localhost/";
 
 // ---- State -----------------------------------------------------------------------------------
 

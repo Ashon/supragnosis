@@ -21,9 +21,6 @@
 //!    `service install|uninstall`, `restart`) and shows the answer, so those rules live once, in the
 //!    workspace where they are tested. The tray only says what state this Mac is in and opens it.
 
-// Tauri on macOS/Windows expects a windowed (non-console) binary in release bundles.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -90,7 +87,7 @@ struct MapItems(Vec<(&'static str, MenuItem<tauri::Wry>)>);
 /// without the selection history.
 fn map_items_enabled(url: &str, controls: &[String]) -> Vec<(&'static str, bool)> {
     let has = |c: &str| controls.iter().any(|x| x == c);
-    let viewer = url.starts_with("viz://") || url.starts_with("http://viz.localhost");
+    let viewer = url.starts_with("viz://");
     let app_page = url.contains("settings.html") || url.contains("welcome.html");
     let review = viewer && url.contains("#review");
     let graph = viewer && !review;
@@ -146,7 +143,7 @@ fn key_js(key: &str, needs_history: bool) -> String {
     format!(
         r#"(function(){{{gate}var t=document.activeElement||document.body;t.dispatchEvent(new KeyboardEvent("keydown",{{key:{k},metaKey:true,bubbles:true,cancelable:true}}));}})();"#,
         gate = if needs_history {
-            r#"if(/^viz:|^http:\/\/viz\.localhost/.test(location.href)&&!document.getElementById("keysDlg"))return;"#
+            r#"if(/^viz:/.test(location.href)&&!document.getElementById("keysDlg"))return;"#
         } else {
             ""
         }
@@ -396,7 +393,6 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
     let base = home().join(".supragnosis");
     // Created closed to other accounts when this is the first thing to create it - the store and the
     // token will live here. An existing directory is the daemon's to correct, which it does on start.
-    #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new()
@@ -558,7 +554,7 @@ const SHELL_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; base-uri
 /// Note what does NOT need an entry: `shell-init.js` is injected as a webview user script rather
 /// than fetched by the document, so it is not `script-src`'s business - which is why Tauri apps run
 /// under policies with no `'unsafe-inline'` at all.
-const TAURI_IPC_SOURCES: &str = "ipc: http://ipc.localhost";
+const TAURI_IPC_SOURCES: &str = "ipc:";
 
 /// Adds the IPC origins to a forwarded policy's `connect-src`.
 ///
@@ -1835,20 +1831,15 @@ const OWN_PAGES: &[&str] = &["settings.html", "welcome.html"];
 
 /// The address of one of the app's own pages.
 fn own_page(name: &str) -> tauri::Url {
-    let url = if cfg!(windows) {
-        format!("http://tauri.localhost/{name}")
-    } else {
-        format!("tauri://localhost/{name}")
-    };
-    url.parse().expect("static url")
+    format!("tauri://localhost/{name}").parse().expect("static url")
 }
 
 fn settings_url() -> tauri::Url {
     own_page("settings.html")
 }
 
-/// Whether `url` is the viewer's own address - its scheme and host, `viz://localhost` or, where the
-/// webview reaches schemes over http, `http://viz.localhost`. Only such an address is a way back:
+/// Whether `url` is the viewer's own address - its scheme and host, `viz://localhost`. Only such an
+/// address is a way back:
 /// anything else a page could put in `?from=` would make "< Graph" a redirect (settings-page.md
 /// Section 4, S1; design-system.md Section 29.4).
 fn is_viewer(url: &tauri::Url) -> bool {
@@ -1911,9 +1902,7 @@ fn own_page_caller(webview: &tauri::Webview) -> Result<(), String> {
 /// its own state after every change.
 fn reload_viewer(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        if w.url()
-            .is_ok_and(|u| u.scheme() == "viz" || u.host_str() == Some("viz.localhost"))
-        {
+        if w.url().is_ok_and(|u| u.scheme() == "viz") {
             let _ = w.eval("location.reload()");
         }
     }
@@ -2600,7 +2589,6 @@ async fn run_streamed(
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         with_login_env(&mut cmd);
         let mut child =
@@ -3033,8 +3021,7 @@ async fn welcome_at_start(app: tauri::AppHandle) {
 
 /// The graph's address: the viewer, which the shell's `viz://` proxy serves.
 fn graph_url() -> tauri::Url {
-    let url = if cfg!(windows) { "http://viz.localhost/" } else { "viz://localhost/" };
-    url.parse().expect("static url")
+    "viz://localhost/".parse().expect("static url")
 }
 
 /// Turns the main window to the settings page (docs/settings-page.md Section 3.0), creating the
@@ -4229,7 +4216,7 @@ mod settings_tests {
         let viewer: tauri::Url = "viz://localhost/".parse().unwrap();
         let hub: tauri::Url = "https://hub.example/viz/".parse().unwrap();
         let other_page: tauri::Url = "tauri://localhost/index.html".parse().unwrap();
-        let windows_viewer: tauri::Url = "http://viz.localhost/settings.html".parse().unwrap();
+        let lookalike: tauri::Url = "viz://localhost/settings.html".parse().unwrap();
         let hub_welcome: tauri::Url = "https://hub.example/welcome.html".parse().unwrap();
         for own in [settings_url(), welcome_url()] {
             assert!(own_page_ok("main", &own), "{own}");
@@ -4238,7 +4225,7 @@ mod settings_tests {
         assert!(!own_page_ok("main", &viewer), "the viewer in the same window");
         assert!(!own_page_ok("main", &hub));
         assert!(!own_page_ok("main", &other_page), "another page of the app");
-        assert!(!own_page_ok("main", &windows_viewer), "a viewer path that looks alike");
+        assert!(!own_page_ok("main", &lookalike), "a viewer path that looks alike");
         assert!(!own_page_ok("main", &hub_welcome), "a hub's page named like the app's");
     }
 
@@ -4817,9 +4804,7 @@ mod settings_tests {
             "the wait's start and its minutes, nothing else"
         );
         let shell = include_str!("../assets/shell-init.js");
-        assert!(
-            shell.contains("window.supragnosisSetup = custom ? \"tauri://localhost/welcome.html\"")
-        );
+        assert!(shell.contains("window.supragnosisSetup = \"tauri://localhost/welcome.html\""));
     }
 
     /// design-system.md Section 29.10 and onboarding.md O6: the page and Copy Diagnostics read the

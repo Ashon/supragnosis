@@ -8,7 +8,7 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 const listen = (ev, fn) => window.__TAURI__.event.listen(ev, fn);
-const GRAPH = location.protocol === "tauri:" ? "viz://localhost/" : "http://viz.localhost/";
+const GRAPH = "viz://localhost/";
 
 const STEPS = [
   { step: "server", title: "Keep Supragnosis running", log: "server" },
