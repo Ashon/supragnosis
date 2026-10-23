@@ -249,7 +249,8 @@ fn a_panel_on_a_tablet_ends_above_the_camera() {
     let band = &CSS[CSS.find("@media (max-width: 1199px)").expect("the band")..];
     let band = &band[..band.find("\n  }\n").expect("it closes")];
     for part in [
-        "max-height:calc(100dvh - 61px - var(--bar) - var(--hud-h) - 24px)",
+        // The frame's top edge is --top: the header, and on a read tier the banner (Section 29.31).
+        "max-height:calc(100dvh - var(--top) - 12px - var(--bar) - var(--hud-h) - 24px)",
         "bottom:calc(var(--bar) + var(--hud-h) + 24px)",
     ] {
         assert!(band.contains(part), "a floating panel does not clear the toolbar: {part}");
