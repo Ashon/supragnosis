@@ -5720,7 +5720,7 @@ impl Engine {
         } else {
             self.store.get_entity(&canon_id)?.unwrap_or(row)
         };
-        let relations = self.store.relations_of(&canon_id)?;
+        let relations = self.merged_relations(&canon_id, &fwd)?;
         // Union merged-away names into aliases so get_entity sees the same alias set as the graph
         // fold (the write path already materialized same-id spelling aliases on the row - IR1).
         if !fwd.is_empty() {
@@ -5763,6 +5763,33 @@ impl Engine {
             competitors,
             kind_source,
         }))
+    }
+
+    /// The relations of an entity as the graph draws them (Principle 15): its own and every
+    /// merged-away member's, endpoints forwarded to their canonical ids, a merge's self-loops
+    /// dropped, and one row per (from, kind, to), the lowest relation id, as [`Engine::graph`] keeps.
+    fn merged_relations(
+        &self,
+        canon_id: &str,
+        fwd: &HashMap<String, String>,
+    ) -> Result<Vec<Relation>, StoreError> {
+        let canon = |id: &str| fwd.get(id).cloned().unwrap_or_else(|| id.to_string());
+        let mut rows = self.store.relations_of(canon_id)?;
+        for (member, c) in fwd {
+            if c == canon_id {
+                rows.extend(self.store.relations_of(member)?);
+            }
+        }
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for mut r in rows {
+            (r.from, r.to) = (canon(&r.from), canon(&r.to));
+            if r.from != r.to && seen.insert((r.from.clone(), r.kind.clone(), r.to.clone())) {
+                out.push(r);
+            }
+        }
+        Ok(out)
     }
 
     /// The observation log for a workspace, flattened for the log-browser surface (observability).
@@ -6238,7 +6265,8 @@ impl Engine {
     /// the first, the higher ranked. Each hit says how it was reached - its words matched, it is near
     /// in meaning, or it is a neighbor the enrichment added - read from the lists the search itself
     /// consumed, so the viewer can group them (U15) without ranking anything. The MCP tool's own
-    /// answer is untouched.
+    /// answer is untouched: forwarding folds the log, which `search` never walks (read_path_cost.rs),
+    /// and a merged-away id it answers forwards at `get_entity` and `traverse`.
     pub fn search_canonical(
         &self,
         query: &str,
@@ -6349,14 +6377,69 @@ impl Engine {
         Ok(results)
     }
 
-    /// Traverses neighbors from an entity following the relation direction (from->to) up to `max_depth` hops.
+    /// Traverses neighbors from an entity following the relation direction (from->to) up to
+    /// `max_depth` hops, through accepted merges as the graph draws them (Principle 15): the walk
+    /// starts at the entity a merged-away id forwards to, leaves a node by any member's edges and
+    /// names each neighbor by its canonical id. With no merge in the start's workspace it is the
+    /// store's walk; either way it is in (depth, id) order, and a node with no row is walked
+    /// through but not named.
     pub fn traverse(
         &self,
         id: &str,
         max_depth: usize,
         limit: usize,
     ) -> Result<Vec<TraverseHit>, StoreError> {
-        self.store.traverse(id, max_depth.max(1), limit)
+        let max_depth = max_depth.max(1);
+        let ws = self
+            .store
+            .get_entity(id)?
+            .and_then(|e| e.provenance.first().map(|p| p.workspace.clone()));
+        let fwd = match &ws {
+            Some(ws) => self.merge_forwarding(Some(ws), &ReadCtx::default())?,
+            None => HashMap::new(),
+        };
+        if fwd.is_empty() {
+            return self.store.traverse(id, max_depth, limit);
+        }
+        let canon = |x: &str| fwd.get(x).cloned().unwrap_or_else(|| x.to_string());
+        let mut members: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (m, c) in &fwd {
+            members.entry(c.as_str()).or_default().push(m.as_str());
+        }
+        let start = canon(id);
+        let mut visited = HashSet::from([start.clone()]);
+        let mut frontier = vec![start];
+        let mut out = Vec::new();
+        for depth in 1..=max_depth {
+            let mut next: BTreeSet<String> = BTreeSet::new();
+            for node in &frontier {
+                let class = members.get(node.as_str()).into_iter().flatten().copied();
+                for m in std::iter::once(node.as_str()).chain(class) {
+                    for r in self.store.relations_of(m)? {
+                        let to = canon(&r.to);
+                        if r.from == m && !visited.contains(&to) {
+                            next.insert(to);
+                        }
+                    }
+                }
+            }
+            for to in &next {
+                visited.insert(to.clone());
+                if let Some(e) = self.store.get_entity(to)? {
+                    out.push(TraverseHit {
+                        id: to.clone(),
+                        depth,
+                        name: e.canonical_name,
+                        kind: e.kind,
+                    });
+                    if out.len() >= limit {
+                        return Ok(out);
+                    }
+                }
+            }
+            frontier = next.into_iter().collect();
+        }
+        Ok(out)
     }
 
     /// This node's default workspace (referenced when an MCP resource builds a concrete URI).

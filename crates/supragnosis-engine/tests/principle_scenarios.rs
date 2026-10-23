@@ -1544,6 +1544,55 @@ fn p15_hypergraph_membership_forwards_accepted_merges() {
     assert_eq!(gn, hn, "graph and hypergraph node sets must agree after forwarding");
 }
 
+/// guard (Principle 15): the agent's reads follow an accepted merge as the graph draws it. An
+/// entity read by its canonical id or by a merged-away one carries every member's relations,
+/// forwarded, and a traverse from either leaves by any member's edges. They used to read only the
+/// canonical row's own edges, so a merge hid what the merged-away entity was connected to.
+#[test]
+fn p15_get_entity_and_traverse_follow_an_accepted_merge() {
+    let (_store, engine) = engine();
+    let uses = |from: &str, to: &str| RelationInput {
+        from: from.into(),
+        kind: "uses".into(),
+        to: to.into(),
+        description: None,
+        valid_from: None,
+        valid_to: None,
+    };
+    observe(&engine, "cozo is a database", &["cozo"], vec![]);
+    observe(
+        &engine,
+        "cozodb uses rocksdb",
+        &["cozodb", "rocksdb"],
+        vec![uses("cozodb", "rocksdb")],
+    );
+    let (cozo, cozodb, rocksdb) = (
+        Entity::make_id(WS, "cozo"),
+        Entity::make_id(WS, "cozodb"),
+        Entity::make_id(WS, "rocksdb"),
+    );
+    let p = propose_merge(&engine, &[cozodb.as_str(), cozo.as_str()], &cozo, "alice");
+    review(&engine, &p, "merge", "alice");
+
+    for id in [&cozo, &cozodb] {
+        let view = engine.get_entity(id).expect("read").expect("an entity");
+        assert_eq!(view.entity.id, cozo, "{id} does not forward to the canonical entity");
+        let edges: Vec<(&str, &str, &str)> = view
+            .relations
+            .iter()
+            .map(|r| (r.from.as_str(), r.kind.as_str(), r.to.as_str()))
+            .collect();
+        assert_eq!(edges, vec![(cozo.as_str(), "uses", rocksdb.as_str())], "read by {id}");
+        let hits: Vec<(String, usize)> = engine
+            .traverse(id, 2, 10)
+            .expect("traverse")
+            .into_iter()
+            .map(|h| (h.id, h.depth))
+            .collect();
+        assert_eq!(hits, vec![(rocksdb.clone(), 1)], "traverse from {id}");
+    }
+}
+
 /// guard (Principle 11 promotion path, P18 lineage): reifying a hyperedge asserts a group entity
 /// plus member_of relations as an ordinary observation whose derived_from names every
 /// co-asserting observation - the grouping becomes first-class (managed like any edge) while the
