@@ -215,7 +215,7 @@
                 <button type="button" data-out="found" aria-pressed="false">Which database does billing-api use?<small>a relation this node holds</small></button>
                 <button type="button" data-out="notfound" aria-pressed="true">Does billing-api use Kafka?<small>nothing on this node says so</small></button>
                 <button type="button" data-out="unavail" data-route="team hub" aria-pressed="false">Ask the team hub about payments<small>the hub is unreachable</small></button>
-                <button type="button" data-out="withheld" data-route="team hub" aria-pressed="false">Ask the team hub about 'payroll'<small>a workspace this machine does not share with it</small></button>
+                <button type="button" data-out="withheld" data-route="team hub" aria-pressed="false">Ask the team hub about 'payroll'<small>a workspace the hub does not share with this machine</small></button>
                 <button type="button" data-out="trunc" aria-pressed="false">Everything about billing-api<small>more than one page of it</small></button>
                 <button type="button" disabled>Open an entry that was destroyed<small>owed: a tombstone that names the act</small></button>
               </div>
@@ -224,7 +224,7 @@
                   <li><span class="kind">Found</span><p>Postgres.</p><p class="sm">Said by laptop for you on Mon 10:02, and confirmed by you in the console.</p></li>
                   <li class="on"><span class="kind">Not found</span><p>Nothing on this node says so.</p><p class="sm">That is unknown, never no. Another node may know, and a later entry may say so.</p></li>
                   <li><span class="kind">Unavailable</span><p>The hub did not answer.</p><p class="sm">This is not an empty result. Local answers still work; ask again when the hub is reachable.</p></li>
-                  <li><span class="kind">Withheld</span><p>'payroll' is not shared with the team hub.</p><p class="sm">You named the workspace, so the refusal names it too.</p></li>
+                  <li><span class="kind">Withheld</span><p>The team hub does not share 'payroll' with this machine.</p><p class="sm">You named the workspace, so the refusal names it too.</p></li>
                   <li><span class="kind">Truncated</span><p>Showing 20 of 57.</p><p class="sm">The rest were left out, not missing. Ask a narrower question or for the next page.</p></li>
                 </ul>
               </div>
