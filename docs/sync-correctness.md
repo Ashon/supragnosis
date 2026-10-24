@@ -258,7 +258,8 @@ Section 6 holds the events it cannot decode instead of failing their batch.
 
 The consent header's documented rationale is corrected. An older hub ignores an unknown body field
 exactly as it ignores an unknown header. The header is still the right place for consent, because it
-applies to the whole request, not to one event.
+applies to the whole request, not to one event. Since 0.11.0 a node sends it only to say no, so a 0.10 hub withdraws
+consent an earlier release gave (remote-server.md Section 13).
 
 ## 13. Ordering
 

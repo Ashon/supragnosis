@@ -150,9 +150,6 @@ struct JoinArgs {
     /// terminal when omitted. It receives every workspace the invitation keeps either way
     #[arg(long)]
     send: Option<String>,
-    /// Let the hub serve what this machine sends to the people it admits, when it serves any
-    #[arg(long)]
-    serve: bool,
     /// The name the hub shows for this machine (default: this machine's name)
     #[arg(long)]
     name: Option<String>,
@@ -1231,8 +1228,7 @@ async fn build_sync_context(
     config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
     config_notes.extend(fed::principals_note(fc.server.as_ref()));
     config_notes.extend(noncanonical_key_notes(&fc));
-    let (serve_workspaces, serve_notes) = fc.sync.serve_set();
-    config_notes.extend(serve_notes);
+    config_notes.extend(fc.sync.serve_note());
     // What a join recorded this node receives (docs/pairing.md Section 4.5, PA12).
     let (receive, receive_note) = join::receive_list(&join::Paths::default_paths());
     config_notes.extend(receive_note);
@@ -1325,7 +1321,6 @@ async fn build_sync_context(
             share_workspaces: fc.sync.share_workspaces.clone(),
             receive,
             vouched,
-            serve_workspaces,
             servers: links,
             config_notes,
             surfaces: surfaces.clone(),
@@ -1410,7 +1405,6 @@ fn hub_slot(
             peer_registry: Some(peer_registry.clone()),
             // The pairing calls ride beside the sync API; the listener adds them when it opens.
             extra: None,
-            on_consent: None,
         };
         let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
             Vec::new(),
@@ -1524,9 +1518,7 @@ fn spawn_fed_status(task: FedStatusTask) {
                 let mut ws_json = Vec::new();
                 let mut diff = supragnosis_sync::SurfaceDiff::default();
                 let mut negotiated_at = None;
-                if let Ok(client) = supragnosis_sync::http::SyncClient::for_link(link)
-                    .map(|c| c.with_serve(sync.serve_set().0))
-                {
+                if let Ok(client) = supragnosis_sync::http::SyncClient::for_link(link) {
                     match client.ping().await {
                         Ok(p) => {
                             healthy = true;
@@ -1842,7 +1834,6 @@ fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
             for link in &links {
                 let server = &link.url;
                 let client = supragnosis_sync::http::SyncClient::for_link(link)?
-                    .with_serve(fc.sync.serve_set().0)
                     .with_vouched(vouched.clone());
                 let s = client.sync_workspace(&store, &node, ws, share, &keys).await?;
                 println!(
@@ -3065,7 +3056,6 @@ fn invite_cmd(a: InviteArgs) -> Result<()> {
 /// The terminal's side of a join: the preview's questions, and the words.
 struct TerminalPerson {
     send: Option<Vec<String>>,
-    serve: bool,
     json: bool,
 }
 
@@ -3076,23 +3066,15 @@ fn printable(s: &str) -> String {
 }
 
 impl join::Person for TerminalPerson {
-    fn preview(
-        &mut self,
-        hub: &str,
-        workspaces: &[String],
-        serves_principals: bool,
-    ) -> Result<join::Choices> {
+    fn preview(&mut self, hub: &str, workspaces: &[String]) -> Result<join::Choices> {
         let hub = printable(hub);
         let hub = hub.as_str();
         if self.json {
             println!(
                 "{}",
-                serde_json::json!({"preview": {"hub_name": hub, "workspaces": workspaces, "serves_principals": serves_principals}})
+                serde_json::json!({"preview": {"hub_name": hub, "workspaces": workspaces}})
             );
-            return Ok(join::Choices {
-                send: self.send.clone().unwrap_or_default(),
-                serve: self.serve,
-            });
+            return Ok(join::Choices { send: self.send.clone().unwrap_or_default() });
         }
         println!();
         match workspaces.is_empty() {
@@ -3115,14 +3097,7 @@ impl join::Person for TerminalPerson {
                 send
             }
         };
-        let serve = match (serves_principals, send.is_empty(), self.send.is_some()) {
-            (true, false, false) => ask_yes(&format!(
-                "{hub} also serves people it admits. May it serve what this machine sends to them?"
-            ))?,
-            (true, false, true) => self.serve,
-            _ => false,
-        };
-        Ok(join::Choices { send, serve })
+        Ok(join::Choices { send })
     }
 
     fn words(&mut self, hub: &str, words: &[&str]) {
@@ -3178,7 +3153,6 @@ fn join_cmd(a: JoinArgs) -> Result<()> {
         .map(|s| s.split(',').map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect());
     let mut person = TerminalPerson {
         send: send.or(if a.json { Some(Vec::new()) } else { None }),
-        serve: a.serve,
         json: a.json,
     };
     let paths = join::Paths::default_paths();
@@ -5463,34 +5437,21 @@ mod fed {
         /// Superseded by the log-borne canon-policy binding in Phase 5.
         #[serde(default)]
         pub origin_keys: std::collections::BTreeMap<String, String>,
-        /// The shared workspaces a hub may serve to its principals (docs/remote-server.md Section
-        /// 4.5). Sharing replicates; serving discloses to people this node never heard of, so it is
-        /// asked for separately. Must be a subset of `share_workspaces`.
+        /// No longer read: principals, whom a hub served these to, were removed in 0.11.0
+        /// (remote-server.md Section 13). Parsed so a config that still names them starts the
+        /// daemon; [`SyncSection::serve_note`] says so.
         #[serde(default)]
         pub serve_workspaces: Vec<String>,
     }
 
     impl SyncSection {
-        /// `serve_workspaces` narrowed to what is shared, and a note for each entry dropped - a
-        /// workspace that does not leave this node cannot be served by a hub, and dropping it only
-        /// ever discloses less (P24's permitted direction).
-        pub fn serve_set(&self) -> (Vec<String>, Vec<String>) {
-            let mut notes = Vec::new();
-            let serve = self
-                .serve_workspaces
-                .iter()
-                .filter(|w| {
-                    let shared = self.share_workspaces.contains(w);
-                    if !shared {
-                        notes.push(format!(
-                            "[sync] serve_workspaces names {w:?}, which is not in share_workspaces - ignored: a workspace that is not shared cannot be served"
-                        ));
-                    }
-                    shared
-                })
-                .cloned()
-                .collect();
-            (serve, notes)
+        /// The note for `serve_workspaces` left in a config: read, and not used.
+        pub fn serve_note(&self) -> Option<String> {
+            (!self.serve_workspaces.is_empty()).then(|| {
+                "[sync] serve_workspaces is no longer read: hubs serve no principals since 0.11.0, \
+                 and this node tells every hub it serves nothing. Remove the key."
+                    .to_string()
+            })
         }
     }
 
@@ -5852,18 +5813,19 @@ mod fed {
     mod tests {
         use super::*;
 
-        /// docs/remote-server.md Section 4.5: a node can let a hub serve only what it shares - an
-        /// entry naming an unshared workspace is dropped with a note, never honored.
+        /// remote-server.md Section 13: `serve_workspaces` left in a config parses and is said to do
+        /// nothing.
         #[test]
-        fn serving_is_narrowed_to_what_is_shared() {
+        fn serve_workspaces_left_in_a_config_is_said_to_do_nothing() {
             let cfg: FileConfig = toml::from_str(
-                "[sync]\nshare_workspaces = [\"team\", \"docs\"]\nserve_workspaces = [\"team\", \"private\"]\n",
+                "[sync]\nshare_workspaces = [\"team\"]\nserve_workspaces = [\"team\", \"private\"]\n",
             )
             .unwrap();
-            let (serve, notes) = cfg.sync.serve_set();
-            assert_eq!(serve, vec!["team".to_string()]);
-            assert_eq!(notes.len(), 1);
-            assert!(notes[0].contains("private"));
+            let note = cfg.sync.serve_note().expect("a note");
+            assert!(note.contains("no longer read") && note.contains("0.11.0"), "{note}");
+            let none: FileConfig =
+                toml::from_str("[sync]\nshare_workspaces = [\"team\"]\n").unwrap();
+            assert_eq!(none.sync.serve_note(), None);
         }
 
         /// remote-server.md Section 13: a hub's config that still names principals, from before 0.11.0,

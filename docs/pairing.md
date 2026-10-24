@@ -126,8 +126,8 @@ A Linux server, reached over SSH and with no Settings page, is a hub through the
 
 A joining machine on Linux runs `supragnosis join`, reading the code on stdin, and shows the three
 words in the terminal while it waits for the hub's answer. It asks which invited workspaces to
-also send, one by one, unless `--send` names them; `--serve` answers the serve question, and
-`--json` prints the preview, the words and the outcome as lines and asks nothing, for the app.
+also send, one by one, unless `--send` names them (the serve question and `--serve` went with
+principals in 0.11.0, remote-server.md Section 13), and `--json` prints the preview, the words and the outcome as lines and asks nothing, for the app.
 
 ## 4. The mechanism
 
@@ -252,7 +252,8 @@ two require the code's secret, the last a joined machine's credential.
     with the address it verified (a `.local` name or DNS name rather than an address DHCP may
     change), the credential, and `ca` pointing at the pinned certificate saved as
     `~/.supragnosis/hubs/<hub's node id>.pem`; the hub's key in `origin_keys`; the ticked
-    workspaces in `share_workspaces`, and in `serve_workspaces` if the person allowed it;
+    workspaces in `share_workspaces` (and, before 0.11.0, in `serve_workspaces` if the person allowed
+    it, which `hub leave` still removes);
   - in `~/.supragnosis/hubs/<hub's node id>.toml` (`0600`): the hub's name, every invited
     workspace as the receive list (D12), and the vouched keys with their bounds.
 

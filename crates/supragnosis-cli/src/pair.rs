@@ -283,8 +283,8 @@ pub struct AnswerBody {
     pub hub_key: String,
     pub hub_name: String,
     pub workspaces: Vec<String>,
-    /// Whether the hub serves principals: the joining machine's serve consent rests on this word,
-    /// not on the preview it read before the person was asked.
+    /// Whether the hub serves principals: always false since 0.11.0 removed them (remote-server.md
+    /// Section 13). Kept on the wire because a 0.10 joiner requires it, and read by no one here.
     pub serves_principals: bool,
     pub vouched: Vec<Vouched>,
     /// The hub's certificate in PEM: the one the code pins.

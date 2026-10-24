@@ -26,7 +26,6 @@ fn context(node: SyncNode, hub: &str, token: &str, keys: &BTreeMap<String, Strin
         share_workspaces: vec!["ws".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         servers: vec![ServerLink {
             url: hub.into(),
             auth_token: token.into(),

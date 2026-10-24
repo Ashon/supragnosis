@@ -380,24 +380,11 @@ pub struct SyncActivity {
 /// Activity hook: the wiring layer forwards hits into the node's event stream (viewer SSE).
 pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
 
-/// Consent hook (docs/remote-server.md Section 4.5): a node said whether this hub may serve one of
-/// its workspaces to the hub's principals - `(node_id, workspace, consents)`. The wiring layer
-/// records it; the sync crate only carries it.
-pub type OnConsent = Arc<dyn Fn(&str, &str, bool) + Send + Sync>;
-
-/// The header a node sends its consent in. A header because consent is about the whole request -
-/// the workspace it names - not about any one event in it. (An older hub would ignore an unknown
-/// body field exactly as it ignores an unknown header: the wire types do not deny unknown fields.
-/// What an older peer cannot read is an unknown enum value, sync-correctness.md Section 12.)
+/// The header a 0.10 node sent its consent to serve a workspace in, which a 0.10 hub read to serve
+/// it to its principals (docs/remote-server.md Section 4.5). Principals were removed in 0.11.0, so a
+/// 0.11 node says "no" in it on every workspace request, and a 0.10 hub withdraws whatever consent
+/// it held (remote-server.md Section 13); revisit when no 0.10 hub remains.
 pub const SERVE_HEADER: &str = "supragnosis-serve";
-
-fn consent_of(headers: &HeaderMap) -> Option<bool> {
-    match headers.get(SERVE_HEADER)?.to_str().ok()?.trim() {
-        "yes" => Some(true),
-        "no" => Some(false),
-        _ => None,
-    }
-}
 
 /// Federated-retrieval hook: the wiring layer injects the engine's hybrid search so a remote read
 /// query answers from this node's full retrieval surface (hits, mode). Without it the handler falls
@@ -469,7 +456,6 @@ pub struct Hooks {
     /// (docs/pairing.md Section 4.2). It authenticates its own requests; `admitted` counts toward
     /// the bind rule.
     pub extra: Option<ExtraSurface>,
-    pub on_consent: Option<OnConsent>,
 }
 
 /// Routes the wiring layer serves beside the sync API, on the same TLS listener.
@@ -573,7 +559,6 @@ pub struct ServerState {
     on_applied: Option<OnApplied>,
     on_activity: Option<OnActivity>,
     on_search: Option<OnSearch>,
-    on_consent: Option<OnConsent>,
     registry: Option<Arc<PeerRegistry>>,
 }
 
@@ -591,7 +576,6 @@ impl ServerState {
             on_applied: None,
             on_activity: None,
             on_search: None,
-            on_consent: None,
             registry: None,
         }
     }
@@ -616,7 +600,6 @@ impl ServerState {
             on_applied: None,
             on_activity: None,
             on_search: None,
-            on_consent: None,
             registry: None,
         }
     }
@@ -637,19 +620,6 @@ impl ServerState {
     pub fn with_on_search(mut self, f: OnSearch) -> Self {
         self.on_search = Some(f);
         self
-    }
-
-    pub fn with_on_consent(mut self, f: OnConsent) -> Self {
-        self.on_consent = Some(f);
-        self
-    }
-
-    /// Passes on a node's consent header for a workspace it is authorized for (Section 4.5). No
-    /// header - an older node - changes nothing: it never consented, so there is nothing to withdraw.
-    fn consent(&self, node_id: &str, workspace: &str, headers: &HeaderMap) {
-        if let (Some(serve), Some(hook)) = (consent_of(headers), &self.on_consent) {
-            hook(node_id, workspace, serve);
-        }
     }
 
     /// Shares the known-peer registry (runtime observability, 6a).
@@ -818,7 +788,6 @@ async fn advertise_handler(
     let admitted = state.peers.admitted();
     let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
-    state.consent(&entry.node_id, &req.workspace, &headers);
     let store = state.store.clone();
     // Store calls are offloaded so a blocking backend cannot starve the async runtime (F11).
     let vv = tokio::task::spawn_blocking(move || version_vector(store.as_ref(), &req.workspace))
@@ -839,7 +808,6 @@ async fn pull_handler(
     let admitted = state.peers.admitted();
     let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
-    state.consent(&entry.node_id, &req.workspace, &headers);
     let store = state.store.clone();
     let node = state.node.clone();
     let ws = req.workspace.clone();
@@ -893,7 +861,6 @@ async fn push_handler(
     let admitted = state.peers.admitted();
     let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
-    state.consent(&entry.node_id, &req.workspace, &headers);
     let store = state.store.clone();
     let node = state.node.clone();
     let keys = admitted.origin_keys;
@@ -1075,9 +1042,6 @@ pub async fn bind(
     if let Some(hook) = hooks.on_search {
         state = state.with_on_search(hook);
     }
-    if let Some(hook) = hooks.on_consent {
-        state = state.with_on_consent(hook);
-    }
     if let Some(r) = hooks.peer_registry {
         state = state.with_peers(r);
     }
@@ -1139,9 +1103,6 @@ pub struct SyncClient {
     base: String,
     token: String,
     http: reqwest::Client,
-    /// The workspaces this node lets the hub serve to its principals (`[sync] serve_workspaces`).
-    /// `None` sends no consent header at all, as an older node does.
-    serve: Option<std::collections::BTreeSet<String>>,
     /// Keys a hub vouched for at a join, by origin, and the last sequence each verifies in each
     /// workspace (docs/pairing.md Section 4.3.1).
     vouched: BTreeMap<String, BTreeMap<String, u64>>,
@@ -1179,7 +1140,6 @@ impl SyncClient {
             base: base_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
             http,
-            serve: None,
             vouched: BTreeMap::new(),
         })
     }
@@ -1192,13 +1152,6 @@ impl SyncClient {
         self
     }
 
-    /// Says, on every workspace request, whether the hub may serve that workspace to its principals
-    /// (docs/remote-server.md Section 4.5): yes for these, no for every other.
-    pub fn with_serve(mut self, serve: impl IntoIterator<Item = String>) -> Self {
-        self.serve = Some(serve.into_iter().collect());
-        self
-    }
-
     async fn call<Req: Serialize, Resp: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
@@ -1207,7 +1160,8 @@ impl SyncClient {
         self.call_for(path, req, None).await
     }
 
-    /// A workspace request, carrying this node's consent for that workspace when it has a view.
+    /// A workspace request, saying no to serving that workspace to a 0.10 hub's principals
+    /// ([`SERVE_HEADER`]).
     async fn call_for<Req: Serialize, Resp: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
@@ -1221,8 +1175,8 @@ impl SyncClient {
             .header(PROTOCOL_HEADER, PROTOCOL)
             .header(RELEASE_HEADER, env!("CARGO_PKG_VERSION"))
             .json(req);
-        if let (Some(ws), Some(serve)) = (workspace, &self.serve) {
-            builder = builder.header(SERVE_HEADER, if serve.contains(ws) { "yes" } else { "no" });
+        if workspace.is_some() {
+            builder = builder.header(SERVE_HEADER, "no");
         }
         let resp = builder.send().await?;
         let status = resp.status();
@@ -1926,36 +1880,32 @@ mod tests {
         }
     }
 
-    /// Consent rides a header on every workspace request (docs/remote-server.md Section 4.5): yes
-    /// for a workspace the node serves, no for any other, and nothing at all from a node that has no
-    /// view - an older one - so the hub never reads silence as a withdrawal or as a grant.
+    /// remote-server.md Section 13: a 0.11 node says no to serving on every workspace request, so a
+    /// 0.10 hub withdraws the consent an earlier release gave it, and a request that names no
+    /// workspace carries no header.
     #[tokio::test]
-    async fn consent_rides_a_header_and_an_older_node_sends_none() {
-        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
-        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
-        let spoke = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
-        let allow = vec![entry(&spoke, "token", &["team", "private"])];
-        let said = Arc::new(std::sync::Mutex::new(Vec::<(String, String, bool)>::new()));
+    async fn a_node_says_no_to_serving_on_every_workspace_request() {
+        let said = Arc::new(std::sync::Mutex::new(Vec::<Option<String>>::new()));
         let log = said.clone();
-        let hook: OnConsent = Arc::new(move |n: &str, w: &str, s: bool| {
-            log.lock().unwrap().push((n.to_string(), w.to_string(), s))
-        });
-        let state = Arc::new(ServerState::new(hub_store, hub, allow).with_on_consent(hook));
-        let addr = spawn_server(state).await;
-        let base = format!("http://{addr}");
-
-        let serving = SyncClient::new(&base, "token").unwrap().with_serve(["team".to_string()]);
-        serving.advertise("team").await.unwrap();
-        serving.advertise("private").await.unwrap();
-        let older = SyncClient::new(&base, "token").unwrap();
-        older.advertise("team").await.unwrap();
-
-        let id = spoke.node_id().to_string();
-        assert_eq!(
-            *said.lock().unwrap(),
-            vec![(id.clone(), "team".into(), true), (id, "private".into(), false)],
-            "the older client said nothing"
+        let app = Router::new().route(
+            "/sync/advertise",
+            axum::routing::post(move |headers: HeaderMap| {
+                let log = log.clone();
+                async move {
+                    log.lock().unwrap().push(
+                        headers.get(SERVE_HEADER).and_then(|v| v.to_str().ok()).map(str::to_string),
+                    );
+                    StatusCode::IM_A_TEAPOT
+                }
+            }),
         );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let client = SyncClient::new(format!("http://{addr}"), "token").unwrap();
+        let _ = client.advertise("team").await;
+        let _ = client.advertise("private").await;
+        assert_eq!(*said.lock().unwrap(), vec![Some("no".to_string()), Some("no".to_string())]);
     }
 
     /// A pull stamps the hub's own unstamped rows before exporting them, and stamping rewrites rows

@@ -54,9 +54,10 @@ pub struct Sidecar {
     pub url: String,
     /// Every invited workspace (D12): what this machine pulls, whatever the hub would admit.
     pub receive: Vec<String>,
-    /// What the join added to `share_workspaces` and `serve_workspaces`, so leaving removes those
-    /// and nothing the person wrote.
+    /// What the join added to `share_workspaces` - and, before 0.11.0, to `serve_workspaces` - so
+    /// leaving removes those and nothing the person wrote.
     pub sent: Vec<String>,
+    #[serde(default)]
     pub served: Vec<String>,
     /// The `[sync]` keys the join created - `sync` itself among them - which leaving removes once
     /// they are empty again.
@@ -72,17 +73,11 @@ pub struct Sidecar {
 /// What the person chose when the hub's preview was shown.
 pub struct Choices {
     pub send: Vec<String>,
-    pub serve: bool,
 }
 
 /// What a join shows the person and asks them - the terminal's prompts, or the app's sheet.
 pub trait Person {
-    fn preview(
-        &mut self,
-        hub: &str,
-        workspaces: &[String],
-        serves_principals: bool,
-    ) -> Result<Choices>;
+    fn preview(&mut self, hub: &str, workspaces: &[String]) -> Result<Choices>;
     fn words(&mut self, hub: &str, words: &[&str]);
 }
 
@@ -94,7 +89,6 @@ pub struct Joined {
     pub url: String,
     pub receive: Vec<String>,
     pub sent: Vec<String>,
-    pub served: Vec<String>,
 }
 
 fn read_toml<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<Option<T>> {
@@ -147,7 +141,6 @@ pub fn may_join(paths: &Paths) -> Result<()> {
         hub: &"0".repeat(32),
         hub_key: &"0".repeat(64),
         send: &["trial".to_string()],
-        serve: true,
         vouched: &[],
     };
     write_join(&text, &trial).with_context(|| {
@@ -164,7 +157,6 @@ struct JoinWrite<'a> {
     hub: &'a str,
     hub_key: &'a str,
     send: &'a [String],
-    serve: bool,
     /// Keys the hub vouched for: one that conflicts with a key the person wrote refuses the answer.
     vouched: &'a [pair::Vouched],
 }
@@ -173,7 +165,6 @@ struct JoinWrite<'a> {
 struct Written {
     text: String,
     sent: Vec<String>,
-    served: Vec<String>,
     created: Vec<String>,
     hub_key_was_there: bool,
 }
@@ -219,7 +210,7 @@ fn write_join(text: &str, w: &JoinWrite<'_>) -> Result<Written> {
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
         .as_table_mut()
         .context("[sync] is not a table")?;
-    for key in ["server", "origin_keys", "share_workspaces", "serve_workspaces"] {
+    for key in ["server", "origin_keys", "share_workspaces"] {
         if !sync.contains_key(key) {
             created.push(key.into());
         }
@@ -259,17 +250,10 @@ fn write_join(text: &str, w: &JoinWrite<'_>) -> Result<Written> {
         Ok(added)
     };
     let sent = add("share_workspaces", w.send)?;
-    let served = match w.serve {
-        true => add("serve_workspaces", w.send)?,
-        false => Vec::new(),
-    };
-    if !w.serve {
-        created.retain(|k| k != "serve_workspaces");
-    }
     let text = doc.to_string();
     toml::from_str::<crate::fed::FileConfig>(&text)
         .context("the joined configuration does not read back")?;
-    Ok(Written { text, sent, served, created, hub_key_was_there })
+    Ok(Written { text, sent, created, hub_key_was_there })
 }
 
 /// Why a call to the hub failed: a connection that may come back, or an answer that will not.
@@ -394,8 +378,7 @@ pub async fn join(
         Some("open") => {
             let hub_name = preview["hub_name"].as_str().unwrap_or("the hub").to_string();
             let offered: Vec<String> = serde_json::from_value(preview["workspaces"].clone())?;
-            let serves = preview["serves_principals"] == true;
-            let choices = person.preview(&hub_name, &offered, serves)?;
+            let choices = person.preview(&hub_name, &offered)?;
             chosen = Some((hub_name, choices));
         }
         Some("used") => {}
@@ -469,14 +452,13 @@ pub async fn join(
     pair::check_answer(code, &body)?;
     let choices = match chosen {
         Some((_, choices)) => choices,
-        None => person.preview(&body.hub_name, &body.workspaces, body.serves_principals)?,
+        None => person.preview(&body.hub_name, &body.workspaces)?,
     };
     let vouched = accept_vouched(&body.vouched, &me.node_id(), &code.hub);
     let credential = body.credential.clone();
     // Ticks count only where the answer agrees: the preview was read before the person was asked.
     let send: Vec<String> =
         choices.send.into_iter().filter(|w| body.workspaces.contains(w)).collect();
-    let serve = choices.serve && body.serves_principals;
     let hub = code.hub.clone();
     // The hub is trusted as the one certificate the code names (D13).
     let one = pinned_block(&body.certificate, &code.fingerprint)
@@ -496,7 +478,6 @@ pub async fn join(
         hub: &hub,
         hub_key: &body.hub_key,
         send: &send,
-        serve,
         vouched: &vouched,
     };
     let written = crate::fed::edit_config_at(&paths.config, |text| {
@@ -513,21 +494,14 @@ pub async fn join(
             url: url.clone(),
             receive: body.workspaces.clone(),
             sent: written.sent.clone(),
-            served: written.served.clone(),
+            served: Vec::new(),
             created: written.created,
             hub_key_was_there: written.hub_key_was_there,
             vouched: vouched.clone(),
         },
     )?;
     tracing::info!(hub = %hub, url = %url, "joined a hub");
-    Ok(Joined {
-        hub_name: body.hub_name,
-        hub,
-        url,
-        receive: body.workspaces,
-        sent: written.sent,
-        served: written.served,
-    })
+    Ok(Joined { hub_name: body.hub_name, hub, url, receive: body.workspaces, sent: written.sent })
 }
 
 /// The vouched keys a joining machine accepts (Section 4.3.1, PA13): each only for the node id
@@ -746,7 +720,6 @@ mod tests {
     /// The test's person: ticks what it was told to, keeps the words it was shown, and says when.
     struct Scripted {
         send: Vec<String>,
-        serve: bool,
         offered: Vec<String>,
         words: Vec<String>,
         /// Told when the words are shown: the hub then holds the request with its words.
@@ -754,10 +727,9 @@ mod tests {
     }
 
     impl Scripted {
-        fn new(send: &[&str], serve: bool) -> Scripted {
+        fn new(send: &[&str]) -> Scripted {
             Scripted {
                 send: send.iter().map(|w| w.to_string()).collect(),
-                serve,
                 offered: Vec::new(),
                 words: Vec::new(),
                 shown: Default::default(),
@@ -766,9 +738,9 @@ mod tests {
     }
 
     impl Person for Scripted {
-        fn preview(&mut self, _hub: &str, workspaces: &[String], _serves: bool) -> Result<Choices> {
+        fn preview(&mut self, _hub: &str, workspaces: &[String]) -> Result<Choices> {
             self.offered = workspaces.to_vec();
-            Ok(Choices { send: self.send.clone(), serve: self.serve })
+            Ok(Choices { send: self.send.clone() })
         }
 
         fn words(&mut self, _hub: &str, words: &[&str]) {
@@ -906,7 +878,6 @@ mod tests {
             share_workspaces: fc.sync.share_workspaces.clone(),
             receive: receive_list(&m.paths).0,
             vouched,
-            serve_workspaces: fc.sync.serve_workspaces.clone(),
             servers,
             config_notes: Vec::new(),
             surfaces: Default::default(),
@@ -929,7 +900,7 @@ mod tests {
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme", "docs"]);
         let m = Machine::new("two", 21);
-        let mut person = Scripted::new(&["acme", "secret"], true);
+        let mut person = Scripted::new(&["acme", "secret"]);
         let allowed = allow_when_asked(listener.pairing.clone());
         let joined = m.join(&code, &mut person).await.expect("joins");
         let hub_side = allowed.await.unwrap();
@@ -942,7 +913,6 @@ mod tests {
             vec!["acme".to_string()],
             "a tick the hub never offered is not sent"
         );
-        assert!(joined.served.is_empty(), "a hub serving no one gets no serve consent");
         let text = m.config();
         assert!(text.starts_with("# the person's own line\n"), "{text}");
         use std::os::unix::fs::PermissionsExt;
@@ -994,7 +964,7 @@ mod tests {
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("cert", 22);
-        let mut person = Scripted::new(&[], false);
+        let mut person = Scripted::new(&[]);
         let wrong = Code { fingerprint: [7; 32], ..code.clone() };
         let e = m.join(&wrong, &mut person).await.unwrap_err().to_string();
         assert!(e.contains("not the machine that made the code"), "{e}");
@@ -1034,13 +1004,13 @@ mod tests {
         let (listener, port) = serve(&hub).await;
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("again", 23);
-        until_words(&m, &code, &mut Scripted::new(&[], false)).await;
-        let mut second = Scripted::new(&[], false);
+        until_words(&m, &code, &mut Scripted::new(&[])).await;
+        let mut second = Scripted::new(&[]);
         until_words(&m, &code, &mut second).await;
         assert_eq!(second.words.len(), 3, "the same request, still pending");
         // Allowed on the hub while no `join` ran; the next run finds the answer waiting.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
-        let mut again = Scripted::new(&["acme"], false);
+        let mut again = Scripted::new(&["acme"]);
         let joined = m.join(&code, &mut again).await.expect("the same request, allowed");
         assert_eq!(again.offered, vec!["acme".to_string()], "asked after the answer");
         assert_eq!(joined.sent, vec!["acme".to_string()]);
@@ -1055,7 +1025,7 @@ mod tests {
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let m = Machine::new("tamper", 25);
         let before = m.config();
-        let mut person = Scripted::new(&["acme"], false);
+        let mut person = Scripted::new(&["acme"]);
         until_words(&m, &code, &mut person).await;
         // Allowed, and the kept answer's hub key swapped for another machine's.
         allow_when_asked(listener.pairing.clone()).await.unwrap();
@@ -1086,7 +1056,7 @@ mod tests {
         )
         .unwrap();
         let allowed = allow_when_asked(listener.pairing.clone());
-        m.join(&code, &mut Scripted::new(&["acme"], false)).await.expect("joins");
+        m.join(&code, &mut Scripted::new(&["acme"])).await.expect("joins");
         allowed.await.unwrap();
         let left = leave(&m.paths).await.expect("leaves");
         assert!(left.hub_answered, "the hub removed this machine");
@@ -1109,7 +1079,7 @@ mod tests {
         let before = m.config();
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let allowed = allow_when_asked(listener.pairing.clone());
-        m.join(&code, &mut Scripted::new(&["acme"], false)).await.expect("joins again");
+        m.join(&code, &mut Scripted::new(&["acme"])).await.expect("joins again");
         allowed.await.unwrap();
         leave(&m.paths).await.expect("leaves");
         assert_eq!(m.config().trim_end(), before.trim_end(), "{}", m.config());
@@ -1125,9 +1095,7 @@ mod tests {
         )
         .unwrap();
         let allowed = allow_when_asked(listener.pairing.clone());
-        m.join(&code, &mut Scripted::new(&[], false))
-            .await
-            .expect("joins with the key known");
+        m.join(&code, &mut Scripted::new(&[])).await.expect("joins with the key known");
         allowed.await.unwrap();
         std::fs::remove_file(m.paths.pem(&code.hub)).unwrap();
         let left = leave(&m.paths).await.expect("leaves without its certificate");
@@ -1169,7 +1137,6 @@ mod tests {
             hub: &"a".repeat(32),
             hub_key: &"b".repeat(64),
             send: &[],
-            serve: false,
             vouched: &kept,
         };
         let e = write_join(&hand, &write).err().expect("refused").to_string();
@@ -1191,7 +1158,7 @@ mod tests {
         let first = Machine::new("replaced", 41);
         let code = invite_at(&listener.pairing, port, &["acme"]);
         let allowed = allow_when_asked(listener.pairing.clone());
-        first.join(&code, &mut Scripted::new(&["acme"], false)).await.expect("joins");
+        first.join(&code, &mut Scripted::new(&["acme"])).await.expect("joins");
         allowed.await.unwrap();
         let theirs = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "old", "acme"));
         observe(&theirs, "acme", "Ledger");
@@ -1204,7 +1171,7 @@ mod tests {
         let second = Machine::new("replacing", 42);
         let code = invite_at(&listener.pairing, port, &["acme", "docs"]);
         let allowed = allow_when_asked(listener.pairing.clone());
-        second.join(&code, &mut Scripted::new(&[], false)).await.expect("joins");
+        second.join(&code, &mut Scripted::new(&[])).await.expect("joins");
         allowed.await.unwrap();
         let car = &joined(&second.paths).unwrap()[0].1;
         assert_eq!(car.vouched.len(), 1, "the hub vouched for the removed machine's key");

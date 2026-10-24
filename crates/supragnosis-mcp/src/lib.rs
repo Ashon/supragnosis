@@ -312,9 +312,6 @@ pub struct SyncContext {
     pub node: Arc<supragnosis_sync::SyncNode>,
     /// Outbound share whitelist (P17/F9) - what may leave this node.
     pub share_workspaces: Vec<String>,
-    /// The shared workspaces this node lets a hub serve to its principals (docs/remote-server.md
-    /// Section 4.5), said to the hub on every round.
-    pub serve_workspaces: Vec<String>,
     /// Keys a hub vouched for at a join, by origin, and the last sequence each verifies in each
     /// workspace (docs/pairing.md Section 4.3.1): their keys are in `origin_keys`, and an event past
     /// the bound - or in a workspace with none - is refused as from an unknown origin.
@@ -1283,7 +1280,7 @@ pub async fn pull_workspace(
     for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
         let server = &link.url;
         let client = match supragnosis_sync::http::SyncClient::for_link(link) {
-            Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
+            Ok(c) => c,
             Err(e) => {
                 results.push(serde_json::json!({"server": server, "error": e.said()}));
                 continue;
@@ -1384,7 +1381,7 @@ pub async fn push_workspace(
     for link in ctx.servers.iter().filter(|l| routed.consult.contains(&l.url)) {
         let server = &link.url;
         let client = match supragnosis_sync::http::SyncClient::for_link(link) {
-            Ok(c) => c.with_serve(ctx.serve_workspaces.clone()),
+            Ok(c) => c,
             Err(e) => {
                 results.push(serde_json::json!({"server": server, "error": e.said()}));
                 continue;
@@ -2439,7 +2436,6 @@ mod agent_answers {
             share_workspaces: vec!["acme".into()],
             receive: Some(vec!["acme".into(), "docs".into()]),
             vouched: Default::default(),
-            serve_workspaces: Vec::new(),
             servers: Vec::new(),
             config_notes: Vec::new(),
             surfaces: Default::default(),

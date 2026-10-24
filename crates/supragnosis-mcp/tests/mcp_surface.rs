@@ -878,7 +878,6 @@ async fn a_narrowed_round_names_the_hosts_it_skipped() {
         share_workspaces: vec!["ws".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
             ServerLink { url: admits.clone(), auth_token: "t".into(), ..Default::default() },
@@ -971,7 +970,6 @@ async fn a_sync_round_waiting_on_a_host_blocks_no_other_tool() {
         share_workspaces: vec!["ws".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![ServerLink { url: host, auth_token: "t".into(), ..Default::default() }],
         surfaces: Default::default(),
@@ -1040,7 +1038,6 @@ async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
         share_workspaces: vec!["ws".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![ServerLink {
             url: host.clone(),
@@ -1118,7 +1115,6 @@ async fn routing_on_the_negotiated_map_records_nothing() {
         share_workspaces: vec!["ws".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         config_notes: Vec::new(),
         servers: vec![
             ServerLink {
@@ -1228,7 +1224,6 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
         share_workspaces: vec!["ws".into(), "mine".into()],
         receive: None,
         vouched: Default::default(),
-        serve_workspaces: Vec::new(),
         config_notes: vec![note.clone()],
         servers: vec![link("https://hub.example"), link("https://quiet.example")],
         surfaces,

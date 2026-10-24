@@ -285,9 +285,9 @@ Guarded by:
 
 - **Client profiles**: the two tests of `profile.rs`, removed with it in 0.11.0 (Section 13).
 - **The remote policy, the hub end to end and consent (R2-R5, R7)**: the tests of `principal.rs`,
-  `remote.rs` and the MCP surface that held them, removed with them in 0.11.0 (Section 13), and
-  `consent_rides_a_header_and_an_older_node_sends_none` and `serving_is_narrowed_to_what_is_shared`,
-  which hold the spoke's side until step 4.
+  `remote.rs`, the MCP surface and the consent header that held them, removed with them in 0.11.0
+  (Section 13). `a_node_says_no_to_serving_on_every_workspace_request` holds what stays: the "no" a
+  0.11 node sends.
 
 Checked end to end with two scratch homes - a hub on loopback with one principal, and a client
 whose active profile points at it:

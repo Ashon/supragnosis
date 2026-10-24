@@ -379,10 +379,10 @@ list` print is not yet under Section 6's contract; it joins when the app reads i
 4).
 
 **A machine joins a hub, and leaves it** ([pairing.md](pairing.md), step 3b of its ordering). New
-commands: `supragnosis join` (the code on stdin; `--send`, `--serve`, `--name`, `--json`) and
-`supragnosis hub leave`. A join writes, into `supragnosis.toml`, a `[[sync.server]]` entry, the
-hub's key in `origin_keys` and the ticked workspaces in `share_workspaces` (and `serve_workspaces`
-when allowed) - keys a release before pairing reads - and makes the file `0600`; leaving removes
+commands: `supragnosis join` (the code on stdin; `--send`, `--name`, `--json`, and `--serve` until
+0.11.0 removed it with principals) and `supragnosis hub leave`. A join writes, into
+`supragnosis.toml`, a `[[sync.server]]` entry, the hub's key in `origin_keys` and the ticked
+workspaces in `share_workspaces` - keys a release before pairing reads - and makes the file `0600`; leaving removes
 those and nothing the person wrote. A node a join set up pulls the invited workspaces on its rounds,
 received-only ones included, and `sync_pull` refuses a workspace that is neither shared nor
 recorded, as `supragnosis sync` does when no daemon runs - which then syncs all of them rather than

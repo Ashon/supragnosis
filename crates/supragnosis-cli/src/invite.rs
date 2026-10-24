@@ -414,7 +414,6 @@ impl Pairing {
         let _g = self.guard();
         let secret = hex32(secret).context("the secret is not 32 hex bytes")?;
         let (mut book, _) = self.invites(now)?;
-        let serves = self.serves_principals();
         Ok(match Self::position(&book, &secret).map(|at| &mut book.invite[at]) {
             None => json!({"state": "unknown", "said": UNKNOWN}),
             Some(i) if i.state != State::Open => {
@@ -424,16 +423,11 @@ impl Pairing {
                 "state": "open",
                 "hub_name": self.hub_name,
                 "workspaces": i.workspaces,
-                "serves_principals": serves,
+                // Always false: principals went in 0.11.0, and a 0.10 joiner reads the field.
+                "serves_principals": false,
                 "expires": i.expires,
             }),
         })
-    }
-
-    /// Always false since 0.11.0 removed principals (remote-server.md Section 13); the field stays on
-    /// the wire, where a 0.10 joiner requires it.
-    fn serves_principals(&self) -> bool {
-        false
     }
 
     /// A refusal that leaves the invitation as it is: the request is not one the hub could show.
@@ -615,7 +609,7 @@ impl Pairing {
             hub_key: self.node.public_key_hex(),
             hub_name: self.hub_name.clone(),
             workspaces: workspaces.clone(),
-            serves_principals: self.serves_principals(),
+            serves_principals: false,
             vouched,
             certificate: self.certificate_pem()?,
             credential: credential.clone(),
