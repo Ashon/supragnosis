@@ -1501,6 +1501,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&[
                 "a_start_says_started_once_its_daemon_answers",
                 "a_forked_start_is_gone_at_once_and_slow_after_thirty_seconds",
+                "the_reason_is_the_logged_error_with_its_causes",
             ]),
         ),
         c(

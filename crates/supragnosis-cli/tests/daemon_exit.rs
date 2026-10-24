@@ -86,17 +86,35 @@ fn start(home: &std::path::Path, http: &str, sock: &std::path::Path) -> std::pro
         .env_clear()
         .env("HOME", home)
         .env("PATH", "/bin:/usr/bin")
+        // a coverage build's profile path, absolute, so the daemon - which runs in `/` - can write
+        // its own; without it both would write beside the test, or fail and say so on stderr
+        .envs(std::env::var_os("LLVM_PROFILE_FILE").map(|v| ("LLVM_PROFILE_FILE", v)))
         .stdin(Stdio::null())
         .output()
         .expect("start runs")
 }
 
-/// Stops whatever daemon the home's pidfile names, so a failing assertion leaves nothing running.
+/// Stops the daemon the home's pidfile names, when that pid is still a supragnosis process, so a
+/// failing assertion leaves nothing running and a reused pid is never signalled.
 struct Reap(PathBuf);
 impl Drop for Reap {
     fn drop(&mut self) {
-        if let Ok(pid) = std::fs::read_to_string(self.0.join(".supragnosis/supragnosis.pid")) {
-            let _ = Command::new("kill").arg(pid.trim()).stderr(Stdio::null()).status();
+        let pid = std::fs::read_to_string(self.0.join(".supragnosis/supragnosis.pid"));
+        let pid = pid.as_deref().map(str::trim).unwrap_or_default();
+        let ours = |pid: &str| {
+            Command::new("ps").args(["-p", pid, "-o", "comm="]).output().is_ok_and(|o| {
+                o.status.success() && String::from_utf8_lossy(&o.stdout).contains("supragnosis")
+            })
+        };
+        if !pid.is_empty() && ours(pid) {
+            let _ = Command::new("kill").arg(pid).status();
+            wait_for("the daemon's exit", Duration::from_secs(10), || {
+                if ours(pid) {
+                    Err("running".to_string())
+                } else {
+                    Ok(())
+                }
+            });
         }
         let _ = std::fs::remove_dir_all(&self.0);
     }

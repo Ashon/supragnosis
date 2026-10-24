@@ -703,6 +703,31 @@ pub fn forked(answering: bool, pidfile: &Pidfile, looks: u32) -> Option<Forked> 
     (looks >= START_LOOKS).then_some(Forked::Slow)
 }
 
+/// The error a daemon that exited logged last, as anyhow prints one: the `Error: ` line and the
+/// `Caused by:` lines under it, joined, without a backtrace or anything written after. `None` when
+/// it logged no error - a panic, or a signal.
+pub fn logged_error(log: &str) -> Option<String> {
+    let lines: Vec<&str> = log.lines().collect();
+    let at = lines.iter().rposition(|l| l.starts_with("Error: "))?;
+    let mut parts = vec![lines[at]["Error: ".len()..].trim().to_string()];
+    let mut causes = false;
+    for line in &lines[at + 1..] {
+        let t = line.trim();
+        match t {
+            "" if causes => break,
+            "" => continue,
+            "Caused by:" => causes = true,
+            _ if !causes || !line.starts_with(' ') => break,
+            _ => {
+                let numbered =
+                    t.split_once(": ").filter(|(n, _)| n.bytes().all(|b| b.is_ascii_digit()));
+                parts.push(numbered.map_or(t, |(_, rest)| rest).to_string());
+            }
+        }
+    }
+    Some(parts.join(": "))
+}
+
 /// The `version` field of the viewer's `/api/about` body.
 pub fn parse_about_version(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -1098,6 +1123,35 @@ mod tests {
             assert_eq!(forked(false, &waiting, START_LOOKS - 1), None, "{waiting:?} waits");
             assert_eq!(forked(false, &waiting, START_LOOKS), Some(Forked::Slow));
         }
+    }
+
+    /// The reason `start` prints for a daemon that exited first is its error with every cause,
+    /// whatever follows it in the log: a backtrace, a coverage build's own complaint.
+    #[test]
+    fn the_reason_is_the_logged_error_with_its_causes() {
+        let info = "2026-10-24T03:33:48Z  INFO supragnosis: store=in-memory\n";
+        let plain = format!("{info}Error: MCP bind address 0.0.0.0:1 is not loopback - refusing\n");
+        assert_eq!(
+            logged_error(&plain).as_deref(),
+            Some("MCP bind address 0.0.0.0:1 is not loopback - refusing")
+        );
+        let chained = "Error: failed to open the store at /h/.supragnosis/redb\n\nCaused by:\n    0: store backend error\n    1: Database already open. Cannot acquire lock.\n";
+        assert_eq!(
+            logged_error(chained).as_deref(),
+            Some("failed to open the store at /h/.supragnosis/redb: store backend error: Database already open. Cannot acquire lock.")
+        );
+        let one = "Error: failed to read /h/config.toml\n\nCaused by:\n    invalid basic string\n";
+        assert_eq!(
+            logged_error(one).as_deref(),
+            Some("failed to read /h/config.toml: invalid basic string")
+        );
+        let traced = format!("{plain}\nStack backtrace:\n   0: std::backtrace\n  36: _main\n");
+        assert_eq!(logged_error(&traced), logged_error(&plain));
+        let profiled =
+            format!("{plain}LLVM Profile Error: Failed to write file \"default.profraw\"\n");
+        assert_eq!(logged_error(&profiled), logged_error(&plain));
+        let panicked = format!("{info}thread 'main' panicked at src/main.rs:1:1:\nboom\nnote: run with RUST_BACKTRACE=1\n");
+        assert_eq!(logged_error(&panicked), None);
     }
 
     /// daemon-lifecycle.md Section 6 and L4: a job that was loaded and does not come up is a

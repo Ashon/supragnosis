@@ -353,13 +353,6 @@ first version missed is the part worth keeping.
   `restart` and `install --take-over` - which the app's switch runs - would then signal it. Before
   acting, the CLI now confirms the pid belongs to a supragnosis executable. A pidfile that names
   anything else is stale and is cleared.
-- **`start` reported success for a daemon that never came up (L4; found by the 2026-10-23 codebase
-  critique).** It printed "daemon started" before it forked, and the parent exited 0 whatever the
-  daemon then did, so a daemon that refused its configuration left only its log. `start` now clears
-  a stale pidfile, forks, and waits: started once the MCP address answers; a failure, non-zero with
-  the last line of `supragnosis.err.log` and the log's path, once the pidfile's process is gone,
-  which is at once, since nothing restarts it; and still starting, not failed, after thirty seconds
-  of neither.
 - **`status` printed the bearer token.** Agents run `status`, so the token landed in their
   transcripts. `status` and `start` now print where the token is and a command line that reads it
   (`$(cat ~/.supragnosis/mcp.token)`), never the value.
@@ -368,10 +361,6 @@ Guarded by:
 
 - `a_store_held_by_no_manager_is_unrecognized` and `redb_in_use_sees_a_writer_and_only_a_writer` -
   L1 for a holder that binds no port.
-- `a_start_whose_daemon_exits_first_fails_with_the_reason` and
-  `a_start_says_started_once_its_daemon_answers` - L4 for `start`, at the binary, in a home of
-  their own; `a_forked_start_is_gone_at_once_and_slow_after_thirty_seconds` drives
-  `lifecycle::forked` with the looks.
 - `a_pid_counts_only_when_it_is_supragnosis` - L9.
 - `a_pidfile_naming_anything_else_is_stale` - L9: `lifecycle::pidfile_state` with a stand-in process
   reader; a pid that is gone or another program's is stale and cleared, and the only pid the
@@ -409,3 +398,16 @@ last exit is a failure, and thirty seconds of neither that nor an answer is slow
 twelve failing looks, a respawn, a clean exit or an unlisted job starting the count again, and a
 slow start.
 
+## 12. A correction from the 2026-10-23 critique
+
+- **`start` reported success for a daemon that never came up (L4).** It printed "daemon started"
+  before it forked, and the parent exited 0 whatever the daemon then did, so a daemon that refused
+  its configuration left only its log. `start` now clears a stale pidfile, forks, and waits: started
+  once the MCP address answers; a failure, non-zero with the error the daemon logged (its causes
+  joined, without a backtrace) and the log's path, once the pidfile's process is gone, which is at
+  once, since nothing restarts it; and still starting, not failed, after thirty seconds of neither.
+
+Guarded by `a_start_whose_daemon_exits_first_fails_with_the_reason` and
+`a_start_says_started_once_its_daemon_answers`, at the binary in a home of their own;
+`a_forked_start_is_gone_at_once_and_slow_after_thirty_seconds`, which drives `lifecycle::forked`
+with the looks; and `the_reason_is_the_logged_error_with_its_causes`.
