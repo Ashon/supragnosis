@@ -988,7 +988,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
     (
         7,
         &[c(
-            "first contact is the client's own name, kept in the local daemon's memory: never in the store, never on the read tier, never recorded by a hub's remote listener, never sent to a peer",
+            "first contact is the client's own name, kept in the local daemon's memory: never in the store, never sent to a peer",
             Evidence::Scenario(&[
                 "first_contact_is_the_clients_own_name",
                 "first_contact_is_the_nodes_own",

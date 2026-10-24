@@ -1,8 +1,8 @@
 # Federation (M4)
 
 Status: living spec - Phases 0-4 implemented (core foundations, sync core, re-materialization,
-transport, CLI/config wiring); Phase 3.5's read tier is built as [remote-viewer.md](remote-viewer.md),
-with the revisions noted in 6d; Phase 7 is built ([negotiated-surface.md](negotiated-surface.md));
+transport, CLI/config wiring); Phase 3.5's read tier was built as [remote-viewer.md](remote-viewer.md),
+with the revisions noted in 6d, and removed in 0.11.0 (remote-server.md Section 13); Phase 7 is built ([negotiated-surface.md](negotiated-surface.md));
 Phases 5 and 6 pending. This document is the specification agreed before the code; implementation feedback
 is folded back as revisions (see the 8th revision note in principles.md). It fixes the data model, the
 sync protocol, the trust/auth model, the invariants (F1..), and the propositions deriving convergence
@@ -360,8 +360,8 @@ governance identity and the login identity are the same key, not two systems to 
   `sync+web-read` share grade. Both gates must pass: the spoke offered the workspace for web reading AND
   the user holds a grant for it.
 
-  > **Revised (remote-viewer.md).** The read tier is served at `/viz/` on the sync
-  > listener to the principals the agent surface already admits (remote-server.md Section 4.2): a
+  > **Revised (remote-viewer.md), then removed in 0.11.0.** The read tier was served at `/viz/` on
+  > the sync listener to the principals the agent surface already admits (remote-server.md Section 4.2): a
   > bearer credential stored as a hash, with per-workspace grants. Proof of possession of an
   > enrolled user key arrives with principal-signed acts (remote-server.md step 5), held by the
   > bridge, which also relays the viewer - so the tier can take a signed challenge then without the
@@ -813,8 +813,8 @@ input, not nondeterminism - F16).
   whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,
   all write endpoints disabled, workspace enumeration filtered, and the web-hardening checklist
   (escaping audit, CSP, no credentials in URLs, no state-changing GET). Reuses the Phase 3 TLS
-  infrastructure. [read tier built as remote-viewer.md, with the 6d revisions; user keys wait for
-  principal-signed acts]
+  infrastructure. [read tier built as remote-viewer.md, with the 6d revisions, and removed in
+  0.11.0; user keys wait for principal-signed acts]
 - **Phase 4** - CLI/config/roles + `sync_*` MCP tools: supragnosis.toml (SUPRAGNOSIS_CONFIG or
   ~/.supragnosis/supragnosis.toml; unknown keys rejected loudly), node keypair persisted once at
   ~/.supragnosis/node.key (0600), `supragnosis identity` (+ --hash-token for allowlist entries),
@@ -902,7 +902,7 @@ property of the spec: no dangling dependency.
 | Keypair + `node_id`, HLC, VV, Provenance sync fields (+ signed lineage declaration), store delta scan | Phase 1 |
 | VV diff, delta codec, hole-tolerant apply, sharing filter, claimed-tier storage + retrieval hooks | Phase 2 |
 | Sync transport (axum/rustls/reqwest), allowlist/bearer | Phase 3 |
-| Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 - built as remote-viewer.md (principal credentials and `serve_workspaces`; user keys with signed acts) |
+| Hub human surface: read tier (user-key enrollment + grants, share grades, RO, web hardening) | Phase 3.5 - built as remote-viewer.md (principal credentials and `serve_workspaces`), removed in 0.11.0; user keys with signed acts owed |
 | Config (supragnosis.toml: `host_label`, origin keys, allowlist), node.key identity, CLI roles, `sync_*` tools | Phase 4 |
 | Negotiated surface (entitlement advertisement, three-bucket difference, surface-aware routing) | Phase 7 (the data itself: Phase 3 `ping` + Phase 4 allowlist) |
 | Log-borne canon policy + principal-key binding + default-solo rule, `tbox_change` gate, representative-tier evaluation, causal-stability watermark, hub write tier (principal-signed acts, F20) | Phase 5 |

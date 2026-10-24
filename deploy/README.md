@@ -14,10 +14,9 @@ single-process lock problem also disappears.
 - MCP: `http://127.0.0.1:7373/mcp` (loopback-only, bearer token from the 0600 `mcp.token` - the
   local trust surface, Principle 17)
 - Viewer: `~/.supragnosis/viz.sock` (HTTP over a unix socket, 0600 owner-only - no TCP port)
-- Both stay local. Reaching knowledge from elsewhere goes through a hub: its TLS listener carries
-  the federation sync API and, for principals it admits, MCP and the viewer
-  (docs/remote-server.md, docs/remote-viewer.md). It binds off loopback only with TLS and at least
-  one admitted node or principal (docs/federation.md F10).
+- Both stay local. Another machine reaches this knowledge by syncing through a hub, whose TLS
+  listener carries the federation sync API and pairing. It binds off loopback only with TLS and at
+  least one admitted node or open invitation (docs/federation.md F10).
 
 ## Quick install (recommended)
 

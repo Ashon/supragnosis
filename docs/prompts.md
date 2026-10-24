@@ -138,9 +138,9 @@ a P5 failure: a short list must not read as the whole list.
 ## 6. Surfaces
 
 - **The local surface** (the bridge and the loopback daemon) serves all four prompts.
-- **A hub's principals** do not get them yet. A digest for a principal must be computed within that
-  principal's grants, and the curation report and proposal folds are not scoped that way today.
-  Until they are, `prompts/list` on the remote surface is empty and `prompts/get` refuses with the
+- **A hub's principals** got none, until 0.11.0 removed principals (remote-server.md Section 13). A
+  digest for a principal would have to be computed within that principal's grants. While they
+  existed, `prompts/list` on the remote surface was empty and `prompts/get` refused with the
   reason (remote-server.md R3: what has no declared remote policy is refused, never filtered
   silently).
 - **The prompt list is a pinned contract,** like the tool list (compatibility.md Section 7): a
@@ -158,7 +158,7 @@ a P5 failure: a short list must not read as the whole list.
 | **PR3** | Every digest section is bounded and says what it left out. |
 | **PR4** | Evidence in a digest is fenced and labelled untrusted. |
 | **PR5** | No prompt instructs a merge verdict. Promotion to `human_confirmed` stays the console's act. |
-| **PR6** | The remote surface lists no prompt and refuses each by name until digests are scoped to a principal's grants. |
+| **PR6** | The remote surface lists no prompt and refuses each by name until digests are scoped to a principal's grants. *(Retired in 0.11.0 with the remote surface.)* |
 
 ## 8. Ordering
 
@@ -167,8 +167,7 @@ a P5 failure: a short list must not read as the whole list.
    golden `prompts/list`, and the cache hints.
 2. **Documentation.** architecture.md Section 7 (prompts implemented), P22's status in architecture.md Section 14,
    the README's tool and prompt list.
-3. **Later, each its own decision:** prompts on the remote surface once digests are grant-scoped;
-   a verdict from inside the conversation once elicitation exists; a signed review - a person's
+3. **Later, each its own decision:** a verdict from inside the conversation once elicitation exists; a signed review - a person's
    signature over the beliefs a brief cited, re-checked for drift - if briefs prove useful.
 
 ## 9. Closure map

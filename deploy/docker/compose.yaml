@@ -31,17 +31,18 @@ services:
       # (F14), so losing this volume does not lose a container - it retires a node identity that
       # every peer's allowlist still names.
       - supragnosis-state:/var/lib/supragnosis/.supragnosis
-      # The hub needs TLS and an admitted node or principal before it will bind anything non-loopback
+      # The hub needs TLS and an admitted node or open invitation before it will bind non-loopback
       # (F10), so the certificate and the config come from the host, read-only.
       # - ./supragnosis.toml:/var/lib/supragnosis/.supragnosis/supragnosis.toml:ro
       # - ./tls:/var/lib/supragnosis/tls:ro
 
     ports:
       # The federation sync API. The ONLY surface allowed off loopback, and only with TLS plus an
-      # admitted node or principal - the daemon refuses to bind otherwise rather than serving in the open.
+      # admitted node or open invitation - the daemon refuses to bind otherwise rather than serving
+      # in the open.
       - "7420:7420"
       # MCP (7373) is deliberately absent. It is the local trust surface (Principle 17), loopback and
-      # token-scoped to one OS user; remote MCP is the hub's governed door on 7420 (remote-server.md).
+      # token-scoped to one OS user, and MCP does not leave the machine.
       # To use it, reach the container rather than opening the port: `docker exec` for the viewer
       # socket, or an ssh tunnel to the host and `docker compose exec`.
 

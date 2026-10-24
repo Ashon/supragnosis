@@ -214,9 +214,8 @@ Each scenario has an id, a story, and the test that tells it. The badge counts t
 
 ## 6. What is left out, and where it is held
 
-- **The hub's read tier** (`/viz/`) - granted workspaces only, and withheld versus unknown - stays in
-  `crates/supragnosis-viz/tests/http.rs` and `remote.rs` until a hub scenario is cheap to stand up.
-  It is the next candidate after A6.
+- **The hub's read tier** (`/viz/`) was left out until 0.11.0 removed it (remote-server.md Section
+  13).
 - **The console's merge band and reification**, and the dreaming surface, are held by their unit
   and scenario tests.
 - **The tray**, **Start at Login with launchd**, and **Restart Claude Desktop** touch the person's

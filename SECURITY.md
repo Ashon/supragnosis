@@ -37,20 +37,11 @@ the signed lineage declaration undetected, a peer reading a workspace it was not
 for, a claimed trust tier that evaluates above what the transport can prove, and any path that
 makes two nodes holding the same event set diverge.
 
-**The hub's agent surface and read tier.** A hub admits principals - people and agents - by a
-bearer credential stored only as a hash, each with per-workspace read and write grants. It
-serves them MCP at `/mcp` and the viewer, read-only, at `/viz/`, both on its TLS sync listener
-([docs/remote-server.md](docs/remote-server.md), [docs/remote-viewer.md](docs/remote-viewer.md)).
-In scope: reading or writing outside the grants, including learning whether something exists in
-a workspace that was not granted; a remote write recorded as anyone but the principal who made
-it; another node's knowledge served without that node's consent; a request on `/viz/` that
-changes state; and a credential that reaches a URL, a log or an AI app's configuration.
-
-**The desktop app's settings.** The settings page changes which server this Mac's AI apps use
-and how each app is connected. Its commands answer only the app's own page, and the same window
-also shows pages a daemon or a hub serves ([docs/settings-page.md](docs/settings-page.md)
-Section 4). In scope: any page other than the app's own settings page - the viewer, a hub's page,
-a frame - getting a settings command to run.
+**The desktop app's settings.** The settings page changes how each AI app is connected and what a
+peer may read. Its commands answer only the app's own page, and the same window also shows the
+viewer a daemon serves ([docs/settings-page.md](docs/settings-page.md) Section 4). In scope: any
+page other than the app's own settings page - the viewer, a frame - getting a settings command to
+run.
 
 Also in scope: a path that writes into the graph without passing through an assertion, a way
 to make an ingest refusal publish the value it refused, and any bypass of the proposal gate for
@@ -59,7 +50,7 @@ a change that affects the canon.
 ## What is out of scope
 
 **A non-loopback bind you configured yourself.** A federation server binding off-loopback
-requires TLS and at least one admitted node or principal, and refuses to start without them.
+requires TLS and at least one admitted node or open invitation, and refuses to start without them.
 Overriding that in your own deployment is your decision, not a vulnerability.
 
 **Credential detection false negatives.** The ingest detector matches narrow, close to
@@ -78,10 +69,6 @@ That an observation contains something you regret is not a vulnerability in the 
 
 Stated here rather than discovered by a reporter:
 
-- Remote principals authenticate with bearer credentials, not keys. The hub records their acts
-  under its own signature, so a compromised hub could forge a principal's act. That is why
-  verdicts, T-Box changes and node operations are refused on the remote surface until principals
-  can sign their own acts ([docs/remote-server.md](docs/remote-server.md) R7, step 5).
 - The installer verifies each download against the release's published sha256 and refuses to
   install without one. It does not verify a signature: a compromised release, or the GitHub
   account behind it, is outside what it can detect.

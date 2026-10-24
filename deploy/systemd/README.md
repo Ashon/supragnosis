@@ -114,7 +114,7 @@ the TLS stack compiles C. Nothing in it needs libclang or bindgen any more - tha
 
 The unit runs `serve`, and a `[server]` section in `supragnosis.toml` starts the sync API
 alongside it. F10 validates at startup: a non-loopback bind demands **both** TLS and at least one
-admitted node or principal, and a misconfigured section fails the daemon loudly rather than dropping
+admitted node or open invitation, and a misconfigured section fails the daemon loudly rather than dropping
 the role.
 
 Self-signed is fine for an internal hub - event authenticity rests on the ed25519 signatures

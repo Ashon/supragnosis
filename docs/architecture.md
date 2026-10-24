@@ -8,8 +8,8 @@
 - Namespace URI: `supragnosis://...`
 - Status: **implemented through v0.4.11.** M0-M2, **M3a (belief resolution) and M3b (identity
   resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases
-  0-4 and 7 are complete (Phase 3.5's read tier is built as remote-viewer.md; Phases 5 and 6
-  pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
+  0-4 and 7 are complete (Phase 3.5's read tier was built as remote-viewer.md and removed in
+  0.11.0; Phases 5 and 6 pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
   M5, M6 - see Section 12 for the per-milestone state and Section 14 for the compliance/deferral
   record. This document is no longer a forward-looking baseline: it describes what exists, and marks
   what does not.
@@ -361,16 +361,11 @@ Implemented:
 - `supragnosis://entity/{id}` - an entity: the same answer as the `get_entity` tool (the entity, its
   attestations and, for a merged-away id, where it was forwarded), so an entity id a search hit or a
   graph hands out is dereferenceable as Principle 14 asks, not only callable. An unknown id is
-  `resource_not_found` saying absence is not a negation (Principle 5); on the hub's agent surface an
-  entity outside the reader's grants answers exactly as an unknown one, since an entity id is
-  computable from a workspace and a name (remote-viewer.md Section 3.4), and one the hub may not serve
-  says why, as the tool does (R5).
+  `resource_not_found` saying absence is not a negation (Principle 5).
 
 - `supragnosis://proposal/{id}` - a proposal, read where it lives: the same answer as the
   `get_proposal` tool under `workspace: "*"` (its targets, verdicts, state, belief diff and checks).
-  An unknown id is `resource_not_found` saying absence is not a negation; on the hub's agent surface
-  a proposal in a workspace outside the reader's grants answers exactly as an unknown one, and one the
-  hub may not serve says why (R5).
+  An unknown id is `resource_not_found` saying absence is not a negation.
 
 Specified but not implemented: `supragnosis://workspace/{ws}/summary` and
 `supragnosis://workspace/{ws}/canon-policy` (the canon-policy artifact itself is M4 Phase 5).
@@ -382,7 +377,7 @@ open decisions, which a summary would flatten), `what-do-we-know-about {topic}`,
 {workspace}` and `review-proposal {id}` (proposal-workflow.md Section 11). Each returns an instruction
 and a bounded digest of current state; the client's model writes the answer, nothing is stored
 (consolidation.md C11), and a judgment meant to last becomes a proposal the person decides in the
-console. The remote surface lists none until digests are scoped to a principal's grants.
+console.
 
 ### Long-running tasks / human mediation (Principle 21) - **not implemented**
 - Target: `sync` / `consolidate` / bulk reprojection exposed **without blocking**, as pollable **task
@@ -544,11 +539,9 @@ HTTP-over-UDS client (`curl --unix-socket`).
   `~/.supragnosis` dir) is the whole access control: the OS admits only the owning user, so every
   request is attributable to the local principal (F19), and the browser-borne attack classes of a
   localhost port (DNS rebinding, CSRF, cross-site fetch) cannot reach it - those defenses were deleted
-  with the TCP listener. The authenticated network read tier (federation Phase 3.5,
-  [remote-viewer.md](remote-viewer.md)) is not this server: the hub's sync listener serves the same
-  page at `/viz/` through a second router (`supragnosis_viz::remote`), riding the sync crate's TLS
-  stack; there a `*` read is the union of the principal's grants, computed per workspace
-  (remote-viewer.md V3), while on this socket it is the whole store.
+  with the TCP listener. The hub's read tier (federation Phase 3.5, [remote-viewer.md](remote-viewer.md)),
+  which served the same page at `/viz/` to a hub's principals, was removed in 0.11.0
+  (remote-server.md Section 13); on this socket a `*` read is the whole store.
   - **Precisely: no THIRD-PARTY origin can reach it.** The desktop shell is a webview that does reach
     the socket - `app/` proxies it through a `viz://` protocol handler, path and query verbatim - so
     "no browser is involved" is not the property that holds. What holds is that the only page on that
@@ -578,8 +571,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
   alike), so the viewer must be in-process with the server (sharing the same `Arc<Engine>`), and two
   server instances at once would contend for the port/db lock.
 - Endpoints (GET except `/api/peer/share`, which is POST - a state-changing GET is acceptable here
-  because the socket admits no third-party origin, per the bind policy above; the Phase 3.5 network
-  read tier forbids state-changing GET, federation.md 6d): `/` (viewer HTML),
+  because the socket admits no third-party origin, per the bind policy above): `/` (viewer HTML),
   `/api/graph[?workspace=<ws>]` (unspecified = default
   workspace, `*`/`all`/empty = everything), `/api/hypergraph`, `/api/types`, `/api/curation`,
   `/api/proposals`, `/api/proposal?id=` (one proposal with its computed belief diff and check
@@ -693,13 +685,13 @@ Each concern names what is built and what is owed; the milestone of an owed part
      machine covers the solo decision rule; the base-frontier machinery (I7/I12, the Stale state)
      did not ship with it and is recorded as debt (Section 14; proposal-workflow.md Section 4
      [impl]).
-6. **M4 - Federation [o] Phases 0-4 and the Phase 3.5 read tier; Phase 5+ pending**: version-vector delta replication +
+6. **M4 - Federation [o] Phases 0-4 (the Phase 3.5 read tier was built, then removed in 0.11.0); Phase 5+ pending**: version-vector delta replication +
    sync API (hub-and-spoke), ed25519 per-attestation signing (Principle 2), selective sharing
    (Principle 17), HLC ordering (authoring time; the causal update of I11 is owed) + HLC-ordered
    re-materialization, federated retrieval, legacy-id migration. Design ->
    [federation.md](federation.md).
-   - Open: peer-to-peer mesh and hybrid topology; browser access to the hub read tier, which waits
-     for user keys (remote-viewer.md Section 2);
+   - Open: peer-to-peer mesh and hybrid topology; a hub serving people, whose read tier was
+     removed in 0.11.0 (remote-server.md Section 13);
      multi-principal governance - the `tbox_change` gate and the log-borne canon-policy artifact
      (Phase 5), which is why deployment is single-principal today; sync/consolidate as **MCP Tasks** and
      human mediation as **elicitation** (Principle 21) - see Section 7.

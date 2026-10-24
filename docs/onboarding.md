@@ -228,8 +228,7 @@ gives neither counts as "an unnamed client". For each name the daemon keeps the 
 the first request and of the last, in memory only.
 
 - **Where it is seen:** on the viewer's local socket at `/api/clients`, and in `status --json` as
-  `clients`. Not on the read tier: `/api/clients` is refused there (remote-viewer.md Section 3.2). A
-  hub's listener for remote principals records nothing, and nothing about it reaches a peer (O7).
+  `clients`. Nothing about it reaches a peer (O7).
 - **Through the bridge** the app's requests reach the daemon as the app sent them (client-connect.md
   Section 3: the bridge does not read or rewrite them), so the name is the app's, not the bridge's.
 - **Which app it is:** setup maps the names it knows to the apps `connect` lists, by the one table
@@ -359,7 +358,7 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 | **O4** | Every state the Welcome page draws comes from `setup`'s events, except how long Try it has waited in this visit, which the page counts itself and uses only to show the minutes, the checks the event carries and the foot's Copy Diagnostics (design-system.md Section 29.10). Its own acts are only stopping the daemon it spawned before the server step, restarting or opening an AI app, rebuilding the search index when the server step says the store was indexed by another model, and asking `setup` again when an entry arrives. |
 | **O5** | The model never blocks: the server, the apps and the first entry proceed while it downloads, search says keyword only until the model is complete, a download in progress never reads as complete, and stopping it leaves nothing broken. |
 | **O6** | Nothing leaves the machine during setup: it never configures sync or a remote server, and the page says so. |
-| **O7** | First contact is the client's own name, kept in the local daemon's memory; the name of the app that wrote an attestation is written to this node's store, in a table of its own (design-system.md Section 29.8, by the author's decision); neither is served on the read tier, recorded by a hub's remote listener or sent to a peer. |
+| **O7** | First contact is the client's own name, kept in the local daemon's memory; the name of the app that wrote an attestation is written to this node's store, in a table of its own (design-system.md Section 29.8, by the author's decision); neither is sent to a peer. |
 | **O8** | Setup takes over only a daemon nobody chose a manager for - the app's child, a `start` daemon, a retired label - and reports a Homebrew service, a hand-written plist or an unnamed holder until the person asks (daemon-lifecycle.md L1, L6); a Linux user unit overwrites no unit it did not generate (L5), adds no exposure and needs no privilege (L7, L8). |
 
 ## 12. What this revises

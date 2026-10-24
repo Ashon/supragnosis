@@ -86,9 +86,9 @@ VOLUME ["/var/lib/supragnosis/.supragnosis"]
 USER supragnosis
 
 # 7420 is the federation sync API - the only surface allowed to bind non-loopback, and only with
-# TLS and at least one admitted node or principal (F10). 7373 (MCP) is deliberately NOT exposed: it
-# is the local trust surface (Principle 17), loopback and token-scoped to one OS user, and remote MCP
-# is the hub's own governed door on 7420 (docs/remote-server.md). See README.md if you need it.
+# TLS and at least one admitted node or open invitation (F10). 7373 (MCP) is deliberately NOT
+# exposed: it is the local trust surface (Principle 17), loopback and token-scoped to one OS user,
+# and MCP does not leave the machine. See README.md if you need it.
 EXPOSE 7420
 
 # `serve` runs in the foreground, which is what a container wants; `start` would daemonize behind a

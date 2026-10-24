@@ -29,14 +29,13 @@ containers on the same lock.
 | State | `~/.supragnosis` | one volume at `$HOME/.supragnosis`, where `HOME=/var/lib/supragnosis` |
 | MCP (7373) | loopback, bearer token | **not published** - see below |
 | Viewer socket | `~/.supragnosis/viz.sock`, 0600 | inside the volume, reachable by `docker exec` |
-| Federation (7420) | binds a configured address | publish it; the daemon still demands TLS and an admitted node or principal |
+| Federation (7420) | binds a configured address | publish it; the daemon still demands TLS and an admitted node or an open invitation |
 
 **Why 7373 stays unpublished.** The daemon's MCP is the local trust surface Principle 17 describes:
 loopback, and a bearer token that only the holder of the 0600 `mcp.token` can present. Its guard
 refuses a non-loopback bind, and publishing it would move a surface scoped to one OS user onto a
-network. If you need MCP from elsewhere, configure `[server]` with a principal and reach the hub's
-governed agent surface at `https://<hub>:7420/mcp` (docs/remote-server.md), or use
-`docker compose exec`.
+network. MCP does not leave the machine: another machine runs a node of its own and syncs through a
+hub, or use `docker compose exec`.
 
 **The viewer socket is inside the container.** Its security property is a unix socket in a 0700
 directory - one principal, no port. Bind-mounting it to the host hands it to whoever can read that
@@ -48,11 +47,11 @@ and mount it out only if you have decided who else may reach it.
 ## Federation
 
 The sync API is the only surface allowed to bind non-loopback, and only with TLS **and** an admitted
-node or principal. The daemon refuses rather than serving in the open, and says which half is missing:
+node or an open invitation. The daemon refuses rather than serving in the open, and says which half is missing:
 
 ```
 Error: refusing to bind 0.0.0.0:7420: TLS is not enabled
-       (F10: non-loopback needs TLS and an admitted node or principal)
+       (F10: non-loopback needs TLS and an admitted node or an open invitation)
 ```
 
 So a hub needs a config and a certificate mounted in - both commented into `compose.yaml`:
