@@ -1491,7 +1491,17 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
     (4, &[
         c(
             "every CLI lifecycle command exits non-zero on failure with the reason",
-            Evidence::Scenario(&["a_refused_lifecycle_command_exits_non_zero_with_the_reason"]),
+            Evidence::Scenario(&[
+                "a_refused_lifecycle_command_exits_non_zero_with_the_reason",
+                "a_start_whose_daemon_exits_first_fails_with_the_reason",
+            ]),
+        ),
+        c(
+            "start says started only once its daemon answers, and a daemon that exits first fails it at once, while thirty seconds of neither is slow",
+            Evidence::Scenario(&[
+                "a_start_says_started_once_its_daemon_answers",
+                "a_forked_start_is_gone_at_once_and_slow_after_thirty_seconds",
+            ]),
         ),
         c(
             "a job install loaded that does not come up is a non-zero exit naming the error log, and a slow start is reported as slow",

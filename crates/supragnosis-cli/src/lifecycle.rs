@@ -678,6 +678,31 @@ impl StartWatch {
     }
 }
 
+/// What a `supragnosis start` came to (Section 6, L4). The daemon it forks has no manager to
+/// restart it, so the first look that finds it gone is the answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Forked {
+    /// Its address answers.
+    Serving,
+    /// The process its pidfile names is gone, before the address answered.
+    Gone(i32),
+    /// [`START_LOOKS`] looks went by with neither: still starting, reported as slow, not failed.
+    Slow,
+}
+
+/// One look at the daemon `start` forked: whether its address answers, and what the pidfile says.
+/// `start` clears a stale pidfile before it forks, so a stale one now is this daemon, gone; an
+/// absent one is a daemon that has not written it yet.
+pub fn forked(answering: bool, pidfile: &Pidfile, looks: u32) -> Option<Forked> {
+    if answering {
+        return Some(Forked::Serving);
+    }
+    if let Pidfile::Stale(pid) = pidfile {
+        return Some(Forked::Gone(*pid));
+    }
+    (looks >= START_LOOKS).then_some(Forked::Slow)
+}
+
 /// The `version` field of the viewer's `/api/about` body.
 pub fn parse_about_version(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -1059,6 +1084,20 @@ mod tests {
             "{\n\t\"Label\" = \"sh.brew.supragnosis-server\";\n\t\"LastExitStatus\" = 256;\n};";
         assert_eq!(parse_launchctl_list(failing), (None, Some(256)));
         assert_eq!(parse_launchctl_list(""), (None, None));
+    }
+
+    /// daemon-lifecycle.md L4 for `start`: an answer is serving; a pidfile naming a process that is
+    /// gone is a failure at once, since nothing restarts it; a pidfile not yet written or a live
+    /// daemon not yet answering keeps the watch going, for thirty seconds, then slow.
+    #[test]
+    fn a_forked_start_is_gone_at_once_and_slow_after_thirty_seconds() {
+        assert_eq!(forked(true, &Pidfile::Absent, 1), Some(Forked::Serving));
+        assert_eq!(forked(true, &Pidfile::Live(41), 1), Some(Forked::Serving));
+        assert_eq!(forked(false, &Pidfile::Stale(41), 1), Some(Forked::Gone(41)));
+        for waiting in [Pidfile::Absent, Pidfile::Live(41)] {
+            assert_eq!(forked(false, &waiting, START_LOOKS - 1), None, "{waiting:?} waits");
+            assert_eq!(forked(false, &waiting, START_LOOKS), Some(Forked::Slow));
+        }
     }
 
     /// daemon-lifecycle.md Section 6 and L4: a job that was loaded and does not come up is a
