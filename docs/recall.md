@@ -5,8 +5,8 @@
 > capture hook this extends), [prompts.md](prompts.md) (the person's half: a reading on request)
 > and [semantic-retrieval.md](semantic-retrieval.md) (the model behind search).
 >
-> Status: **specified** (Section 9). Decisions D1-D11 were chosen by the author on 2026-10-25 from
-> the measurement in Section 1.
+> Status: **built** for Section 9 step 2 (the hook); step 3, the live eval, is next. Decisions
+> D1-D11 were chosen by the author on 2026-10-25 from the measurement in Section 1.
 
 ## 1. Why this exists
 

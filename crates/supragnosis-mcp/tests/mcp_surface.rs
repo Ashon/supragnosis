@@ -1918,7 +1918,7 @@ async fn a_slow_resource_read_holds_no_other_request() {
 
 /// design-system.md Section 29.20: a failed call is flagged as a tool error and a not-found answer
 /// stays a result (P5), and the server's instructions ask for the workspace to be named after the
-/// project.
+/// project and say how to search it (recall.md Section 5).
 #[tokio::test]
 async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
@@ -1936,6 +1936,11 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
     assert!(
         instructions.contains("the repository's name, also from a git worktree"),
         "the instructions do not say how to name a workspace"
+    );
+    // recall.md Section 5 (D4): and how to search before deciding.
+    assert!(
+        instructions.contains("two or three English topic words and the project's workspace"),
+        "the instructions do not say how to search"
     );
     let failed = client
         .call_tool(

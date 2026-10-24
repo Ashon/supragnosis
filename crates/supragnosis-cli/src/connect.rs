@@ -889,8 +889,9 @@ pub fn claude_code_settings(env: &Env) -> PathBuf {
     env.home.join(".claude/settings.json")
 }
 
-/// The two events the capture hook answers, in the order `connect` registers them.
-pub const HOOK_EVENTS: [&str; 2] = ["PostToolUse", "SessionStart"];
+/// The events the capture hook answers, in the order `connect` registers them: after a Bash call,
+/// at a session's start, and at a subagent's start (docs/recall.md Section 4).
+pub const HOOK_EVENTS: [&str; 3] = ["PostToolUse", "SessionStart", "SubagentStart"];
 
 /// The hook's shell command: the program quoted, so a path with a space survives the shell.
 pub fn hook_command(program: &str) -> String {
@@ -899,7 +900,7 @@ pub fn hook_command(program: &str) -> String {
 
 /// The hook group `connect` adds under `hooks.<event>`: one command, a short timeout. After a
 /// Bash call only; a session start has no matcher, so every source (startup, resume, clear,
-/// compact) gets the line.
+/// compact) gets the index, and neither has a subagent start, so every agent type does.
 pub fn hook_group(event: &str, program: &str) -> Value {
     let hooks = serde_json::json!([
         { "type": "command", "command": hook_command(program), "timeout": 10 }
@@ -922,7 +923,8 @@ pub fn is_capture(group: &Value) -> bool {
     })
 }
 
-/// What Claude Code's settings say about capture: on when both events carry the hook.
+/// What Claude Code's settings say about capture: on when every event of [`HOOK_EVENTS`] carries
+/// the hook. An install connected before the subagent event reads as off until `connect` runs again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Capture {
     On,
@@ -1351,7 +1353,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Section 12.4 / C3: the two hook groups go in beside whatever hooks the person has, which
+    /// Section 12.4 / C3: the hook's groups go in beside whatever hooks the person has, which
     /// stay byte for byte; `--remove` takes them out and the file is what it was; a file that is
     /// not JSON is refused; registering twice adds nothing.
     #[test]
@@ -1375,6 +1377,17 @@ mod tests {
         );
         assert_eq!(v["hooks"]["PostToolUse"][1]["matcher"], "Bash");
         assert!(v["hooks"]["SessionStart"][0].get("matcher").is_none(), "every session source");
+        assert!(v["hooks"]["SubagentStart"][0].get("matcher").is_none(), "every agent type");
+
+        // An install connected before the subagent event reads as off, and connecting again adds
+        // only the missing group (docs/recall.md Section 4).
+        let older = remove_hook(&text, "SubagentStart").expect("remove").expect("removed");
+        assert_eq!(capture_state(&older), Capture::Off);
+        let mut upgraded = older.clone();
+        for event in HOOK_EVENTS {
+            upgraded = add_hook(&upgraded, event, &hook_group(event, p)).expect(event);
+        }
+        assert_eq!(upgraded, text, "the two groups it had are untouched");
         assert!(!text.contains("Bearer") && !text.contains("token"), "C2 holds for the hook too");
 
         // Twice is once.
