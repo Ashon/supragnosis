@@ -337,7 +337,9 @@ A critique of the whole codebase re-traced the sync surface and found three rule
 
 - **The credential comes before the body (D11).** The sync routes check the bearer in the request's
   headers before they read its body. A request with no admitted bearer is answered 401, and its body
-  is not read. The handler then authorizes the workspace its body names, as before. The pairing
+  is not read. A client still sending a large body may then see the connection reset rather than
+  the 401: that is the cost of not reading it, and a round's first request, `advertise`, is small.
+  The handler then authorizes the workspace its body names, as before. The pairing
   routes keep their 16 KiB limit: a machine that is joining has no bearer yet, so its proof is in
   the body.
 - **Seq arithmetic is checked (D12).** A reservation that would pass the largest seq fails the

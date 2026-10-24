@@ -495,8 +495,9 @@ pub struct PeerDirectory {
     own: (String, String),
 }
 
-/// One consistent view of admission for the length of one request. Taken once per handler so a
-/// concurrent change cannot land between authenticating a peer and verifying what it sent.
+/// One consistent view of admission for the length of one request. Taken once per request, where
+/// the bearer is checked, so a concurrent change cannot land between authenticating a peer and
+/// verifying what it sent.
 #[derive(Clone)]
 pub struct Admitted {
     pub allowlist: Vec<AllowEntry>,
