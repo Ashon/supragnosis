@@ -1,10 +1,10 @@
 //! supragnosis executable (single-binary CLI).
 //!
-//! Subcommands control the server. Running it **with no arguments** starts a stdio
-//! MCP server - this is backward compatibility for the path where an MCP client
-//! launches it as a child process.
+//! Subcommands control the server. Launched **with no arguments** through a pipe, it starts a
+//! stdio MCP server - backward compatibility for an MCP client that launches it as a child
+//! process. Typed in a terminal with no arguments, it prints its help.
 //!
-//!   supragnosis                  stdio MCP server (default, no arguments)
+//!   supragnosis                  stdio MCP server through a pipe; help in a terminal
 //!   supragnosis serve [options]   foreground run (--http for a streamable-http daemon, --viz for the viewer)
 //!   supragnosis start [options]   start the background daemon (default MCP 127.0.0.1:7373 + viewer socket ~/.supragnosis/viz.sock)
 //!   supragnosis stop             stop the background daemon
@@ -358,7 +358,9 @@ fn main() -> Result<()> {
         // server is what a client launches, through a pipe; started here it would take the store
         // lock and wait on the keyboard (client-connect.md Section 6).
         None if std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
-            return Ok(<Cli as clap::CommandFactory>::command().print_help()?);
+            // As clap's own --help does, a reader that closed early (`| head`) is not an error.
+            let _ = <Cli as clap::CommandFactory>::command().print_help();
+            return Ok(());
         }
         None => Cmd::Serve(RunArgs::default()),
     };

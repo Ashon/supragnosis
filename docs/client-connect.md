@@ -36,8 +36,8 @@ The command is also not portable. What each client can reach, checked in October
 The client a non-developer is most likely to use, Claude Desktop, cannot reach the daemon at all
 without a third-party bridge such as `mcp-remote`, which needs Node. Every client speaks stdio, but
 the stdio server supragnosis ships cannot be offered while the daemon runs. Launched by a client
-with no arguments, `supragnosis` opens the store itself. The store admits one writer, so beside the daemon - which
-the app and Start at Login keep running - that server fails on the lock. If it starts first, the
+with no arguments, `supragnosis` opens the store itself. The store admits one writer, so beside the
+daemon - which the app and Start at Login keep running - that server fails on the lock. If it starts first, the
 daemon is the one that fails (daemon-lifecycle.md Section 11).
 
 The token also leaves the 0700 directory. The shell expands `$(cat ...)` before the client sees
