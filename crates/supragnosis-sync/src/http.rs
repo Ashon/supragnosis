@@ -1238,8 +1238,8 @@ impl SyncClient {
     }
 
     /// Pulls page after page of what the host holds beyond `since`, handing each page to `apply`
-    /// (sync-correctness.md Section 11). A stream with a rejection in a page is held: the request
-    /// claims it whole for the rest of this round, so its later events are neither applied past the
+    /// (sync-correctness.md Section 11). A stream with a rejection that holds (Section 16) in a page is
+    /// held: the request claims it whole for the rest of this round, so its later events are neither applied past the
     /// rejected one nor sent again and again in place of the other streams. The next round asks from
     /// the store's own version vector, which is below the rejected event, and offers it again.
     pub async fn pull_all<F, Fut>(
@@ -1282,7 +1282,7 @@ impl SyncClient {
     }
 
     /// Pushes `events` in batches (sync-correctness.md Section 11), in (origin, seq) order. A stream
-    /// with a rejection in one batch is not sent further this round: the host's version vector stays
+    /// with a rejection that holds at the host in one batch is not sent further this round: the host's version vector stays
     /// below the rejected event, so it and everything behind it are offered again next round.
     pub async fn push(
         &self,

@@ -343,11 +343,13 @@ A critique of the whole codebase re-traced the sync surface and found three rule
   routes keep their 16 KiB limit: a machine that is joining has no bearer yet, so its proof is in
   the body.
 - **Seq arithmetic is checked (D12).** A reservation that would pass the largest seq fails the
-  backfill, and with it the round, with an error naming the workspace. Nothing is stamped and the
-  mark is not raised. A host whose stated seq cannot be honored then stops this node's rounds with
-  it, loudly, instead of making it issue seqs again. The floor itself stays unbounded: the case it
-  exists for is a node that knows less of its own stream than its host does, and a host can withhold
-  everything in any case.
+  backfill with an error naming the workspace, so nothing of that workspace is pushed. Nothing is
+  stamped and the mark is not raised. A host whose stated seq cannot be honored then stops this
+  node's pushes of that workspace, loudly, instead of making it issue seqs again. A host that states
+  a seq just below the largest makes this node issue the last one, and its mark keeps it: every
+  later stamp in that workspace then fails, loudly, whoever the node syncs with. The floor itself
+  stays unbounded: the case it exists for is a node that knows less of its own stream than its host
+  does, and a host can withhold everything in any case.
 - **A rejection holds its stream only when the receiver can clear it (D13).**
   - **Held, as Section 6 says:** `Undecodable`, which an upgrade clears; `UnknownOrigin`, which a
     configured key clears; `OriginNotAdmitted`, which a grant clears; and `BadSignature`, which a
@@ -358,8 +360,9 @@ A critique of the whole codebase re-traced the sync surface and found three rule
     stream it belongs to. Dropping it would let anyone who can send an event make a receiver skip a
     seq of someone else's stream.
   - **Dropped:** `Malformed` and `WorkspaceMismatch`. A dropped event is reported in the round like
-    any rejection and is not applied, and the stream carries on past it. The receiver's version
-    vector can then pass its seq, so it is not offered again. This is the rule for what cannot be
+    any rejection and is not applied, and the stream carries on past it. Once a later event of the
+    stream lands, the receiver's version vector passes the dropped seq, and it is not offered
+    again. This is the rule for what cannot be
     processed: an event refused for what its origin signed would be refused every round. A later
     release that accepts such content does not bring a dropped event back.
 
