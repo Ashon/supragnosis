@@ -1477,9 +1477,9 @@ pub trait AssertionStore: Send + Sync {
 /// the CLI - is handed an `AssertionStore`, through which knowledge can only enter as an appended
 /// assertion and the graph can only be read.
 ///
-/// It was a convention before, and the convention held: the whole workspace contains exactly two
-/// calls to these methods, both inside the projection's writers. What it did not hold against is
-/// the past. The author's own store carries 35 entity rows that no observation anywhere
+/// It was a convention before, and the convention held: the calls to these methods sit in the
+/// projection's writers and the entity-embedding backfill. What it did not hold against is the
+/// past. The author's own store carries 35 entity rows that no observation anywhere
 /// asserts - written directly, in an era when something did reach for this handle - and they are
 /// invisible to the log, survive every re-projection, and cannot cross the sync wire because there is
 /// nothing to export. A replay cannot reproduce them because the log never knew about them.

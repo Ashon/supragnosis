@@ -77,8 +77,8 @@ store's `commit_projected`, which writes them in one transaction. So:
 - **One commit instead of many.** An `observe` paid one commit for its append and one for each
   touched row; it now pays one. A reproject writes its whole projection the same way
   (2026-10-24): it paid a commit, and a disk flush, for every entity and relation row, and a reader
-  could see a projection half rewritten. It now pays one commit, and a reader sees the old
-  projection or the new one.
+  could see a projection half rewritten. On redb it now pays one commit, and a read transaction
+  sees the old projection or the new one.
 - **A verdict calls for rows only when it moves a tier.** A merge of a `claim_promotion` or a
   `claim_demotion` changes the tier the entity fold weighs its targets' assertions by, and with it
   which spelling and kind those entities' rows hold, so those rows commit with it. Any other verdict
