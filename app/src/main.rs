@@ -3268,6 +3268,11 @@ fn main() {
         });
 }
 
+/// Every source file of the app, for the tests that read the source by its text: the modules, then
+/// this file, then the tests, so the text before the first test module is the app's own.
+#[cfg(test)]
+const SRC: &str = concat!(include_str!("main.rs"),);
+
 #[cfg(test)]
 mod conditional_tests {
     use super::{forwarded_if_none_match, http};
@@ -3507,7 +3512,7 @@ mod status_text_tests {
 
     /// The body of `fn name(` in this file, to its closing brace at the start of a line.
     fn source_of(name: &str) -> &'static str {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
         let rest = &src[start..];
         &rest[..rest.find("\n}\n").expect("it closes")]
@@ -3568,10 +3573,15 @@ mod status_text_tests {
     /// which a click calls. A new call that stops a daemon fails this until it is added on purpose.
     #[test]
     fn only_the_persons_act_stops_a_daemon_it_did_not_spawn() {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
         let within = |at: usize| -> &str {
-            let head = app[..at].rfind("\nfn ").max(app[..at].rfind("\nasync fn ")).unwrap();
+            let head = app[..at]
+                .rfind("\nfn ")
+                .max(app[..at].rfind("\nasync fn "))
+                .max(app[..at].rfind("\npub(crate) fn "))
+                .max(app[..at].rfind("\npub(crate) async fn "))
+                .unwrap();
             let name = &app[head..];
             let name = &name[name.find("fn ").unwrap() + 3..];
             &name[..name.find('(').unwrap()]
@@ -3628,7 +3638,7 @@ mod status_text_tests {
         let mut reaped = super::reaped_on_exit(Daemon::Spawned(child)).expect("its own child");
         let _ = reaped.wait();
 
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let exit = &src[src.find("RunEvent::Exit => {").expect("the exit arm")..];
         let exit = &exit[..exit.find("\n            }\n").expect("it closes")];
         assert!(exit.contains("reaped_on_exit(prev)"), "{exit}");
@@ -3645,10 +3655,10 @@ mod status_text_tests {
     /// than a setting. A command the page starts calling fails this until it is placed.
     #[test]
     fn every_setting_change_is_a_cli_call() {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
         let body = |name: &str| -> &str {
-            let at = ["async fn ", "fn "]
+            let at = ["async fn ", "fn ", "pub(crate) async fn ", "pub(crate) fn "]
                 .iter()
                 .find_map(|k| app.find(&format!("\n{k}{name}(")))
                 .unwrap_or_else(|| panic!("no fn {name}"));
@@ -3833,7 +3843,7 @@ mod settings_tests {
     /// one set.
     #[test]
     fn every_command_checks_its_caller_first() {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let mut declared: Vec<String> = Vec::new();
         let mut rest = src;
         while let Some(at) = rest.find("#[tauri::command]\n") {
@@ -3963,7 +3973,7 @@ mod settings_tests {
     /// for a login job the CLI started again, and attaches; and the page follows the re-embedding.
     #[test]
     fn a_store_the_daemon_cannot_open_is_rebuilt_from_the_page() {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let body = |src: &'static str, sig: &str| -> &'static str {
             let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
             &src[at..at + src[at..].find("\n}\n").expect("it closes")]
@@ -4093,7 +4103,7 @@ mod settings_tests {
         assert_eq!(manager_pid(Some(&st)), Some(4242));
         assert_eq!(manager_pid(Some(&serde_json::json!({ "managers": [] }))), None);
 
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let body = |src: &'static str, sig: &str| -> &'static str {
             let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
             &src[at..at + src[at..].find("\n}\n").expect("it closes")]
@@ -4144,7 +4154,7 @@ mod settings_tests {
         );
         assert!(starting_html(&StartPage::Starting, None, &settings_url(), Path::new(LOG))
             .contains("<body data-tauri-drag-region=\"deep\""));
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
         assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 1);
         assert!(!pages.contains("<body data-tauri-drag-region style="));
@@ -4229,7 +4239,7 @@ mod settings_tests {
 
         // The shell changes the page: it watches while the page is drawn and reloads when the daemon
         // answers or the page should say something else, and forgets it once the graph is served.
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let watch = &src[src.find("async fn watch_splash(").expect("watch_splash")..];
         let watch = &watch[..watch.find("\n}\n").expect("it closes")];
         assert!(watch.contains("Duration::from_secs(1)") && watch.contains("reload_viewer"));
@@ -4339,7 +4349,7 @@ mod settings_tests {
                 && out.contains("not json")
         );
         assert!(out.ends_with('\n'));
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let diag = &src[src.find("async fn diagnostics(").expect("diagnostics")..];
         assert!(
             diag[..diag.find("\n}\n").unwrap()].contains("without_entry(&text(run_cli(&args)))")
@@ -4516,7 +4526,7 @@ mod settings_tests {
         assert!(css.contains("html.shell-asking header { transition: none; }"));
         // The shell's side, read from this file: the test's own copy of the line is escaped, so it
         // cannot be what matches.
-        assert!(include_str!("main.rs").contains("window.emit(\"shell-fullscreen\", fs)"));
+        assert!(super::SRC.contains("window.emit(\"shell-fullscreen\", fs)"));
         // The window grants the full-screen getter by name (design-system.md Section 29.29).
         let caps = include_str!("../capabilities/default.json");
         assert!(caps.contains("\"core:window:allow-is-fullscreen\""));
@@ -4557,7 +4567,7 @@ mod settings_tests {
     fn the_third_pass_defects_on_the_apps_pages() {
         let css = include_str!("../assets/settings.css");
         let welcome = include_str!("../assets/welcome.css");
-        let main = include_str!("main.rs");
+        let main = super::SRC;
         assert!(
             css.contains(":where(input[type=\"checkbox\"], input[type=\"radio\"]) { accent-color: var(--accent); }"),
             "a checkbox can take the system's blue beside a gold one"
@@ -4589,7 +4599,7 @@ mod settings_tests {
     /// webview itself is not zoomed, so the title bar keeps its height and its traffic lights.
     #[test]
     fn view_sets_the_root_text_size() {
-        let main = include_str!("main.rs");
+        let main = super::SRC;
         for part in [
             "\"Make Text Bigger\"",
             "Some(\"CmdOrCtrl+=\")",
@@ -4619,7 +4629,7 @@ mod settings_tests {
         let html = include_str!("../assets/welcome.html");
         let js = include_str!("../assets/welcome.js");
         let settings = include_str!("../assets/settings.js");
-        let main = include_str!("main.rs");
+        let main = super::SRC;
         assert!(
             html.contains("<h1 id=\"pageTitle\">Setup</h1>"),
             "the title bar does not say Setup"
@@ -4796,7 +4806,7 @@ mod settings_tests {
         );
         assert!(super::APP_COMMANDS.contains(&"capture_set"));
         assert!(include_str!("../capabilities/settings.json").contains("\"allow-capture-set\""));
-        let main = include_str!("main.rs");
+        let main = super::SRC;
         let at = main.find("async fn capture_set(").expect("capture_set");
         let body = &main[at..at + main[at..].find("\n}\n").expect("it closes")];
         assert!(body.contains("\"--no-capture\"") && body.contains("\"claude-code\""));
@@ -5022,7 +5032,7 @@ mod window_tests {
         assert_eq!(attention_section(Some("daemon"), true, false), Some("apps"));
         assert_eq!(attention_section(None, false, true), Some("daemon"), "repairing");
         assert_eq!(attention_section(None, false, false), None, "the last pane");
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         assert!(src.contains(".min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)"));
         assert!(src.contains("Some(f) => builder.inner_size(f.w, f.h).position(f.x, f.y),"));
         assert!(src.contains("None => builder.inner_size(1280.0, 860.0).center(),"));
@@ -5151,7 +5161,7 @@ mod tray_tests {
     /// the menu bar holds Setup..., Find, the map's commands and Help.
     #[test]
     fn each_menu_item_has_its_own_id() {
-        let src = include_str!("main.rs");
+        let src = super::SRC;
         let tray = &src[src.find("TrayIconBuilder::with_id(\"supragnosis\")").expect("the tray")..];
         let tray = &tray[..tray.find(".build(app)?;").unwrap()];
         for arm in [
