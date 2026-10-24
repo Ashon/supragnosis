@@ -232,7 +232,7 @@ fn no_retired_word_reaches_a_page() {
         .collect();
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
     let before_tests = |src: &'static str| without_tests(src);
-    let sources: [(&str, String); 12] = [
+    let sources: [(&str, String); 13] = [
         ("viewer.html", include_str!("../assets/viewer.html").to_string()),
         ("viewer.js", SCRIPT.to_string()),
         ("app/assets/kit.js", include_str!("../../../app/assets/kit.js").to_string()),
@@ -257,6 +257,7 @@ fn no_retired_word_reaches_a_page() {
             include_str!("../../../app/assets/shell-init.js").to_string(),
         ),
         ("app/src/cli.rs", before_tests(include_str!("../../../app/src/cli.rs"))),
+        ("app/src/proxy.rs", before_tests(include_str!("../../../app/src/proxy.rs"))),
         ("app/src/main.rs", before_tests(include_str!("../../../app/src/main.rs"))),
         (
             "supragnosis-cli/src/setup.rs",
