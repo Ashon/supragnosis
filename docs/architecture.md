@@ -505,9 +505,9 @@ sections are present, and `peers` awaits the P2P phase.
   blocking store calls via `spawn_blocking` to prevent runtime starvation - the Section 14 precondition
   for remote transport, now **discharged**.
   For operations (launchd, etc.) see [`deploy/README.md`](../deploy/README.md).
-  - The local daemon's MCP stays loopback-bound, bearer token and all. MCP beyond loopback is served
-    only by the hub's TLS listener, to principals it admits ([remote-server.md](remote-server.md)
-    R1).
+  - The local daemon's MCP stays loopback-bound, bearer token and all, and MCP never leaves the
+    machine: the hub's TLS listener served it to admitted principals until 0.11.0 removed them
+    ([remote-server.md](remote-server.md) Section 13).
 - **Hub server (implemented, M4 Phase 4)**: the `[server]` section starts the sync API alongside the
   daemon - axum routes `/sync/ping|advertise|pull|push|search` under bearer auth matched against the
   allowlist, then per-workspace authorization. A **non-loopback bind requires TLS and at least one

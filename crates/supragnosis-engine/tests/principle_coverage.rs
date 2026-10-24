@@ -542,9 +542,9 @@ const DREAMING_REGISTRY: &[(u8, &[Clause])] = &[
 // docs/design-system.md Section 13 - one look, one set of parts, a map that shows who said it (U rows).
 const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
-        "every console write - each path the read tier refuses as a verdict or a write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed",
-        // crates/supragnosis-viz/tests/http.rs: a source tripwire that reads the writes from the read
-        // tier's policy table and requires each to go through consoleWrite, which reports every branch.
+        "every console write - its verdicts and the acts that write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed",
+        // crates/supragnosis-viz/tests/http.rs: a source tripwire that names the console's writes and
+        // requires each to go through consoleWrite, which reports every branch.
         Evidence::Scenario(&["every_console_write_reports_its_outcome"]),
     )]),
     (2, &[c(
@@ -569,7 +569,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ]),
     )]),
     (5, &[c(
-        "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one, and none is shown on a read tier",
+        "dream drafts are listed apart from published proposals and marked as this node's; only the person's act publishes or accepts one",
         Evidence::Deferred(
             "the Review page is built and dream drafts are not yet made. Revisit when dreaming.md \
              Section 12 step 5 lands, with the drafts in the Review page",

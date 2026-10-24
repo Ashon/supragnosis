@@ -252,6 +252,10 @@ The viewer has no TCP port at all: it serves over a unix socket whose 0600 mode 
 control, and every response carries a Content-Security-Policy. A non-loopback federation bind
 requires TLS and someone admitted (a node or an open invitation), and refuses to start otherwise.
 
+A second machine joins with a code: `supragnosis invite` on the machine that will be the hub,
+`supragnosis join` on the other ([docs/pairing.md](docs/pairing.md)). Each keeps its own daemon,
+and the two sync.
+
 ## Upgrading from a pre-0.2 store
 
 Through v0.1.21 the store was Cozo. This build reads only redb and refuses to start beside an

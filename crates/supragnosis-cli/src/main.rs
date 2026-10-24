@@ -3367,8 +3367,8 @@ async fn spawn_viz(
         if std::env::var_os(gone).is_some() {
             tracing::warn!(
                 "{gone} is no longer supported - the viewer serves HTTP over a unix socket \
-                 (SUPRAGNOSIS_VIZ_SOCK / --viz <path>); the authenticated network read tier is \
-                 federation Phase 3.5"
+                 (SUPRAGNOSIS_VIZ_SOCK / --viz <path>); another machine reaches this knowledge by \
+                 syncing through a hub"
             );
         }
     }

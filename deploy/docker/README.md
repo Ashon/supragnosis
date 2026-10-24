@@ -47,11 +47,12 @@ and mount it out only if you have decided who else may reach it.
 ## Federation
 
 The sync API is the only surface allowed to bind non-loopback, and only with TLS **and** an admitted
-node or an open invitation. The daemon refuses rather than serving in the open, and says which half is missing:
+node or an open invitation. The listener stays down rather than serving in the open, the node keeps
+serving everything else, and the log and `sync_status`'s `listener` say which half is missing:
 
 ```
-Error: refusing to bind 0.0.0.0:7420: TLS is not enabled
-       (F10: non-loopback needs TLS and an admitted node or an open invitation)
+refusing to bind 0.0.0.0:7420: TLS is not enabled (F10: non-loopback needs TLS and an admitted
+node or an open invitation)
 ```
 
 So a hub needs a config and a certificate mounted in - both commented into `compose.yaml`:

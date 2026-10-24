@@ -688,9 +688,9 @@ changing the canon policy without a central admin - is out of scope.
   human surface never accepts a write it cannot attribute to an enrolled principal - anonymous writes
   would collapse every actor into the hub's host identity and void I9/P2. (Scope: this governs the human
   surface only - the sync surface legitimately accepts node-attributed attestations whose principal is
-  absent, which are simply trusted less, P2/P18.) *Revised (remote-viewer.md):* until principals sign
-  their own acts, the human surface authenticates admitted principals by a bearer credential stored as
-  a hash, the share grade is `serve_workspaces`, and the read tier accepts no write at all.
+  absent, which are simply trusted less, P2/P18.) *Revised (remote-viewer.md), then removed in
+  0.11.0:* the read tier authenticated admitted principals by a bearer credential stored as a hash,
+  its share grade was `serve_workspaces`, and it accepted no write at all.
 - **F20** A hub-mediated act is forgeable by a compromised hub at strength (i) (session-authenticated,
   `host = hub, on_behalf_of = principal`) and unforgeable at strength (ii) (**principal-signed**: the
   act bytes carry the user key's signature alongside the hub's node signature). Recall verdicts (I17)
@@ -806,8 +806,8 @@ input, not nondeterminism - F16).
   still converges (F7); cross-node reprojection materializes identically. [done]
 - **Phase 3** - transport: axum sync API (`/sync/advertise|pull|push`) + in-process rustls TLS +
   allowlist/bearer wire auth + reqwest client (`sync-http` = the sync crate's `http` feature); the F10
-  bind guard refuses non-loopback without TLS + a non-empty allowlist (since generalized to count
-  admitted principals, remote-server.md R1). Loopback guard for MCP
+  bind guard refuses non-loopback without TLS + a non-empty allowlist (since generalized to count an
+  open invitation, pairing.md PA1). Loopback guard for MCP
   untouched; the viewer later moved off TCP entirely (local unix socket). [done]
 - **Phase 3.5** - **hub human surface, read tier** (6d, F19): user-key enrollment + admin-managed user
   whitelist with per-workspace grants, challenge-response session auth, `sync+web-read` share grades,

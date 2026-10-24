@@ -13,7 +13,8 @@
 > moves (Section 11, U10), one voice in type (Section 4, U11), and the principles page (Section 11a,
 > U12-U14). Dream drafts join the Review page with dreaming.md Section 12 step 5 (U5). The second
 > pass over every screen (Section 1, U15-U20) is built - steps 12-16 - and U19's every-surface half
-> waits on browser scenarios. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
+> waits on browser scenarios. Where this document speaks of a hub's read tier, it describes what was
+> built; 0.11.0 removed the tier (remote-server.md Section 13), and the console is the one surface. The third pass, for reading and pressing on a Mac (Section 1, U21-U27),
 > is built - steps 17-24: its defects, reading, lines, shapes and targets, words on the screen, the
 > map's List, the site's type, the title bar and the light appearance. The fourth pass, for a map of
 > many nodes (Section 26, U28-U32), is built - steps 25-30: the bench, the simulation at rest, the
@@ -1599,11 +1600,11 @@ social image.
 
 | | Invariant |
 |---|---|
-| **U1** | Every console write - each path the read tier refuses as a verdict or a write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed (P24). |
+| **U1** | Every console write - its verdicts and the acts that write - reports its outcome where it was made: what was done, the server's reason for a refusal, or that nothing changed (P24). |
 | **U2** | The map draws a node's trust from its effective tier, the value the inspector's baseline reads, never a claimed tier; the legend states what the ring reads, and a scope of one tier draws no rings and states the tier (P18, inspector.md D3, D4). |
 | **U3** | A contested node is marked wherever it is drawn, at every zoom, label and focus state, and the status bar counts the contested nodes of the loaded scope whatever the legend hides (P6). |
 | **U4** | On the Review page a decision control appears only with its item's belief diff and checks on screen, and decides that item alone; there is no batch decision, except one act that rejects every Blocked item at once, each listed with the check that blocks it before the act is cast (Section 29.21; the author's decision of 2026-10-22, that what the system cannot process may be dropped). Every open proposal is listed; a generated candidate is left out only when its diff is computable and empty (P23, proposal-workflow.md Section 14.2). |
-| **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one, and none is shown on a read tier (dreaming.md DR1). |
+| **U5** | Dream drafts are listed apart from published proposals and marked as this node's drafts; only the person's act publishes or accepts one (dreaming.md DR1). |
 | **U6** | The viewer's search answers with the engine's ranking, each group of Section 8 in that order, and its mode label, and entity hits are canonical. (Until 0.11.0 removed the read tier, its policy for the path was `Read`: workspaces resolved over a reader's grants, and a union merged per-workspace hits by score then id.) It adds nothing to the MCP surface (P17, P19, P21, remote-viewer.md V3). |
 | **U7** | The viewer, the settings page and the landing give every token they share one value and each declares every custom property it reads, in any of its rules, and every text token meets 4.5:1 and APCA Lc 60 on every surface token, and `--ink2` Lc 75; a signal drawn as text takes its `-ink` token and gold `--gold-ink`, the brand gold `--accent` in both appearances with the mark drawn in it, and text on a pill's tint meets the same floor over it. |
 | **U8** | A status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states (P5, P24). |
