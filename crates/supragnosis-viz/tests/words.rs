@@ -6,7 +6,7 @@
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const ENGINE: &str = concat!(
     include_str!("../../supragnosis-engine/src/proposal_types.rs"),
-    include_str!("../../supragnosis-engine/src/lib.rs"),
+    include_str!("../../supragnosis-engine/src/review.rs"),
 );
 const CORE: &str = include_str!("../../supragnosis-core/src/lib.rs");
 
