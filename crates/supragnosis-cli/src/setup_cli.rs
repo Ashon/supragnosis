@@ -622,7 +622,7 @@ mod first_run {
         // The other reads go through the helpers `status` uses: /api/clients and /api/health.
         assert!(s.contains("first_contacts()") && s.contains("store_health()"));
         for helper in ["fn first_contacts(", "fn store_health("] {
-            let src = include_str!("main.rs");
+            let src = include_str!("managers.rs");
             let body = &src[src.find(helper).expect(helper)..];
             let body = &body[..body.find("\n}\n").expect("its end")];
             assert_eq!(body.matches("viz_get(").count(), 1, "{helper} reads one path");

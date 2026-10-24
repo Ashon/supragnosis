@@ -3,7 +3,7 @@
 //! Everything here is a pure function of what was observed - which launchd labels are loaded or which
 //! systemd user units are enabled or active, whether the pidfile names a live process, whether the
 //! daemon answers - so the rules are tested as tables and run on every platform. Only observing and
-//! acting shell out, and that lives in main.rs.
+//! acting shell out, and that lives in managers.rs and service.rs.
 
 /// Who installed a launchd job, which decides how it is described and retired (Section 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -362,8 +362,8 @@ pub fn parse_launchctl_list(out: &str) -> (Option<u32>, Option<i64>) {
     )
 }
 
-/// What `systemctl --user show <unit>` says about one unit, read from the properties main.rs asks
-/// for: LoadState, ActiveState, UnitFileState, MainPID, ExecMainStatus and
+/// What `systemctl --user show <unit>` says about one unit, read from the properties managers.rs
+/// asks for: LoadState, ActiveState, UnitFileState, MainPID, ExecMainStatus and
 /// ExecMainExitTimestampMonotonic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitShow {
@@ -1019,7 +1019,7 @@ mod tests {
 
         // The CLI's pidfile reads go through this one decision, and the only pid the lifecycle
         // commands see - the one a stop or a restart signals - is a live one.
-        let main = include_str!("main.rs");
+        let main = include_str!("managers.rs");
         assert!(
             main.contains("lifecycle::pidfile_state("),
             "the CLI reads the pidfile through it"
@@ -1376,7 +1376,7 @@ mod tests {
         assert!(!released(std::iter::repeat((false, true))), "a store still held is not quiet");
         assert!(!released(std::iter::repeat((true, false))), "nor an address still answering");
 
-        let main = include_str!("main.rs");
+        let main = concat!(include_str!("daemon_ctl.rs"), include_str!("service.rs"));
         for (install, touch) in [
             ("fn launchd_install(args", "if state == \"hand_written\" {"),
             ("fn systemd_install(args", "let moved = if state == \"hand_written\" {"),

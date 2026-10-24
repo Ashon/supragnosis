@@ -1,6 +1,8 @@
 //! supragnosis.toml and the node's identity: the federation configuration, read and edited, and
 //! the keypair a node is known by.
 
+// --- Federation configuration + node identity (M4 Phase 4, docs/federation.md Section 9) ---------
+
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
