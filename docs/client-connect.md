@@ -208,7 +208,7 @@ steps.
 | **C3** | `connect` never replaces an entry it did not write unless `--replace` is given, and never edits a client file without first copying it aside. A file it cannot parse is refused, not rewritten. |
 | **C4** | Through the bridge a client sees the daemon's surface unchanged: the same tool list, the same results, the same errors. |
 | **C5** | `connect` without a client argument only reads. |
-| **C6** | The capture hook never blocks the agent, never writes to the store itself, and speaks only after a commit that landed or at the start of a session. |
+| **C6** | The capture hook never blocks the agent, never writes to the store itself, and speaks only after a commit that landed, at the start of a session, or at the start of a subagent. |
 
 ## 9. Ordering
 
@@ -302,9 +302,9 @@ Checked end to end:
 
 > Status: **built**. Principle 22's first clause was deferred in the registry with the reason that
 > nothing makes an agent capture or retrieve unasked; this section is the mechanism that repaid it.
-> What building it changed is in Section 11. [recall.md](recall.md) (specified) replaces the
-> session-start line with an index of the workspace's records, adds a subagent's start, and
-> rewrites the commit text; this section describes the hook as built until that lands.
+> What building it changed is in Section 11. Since [recall.md](recall.md) (2026-10-25), a session
+> starts with an index of the workspace's records rather than a count, a subagent's start is a third
+> event, and the commit question names what counts; that document owns the texts quoted below.
 
 ### 12.1 Why
 
@@ -325,7 +325,7 @@ all: the server instructions are generic, and nothing says "this workspace holds
 
 ### 12.2 What it is
 
-One CLI command, `supragnosis hook claude-code`, that Claude Code runs as a hook on two events. It
+One CLI command, `supragnosis hook claude-code`, that Claude Code runs as a hook on three events. It
 reads the event's JSON from stdin and answers on stdout with `hookSpecificOutput.additionalContext`,
 the channel that adds a line to the agent's context without refusing anything. It never answers
 with `decision`.
@@ -337,22 +337,24 @@ staged, a rejected message), `git commit --help`, and a HEAD another session mad
 leave that false, and the hook says nothing. The answer names the commit and asks the question once:
 
 > Commit 9f41c2e "the bridge opens a new connection for every request" landed in supragnosis
-> (author ashon). If it settled a decision, a constraint or a fact about the project that the diff
-> does not show - why it was done this way, what was ruled out, what it depends on - record it now
-> with `observe`: workspace "supragnosis", on_behalf_of "ashon", source_ref "git:9f41c2e...". If it
-> settled nothing, record nothing.
+> (author ashon). Record what this work settled that the diff does not show: a choice the person
+> made in this conversation, an option ruled out and why, a number that was measured, a constraint
+> or a dependency. Use supragnosis observe: workspace "supragnosis", on_behalf_of "ashon",
+> source_ref "git:9f41c2e...". Write it in English, one subject per record, naming the entities it
+> is about. If the commit settled nothing beyond its diff, record nothing.
 
 **At the start of a session** (`SessionStart`, every source: startup, resume, clear, compact). The
 hook asks the local daemon over the viewer socket, with the 800 ms budget `status` already uses,
-whether the repository's workspace holds anything, and says so in one line:
+for the repository's workspace's log, and answers with an index of its newest records, fenced as
+evidence, and how to search the rest (recall.md Section 3). After a compaction it also asks for
+what the summary holds that the records do not (recall.md Section 6).
 
-> supragnosis: workspace "supragnosis" holds 168 entities and 274 relations on this node. Search it
-> (`search_knowledge`, `workspace_map`) before assuming what this project has decided; `brief` reads
-> it as a whole.
+**At the start of a subagent** (`SubagentStart`, every agent type). The same index, shorter, in the
+subagent's own context (recall.md Section 4).
 
-When the workspace is not known here the line says that the first `observe` will create it. When no
-daemon answers, the hook says nothing: the bridge already says what to do when a tool is called,
-and a session start is not the place to repeat it.
+When the workspace holds no records here the line says that the first `observe` will create it,
+and a subagent gets nothing. When no daemon answers, the hook says nothing: the bridge already says
+what to do when a tool is called, and a session start is not the place to repeat it.
 
 The hook never writes to the store. The agent does, through the bridge, with its own judgment and
 under the tool's own rules (C4): the hook names the moment and the facts of the commit, and the
@@ -376,8 +378,9 @@ the text says "workspace", not "only this workspace".
 ### 12.4 Registration
 
 - **`supragnosis connect claude-code` registers the hook beside the bridge**, in
-  `~/.claude/settings.json`: one `PostToolUse` entry with matcher `Bash` and one `SessionStart`
-  entry, each with the single command `<program> hook claude-code`, `<program>` chosen as the bridge's
+  `~/.claude/settings.json`: one `PostToolUse` entry with matcher `Bash`, one `SessionStart` entry
+  and one `SubagentStart` entry, each with the single command `<program> hook claude-code`,
+  `<program>` chosen as the bridge's
   is. `--no-capture` registers the bridge alone, and on an app already connected through the bridge
   it removes the hook and keeps the bridge, which is the Settings page's capture switch turned off
   (design-system.md Section 6a). `connect --remove claude-code` removes both. The
@@ -421,11 +424,13 @@ the text says "workspace", not "only this workspace".
   any repository: no output. An input with no event is an error, not silence.
 - `git_commit_is_recognised_in_the_shapes_agents_write_it` - the heredoc, the `&&` chain, the
   `-C` and `-c` forms, a path to git; and not `commit-tree`, not an echo.
-- `a_session_start_says_what_the_workspace_holds` - against a daemon's answers for a seeded store:
-  the counts; for a workspace it has never seen: the first `observe` creates it; with no daemon: no
-  output; a workspace name with a space reaches the daemon encoded.
+- The session and subagent starts are guarded by the tests the registry cites for C6 and for
+  recall.md's RC rows: the newest records as evidence, the compaction question, a workspace
+  reported by its log (the first `observe` creates one that holds nothing; with no daemon, no
+  output; a name with a space reaches the daemon encoded), the context cap, and a subagent's index.
 - `connect_registers_the_hook_beside_the_bridge_and_removes_both` - a `settings.json` with other
-  hooks keeps them byte for byte around the two groups; removal gives the file back as it was,
+  hooks keeps them byte for byte around the three groups; an install with only the older two
+  reads as off and gains only the third; removal gives the file back as it was,
   the arrays and `hooks` included when only ours were in them; twice is once; a file that is not
   JSON, or whose `hooks` is not the documented shape, is refused (C3).
 - The registry: C6 is `Scenario` over those, and P22's first clause moved from `Deferred` to

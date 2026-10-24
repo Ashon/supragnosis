@@ -1430,15 +1430,47 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (6, &[c(
         "the capture hook never blocks the agent, never writes to the store itself, and speaks only after a \
-         commit that landed or at the start of a session",
+         commit that landed, at the start of a session, or at the start of a subagent",
         // hook.rs answers with additionalContext and never a decision; it holds no store handle, only
-        // git and the viewer socket; and both silences are tested.
+        // git and the viewer socket; and its silences are tested.
         Evidence::Scenario(&[
             "a_commit_that_landed_asks_for_the_decision_behind_it",
             "a_command_that_landed_no_commit_gets_no_answer",
-            "a_session_start_says_what_the_workspace_holds",
+            "a_session_starts_with_the_newest_records_as_evidence",
+            "a_compacted_session_is_asked_what_its_summary_holds",
+            "a_subagent_starts_with_the_newest_records",
             "connect_registers_the_hook_beside_the_bridge_and_removes_both",
         ]),
+    )]),
+];
+
+// docs/recall.md Section 8 - the recall index (RC rows).
+const RECALL_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "the recall index is computed from the log each time it is given and is never written; the hook \
+         holds no store handle",
+        Evidence::Structural(
+            "hook.rs's `World` carries a clock, a git runner, a GET on the viewer socket and an override \
+             string, and nothing else reaches `answer`, so the hook has no store handle to write with; the \
+             index is rendered from the log the daemon answers on each call and kept nowhere",
+        ),
+    )]),
+    (2, &[c(
+        "the index is fenced as evidence, no record's text can close the fence, and it says how many \
+         records it leaves out",
+        Evidence::Scenario(&[
+            "a_session_starts_with_the_newest_records_as_evidence",
+            "a_line_is_the_first_sentence_and_the_day_it_was_made",
+        ]),
+    )]),
+    (3, &[c(
+        "the index stays under Claude Code's 10,000-character context cap",
+        Evidence::Scenario(&["the_index_stays_under_the_context_cap"]),
+    )]),
+    (4, &[c(
+        "a workspace is reported by the records its log holds, so a workspace whose records carry no \
+         entities is never called unknown",
+        Evidence::Scenario(&["a_workspace_is_reported_by_the_records_its_log_holds"]),
     )]),
 ];
 
@@ -2884,6 +2916,12 @@ const FAMILIES: &[Family] = &[
         rows: CLIENT_CONNECT_REGISTRY,
     },
     Family {
+        doc: "docs/recall.md",
+        text: include_str!("../../../docs/recall.md"),
+        prefix: "RC",
+        rows: RECALL_REGISTRY,
+    },
+    Family {
         doc: "docs/daemon-lifecycle.md",
         text: include_str!("../../../docs/daemon-lifecycle.md"),
         prefix: "L",
@@ -3360,6 +3398,8 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed the day it was written. Its guards will live in the CLI crate, beside the lifecycle's,
     // since the bridge and `connect` are CLI subcommands the desktop app calls.
     ("docs/client-connect.md", include_str!("../../../docs/client-connect.md")),
+    // Listed the day it was written. Its guards live beside the capture hook's, in the CLI crate.
+    ("docs/recall.md", include_str!("../../../docs/recall.md")),
     // Listed the day it was written. Its guards will split between the CLI (profiles, principals)
     // and the MCP crate, where the remote policy table and its every-tool-is-classified test live.
     ("docs/remote-server.md", include_str!("../../../docs/remote-server.md")),
@@ -4124,14 +4164,15 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&["the_tool_list_is_the_pinned_contract"])),
     ]),
     (22, "Knowledge as a By-Product", &[
-        // client-connect.md Section 12: the capture hook. After a commit the agent made, Claude
-        // Code hands it the facts of the commit and the question; at a session's start, what the
-        // workspace holds here. The person asks for neither.
+        // client-connect.md Section 12 and recall.md: the capture hook. After a commit the agent
+        // made, Claude Code hands it the facts of the commit and the question; at a session's or a
+        // subagent's start, the workspace's newest records. The person asks for neither.
         c("a commit the agent made asks it for the decision behind the change, and a session starts \
            knowing what the workspace holds, with the person asking for neither",
           Evidence::Scenario(&[
             "a_commit_that_landed_asks_for_the_decision_behind_it",
-            "a_session_start_says_what_the_workspace_holds",
+            "a_session_starts_with_the_newest_records_as_evidence",
+            "a_subagent_starts_with_the_newest_records",
           ])),
         // docs/prompts.md: curation reaches the person where they already work, as decisions
         // (open proposals, contested points) beside the reading - and the reading is never stored.

@@ -1601,7 +1601,11 @@ impl ServerHandler for SupragnosisServer {
                  (observe, define_type, propose) names its workspace: name it after the project you \
                  work in - the repository's name, also from a git worktree, never the worktree's \
                  directory - and keep using that name, so one project's knowledge is not split \
-                 across two. A read that names no workspace reads every workspace. Confirming \
+                 across two. A read that names no workspace reads every workspace. Before you \
+                 change a design or settle a question the project may already have settled, \
+                 search its records: two or three English topic words and the project's \
+                 workspace; a hit that is an observation opens with \
+                 supragnosis://observation/{id}. Confirming \
                  knowledge as human_confirmed is the person's act in the Supragnosis app: never \
                  do it yourself, by any tool or other way. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \

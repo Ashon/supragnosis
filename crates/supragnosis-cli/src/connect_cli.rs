@@ -131,7 +131,7 @@ pub(crate) fn claude_code_settings_text(
 }
 
 /// Registers the capture hook in Claude Code's settings (client-connect.md Section 12.4), unless
-/// it is there already. The file is copied aside first and only the two hook groups are added.
+/// it is there already. The file is copied aside first and only the hook's own groups are added.
 pub(crate) fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
     let (path, mut text) = claude_code_settings_text(env)?;
     match connect::capture_state(&text) {
@@ -158,7 +158,7 @@ pub(crate) fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
     }
     println!(
         "  capture on: after a commit the agent is asked for the decision behind it, and a session \
-         starts knowing what the workspace holds ({})",
+         and each subagent start with the workspace's newest records ({})",
         path.display()
     );
     Ok(())
