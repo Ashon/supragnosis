@@ -3496,6 +3496,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../../app/src/cli.rs"),
     include_str!("../../../app/src/daemon.rs"),
     include_str!("../../../app/src/proxy.rs"),
+    include_str!("../../../app/src/splash.rs"),
     include_str!("../../../app/src/main.rs"),
 ];
 
