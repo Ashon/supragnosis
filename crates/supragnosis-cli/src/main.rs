@@ -4858,11 +4858,8 @@ fn start(cfg: Config) -> Result<()> {
             let log = log_dir().join("supragnosis.err.log");
             let reason = std::fs::read_to_string(&log)
                 .ok()
-                .and_then(|t| {
-                    let line = t.lines().rev().find(|l| !l.trim().is_empty())?;
-                    Some(line.trim_start_matches("Error: ").to_string())
-                })
-                .unwrap_or_else(|| "no reason was logged".to_string());
+                .and_then(|t| lifecycle::logged_error(&t))
+                .unwrap_or_else(|| "it logged no error".to_string());
             anyhow::bail!(
                 "the daemon (pid {pid}) exited before it answered on {http}: {reason}\n  the log is {}",
                 log.display()
