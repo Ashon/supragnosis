@@ -1272,7 +1272,7 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     assert!(quiet.get("both").is_none() && quiet.get("negotiated_at").is_none(), "{quiet}");
 
     // The viewer's federation blob carries the same buckets and time, from its own ping.
-    let viewer = include_str!("../../supragnosis-cli/src/main.rs");
+    let viewer = include_str!("../../supragnosis-cli/src/sync_wiring.rs");
     let blob = &viewer[viewer.find("servers_json.push(serde_json::json!({").expect("the blob")..];
     let blob = &blob[..blob.find("}));").expect("it closes")];
     for key in [
