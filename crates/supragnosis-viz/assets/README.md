@@ -9,7 +9,7 @@ The ontology viewer's frontend, split out of the Rust source into real files:
 
 ## How it ships
 
-`build.rs` copies all three into `OUT_DIR` and `crates/supragnosis-viz/src/lib.rs` embeds them from
+`build.rs` writes them into `OUT_DIR`, the script's parts joined into one, and `crates/supragnosis-viz/src/lib.rs` embeds them from
 there via `include_str!`, serving them at `/`, `/viewer.css`, `/viewer.js`. So the crate is still a
 single self-contained binary that works offline (no CDN, no external fetch), and **the build stays
 pure cargo - Node is not required to build or release** (the minifiers are Rust build-dependencies).

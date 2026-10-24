@@ -4481,7 +4481,9 @@ mod settings_tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../crates/supragnosis-viz/assets/viewer");
         let parts: Vec<String> = std::fs::read_dir(dir)
             .unwrap_or_else(|e| panic!("read {dir}: {e}"))
-            .map(|e| std::fs::read_to_string(e.expect("a directory entry").path()).expect("a part"))
+            .map(|e| e.expect("a directory entry").path())
+            .filter(|p| p.extension().is_some_and(|x| x == "js"))
+            .map(|p| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display())))
             .collect();
         assert!(!parts.is_empty(), "no part of the viewer script was read");
         for viewer in parts.iter().map(String::as_str).chain([
