@@ -3501,6 +3501,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../../app/src/settings.rs"),
     include_str!("../../../app/src/splash.rs"),
     include_str!("../../../app/src/tray.rs"),
+    include_str!("../../../app/src/welcome.rs"),
     include_str!("../../../app/src/window.rs"),
     include_str!("../../../app/src/main.rs"),
 ];
