@@ -4803,6 +4803,8 @@ fn status_http_addr() -> String {
 
 fn start(cfg: Config) -> Result<()> {
     let http = cfg.http.clone().unwrap_or_else(|| "127.0.0.1:7373".to_string());
+    // A pidfile left by a daemon that is gone would read, after the fork, as this one gone.
+    clear_stale_pidfile();
     if let Some(pid) = live_pidfile() {
         anyhow::bail!("already running (pid {pid}). Run 'supragnosis stop' and try again.");
     }
@@ -4819,22 +4821,72 @@ fn start(cfg: Config) -> Result<()> {
         .as_deref()
         .map(|v| format!("unix:{v}"))
         .unwrap_or_else(|| "(off)".to_string());
-    println!("supragnosis daemon started - MCP http://{http}/mcp  viewer {viz_msg}");
-    println!("  pidfile {}  logs {}", pid_path().display(), log_dir().display());
     // Generated here rather than in the child, so the connect line can be printed to the terminal
     // the operator is actually looking at. It is the same file the daemon then loads.
     if cfg.mcp_auth {
         load_or_create_mcp_token()?;
-        print_client_command(&http);
     }
-    // fork/setsid/pidfile/stdio redirect. The code after this runs only in the daemonized child.
-    daemonize::Daemonize::new()
+    // fork/setsid/pidfile/stdio redirect. The daemonized child serves; this process waits for it
+    // to answer, so `start` says started only once it is, and fails with the reason when the
+    // daemon exits first (daemon-lifecycle.md L4).
+    let parent = match daemonize::Daemonize::new()
         .pid_file(pid_path())
         .stdout(out)
         .stderr(err)
-        .start()
-        .map_err(|e| anyhow::anyhow!("daemonization failed: {e}"))?;
-    run_blocking(cfg)
+        .execute()
+    {
+        daemonize::Outcome::Child(Ok(_)) => return run_blocking(cfg),
+        daemonize::Outcome::Child(Err(e)) | daemonize::Outcome::Parent(Err(e)) => {
+            anyhow::bail!("daemonization failed: {e}")
+        }
+        daemonize::Outcome::Parent(Ok(parent)) => parent,
+    };
+    if parent.first_child_exit_code != 0 {
+        anyhow::bail!(
+            "daemonization failed: its first child exited with status {}",
+            parent.first_child_exit_code
+        );
+    }
+    match await_forked(&http) {
+        lifecycle::Forked::Serving => {
+            println!("supragnosis daemon started - MCP http://{http}/mcp  viewer {viz_msg}")
+        }
+        lifecycle::Forked::Slow => println!(
+            "supragnosis daemon still starting - `supragnosis status` shows it once http://{http}/mcp answers"
+        ),
+        lifecycle::Forked::Gone(pid) => {
+            let log = log_dir().join("supragnosis.err.log");
+            let reason = std::fs::read_to_string(&log)
+                .ok()
+                .and_then(|t| {
+                    let line = t.lines().rev().find(|l| !l.trim().is_empty())?;
+                    Some(line.trim_start_matches("Error: ").to_string())
+                })
+                .unwrap_or_else(|| "no reason was logged".to_string());
+            anyhow::bail!(
+                "the daemon (pid {pid}) exited before it answered on {http}: {reason}\n  the log is {}",
+                log.display()
+            );
+        }
+    }
+    println!("  pidfile {}  logs {}", pid_path().display(), log_dir().display());
+    if cfg.mcp_auth {
+        print_client_command(&http);
+    }
+    Ok(())
+}
+
+/// Watches the daemon `start` just forked until its address answers, its process is gone, or thirty
+/// seconds pass (`lifecycle::forked`).
+fn await_forked(http: &str) -> lifecycle::Forked {
+    let mut looks = 0;
+    loop {
+        std::thread::sleep(lifecycle::START_TICK);
+        looks += 1;
+        if let Some(seen) = lifecycle::forked(port_open(http), &pidfile_now(), looks) {
+            return seen;
+        }
+    }
 }
 
 /// Sends SIGTERM to the self-managed (pidfile) daemon and waits for graceful exit.
