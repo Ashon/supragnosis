@@ -232,7 +232,7 @@ fn no_retired_word_reaches_a_page() {
         .collect();
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
     let before_tests = |src: &'static str| without_tests(src);
-    let sources: [(&str, String); 17] = [
+    let sources: [(&str, String); 18] = [
         ("viewer.html", include_str!("../assets/viewer.html").to_string()),
         ("viewer.js", SCRIPT.to_string()),
         ("app/assets/kit.js", include_str!("../../../app/assets/kit.js").to_string()),
@@ -256,6 +256,7 @@ fn no_retired_word_reaches_a_page() {
             "app/assets/shell-init.js",
             include_str!("../../../app/assets/shell-init.js").to_string(),
         ),
+        ("app/src/apps.rs", before_tests(include_str!("../../../app/src/apps.rs"))),
         ("app/src/cli.rs", before_tests(include_str!("../../../app/src/cli.rs"))),
         ("app/src/daemon.rs", before_tests(include_str!("../../../app/src/daemon.rs"))),
         ("app/src/menu.rs", before_tests(include_str!("../../../app/src/menu.rs"))),
@@ -389,11 +390,11 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
 }
 
 /// design-system.md Section 29.8: one table of the AI apps' names. The core crate holds it; the app's
-/// pages (`kit.js`) and its shell (`main.rs`) keep copies, which say the same, app for app.
+/// pages (`kit.js`) and its shell (`apps.rs`) keep copies, which say the same, app for app.
 #[test]
 fn the_app_names_are_one_table() {
     let kit = include_str!("../../../app/assets/kit.js");
-    let shell = include_str!("../../../app/src/main.rs");
+    let shell = include_str!("../../../app/src/apps.rs");
     for (id, name) in supragnosis_core::AI_APPS {
         let key = if id.contains('-') {
             format!("\"{id}\": \"{name}\"")
