@@ -424,10 +424,10 @@ the text says "workspace", not "only this workspace".
   any repository: no output. An input with no event is an error, not silence.
 - `git_commit_is_recognised_in_the_shapes_agents_write_it` - the heredoc, the `&&` chain, the
   `-C` and `-c` forms, a path to git; and not `commit-tree`, not an echo.
-- The session and subagent starts are guarded by the tests recall.md Section 8 names: the newest
-  records as evidence, the compaction question, a workspace reported by its log (the first
-  `observe` creates one that holds nothing; with no daemon, no output; a name with a space reaches
-  the daemon encoded), the context cap, and a subagent's index.
+- The session and subagent starts are guarded by the tests the registry cites for C6 and for
+  recall.md's RC rows: the newest records as evidence, the compaction question, a workspace
+  reported by its log (the first `observe` creates one that holds nothing; with no daemon, no
+  output; a name with a space reaches the daemon encoded), the context cap, and a subagent's index.
 - `connect_registers_the_hook_beside_the_bridge_and_removes_both` - a `settings.json` with other
   hooks keeps them byte for byte around the three groups; an install with only the older two
   reads as off and gains only the third; removal gives the file back as it was,

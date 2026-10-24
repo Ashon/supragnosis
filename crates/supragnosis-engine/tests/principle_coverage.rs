@@ -1437,6 +1437,7 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
             "a_commit_that_landed_asks_for_the_decision_behind_it",
             "a_command_that_landed_no_commit_gets_no_answer",
             "a_session_starts_with_the_newest_records_as_evidence",
+            "a_compacted_session_is_asked_what_its_summary_holds",
             "a_subagent_starts_with_the_newest_records",
             "connect_registers_the_hook_beside_the_bridge_and_removes_both",
         ]),

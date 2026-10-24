@@ -107,7 +107,9 @@ header needs the total; on the author's store it answered in about 10 ms.
   and moves anything longer to a file the agent is not asked to read, so the caps on lines and
   length are what keep the index whole. The workspace name has no length limit (an override can
   name anything), so when the whole would still pass the cap, lines go from the oldest shown until
-  it fits, and the count of records not shown grows to match. Claude Code's own memory index,
+  it fits, and the count of records not shown grows to match. A name long enough to pass the cap
+  with no line left (over 3,000 characters, which only `SUPRAGNOSIS_WORKSPACE` can set) is not
+  provided for. Claude Code's own memory index,
   loaded at the same moment, is 11.4 KB on the author's machine.
 - **A workspace with no records** on this node, or with only proposal events, gets the line it
   gets today, worded by what it holds: it holds no records yet, the first `observe` creates it, and
@@ -283,6 +285,10 @@ transcripts and the two are compared here.
 - **D10, `MEMORY.md` and this store:** when the second measurement shows whether the index is read
   and used. Moving project decisions out of the memory files before then would take away the recall
   path that works today.
+- **A commit made elsewhere:** the commit question reads HEAD in the directory the session runs in,
+  so `cd <other checkout> && git commit` draws no question (seen building this: three commits in a
+  worktree, none asked). When the second measurement shows commits that went unasked, the hook
+  reads the directory from the command's `cd` or `git -C`.
 - **`default` and `folio`:** the author's store holds the same 168 entities in both, and the
   portfolio project's sessions point at a third workspace of 15. Which one stays is the author's
   pick, and it is a data repair, not a change to this design.

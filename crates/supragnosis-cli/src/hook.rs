@@ -693,14 +693,33 @@ mod tests {
         let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
         assert!(answer(&input, &w).unwrap().is_none(), "no daemon, no line");
 
-        let daemon = daemon_with("my project", log_of(1, 0, |_| "One.".into()), None);
+        let one = log_of(1, 0, |_| "One.".into());
+        let spaced = move |p: &str| -> Option<String> {
+            assert_eq!(
+                p, "/api/observations?workspace=my%20project",
+                "the name reaches it encoded"
+            );
+            Some(one.clone())
+        };
         let w = World {
             now: now(),
             git: &real_git,
-            daemon: &daemon,
+            daemon: &spaced,
             workspace_override: Some("my project".into()),
         };
         assert!(context_of(&answer(&input, &w).unwrap().unwrap()).contains("its 1 record,"));
+
+        // A log of proposal events only holds no records.
+        let only_events: Vec<Value> =
+            serde_json::from_str::<Vec<Value>>(&log_of(2, 2, |_| String::new()))
+                .unwrap()
+                .into_iter()
+                .filter(|r| r.get("proposal").is_some())
+                .collect();
+        let events = daemon_with(&name, Value::Array(only_events).to_string(), None);
+        let w = World { now: now(), git: &real_git, daemon: &events, workspace_override: None };
+        let text = answer(&input, &w).unwrap().unwrap();
+        assert!(context_of(&text).contains("holds no records on this node yet"), "{text}");
         let _ = std::fs::remove_dir_all(&repo);
     }
 
@@ -732,6 +751,13 @@ mod tests {
             }
             let left = 40 - lines.len();
             assert!(text.contains(&format!("{left} older records are not shown.")), "{left}");
+            assert!(
+                lines[0].ends_with(&format!("{:064x}", 0)),
+                "the newest record stays: {}",
+                lines[0]
+            );
+            let last = format!("{:064x}", lines.len() - 1);
+            assert!(lines[lines.len() - 1].ends_with(&last), "the oldest shown go first");
         }
         let _ = std::fs::remove_dir_all(&repo);
     }
