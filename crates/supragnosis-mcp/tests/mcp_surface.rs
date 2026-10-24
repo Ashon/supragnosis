@@ -1988,3 +1988,40 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
     client.cancel().await.expect("client shutdown");
     server.await.expect("server task");
 }
+
+/// An observation's id passed to get_entity - taken from a search hit of kind observation - is
+/// still not found as an entity (P5), and the note says where the id is read (P21). An id that names
+/// nothing answers as before.
+#[tokio::test]
+async fn get_entity_on_an_observation_id_names_its_resource() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine, false).await;
+    let observed = call(
+        &client,
+        "observe",
+        json!({ "content": "free text, no entities", "workspace": "notes" }),
+    )
+    .await;
+    let id = observed["observation_id"].as_str().expect("an observation id").to_string();
+
+    let answer = call(&client, "get_entity", json!({ "id": id })).await;
+    assert_eq!(answer["found"], false, "{answer}");
+    assert!(
+        answer["note"]
+            .as_str()
+            .is_some_and(|n| n.contains(&format!("supragnosis://observation/{id}"))),
+        "the note does not name the observation's resource: {answer}"
+    );
+
+    let unknown = call(&client, "get_entity", json!({ "id": "ab".repeat(32) })).await;
+    assert_eq!(
+        unknown,
+        json!({
+            "found": false,
+            "id": "ab".repeat(32),
+            "note": "unknown - not found is not a negation (open-world assumption)",
+        })
+    );
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+}
