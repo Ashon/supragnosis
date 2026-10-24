@@ -215,8 +215,7 @@
                 <button type="button" data-out="found" aria-pressed="false">Which database does billing-api use?<small>a relation this node holds</small></button>
                 <button type="button" data-out="notfound" aria-pressed="true">Does billing-api use Kafka?<small>nothing on this node says so</small></button>
                 <button type="button" data-out="unavail" data-route="team hub" aria-pressed="false">Ask the team hub about payments<small>the hub is unreachable</small></button>
-                <button type="button" data-out="withheld" data-route="shared server" aria-pressed="false">Search the workspace 'payroll'<small>on a shared server, not granted to you</small></button>
-                <button type="button" data-out="notfound" data-route="shared server" aria-pressed="false">Open entity 7f3a91c2<small>it exists, outside your grants</small></button>
+                <button type="button" data-out="withheld" data-route="team hub" aria-pressed="false">Ask the team hub about 'payroll'<small>a workspace this machine does not share with it</small></button>
                 <button type="button" data-out="trunc" aria-pressed="false">Everything about billing-api<small>more than one page of it</small></button>
                 <button type="button" disabled>Open an entry that was destroyed<small>owed: a tombstone that names the act</small></button>
               </div>
@@ -225,14 +224,13 @@
                   <li><span class="kind">Found</span><p>Postgres.</p><p class="sm">Said by laptop for you on Mon 10:02, and confirmed by you in the console.</p></li>
                   <li class="on"><span class="kind">Not found</span><p>Nothing on this node says so.</p><p class="sm">That is unknown, never no. Another node may know, and a later entry may say so.</p></li>
                   <li><span class="kind">Unavailable</span><p>The hub did not answer.</p><p class="sm">This is not an empty result. Local answers still work; ask again when the hub is reachable.</p></li>
-                  <li><span class="kind">Withheld</span><p>You are not granted 'payroll'.</p><p class="sm">You named the workspace, so the refusal names it too.</p></li>
-                  <li><span class="kind">Not found</span><p>No entity 7f3a91c2 on this node.</p><p class="sm">Word for word the answer an id that does not exist gets, so asking cannot reveal what exists.</p></li>
+                  <li><span class="kind">Withheld</span><p>'payroll' is not shared with the team hub.</p><p class="sm">You named the workspace, so the refusal names it too.</p></li>
                   <li><span class="kind">Truncated</span><p>Showing 20 of 57.</p><p class="sm">The rest were left out, not missing. Ask a narrower question or for the next page.</p></li>
                 </ul>
               </div>
             </div>
             <p class="cap"><span class="ow"><span class="owed">owed</span> <span data-owed="5">a destroyed id answers as destroyed, recording the act and never the content</span></span></p>
-            <p class="shows">Shows <span data-clause="5">absence is a well-formed answer, never an error</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name</span></p>
+            <p class="shows">Shows <span data-clause="5">absence is a well-formed answer, never an error</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span><span class="sep" aria-hidden="true"> / </span><span data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span></p>
           </figure>
         </article>
         <article class="pr big" id="p6" aria-labelledby="t-p6">
