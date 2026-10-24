@@ -718,6 +718,21 @@ impl AssertionStore for RedbStore {
         Ok(ids.next().is_some())
     }
 
+    /// The keys of the `workspace -> id` index, which are sorted: no log row is read. A log row's
+    /// workspace is inside its content address and no row is removed, so the keys are exactly the
+    /// workspaces the log holds.
+    fn observation_workspaces(&self) -> Result<Vec<String>, StoreError> {
+        use redb::ReadableMultimapTable;
+        let txn = self.db.begin_read().map_err(backend)?;
+        let idx = txn.open_multimap_table(OBS_BY_WS).map_err(backend)?;
+        let mut out = Vec::new();
+        for entry in idx.iter().map_err(backend)? {
+            let (ws, _) = entry.map_err(backend)?;
+            out.push(ws.value().to_string());
+        }
+        Ok(out)
+    }
+
     fn all_observations(&self, workspace: Option<&str>) -> Result<Vec<Observation>, StoreError> {
         let txn = self.db.begin_read().map_err(backend)?;
         let ids = self.ids_in(&txn, OBSERVATIONS, OBS_BY_WS, workspace)?;
