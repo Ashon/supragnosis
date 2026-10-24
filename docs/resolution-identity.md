@@ -106,7 +106,7 @@ as `reproject`, incrementally:
 - **IR3**: for any log state, the incremental projection of the last write equals the row
   `reproject` would produce - pinned by a property test that interleaves observes and compares
   against a fresh replay.
-- [impl] Realized by UNIFYING the two paths, not by narrowing the lock: `project_entities(ws, only)`
+- [impl] Realized by UNIFYING the two paths, not by narrowing the lock: `materialize_entities(ws, only)`
   folds the log to (re)build entity rows - `reproject` runs it over all entities (`only = None`),
   `observe` over just the touched ids (`only = Some`). Both run the identical fold, so IR3 holds by
   construction (there is no separate incremental rule to diverge) rather than by a per-entity guard.

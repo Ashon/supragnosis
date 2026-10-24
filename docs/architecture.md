@@ -640,7 +640,7 @@ Each concern names what is built and what is owed; the milestone of an owed part
      window that already exists (F5).
    - **M3b - identity resolution [o] ([resolution-identity.md](resolution-identity.md)), except IR6**:
      alias accumulation (IR1), the conservative merge band with embedding candidates (generation
-     only - commitment stays gated, Principle 15), the unified resolution write path (project_entities
+     only - commitment stays gated, Principle 15), the unified resolution write path (materialize_entities
      shared by observe and reproject, so incremental == replay - IR3, and write_guard is no longer a
      divergence source), keyword-search alias parity + entity-embedding staleness (the Section 14
      latent conditions, repaid), and T-Box conflict surfacing (Principle 9 minimal + IR5).
@@ -1180,11 +1180,11 @@ Phase 5's.
   in the port conformance suite, so every adapter inherits it. (The original per-adapter guard was
   named here long after it was gone; the conformance case is the one that runs.) Now that aliases actually accumulate (IR1), the condition became reachable and was met in
   the same slice.
-- Entity-embedding recomputation on text change - REPAID (IR4): `project_entities` recomputes the
+- Entity-embedding recomputation on text change - REPAID (IR4): `materialize_entities` recomputes the
   name-meaning vector only when `canonical_name + aliases` changed since the stored row, so it is
   never silently stale. Guarded by `embedding_recomputed_on_alias_change`.
 - `canonical_name` representative-spelling determinism - REPAID (M3a for `reproject`, M3b for the
-  incremental path): both paths now run the same `project_entities` fold, so the incremental write
+  incremental path): both paths now run the same `materialize_entities` fold, so the incremental write
   equals a fresh replay (IR3, `incremental_write_equals_replay`). The F5 transient window that
   affected the incremental path is closed on the local side; the cross-node window (stamps arriving)
   still converges at re-materialization as specified (8th revision).

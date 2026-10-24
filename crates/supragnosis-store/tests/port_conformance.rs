@@ -455,6 +455,36 @@ fn add_relation_upserts_on_id_across_kind_spellings() {
     });
 }
 
+/// `put_projection` writes a reproject's rows in one write, and they read back as rows put one by
+/// one would: an upsert per id, the later of two writes for one edge winning, and the edge reachable
+/// from both ends (crash-recovery.md Section 3a).
+#[test]
+fn put_projection_reads_back_as_the_row_writers_leave_it() {
+    for_each_adapter(|store| {
+        store.put_entity(ent("alpha")).expect("an earlier row");
+        let mut alpha = ent("alpha");
+        alpha.kind = "Project".into();
+        let mut restated = rel("alpha", "dependsOn", "beta");
+        restated.description = Some("the later write".into());
+        store
+            .put_projection(
+                vec![alpha, ent("beta")],
+                vec![rel("alpha", "depends_on", "beta"), restated],
+            )
+            .expect("one write");
+
+        let got = store.get_entity(&eid("alpha")).expect("get").expect("row");
+        assert_eq!(got.kind, "Project", "upserted over the earlier row");
+        assert_eq!(store.all_entities(Some(WS)).expect("enumerate").len(), 2);
+        let rels = store.all_relations(Some(WS)).expect("enumerate");
+        assert_eq!(rels.len(), 1, "one edge id");
+        assert_eq!(rels[0].description.as_deref(), Some("the later write"));
+        for end in ["alpha", "beta"] {
+            assert_eq!(store.relations_of(&eid(end)).expect("relations_of").len(), 1, "{end}");
+        }
+    });
+}
+
 /// `relations_of` is both directions - the port says "whose from or to is entity_id" - and the
 /// result is ordered by id, because a caller that renders an inspector panel must not see the
 /// rows move between two identical reads (Principle 16).

@@ -1016,6 +1016,23 @@ impl KnowledgeStore for RedbStore {
         txn.commit().map_err(backend)
     }
 
+    fn put_projection(
+        &self,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError> {
+        // One transaction for a whole reproject (crash-recovery.md Section 3a): one commit, where a
+        // commit per row paid a disk flush each, and readers see the old projection or the new one.
+        let txn = self.db.begin_write().map_err(backend)?;
+        for e in entities {
+            put_entity_in(&txn, e)?;
+        }
+        for r in relations {
+            add_relation_in(&txn, r)?;
+        }
+        txn.commit().map_err(backend)
+    }
+
     fn commit_projected(
         &self,
         obs: Observation,

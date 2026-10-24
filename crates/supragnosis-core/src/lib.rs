@@ -1478,8 +1478,8 @@ pub trait AssertionStore: Send + Sync {
 /// assertion and the graph can only be read.
 ///
 /// It was a convention before, and the convention held: the whole workspace contains exactly two
-/// calls to these methods, both inside `project_entities`/`project_relations`. What it did not hold
-/// against is the past. The author's own store carries 35 entity rows that no observation anywhere
+/// calls to these methods, both inside the projection's writers. What it did not hold against is
+/// the past. The author's own store carries 35 entity rows that no observation anywhere
 /// asserts - written directly, in an era when something did reach for this handle - and they are
 /// invisible to the log, survive every re-projection, and cannot cross the sync wire because there is
 /// nothing to export. A replay cannot reproduce them because the log never knew about them.
@@ -1491,6 +1491,23 @@ pub trait KnowledgeStore: AssertionStore {
     fn put_entity(&self, entity: Entity) -> Result<(), StoreError>;
     /// Upsert keyed on relation.id. Reachable only where the projection is computed.
     fn add_relation(&self, rel: Relation) -> Result<(), StoreError>;
+    /// Upserts a workspace's whole projection, entity rows then relation rows: a reproject's result
+    /// (crash-recovery.md Section 3a). A store that can commits it in one transaction, so it pays
+    /// one commit rather than one per row and no reader sees part of it. The default writes row by
+    /// row.
+    fn put_projection(
+        &self,
+        entities: Vec<Entity>,
+        relations: Vec<Relation>,
+    ) -> Result<(), StoreError> {
+        for e in entities {
+            self.put_entity(e)?;
+        }
+        for r in relations {
+            self.add_relation(r)?;
+        }
+        Ok(())
+    }
     /// The owed-projection ledger (crash-recovery.md Section 3): every observation whose append
     /// committed and whose projection has not been confirmed since, as `(observation id, workspace)`
     /// in id order. Empty is the normal state. Projection-side, so it lives on the handle only the

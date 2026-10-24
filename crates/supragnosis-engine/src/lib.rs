@@ -5028,24 +5028,11 @@ impl Engine {
     ///
     /// Same log -> same rows on every node/call (P16). Entity `properties` (not modeled by any
     /// assertion yet) are carried forward from the stored row rather than reset.
-    fn project_entities(
-        &self,
-        ws: &str,
-        only: Option<&HashSet<String>>,
-        cx: &ReadCtx,
-        prepared: &HashMap<String, Vec<f32>>,
-    ) -> Result<usize, StoreError> {
-        let rows = self.materialize_entities(ws, only, cx, prepared)?;
-        let count = rows.len();
-        for entity in rows {
-            self.store.put_entity(entity)?;
-        }
-        Ok(count)
-    }
-
-    /// The entity rows [`Engine::project_entities`] writes, ready to store: folded from the log `cx`
-    /// reads, each carrying the stored row's properties and a vector for its text. Writes nothing,
-    /// so a writer can commit them with its row (crash-recovery.md Section 3a).
+    ///
+    /// The rows are ready to store: folded from the log `cx` reads, each carrying the stored row's
+    /// properties and a vector for its text. Nothing is written, so a writer commits them with its
+    /// row and a reproject with the rest of its projection, in one transaction either way
+    /// (crash-recovery.md Section 3a).
     fn materialize_entities(
         &self,
         ws: &str,
@@ -5083,7 +5070,7 @@ impl Engine {
         Ok(out)
     }
 
-    /// The entity rows the log folds to (see [`Engine::project_entities`]), before anything is
+    /// The entity rows the log folds to (see [`Engine::materialize_entities`]), before anything is
     /// read from the stored rows: no embedding, no carried properties.
     fn fold_entities(
         &self,
@@ -5210,7 +5197,7 @@ impl Engine {
         prepared
     }
 
-    /// Projects relations from the log - the edge half of what [`Engine::project_entities`] does for
+    /// Projects relations from the log - the edge half of what [`Engine::materialize_entities`] does for
     /// nodes, and shared by `observe` and `reproject` for the same reason (IR3): if the incremental
     /// write and a fresh replay run different code, they are two answers to one question and the
     /// projection stops being a function of the log.
@@ -5226,22 +5213,10 @@ impl Engine {
     /// `only` bounds the work to the edges a single observe touched. It is a filter on which rows are
     /// WRITTEN, never on which are read: the winner for an edge is still chosen across every
     /// observation asserting it, so narrowing the write set cannot change what gets written.
-    fn project_relations(
-        &self,
-        ws: &str,
-        only: Option<&HashSet<String>>,
-    ) -> Result<usize, StoreError> {
-        let rows = self.relation_rows(ws, only, None)?;
-        let written = rows.len();
-        for r in rows {
-            self.store.add_relation(r)?;
-        }
-        Ok(written)
-    }
-
-    /// The relation rows [`Engine::project_relations`] writes, folded from the log as it reads with
-    /// `overlay` in it. Writes nothing, so a writer can commit them with its row (crash-recovery.md
-    /// Section 3a).
+    ///
+    /// The rows are folded from the log as it reads with `overlay` in it. Nothing is written, so a
+    /// writer commits them with its row and a reproject with the rest of its projection
+    /// (crash-recovery.md Section 3a).
     fn relation_rows(
         &self,
         ws: &str,
@@ -5674,16 +5649,19 @@ impl Engine {
         let cx = &ReadCtx::default();
         // Entities: the same resolution write path the incremental observe uses, over ALL entities
         // (only = None) - so a reproject and an incremental write agree row-for-row (IR3).
-        let entities = self.project_entities(&ws, None, cx, &prepared)?;
-
+        let entities = self.materialize_entities(&ws, None, cx, &prepared)?;
         // The same fold the incremental write runs, over every edge rather than one observe's.
-        let relations = self.project_relations(&ws, None)?;
-        self.store.clear_owed(&owed)?;
-        Ok(ReprojectReport {
+        let relations = self.relation_rows(&ws, None, None)?;
+        let report = ReprojectReport {
             observations: self.observations(Some(&ws))?.len(),
-            entities,
-            relations,
-        })
+            entities: entities.len(),
+            relations: relations.len(),
+        };
+        // One write for the whole projection: one commit instead of one per row, and no reader sees
+        // a projection half rewritten (crash-recovery.md Section 3a).
+        self.store.put_projection(entities, relations)?;
+        self.store.clear_owed(&owed)?;
+        Ok(report)
     }
 
     /// The shared store port - the federation sync layer operates on the same log the engine
@@ -6124,7 +6102,7 @@ impl Engine {
         let canon = |id: String| fwd.get(&id).cloned().unwrap_or(id);
 
         // Rebuild this entity's name/kind belief candidates from the log, at the same effective tier
-        // and fold order as project_entities/belief_fold - so the ranking matches the projection.
+        // and fold order as materialize_entities/belief_fold - so the ranking matches the projection.
         let mut name_cands: Vec<BeliefCandidate> = Vec::new();
         let mut kind_cands: Vec<BeliefCandidate> = Vec::new();
         let mut bases: HashMap<String, TrustTier> = HashMap::new();
