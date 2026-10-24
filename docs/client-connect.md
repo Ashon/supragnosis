@@ -302,7 +302,9 @@ Checked end to end:
 
 > Status: **built**. Principle 22's first clause was deferred in the registry with the reason that
 > nothing makes an agent capture or retrieve unasked; this section is the mechanism that repaid it.
-> What building it changed is in Section 11.
+> What building it changed is in Section 11. [recall.md](recall.md) (specified) replaces the
+> session-start line with an index of the workspace's records, adds a subagent's start, and
+> rewrites the commit text; this section describes the hook as built until that lands.
 
 ### 12.1 Why
 
