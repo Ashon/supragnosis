@@ -721,7 +721,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (19, &[c(
         "the viewer's View toggles are switches that say their state, its legend chips say whether they are pressed, its workspace chips are one radio group, its page declares its language and names the map, and the app's dialogs hold focus",
-        // crates/supragnosis-viz/tests/controls.rs and app/src/main.rs: the helpers and their callers.
+        // crates/supragnosis-viz/tests/controls.rs and app/src/page_tests.rs: the helpers and their callers.
         Evidence::Scenario(&["the_viewers_controls_say_what_they_are", "the_app_pages_dialogs_hold_focus"]),
     ), c(
         "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 under a coarse pointer, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
@@ -796,7 +796,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         "the title bar names the place on screen, never the product: the filters toggle and the scope's name leading and the search trailing on the Graph page, the way back to the Graph leading on every other page with Esc and Cmd+[, no other navigation, one bar on every page with the star first, and in the app it drags the window from anywhere but its controls and clears the traffic lights only while they are shown",
         // crates/supragnosis-viz/tests/titlebar.rs: the viewer's bar, the app pages' bars, and the
         // star and the leading group's rules the app's stylesheet shares with the viewer's;
-        // app/src/main.rs: the drag region the shell gives every page's header.
+        // app/src/page_tests.rs: the drag region the shell gives every page's header.
         Evidence::Scenario(&[
             "the_viewer_title_bar_is_a_mac_toolbar",
             "the_app_pages_go_back_to_the_graph",
@@ -3504,6 +3504,8 @@ const SOURCES: &[&str] = &[
     include_str!("../../../app/src/welcome.rs"),
     include_str!("../../../app/src/window.rs"),
     include_str!("../../../app/src/main.rs"),
+    include_str!("../../../app/src/tests.rs"),
+    include_str!("../../../app/src/page_tests.rs"),
 ];
 
 /// One row per principle in `docs/principles.md`, in order, each carrying the clauses that
