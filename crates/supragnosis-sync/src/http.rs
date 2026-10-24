@@ -1792,6 +1792,11 @@ mod tests {
             Err(TransportError::Remote { status: 403, .. }) => {}
             other => panic!("expected 403, got {other:?}"),
         }
+        // A federated search is authorized the same way: an unshared workspace is refused too.
+        match good.search("private-ws", "anything", 5).await {
+            Err(TransportError::Remote { status: 403, .. }) => {}
+            other => panic!("expected 403 for a search, got {other:?}"),
+        }
         // Right token, shared workspace -> OK.
         assert!(good.advertise("ws").await.is_ok());
     }

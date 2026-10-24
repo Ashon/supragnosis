@@ -639,9 +639,9 @@ changing the canon policy without a central admin - is out of scope.
 - **F9** Only whitelisted workspaces cross the sync boundary (opt-in, default nothing, P17); the server
   enforces per-node access, filtering before the boundary. Any remote read surface obeys the same whitelist
   (P17 second-door rule).
-- **F10** The hub listener binds non-loopback ONLY with TLS enabled and at least one admitted node,
-  principal or open invitation (remote-server.md R1, pairing.md PA1); one that may not bind leaves
-  the rest of the node serving. *(Revised by pairing.md: the invitation, and no exit at start.)* The local daemon's MCP stays loopback-only (its bind guard
+- **F10** The hub listener binds non-loopback ONLY with TLS enabled and at least one admitted node
+  or open invitation (pairing.md PA1; an admitted principal counted too until 0.11.0 removed them,
+  remote-server.md Section 13); one that may not bind leaves the rest of the node serving. *(Revised by pairing.md: the invitation, and no exit at start.)* The local daemon's MCP stays loopback-only (its bind guard
   unchanged); the local viewer has no TCP bind (local unix socket only).
 - **F11** Sync is a non-blocking, pollable task (P21). It never blocks tool handlers; store calls offload
   via `spawn_blocking`.

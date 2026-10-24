@@ -1538,7 +1538,7 @@ pub struct AttestationSummary {
     pub origin_node: Option<String>,
     /// The AI app that wrote it, as this node recorded it, by the name a person reads - only on the
     /// local viewer's reads (design-system.md Section 29.8). A node-local field: no fold, check or
-    /// projection reads it, and the read tier and MCP never ask for it.
+    /// projection reads it, and MCP never asks for it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
 }
@@ -3702,9 +3702,8 @@ impl Engine {
     }
 
     /// One proposal's labels: each target's, and its merge target's. A label names only what is in
-    /// the proposal's own workspace - the workspace its opening observation was written to - so a
-    /// reader granted that workspace on the read tier is told nothing from another (remote-viewer.md
-    /// Section 3.4); a target elsewhere keeps `None`.
+    /// the proposal's own workspace - the workspace its opening observation was written to; a target
+    /// elsewhere keeps `None`.
     fn labels_for(
         &self,
         id: &str,
@@ -5811,7 +5810,7 @@ impl Engine {
 
     /// [`Engine::observation_log`] for the local viewer: each attestation names the app that wrote
     /// it where this node recorded one (design-system.md Section 29.8). Only the local console's
-    /// routes call it; the read tier and MCP read [`Engine::observation_log`].
+    /// routes call it; MCP reads [`Engine::observation_log`].
     pub fn observation_log_local(
         &self,
         workspace: Option<&str>,

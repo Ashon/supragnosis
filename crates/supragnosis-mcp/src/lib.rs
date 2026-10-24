@@ -352,8 +352,8 @@ pub struct SyncContext {
 }
 
 /// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
-/// started, by the name each client gives itself. Kept in memory only - never in the store, never on
-/// the read tier, never sent to a peer (O7) - so that setup can say an app reached the daemon without
+/// started, by the name each client gives itself. Kept in memory only - never in the store, never
+/// sent to a peer (O7) - so that setup can say an app reached the daemon without
 /// writing anything to learn it.
 #[derive(Default)]
 pub struct ClientLog {
@@ -513,7 +513,7 @@ impl SupragnosisServer {
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
         let note = "unknown - not found is not a negation (open-world assumption)";
         // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
-        // on every surface (design-system.md Section 29.20, remote-viewer.md Section 3.4).
+        // whatever the caller (design-system.md Section 29.20).
         let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
         let note = if looks_like_id {
             note.to_string()
@@ -2043,7 +2043,7 @@ tokio::task_local! {
     static WRITING_APP: Option<String>;
 }
 
-/// The app of the local call in progress, or `None` outside one (a remote principal's, the CLI's).
+/// The app of the call in progress, or `None` outside one (the CLI's).
 fn writing_app() -> Option<String> {
     WRITING_APP.try_with(|a| a.clone()).ok().flatten()
 }

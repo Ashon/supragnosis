@@ -8,7 +8,7 @@
 //! an invitation opens or closes.
 //!
 //! The admin socket is how this user's own processes change the running daemon: start a sync round,
-//! re-read the hub's admissions, invite, allow, deny, remove. It is a `0600` unix socket in the
+//! invite, allow, deny, remove. It is a `0600` unix socket in the
 //! owner-only directory, so it needs no token and is open to no other account, no agent (it is not
 //! MCP) and no page (the app's proxy reaches only the viewer socket).
 

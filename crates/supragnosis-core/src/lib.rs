@@ -1798,7 +1798,7 @@ pub struct EventEnvelope {
     /// Session id (a conversation, roughly one MCP server run unit, or injected by the client). The footprint grouping key.
     pub session: String,
     /// The app of the local MCP session the activity came from, as it named itself in `initialize`
-    /// (design-system.md Section 29.8). Never a remote principal's; the read tier drops it.
+    /// (design-system.md Section 29.8).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
     #[serde(flatten)]

@@ -3656,8 +3656,8 @@ async fn expired_session_is_not_found(
 /// Parses the MCP streamable-http bind address and **verifies it is loopback** (Principle 17).
 ///
 /// Accepts only a `host:port` IP literal (e.g. `127.0.0.1:7373`). Non-loopback addresses are
-/// rejected - this port is the local trust surface; MCP beyond loopback is the hub's governed
-/// agent surface on its TLS listener (docs/remote-server.md R1), never this port. A hostname
+/// rejected - this port is the local trust surface, and MCP never leaves loopback (the hub's agent
+/// surface was removed in 0.11.0, remote-server.md Section 13). A hostname
 /// (localhost) is not accepted because it would require DNS resolution (removing ambiguity). This
 /// TCP port is the last one standing: the viewer serves over a unix socket, and clients reach this
 /// one through `supragnosis bridge`, which relays to it.
@@ -3668,8 +3668,8 @@ fn parse_loopback_addr(s: &str) -> Result<std::net::SocketAddr> {
     if !addr.ip().is_loopback() {
         anyhow::bail!(
             "MCP bind address {addr} is not loopback - refusing (Principle 17: knowledge \
-             sovereignty). Use 127.0.0.1:<port>; remote access goes through a hub's TLS listener \
-             (sync, and MCP for admitted principals), never this port"
+             sovereignty). Use 127.0.0.1:<port>; other machines reach this knowledge by syncing \
+             through a hub, never through this port"
         );
     }
     Ok(addr)

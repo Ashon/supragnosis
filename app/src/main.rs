@@ -2,8 +2,8 @@
 //!
 //! A Tauri webview around the daemon's unix-socket viewer (Principle 21: a human-facing channel,
 //! separate from the MCP tool surface). The shell embeds NO frontend and NO engine - the viewer UI
-//! is served by the daemon (supragnosis-viz), so the desktop app and the future hub read tier keep
-//! a single UI source, and the store stays single-process (the daemon owns the db; the shell owns
+//! is served by the daemon (supragnosis-viz), so the app keeps a single UI source, and the store
+//! stays single-process (the daemon owns the db; the shell owns
 //! nothing). It adds exactly three things:
 //!
 //! 1. **Daemon lifecycle** - attach to a live viz socket, or spawn `supragnosis serve` as a child

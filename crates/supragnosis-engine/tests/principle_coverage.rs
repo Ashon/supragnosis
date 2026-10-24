@@ -235,8 +235,8 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     ]),
     (10, &[c(
-        "the hub listener binds non-loopback only with TLS and something admitted - whether a \
-         principals-only hub starts is R1's clause",
+        "the hub listener binds non-loopback only with TLS and something admitted - an allowlisted \
+         node or an open invitation",
         Evidence::Scenario(&[
             "bind_guard_enforces_f10",
             "parse_loopback_addr_accepts_loopback_rejects_public",
@@ -249,9 +249,10 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"]),
     ), c(
         "an open invitation counts as an admission",
-        Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-        ),
+        Evidence::Scenario(&[
+            "a_listener_that_cannot_open_leaves_the_node_serving",
+            "an_admission_beside_the_allowlist_passes_the_bind_guard",
+        ]),
     )]),
     // A round grew past one small delta exchange in 00aae4e (batched pushes, paged pulls), which
     // was this row's trigger; the two demands it bundles stand apart now.
@@ -328,26 +329,26 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "define_type is ungated working-set last-write-wins today, which the invariant itself              says is tolerable only under the solo exception - and so federated deployment stays              single-principal until the M4 Phase 5 gate exists",
         ),
     )]),
-    // F19 bundles three demands. The read tier (remote-viewer.md, v0.4.7) built two of them; the
-    // user keys it names are remote-server.md step 5, and the read tier admits bearer principals.
+    // F19 bundles three demands. The read tier (remote-viewer.md, v0.4.7) built two of them and was
+    // removed in 0.11.0; the user keys it names were remote-server.md step 5, never built.
     (19, &[
         c("the hub human surface's read tier disables every write and answers only within each \
            user's workspace grants",
           Evidence::Deferred(
-            "M4 Phase 5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), so \
-             the hub serves no person. Revisit when a hub serves people again",
+            "M4 Phase 3.5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), \
+             so the hub serves no person. Revisit when a hub serves people again",
           )),
         c("a workspace is served to users only under the spoke's sync+web-read consent",
           Evidence::Deferred(
-            "M4 Phase 5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), so \
-             the hub serves no person. Revisit when a hub serves people again",
+            "M4 Phase 3.5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), \
+             so the hub serves no person. Revisit when a hub serves people again",
           )),
         c("the hub human surface authenticates by enrolled user keys and never accepts an \
            unattributable write",
           Evidence::Deferred(
-            "the read tier admits a bearer principal, not an enrolled user key, and has no write \
-             route, so nothing unattributable can arrive yet. Keys are remote-server.md step 5, and \
-             the write tier is M4 Phase 5 with F20's signed acts",
+            "the hub serves no person since 0.11.0 removed the read tier, so nothing \
+             unattributable can arrive. Enrolled keys and a write tier are M4 Phase 5 with F20's \
+             signed acts. Revisit when a hub serves people again",
           )),
     ]),
     (20, &[c(
@@ -2719,15 +2720,23 @@ const REMOVED_SURFACE: &str = "removed in 0.11.0 (remote-server.md Section 13): 
 const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("the local MCP daemon binds loopback only",
-          Evidence::Structural(REMOVED_SURFACE)),
+          Evidence::Scenario(&["parse_loopback_addr_accepts_loopback_rejects_public"])),
         c("MCP leaves loopback only on the hub's listener, and only with TLS",
           Evidence::Structural(REMOVED_SURFACE)),
-        c("a non-loopback listener needs at least one admitted principal or node",
-          Evidence::Structural(REMOVED_SURFACE)),
+        c("a non-loopback listener needs at least one admitted node or open invitation, principals \
+           having gone in 0.11.0",
+          Evidence::Scenario(&[
+            "bind_guard_enforces_f10",
+            // `serve` assembles the count: the allowlist plus what the extra surface admits.
+            "an_admission_beside_the_allowlist_passes_the_bind_guard",
+          ])),
         c("a listener that cannot start leaves the rest of the daemon serving",
-          Evidence::Structural(REMOVED_SURFACE)),
+          Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"])),
         c("an open invitation is an admission too",
-          Evidence::Structural(REMOVED_SURFACE)),
+          Evidence::Scenario(&[
+            "a_listener_that_cannot_open_leaves_the_node_serving",
+            "an_admission_beside_the_allowlist_passes_the_bind_guard",
+          ])),
     ]),
     (2, &[c(
         "every remote request is authenticated as exactly one admitted principal; none is anonymous",
@@ -2755,13 +2764,13 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (6, &[
         c("no credential appears in an AI app's configuration",
-          Evidence::Structural(REMOVED_SURFACE)),
+          Evidence::Scenario(&["registrations_run_the_bridge_and_carry_no_secret"])),
         c("no credential appears on a command line",
           Evidence::Structural(REMOVED_SURFACE)),
         c("the bridge and the CLI read the credential from a 0600 file",
           // The bridge reads this machine's token file, which `write_secret` makes 0600; the
           // profiles' credential files went with the profiles in 0.11.0 (Section 13).
-          Evidence::Structural(REMOVED_SURFACE)),
+          Evidence::Scenario(&["the_state_directory_and_its_secrets_are_closed_to_other_accounts"])),
     ]),
     (7, &[c(
         "review, define_type and the sync_* tools are refused on the remote surface",
@@ -2824,7 +2833,10 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (9, &[c(
         "the local viewer is unchanged: a 0600 unix socket, the full console, no credential",
-        Evidence::Structural(REMOVED_SURFACE),
+        Evidence::Scenario(&[
+            "viz_socket_is_owner_only_and_review_needs_no_browser_headers",
+            "p17_socket_directory_denies_foreign_users_before_the_socket_mode",
+        ]),
     )]),
 ];
 
@@ -3944,10 +3956,8 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             // quoted - the honest state while there is no way to remove them (excision.md 8.2).
             "p17_the_log_is_scanned_for_secrets_that_predate_the_door",
         ])),
-        // Opened by remote-viewer.md: the hub serves the viewer to its principals at /viz/, and
-        // enumeration, omitted and `*` workspaces, id-based reads and the event stream are all
-        // resolved against the reader's grants - a union is computed per granted workspace, never
-        // the node-wide projection filtered afterwards (V3, V4).
+        // Opened by remote-viewer.md for the hub's read tier, which 0.11.0 removed; the door that
+        // stays is federated retrieval over sync.
         c("a remote search over sync reaches only a workspace the two nodes share: the query is not \
            sent for any other, and the hub refuses one it does not share",
           Evidence::Scenario(&[

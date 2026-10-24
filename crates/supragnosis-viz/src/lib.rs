@@ -449,8 +449,8 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/surface" => Response {
             status: "200 OK",
             content_type: "application/json",
-            // The workspace an omitted one resolves to: the node's default, so the page calls the default by its name (design-system.md
-            // Section 29.10).
+            // The workspace an omitted one resolves to: the node's default, so the page calls the
+            // default by its name (design-system.md Section 29.10).
             body: serde_json::json!({
                 "surface": "local",
                 "node": engine.host(),

@@ -157,9 +157,9 @@ two require the code's secret, the last a joined machine's credential.
   pane does not list the machines a hub made this way admits, and the invitation says so;
   `supragnosis peer list` lists them at once, and step 4 makes the pane read them the same way.
 - **At run time**, the daemon opens the listener when the first admission arrives - an invitation,
-  a joined machine, a principal - and closes it when the last one ends, an unused invitation
-  expiring among them. The bind rule is checked each time it would open (D5, PA1). `principal add`
-  and `principal remove` tell the daemon through the admin socket after they edit the file.
+  a joined machine - and closes it when the last one ends, an unused invitation expiring among
+  them. The bind rule is checked each time it would open (D5, PA1). (Until 0.11.0 a principal was
+  an admission too, and `principal add` and `remove` told the daemon.)
 - **The certificate it makes for itself.** The first invitation on a hub with no certificate
   makes an ECDSA P-256 key and a self-signed end-entity certificate (not a CA) naming the host's
   `.local` name, the `--address` names and `localhost`, valid for ten years, written under
@@ -308,7 +308,7 @@ two of them can be confused; the secret and every key are 32 bytes.
 ### 4.4 Editing `supragnosis.toml`
 
 Every writer - the join on either side, a removal, the first invitation's `[server]` lines, the
-narrowing act, `principal add` and `remove` - edits the file in place with the format-preserving
+narrowing act - edits the file in place with the format-preserving
 editor the narrowing act uses, keeping every line the person wrote, under one lock file beside it,
 so two edits never lose each other's change. An edit adds only what the person chose in the act at
 hand, and removes only what pairing itself recorded: an entry written by hand is never removed or

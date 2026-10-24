@@ -2138,7 +2138,7 @@ async fn every_act_under_all_is_filed_where_its_item_lives() {
 
 /// The same name in other workspaces, on the local console (design-system.md Section 29.16): one
 /// `in` per workspace the page lists, each a lookup; the entity's own workspace is never listed, an
-/// unknown entity is said without spelling its id, and the read tier refuses the path.
+/// unknown entity is said without spelling its id.
 #[tokio::test]
 async fn the_console_reads_the_same_name_in_other_workspaces() {
     let store = Arc::new(InMemoryStore::new());

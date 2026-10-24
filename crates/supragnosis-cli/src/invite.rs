@@ -430,12 +430,10 @@ impl Pairing {
         })
     }
 
+    /// Always false since 0.11.0 removed principals (remote-server.md Section 13); the field stays on
+    /// the wire, where a 0.10 joiner requires it.
     fn serves_principals(&self) -> bool {
-        crate::fed::load_at(&self.paths.config)
-            .ok()
-            .flatten()
-            .and_then(|c| c.server)
-            .is_some_and(|s| !s.principals.is_empty())
+        false
     }
 
     /// A refusal that leaves the invitation as it is: the request is not one the hub could show.
