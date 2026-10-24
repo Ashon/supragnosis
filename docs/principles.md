@@ -150,10 +150,14 @@
 > and a design step's check table lists only the rules the step changes or puts at risk. *Tightens*
 > Appendix B.2: a test reads behavior, not source text. *Corrects a fact* in Appendix A's closing
 > paragraph: the hub is kept minimal - a hub-and-spoke meeting point for device sync and pairing,
-> with the remote MCP surface and the read tier frozen, then removed in 0.11.0 (remote-server.md
-> Section 13) - so the owed mechanisms that serve
+> with the remote MCP surface and the read tier frozen as built - so the owed mechanisms that serve
 > several people on one hub are due when a second person uses one, not on a schedule (architecture.md
 > Section 14).
+> Revision: 2026-10-24 (remote-server.md Section 13) - *corrects facts*: the remote MCP surface
+> (server profiles and principals) and the hub's read tier, frozen the day before, are removed in
+> 0.11.0. Where 5, 17 and 24 cite remote-server.md and remote-viewer.md they cite the design as it
+> was built; the rules hold for any remote surface, and the one that remains is federated retrieval
+> over sync. 24's bind example loses its principal with the code that admits one.
 
 ---
 

@@ -5,8 +5,9 @@
 > Companion to [client-connect.md](client-connect.md) (the bridge every AI app launches) and
 > [federation.md](federation.md) (nodes that replicate; Section 6 is the trust model this extends).
 >
-> Status: **built** (Section 10 steps 1-3); step 4 is specified in [remote-viewer.md](remote-viewer.md),
-> and step 5 here. What building it changed is in Section 12.
+> Status: **built** (Section 10 steps 1-3), **then removed in 0.11.0** (Section 13); step 4 was
+> specified in [remote-viewer.md](remote-viewer.md) and step 5 here, and neither ships. What building
+> it changed is in Section 12.
 >
 > **Removed in 0.11.0 (decided 2026-10-24).** The hub is kept minimal: each machine joins it, syncs,
 > and uses its own daemon - its AI apps reach that daemon through the bridge as before - so nothing
@@ -343,56 +344,66 @@ that every change to the MCP surface, the hub and the app had to step around.
 
 **What goes.**
 - **Server profiles:** `supragnosis server` (`add`, `use`, `remove`, `--json`), `client.toml`, the
-  bridge's remote mode and `SUPRAGNOSIS_SERVER_URL`, `_TOKEN_FILE` and `_CA`, and the app's Server
-  pane, tray line and remote state (Section 5).
+  bridge's remote mode and `SUPRAGNOSIS_SERVER_URL`, `_TOKEN_FILE` and `_CA`, the remote branches of
+  `setup` and `connect`, and the app's Server pane, tray line and remote state (Section 5).
 - **Principals:** `supragnosis principal` (`add`, `remove`, `list`), `[[server.principals]]`, the
-  hub's `/mcp`, and the MCP surface's remote mode - `remote::admit`, its policy table and every
-  tool's remote branch (Sections 3-4).
-- **Consent to serve:** `[sync] serve_workspaces`, `join --serve`, the `supragnosis-serve` header
-  and the hub's record of it, `served-consent.json` (Section 4.4).
+  hub's `/mcp`, the MCP surface's remote mode - `remote::admit`, its policy table and every tool's
+  remote branch (Sections 3-4) - and the admin socket's `/server/refresh`, which only `principal`
+  called.
+- **Consent to serve:** `[sync] serve_workspaces`, `join --serve`, and the hub's record of consent,
+  `served-consent.json` (Section 4.4), which is left in place and not read.
 - **The read tier:** the hub's `/viz/`, its policy table and its audit lines (remote-viewer.md step
   1), and what steps 2-3 left in the app, the window's remote page.
 
-**What stays.** The hub's listener for sync and pairing, under pairing.md PA1's bind rule; each
-machine's daemon, console and bridge to its own daemon; federated retrieval over sync
-(`search_knowledge`'s `scope`); and the local viewer's `/api/surface`, which the page reads for its
-node and default workspace.
+**What stays.** The hub's listener for sync and pairing; each machine's daemon, console and bridge
+to its own daemon; federated retrieval over sync (`search_knowledge`'s `scope`); and the local
+viewer's `/api/surface` as it is, `surface: "local"` included, since the page gates its acts on it.
+The viewer's branches for the read tier stay too: with the surface always local they are always
+taken.
 
-**What a machine that used them meets.** Each is said where it is read, and none is silent
-(Principles 5 and 24):
+**What a machine that used them meets.**
 - **A key that is no longer read.** `[[server.principals]]` and `[sync] serve_workspaces` still
   parse, as `insecure_tls` does, and do nothing. The daemon starts, and its log and `sync_status`'s
-  notes say that the key is no longer read since 0.11.0 and can be removed. Refusing the file would
-  stop a node's own knowledge over a key that now does nothing.
-- **A client that used a server elsewhere.** When `client.toml` names an active server, or
-  `SUPRAGNOSIS_SERVER_URL` is set, the bridge refuses to start rather than answer from this machine's
-  daemon: an AI app's writes would otherwise land on another machine than the one the person chose,
-  without a word. The refusal names the file or the variable, says remote servers were removed in
-  0.11.0, and says that deleting `client.toml` and its `servers/*.token` credentials, or unsetting
-  the variable, uses this machine's daemon. `status` says the same. The CLI deletes none of those
-  files: they are the person's.
-- **The pairing wire.** A hub's answer keeps `serves_principals`, always false, so a 0.10 joiner
-  still reads it, and a 0.11 joiner ignores it. A 0.11 spoke sends no `supragnosis-serve` header,
-  which a 0.10 hub reads as no change. So a 0.10 hub with principals keeps serving consent given
-  before; owed, revisit when a 0.10 hub with principals syncs with a 0.11 spoke.
+  notes say the key is no longer read since 0.11.0 and can be removed (Principle 24). Refusing the
+  file would stop a node's own knowledge over a key that now does nothing. `hub leave` still removes
+  the `serve_workspaces` entries a 0.10 join recorded.
+- **Consent given before.** A 0.11 spoke still sends the `supragnosis-serve` header, naming no
+  workspace, so a 0.10 hub withdraws whatever consent it held: sharing less, the direction Principle
+  24 allows. The spoke's side of the header is the one piece of consent that stays; revisit when no
+  0.10 hub remains.
+- **A client that used a server elsewhere.** Nothing reads `client.toml` or `SUPRAGNOSIS_SERVER_*`
+  any more, and the bridge uses this machine's daemon. No one uses a server profile today, and an AI
+  app writing to its own machine's daemon leaks nothing, so this is said where an upgrade is read:
+  the 0.11.0 release note says to delete `client.toml` and its `servers/*.token` credentials. A
+  guard in the bridge is owed (Appendix A, assurance against proportion); revisit when a profile is
+  reported still in use.
+- **The pairing wire.** A hub's answer keeps `serves_principals`, declared on both sides and always
+  false: a 0.10 joiner requires the field, and a 0.11 joiner that dropped it would refuse a 0.10
+  hub's answer after being admitted.
 - **Machine-read output.** `server --json` goes with its command, a breaking change named in
   CHANGELOG.md and its release note. `status --json` keeps its `server` field, always `{"name":
-  "local", "remote": false}`, so its schema stays 1 and a 0.10 app still reads it
-  (compatibility.md Section 6).
+  "local", "remote": false}`, so its schema stays 1 (compatibility.md Section 6). Its `url`, present
+  only on a remote profile, goes with the profiles; no app reads it.
 - **The knowledge.** What a principal wrote stays in the log as written (Principle 3). Nothing in
   the store changes, and no store format moves.
 
-**Invariants.** R1-R8 here and V1-V9 in remote-viewer.md retire with the code, and the coverage
-registry drops their families. What R1 kept that still matters is held elsewhere: the local daemon
-serves loopback only (Principle 17), and the hub's listener binds off loopback only with TLS and an
-admitted node or an open invitation (pairing.md PA1). A clause in another document that rested on a
-removed test is reworded to what still holds, or retired, in the step that removes the test.
+**Invariants and the registry.** R1-R8 here and V1-V9 in remote-viewer.md stay in their tables,
+since Sections 1-12 keep the design as built and other documents cite their rows, and the coverage
+registry holds each of their clauses as removed: no route serves `/mcp` or `/viz/` on the hub. What
+R1 kept that still matters is held elsewhere: the local daemon serves loopback only (Principle 17),
+and the hub's listener binds off loopback only with TLS and an admitted node or an open invitation
+(pairing.md PA1, whose admitted principal goes in step 3). A clause in another family that rested on
+a removed test is decided in the step that removes it: Principle 17's read-tier clause rests on
+federated retrieval's tests instead, F19's clauses return to owed, and the rest are reworded to what
+still holds or retired.
 
 **Order.** Each step is one change of about 500 lines without its tests, with its documents.
 1. This section and the status lines that point here.
-2. Server profiles in the CLI and the bridge, with the refusal above; then in the app.
-3. Principals and the read tier: the hub's router, the MCP surface's remote mode, the read tier's
-   policy, and the two keys read and ignored.
-4. Consent: `serve_workspaces`, `join --serve` and the header, with the pairing field kept.
+2. Server profiles in the CLI, the bridge, `setup` and `connect`; then in the app.
+3. Principals and the read tier: the hub's router and `/server/refresh`, the MCP surface's remote
+   mode, the read tier's policy, `[[server.principals]]` read and ignored, and PA1, F10 and
+   Principle 24's example without the principal.
+4. Consent: `serve_workspaces` read and ignored, `join --serve`, the header kept naming nothing, and
+   the pairing field kept.
 5. What is left in other documents, README.md, SECURITY.md and `deploy/`, and the principles page,
    whose answer demo routes two questions through a shared server.
