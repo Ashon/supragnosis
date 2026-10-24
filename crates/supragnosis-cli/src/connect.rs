@@ -1315,7 +1315,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "new", "the file is untouched");
         let _ = std::fs::remove_dir_all(&home);
 
-        let main = include_str!("main.rs");
+        let main = crate::MAIN_SOURCES.concat();
         assert!(!main.contains("connect::back_up("), "no copy is taken apart from its write");
         let writes: Vec<&str> = main
             .match_indices("connect::write_replacing(")
