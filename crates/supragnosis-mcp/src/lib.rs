@@ -504,15 +504,22 @@ impl SupragnosisServer {
         is_all(ws).then(|| format!("{tool} writes to one workspace - name it"))
     }
 
-    /// The answer to an entity id that is unknown.
-    fn unknown_entity(&self, id: &str) -> String {
+    /// The answer to an entity id that is unknown. `observation` says the id names an observation
+    /// instead: the answer stays not found, and its note points at the read that takes the id
+    /// (Principle 21).
+    fn unknown_entity(&self, id: &str, observation: bool) -> String {
         self.engine
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
         let note = "unknown - not found is not a negation (open-world assumption)";
         // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
         // whatever the caller (design-system.md Section 29.20).
         let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
-        let note = if looks_like_id {
+        let note = if observation {
+            format!(
+                "{note}. This id is an observation's, not an entity's: read it as the resource \
+                 supragnosis://observation/{id}, or pass get_entity the id of an entity hit"
+            )
+        } else if looks_like_id {
             note.to_string()
         } else {
             format!(
@@ -617,8 +624,17 @@ impl SupragnosisServer {
     async fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         let id = req.id.clone();
         let engine = self.engine.clone();
-        match tokio::task::spawn_blocking(move || engine.get_entity(&id)).await {
-            Ok(Ok(Some(view))) => {
+        let looked_up = tokio::task::spawn_blocking(move || {
+            let view = engine.get_entity(&id)?;
+            // An id that names no entity may name an observation: a search_knowledge hit of kind
+            // observation, passed here. The point read says which, and its failure is the store's,
+            // answered as one (Principle 5).
+            let observation = view.is_none() && engine.get_observation(&id)?.is_some();
+            Ok::<_, supragnosis_core::StoreError>((view, observation))
+        })
+        .await;
+        match looked_up {
+            Ok(Ok((Some(view), _))) => {
                 self.engine.emit_from(
                     writing_app().as_deref(),
                     Event::GetEntity {
@@ -631,7 +647,7 @@ impl SupragnosisServer {
             }
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
             // We do not return "not found" as an error, so the LLM does not misread absence as negation.
-            Ok(Ok(None)) => self.unknown_entity(&req.id),
+            Ok(Ok((None, observation))) => self.unknown_entity(&req.id, observation),
             // A backend failure differs from absence (Principle 5) - surfaced as an explicit error so it is not misread as "nothing there".
             Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),

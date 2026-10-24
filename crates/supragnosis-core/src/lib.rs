@@ -1404,6 +1404,15 @@ pub trait AssertionStore: Send + Sync {
     fn holds_observations(&self, workspace: &str) -> Result<bool, StoreError> {
         Ok(!self.all_observations(Some(workspace))?.is_empty())
     }
+    /// Every workspace that holds an observation, ascending and each once - the workspaces
+    /// [`AssertionStore::holds_observations`] says exist, all at once. A workspace whose
+    /// observations assert no entity is one of them (Principle 22). The default walks the whole
+    /// log; an adapter with a workspace index answers from its keys without reading a row.
+    fn observation_workspaces(&self) -> Result<Vec<String>, StoreError> {
+        let set: std::collections::BTreeSet<String> =
+            self.all_observations(None)?.iter().map(|o| o.workspace().to_string()).collect();
+        Ok(set.into_iter().collect())
+    }
     /// The sync delta read (docs/federation.md Section 5, M4 Phase 1): every sync-stamped attestation
     /// in `workspace` NOT yet covered by `since`, as wire-unit events, ordered deterministically by
     /// (origin_node, origin_seq, content id). Attestations without a sync block (pre-federation /
