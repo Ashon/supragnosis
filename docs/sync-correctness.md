@@ -6,7 +6,8 @@
 > wire's version to this document).
 >
 > Status: **built** (Section 13, all five steps). Each defect has a test that failed on the code
-> before it.
+> before it. Section 16 corrects three rules after the 2026-10-23 critique; its steps land in the
+> order it gives.
 
 ## 1. Why this exists
 
@@ -152,6 +153,8 @@ is reported as held behind the rejected seq, and the other streams carry on.
 The receiver's max for the stream then stays below the rejected seq, so the rejected event and
 everything held behind it are offered again every round. The failure becomes loud and persistent,
 not silent and permanent. It clears by itself once the cause is gone: an upgrade, a configured key.
+Section 16 corrects this for the two rejections whose cause a receiver cannot remove: they are
+dropped, not held.
 
 **Events are decoded one at a time.** The batch is read as a list of JSON values, and each is
 decoded into an event separately. An event this release cannot decode, such as an enum value from a
@@ -305,3 +308,58 @@ Each step is independent and lands with its tests. Order is by what each loses i
 | D8 `insecure_tls` and plain HTTP send the bearer unverified | 10 |
 | D9 unbounded bodies, one-shot push, no timeouts | 11 |
 | D10 no protocol version; one unknown value fails a whole body | 6, 12 |
+| D11 the sync routes read a body before they check its credential | 16 |
+| D12 a host's stated seq can wrap this node's counter | 16 |
+| D13 a rejection no receiver can clear holds its stream for good | 16 |
+
+## 16. Three corrections from the 2026-10-23 critique (D11-D13)
+
+A critique of the whole codebase re-traced the sync surface and found three rules that do not hold.
+
+- **D11. The sync routes read a body before they check its credential.** Each handler extracts its
+  JSON body, up to the 8 MiB limit, and only then checks the bearer. A push body becomes a list of
+  JSON values several times its wire size in memory. A hub listens on every interface once it is
+  paired or has an open invitation, so anyone who can reach its port can make it read and parse
+  bodies with no credential at all.
+- **D12. A host's stated seq can wrap this node's counter.** Section 5 floors the counter with the
+  host's copy of this node's own stream, a number the host states and nothing signs. Reserving seqs
+  then adds to it unchecked. A host that states the largest seq makes a release build wrap and issue
+  seq 0 onward. Every peer already covers those seqs, so the new events never leave, and
+  Section 5's rule breaks without a sign.
+- **D13. A rejection no receiver can clear holds its stream for good.** Section 6 holds a stream at
+  any rejection and says the hold clears once the cause is gone. For two rejections the cause never
+  goes: an event signed by its origin whose content this release refuses (`Malformed`), and an event
+  whose own workspace is not the stream's (`WorkspaceMismatch`). The origin cannot change an event
+  it signed, and the mismatched event is not part of the stream at all. Every later event of that
+  origin waits behind it at that receiver, and the sender offers all of them again every round.
+
+**Rules.**
+
+- **The credential comes before the body (D11).** The sync routes check the bearer in the request's
+  headers before they read its body. A request with no admitted bearer is answered 401, and its body
+  is not read. The handler then authorizes the workspace its body names, as before. The pairing
+  routes keep their 16 KiB limit: a machine that is joining has no bearer yet, so its proof is in
+  the body.
+- **Seq arithmetic is checked (D12).** A reservation that would pass the largest seq fails the
+  backfill, and with it the round, with an error naming the workspace. Nothing is stamped and the
+  mark is not raised. A host whose stated seq cannot be honored then stops this node's rounds with
+  it, loudly, instead of making it issue seqs again. The floor itself stays unbounded: the case it
+  exists for is a node that knows less of its own stream than its host does, and a host can withhold
+  everything in any case.
+- **A rejection holds its stream only when the receiver can clear it (D13).**
+  - **Held, as Section 6 says:** `Undecodable`, which an upgrade clears; `UnknownOrigin`, which a
+    configured key clears; `OriginNotAdmitted`, which a grant clears; and `BadSignature`, which a
+    corrected key clears, or a good copy of an event altered on the way. An event past a vouched
+    key's bound (pairing.md Section 4.3.1) reads as `UnknownOrigin` and is never cleared, but
+    everything behind it is past the bound too, so its hold keeps nothing else out.
+  - **Why `BadSignature` holds:** an event whose signature does not verify does not prove which
+    stream it belongs to. Dropping it would let anyone who can send an event make a receiver skip a
+    seq of someone else's stream.
+  - **Dropped:** `Malformed` and `WorkspaceMismatch`. A dropped event is reported in the round like
+    any rejection and is not applied, and the stream carries on past it. The receiver's version
+    vector can then pass its seq, so it is not offered again. This is the rule for what cannot be
+    processed: an event refused for what its origin signed would be refused every round. A later
+    release that accepts such content does not bring a dropped event back.
+
+These land in two steps, each with a test that fails on the code before it: the credential first
+(D11), then the counter and the drop (D12, D13). federation.md F6 and F7 change with the second step.
