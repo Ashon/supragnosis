@@ -4,7 +4,10 @@
 //! kind or event cannot arrive as "opened new_kind: 9f778c20".
 
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
-const ENGINE: &str = include_str!("../../supragnosis-engine/src/lib.rs");
+const ENGINE: &str = concat!(
+    include_str!("../../supragnosis-engine/src/proposal_types.rs"),
+    include_str!("../../supragnosis-engine/src/lib.rs"),
+);
 const CORE: &str = include_str!("../../supragnosis-core/src/lib.rs");
 
 const TIER_FIELDS: &[&str] = &["trust_tier", "effective_tier", "evaluated_tier"];
