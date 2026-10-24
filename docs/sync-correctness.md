@@ -6,8 +6,8 @@
 > wire's version to this document).
 >
 > Status: **built** (Section 13, all five steps). Each defect has a test that failed on the code
-> before it. Section 16 corrects three rules after the 2026-10-23 critique; its steps land in the
-> order it gives.
+> before it. Section 16 corrects three rules after the 2026-10-23 critique, and is built the same
+> way.
 
 ## 1. Why this exists
 
@@ -363,5 +363,7 @@ A critique of the whole codebase re-traced the sync surface and found three rule
     processed: an event refused for what its origin signed would be refused every round. A later
     release that accepts such content does not bring a dropped event back.
 
-These land in two steps, each with a test that fails on the code before it: the credential first
-(D11), then the counter and the drop (D12, D13). federation.md F6 and F7 change with the second step.
+They landed in two steps, each with a test that failed on the code before it: the credential first
+(D11), then the counter and the drop (D12, D13). federation.md F6 and F7 carry the change. A pushing
+client reads which rejections a host held from the reasons it reports, and stops sending only those
+streams for the rest of the round; a pulling client does the same with its own rejections.

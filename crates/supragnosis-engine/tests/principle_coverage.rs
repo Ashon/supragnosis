@@ -206,6 +206,11 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             // Across batches and pages too, and a held stream does not starve the others (Section 11).
             "a_large_surplus_is_pushed_in_batches_and_pulled_in_pages",
             "a_held_stream_does_not_starve_the_others_across_pages",
+            // A reservation past the largest seq fails rather than wrap, and a rejection the
+            // receiver cannot clear is dropped rather than held (Section 16).
+            "a_hosts_stated_seq_cannot_wrap_the_counter",
+            "a_rejection_its_receiver_cannot_clear_does_not_hold_its_stream",
+            "a_client_reads_which_rejections_hold_as_its_host_applies_them",
         ]),
     )]),
     (8, &[c(

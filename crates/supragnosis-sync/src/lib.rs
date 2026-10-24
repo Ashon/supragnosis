@@ -38,6 +38,11 @@ pub enum SyncError {
     /// is stamped without it: a stamp whose seq the mark does not cover could be issued again.
     #[error("seq mark at {0}")]
     SeqMark(String),
+    /// Stamping would pass the largest seq this node can issue in the workspace - which no honest
+    /// count reaches, so a host stated more of this node's stream than it can have issued
+    /// (sync-correctness.md Section 16, D12). Nothing is stamped: wrapping would issue seqs again.
+    #[error("workspace {0:?}: no seq is left to issue (a host stated more of this node's stream than it can have issued)")]
+    SeqExhausted(String),
 }
 
 /// One configured sync server and the credential this node presents to it.
@@ -183,14 +188,36 @@ pub enum RejectReason {
     /// (sync-correctness.md Section 6). Rejected alone; the rest of its batch proceeds.
     Undecodable(String),
     /// An earlier event of the same (origin, workspace) stream, at this seq, was rejected in this
-    /// batch, so this one is not applied either (sync-correctness.md Section 6). The receiver's
-    /// version vector then stays below the rejected event, which is offered again every round until
-    /// it is accepted - a held stream, never a permanent hole.
+    /// batch for a cause the receiver can clear, so this one is not applied either
+    /// (sync-correctness.md Sections 6 and 16). The receiver's version vector then stays below the
+    /// rejected event, which is offered again every round until it is accepted.
     Held(u64),
     /// Pushed to a hub for an origin that is not granted this workspace there
     /// (sync-correctness.md Section 8): what a node could not push in its own name, another node
     /// cannot push for it.
     OriginNotAdmitted,
+}
+
+impl RejectReason {
+    /// Whether this rejection holds the rest of its stream: only when the receiver can clear its
+    /// cause (sync-correctness.md Section 16, D13). An upgrade, a key or a grant clears the first
+    /// four. An event its origin signed malformed stays malformed, and one of another workspace is
+    /// not part of this stream at all, so the stream carries on past them. Listed whole, so a new
+    /// reason has to decide.
+    pub fn holds(&self) -> bool {
+        match self {
+            RejectReason::Undecodable(_)
+            | RejectReason::UnknownOrigin
+            | RejectReason::OriginNotAdmitted
+            // Unverified, so it does not prove which stream it belongs to: dropping it would let
+            // anyone who can send an event make the receiver skip a seq of someone else's stream.
+            | RejectReason::BadSignature
+            | RejectReason::Held(_) => true,
+            RejectReason::Malformed(_) | RejectReason::WorkspaceMismatch | RejectReason::Unstamped => {
+                false
+            }
+        }
+    }
 }
 
 /// One rejected event: enough identity to audit without trusting the event's own claims.
@@ -325,8 +352,10 @@ impl SyncNode {
     ) -> Result<u64, SyncError> {
         let mut map = self.last_seq.lock().unwrap();
         let last = self.seeded(&mut map, store, workspace)?;
-        let first = *last + 1;
-        let reserved = *last + n;
+        // Checked (Section 16, D12): a host's stated seq floors the counter, and nothing bounds it.
+        let exhausted = || SyncError::SeqExhausted(workspace.to_string());
+        let first = last.checked_add(1).ok_or_else(exhausted)?;
+        let reserved = last.checked_add(n).ok_or_else(exhausted)?;
         if self.seq_mark.is_some() {
             let mut mark = self.read_mark()?;
             let entry = mark.entry(workspace.to_string()).or_default();
@@ -379,7 +408,10 @@ impl SyncNode {
         if needed == 0 {
             return Ok(0);
         }
-        let mut seq = self.reserve(store, workspace, needed)?;
+        let first = self.reserve(store, workspace, needed)?;
+        // A range rather than a running sum, so a reservation ending at the largest seq stamps it
+        // without stepping past it.
+        let mut seqs = first..=first + (needed - 1);
         let mut prev: Option<Hlc> = None;
         let mut stamped = 0usize;
         for mut obs in obss {
@@ -394,14 +426,13 @@ impl SyncNode {
                 prev = Some(hlc.clone());
                 let mut meta = SyncMeta {
                     origin_node: self.node_id.clone(),
-                    origin_seq: seq,
+                    origin_seq: seqs.next().expect("one seq reserved per unstamped attestation"),
                     hlc,
                     signature: String::new(),
                     // The origin's lineage declaration (signed, F13): what this observation derives
                     // from as known at stamping time.
                     lineage: lineage.clone(),
                 };
-                seq += 1;
                 meta.signature = self.identity.sign_attestation(&content_id, p, &meta);
                 p.sync = Some(meta);
                 changed = true;
@@ -441,7 +472,8 @@ impl SyncNode {
     /// Events are taken in (origin, seq) order, and the first rejection in a stream holds the rest of
     /// that stream for this batch (sync-correctness.md Section 6): the version vector then stays
     /// below the rejected event, so it is offered again until it is accepted, instead of being
-    /// skipped for good by a later seq. Other streams carry on.
+    /// skipped for good by a later seq. Other streams carry on. A rejection the receiver cannot clear
+    /// is dropped instead, and its stream carries on too ([`RejectReason::holds`], Section 16).
     pub fn apply(
         &self,
         store: &dyn AssertionStore,
@@ -540,7 +572,7 @@ impl SyncNode {
                 }
                 Err(reason) => {
                     // An unstamped event has no stream to hold.
-                    if !origin_node.is_empty() {
+                    if !origin_node.is_empty() && reason.holds() {
                         held.insert(origin_node.clone(), origin_seq);
                     }
                     report.rejected.push(Rejection { origin_node, origin_seq, reason });
@@ -865,6 +897,77 @@ mod tests {
             .apply(&store_r, "ws", offered, &keys(&[&o]), &mut VersionVector::default())
             .unwrap();
         assert_eq!((report.accepted, report.rejected.len()), (2, 0));
+    }
+
+    /// Section 16 (D12): a host's stated seq cannot make the counter wrap. Floored at the largest
+    /// seq, nothing is left to issue: backfill fails naming the workspace, stamps nothing and leaves
+    /// the mark alone, where it used to issue seq 0 onward again. One below, it issues the largest
+    /// seq itself.
+    #[test]
+    fn a_hosts_stated_seq_cannot_wrap_the_counter() {
+        let mark = tmp_mark();
+        let n = node(8).with_seq_mark(mark.clone());
+        let store = InMemoryStore::new();
+        store.add_observation(Observation::new("after".into(), prov("ws", 1))).unwrap();
+        n.floor_seq(&store, "ws", u64::MAX).unwrap();
+        let err = n.backfill(&store, "ws").unwrap_err();
+        assert!(matches!(&err, SyncError::SeqExhausted(ws) if ws == "ws"), "{err}");
+        assert!(stamps(&store, "ws").is_empty(), "nothing is stamped");
+        assert_eq!(n.read_mark().unwrap().get("ws"), None, "nor is the mark raised");
+
+        let m = node(8).with_seq_mark(mark.clone());
+        m.floor_seq(&store, "ws", u64::MAX - 1).unwrap();
+        assert_eq!(m.backfill(&store, "ws").unwrap(), 1);
+        assert_eq!(stamps(&store, "ws")[0].origin_seq, u64::MAX);
+        let _ = std::fs::remove_file(mark);
+    }
+
+    /// Section 16 (D13): a rejection the receiver cannot clear does not hold its stream. An event its
+    /// origin signed malformed, and one of another workspace, are rejected alone; the events behind
+    /// them are applied and the version vector passes the dropped seq, where holding kept every later
+    /// event of the origin out for good. A bad signature still holds (see the test above).
+    #[test]
+    fn a_rejection_its_receiver_cannot_clear_does_not_hold_its_stream() {
+        let (o, r) = (node(9), node(10));
+        let store_o = InMemoryStore::new();
+        for i in 0..3 {
+            let mut p = prov("ws", i);
+            if i == 1 {
+                p.confidence = Some(5.0); // out of [0.0, 1.0]
+            }
+            store_o.add_observation(Observation::new(format!("e{i}"), p)).unwrap();
+        }
+        for i in 0..2 {
+            store_o
+                .add_observation(Observation::new(format!("o{i}"), prov("other", i)))
+                .unwrap();
+        }
+        o.backfill(&store_o, "ws").unwrap();
+        o.backfill(&store_o, "other").unwrap();
+
+        let store_r = InMemoryStore::new();
+        let ws = store_o.attestations_since("ws", &VersionVector::default()).unwrap();
+        let report = r
+            .apply(&store_r, "ws", ws, &keys(&[&o]), &mut VersionVector::default())
+            .unwrap();
+        assert_eq!(report.accepted, 2);
+        let reasons: Vec<_> = report.rejected.iter().map(|x| x.reason.clone()).collect();
+        assert!(matches!(reasons.as_slice(), [RejectReason::Malformed(_)]), "{reasons:?}");
+        assert_eq!(version_vector(&store_r, "ws").unwrap().get(o.node_id(), "ws"), 3);
+
+        // The second event of "other" carries seq 2, so it sorts among this stream's events.
+        let store_r = InMemoryStore::new();
+        let mut batch = store_o.attestations_since("ws", &VersionVector::default()).unwrap();
+        batch.retain(|e| e.attestation.confidence.is_none()); // the well-formed two
+        let mut other = store_o.attestations_since("other", &VersionVector::default()).unwrap();
+        other.retain(|e| e.attestation.sync.as_ref().unwrap().origin_seq == 2);
+        batch.extend(other);
+        let report = r
+            .apply(&store_r, "ws", batch, &keys(&[&o]), &mut VersionVector::default())
+            .unwrap();
+        let reasons: Vec<_> = report.rejected.iter().map(|x| x.reason.clone()).collect();
+        assert_eq!(reasons, vec![RejectReason::WorkspaceMismatch]);
+        assert_eq!(report.accepted, 2);
     }
 
     /// Section 6 (D10): an event this release cannot decode is rejected alone and holds only its

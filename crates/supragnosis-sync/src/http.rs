@@ -689,6 +689,15 @@ pub struct PushReq {
     pub events: Vec<serde_json::Value>,
 }
 
+/// Whether a rejection a host reported holds its stream there ([`crate::RejectReason::holds`]). A reason
+/// travels as its `Debug` form, so the ones that do not hold are told apart by name; an older host
+/// holds them too, and then only answers `Held` for what is sent behind them.
+fn holds_at_the_host(reason: &str) -> bool {
+    !["Malformed", "WorkspaceMismatch", "Unstamped"]
+        .iter()
+        .any(|r| reason.starts_with(r))
+}
+
 /// The wire form of outgoing events.
 fn to_wire(events: Vec<AttestationEvent>) -> Vec<serde_json::Value> {
     events
@@ -1251,8 +1260,12 @@ impl SyncClient {
             }
             let streams: Vec<(String, u64)> = page.events.iter().map(stream_of).collect();
             let report = apply(page.events).await?;
-            let held: std::collections::HashSet<&str> =
-                report.rejected.iter().map(|r| r.origin_node.as_str()).collect();
+            let held: std::collections::HashSet<&str> = report
+                .rejected
+                .iter()
+                .filter(|r| r.reason.holds())
+                .map(|r| r.origin_node.as_str())
+                .collect();
             let before = since.clone();
             for (origin, seq) in streams.iter().filter(|(o, _)| !o.is_empty()) {
                 let to = if held.contains(origin.as_str()) { u64::MAX } else { *seq };
@@ -1314,7 +1327,13 @@ impl SyncClient {
     ) -> Result<(), TransportError> {
         let req = PushReq { workspace: workspace.into(), events };
         let resp: PushResp = self.call_for("/sync/push", &req, Some(workspace)).await?;
-        held.extend(resp.rejected.iter().map(|r| r.0.clone()).filter(|o| !o.is_empty()));
+        held.extend(
+            resp.rejected
+                .iter()
+                .filter(|r| holds_at_the_host(&r.2))
+                .map(|r| r.0.clone())
+                .filter(|o| !o.is_empty()),
+        );
         total.accepted += resp.accepted;
         total.rejected.extend(resp.rejected);
         Ok(())
@@ -1393,6 +1412,7 @@ impl SyncClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RejectReason;
     use supragnosis_core::{NodeIdentity, Observation, Provenance};
     use supragnosis_store::InMemoryStore;
 
@@ -1804,6 +1824,25 @@ mod tests {
         }
         let status = send("/sync/push", Some("secret-token")).await.unwrap().status();
         assert_eq!(status, StatusCode::BAD_REQUEST, "an admitted caller's body is read");
+    }
+
+    /// Section 16 (D13): a pushing client reads which rejections hold their stream at the host from
+    /// the reasons the host reports, so it keeps sending a stream whose rejection was dropped and
+    /// stops one that is held - the same split the host applies.
+    #[test]
+    fn a_client_reads_which_rejections_hold_as_its_host_applies_them() {
+        for reason in [
+            RejectReason::Unstamped,
+            RejectReason::UnknownOrigin,
+            RejectReason::BadSignature,
+            RejectReason::WorkspaceMismatch,
+            RejectReason::Malformed("confidence 5".into()),
+            RejectReason::Undecodable("unknown variant".into()),
+            RejectReason::Held(3),
+            RejectReason::OriginNotAdmitted,
+        ] {
+            assert_eq!(holds_at_the_host(&format!("{reason:?}")), reason.holds(), "{reason:?}");
+        }
     }
 
     /// A store whose every call fails, as a disk that went away does - the fault-injecting adapter.

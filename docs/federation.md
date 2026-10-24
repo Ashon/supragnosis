@@ -621,18 +621,22 @@ changing the canon policy without a central admin - is out of scope.
   never applied. So is one this release cannot decode (`Undecodable`, alone - the rest of its batch
   proceeds), one held behind an earlier rejection in its stream (`Held`, see F7), and one pushed to a
   hub for an origin that hub does not grant the workspace (`OriginNotAdmitted`). Signatures and keys
-  verify in one spelling only, lowercase hex (sync-correctness.md Sections 7-8).
+  verify in one spelling only, lowercase hex (sync-correctness.md Sections 7-8). A sync request whose
+  bearer is not admitted is refused before its body is read (sync-correctness.md Section 16).
 - **F7** `origin_seq` is monotonic per **(origin node, workspace)**, so a shared workspace's stream is
   dense while unshared workspaces are absent (selective sharing). Apply is **hole-tolerant and idempotent**:
   convergence rests on CAS + HLC + the deterministic fold (P16), never on dense delivery, so a re-sent,
   out-of-order, or workspace-filtered stream still converges - there is no sequence-gap parking. The
   one exception is a hole a *rejection* would leave: the first rejection in a stream holds the rest of
   it for that batch, so the version vector stays below the rejected event and it is offered again until
-  accepted, instead of being skipped for good by a later seq (sync-correctness.md Section 6). A seq is
-  issued once per identity: the counter is reserved in a mark beside the node key before it is used,
-  and floored by what a host already holds of this node's stream (sync-correctness.md Section 5). Origin
-  fields (seq/hlc/signature) are set once by the origin and preserved verbatim through relays, so relay
-  copies dedup by full-attestation equality.
+  accepted, instead of being skipped for good by a later seq (sync-correctness.md Section 6). A
+  rejection the receiver cannot clear, content its origin signed malformed or an event of another
+  workspace, is dropped instead, and the stream carries on past it (sync-correctness.md Section 16). A
+  seq is issued once per identity: the counter is reserved in a mark beside the node key before it is
+  used, and floored by what a host already holds of this node's stream (sync-correctness.md Section 5).
+  A reservation that would pass the largest seq fails rather than wrap (sync-correctness.md
+  Section 16). Origin fields (seq/hlc/signature) are set once by the origin and preserved verbatim
+  through relays, so relay copies dedup by full-attestation equality.
 - **F8** HLC is monotonic and totally ordered (the I11 clock); last-write-wins folds order by HLC, not by
   arrival. An observation orders by its authoring attestation's HLC (earliest over the set for the
   multi-attestation case).
