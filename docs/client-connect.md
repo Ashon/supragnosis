@@ -35,8 +35,8 @@ The command is also not portable. What each client can reach, checked in October
 
 The client a non-developer is most likely to use, Claude Desktop, cannot reach the daemon at all
 without a third-party bridge such as `mcp-remote`, which needs Node. Every client speaks stdio, but
-the stdio server supragnosis ships cannot be offered while the daemon runs. Run with no arguments,
-`supragnosis` opens the store itself. The store admits one writer, so beside the daemon - which
+the stdio server supragnosis ships cannot be offered while the daemon runs. Launched by a client
+with no arguments, `supragnosis` opens the store itself. The store admits one writer, so beside the daemon - which
 the app and Start at Login keep running - that server fails on the lock. If it starts first, the
 daemon is the one that fails (daemon-lifecycle.md Section 11).
 
@@ -173,7 +173,11 @@ configuration a terminal's OpenCode reads (Section 13).
   else", which VS Code's removal and the capture hook had already outgrown.)*
 - **The store-opening stdio server stays, demoted.** It is still the right shape where no daemon
   runs - a CI job, a one-off container. But documents, installers and `connect` stop recommending
-  it, because beside a daemon it is the second writer.
+  it, because beside a daemon it is the second writer. *(Revised 2026-10-24: the bare command is
+  that server only where a client launches it, through a pipe. Typed in a terminal, it prints its
+  help: a person checking what the command does would otherwise take the store lock and leave a
+  server waiting on the keyboard, the holder `service install` cannot name. `supragnosis serve`
+  starts the server from anywhere.)*
 - **The user scope where a client has scopes.** A person connecting "Claude" means everywhere, not
   the one project directory a terminal happened to be in. Claude Code's default scope is the local
   project; `connect` passes `--scope user`.

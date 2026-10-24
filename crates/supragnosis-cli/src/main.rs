@@ -352,7 +352,17 @@ mod pair;
 mod setup;
 
 fn main() -> Result<()> {
-    match Cli::parse().cmd.unwrap_or(Cmd::Serve(RunArgs::default())) {
+    let cmd = match Cli::parse().cmd {
+        Some(cmd) => cmd,
+        // Bare, from a terminal: a person asking what the command does. The store-opening stdio
+        // server is what a client launches, through a pipe; started here it would take the store
+        // lock and wait on the keyboard (client-connect.md Section 6).
+        None if std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
+            return Ok(<Cli as clap::CommandFactory>::command().print_help()?);
+        }
+        None => Cmd::Serve(RunArgs::default()),
+    };
+    match cmd {
         Cmd::Serve(a) => run_blocking(resolve(a, false)),
         Cmd::Start(a) => start(resolve(a, true)),
         Cmd::Stop => stop(),

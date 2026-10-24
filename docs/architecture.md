@@ -475,9 +475,10 @@ sections are present, and `peers` awaits the P2P phase.
 - **Local host (bridge)**: the MCP client launches `supragnosis bridge` as its stdio server (per
   chat). The bridge relays to the standalone daemon below, reading the token from its file on every
   connect, so no client configuration holds a secret ([client-connect.md](client-connect.md) Section 3).
-  The **store-opening stdio server** (`supragnosis` with no arguments) remains for where no daemon
-  runs - a CI job, a one-off container - and is not recommended beside a daemon, where it would be the
-  second writer (client-connect.md Section 6).
+  The **store-opening stdio server** (`supragnosis serve`, or the bare command a client launches
+  through a pipe; typed in a terminal it prints its help) remains for where no daemon runs - a CI
+  job, a one-off container - and is not recommended beside a daemon, where it would be the second
+  writer (client-connect.md Section 6).
 - **Standalone daemon**: given `--http` / `SUPRAGNOSIS_HTTP_ADDR` (e.g. 127.0.0.1:7373), it exposes
   MCP **streamable-HTTP** persistently instead of stdio (rmcp `StreamableHttpService` -> axum `/mcp`). Because the daemon is
   the sole holder of the db, the single-process lock problem disappears, and multiple agents connect via

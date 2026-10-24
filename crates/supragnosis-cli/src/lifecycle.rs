@@ -144,7 +144,7 @@ pub fn classify(o: &Observed) -> Situation {
 }
 
 /// Why `service install` will not start a job beside a holder it cannot name, take-over or not.
-pub const UNRECOGNIZED_HOLDER: &str = "something this CLI does not manage is serving the daemon's address or holding its store - most likely a daemon the desktop app started for its session, a stdio server an MCP client launched (`claude mcp add supragnosis -- supragnosis` starts one per session), or a `supragnosis serve` in a terminal. Nothing names it, so nothing can retire it, and a login job started beside it would fail on the store lock and be retried forever. Turn on Start at Login in the app instead (it stops its own daemon first), or quit the app, register MCP clients over HTTP rather than stdio, or stop that process - then run this again";
+pub const UNRECOGNIZED_HOLDER: &str = "something this CLI does not manage is serving the daemon's address or holding its store - most likely a daemon the desktop app started for its session, a stdio server an MCP client launched (`claude mcp add supragnosis -- supragnosis` starts one per session), or a `supragnosis serve` in a terminal. Nothing names it, so nothing can retire it, and a login job started beside it would fail on the store lock and be retried forever. Turn on Start at Login in the app instead (it stops its own daemon first), or quit the app, register MCP clients with `supragnosis connect` (the bridge, which opens no store), or stop that process - then run this again";
 
 /// Whether `ps -o comm=` output names this program (L9). macOS prints the executable's path, Linux
 /// its name; either way the last component is `supragnosis` - not `supragnosis-app`, the desktop
