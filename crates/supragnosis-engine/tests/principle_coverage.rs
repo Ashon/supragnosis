@@ -3420,6 +3420,7 @@ const SOURCES: &[&str] = &[
     include_str!("../src/maintenance.rs"),
     include_str!("../src/read.rs"),
     include_str!("../src/search.rs"),
+    include_str!("../src/graph.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
     include_str!("../../supragnosis-store/src/redb_store.rs"),
