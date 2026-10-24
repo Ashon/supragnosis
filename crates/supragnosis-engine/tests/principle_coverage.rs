@@ -3405,6 +3405,7 @@ const SOURCES: &[&str] = &[
     include_str!("read_path_cost.rs"),
     include_str!("principles_page.rs"),
     include_str!("../src/lib.rs"),
+    include_str!("../src/types.rs"),
     include_str!("../../supragnosis-core/src/lib.rs"),
     include_str!("../../supragnosis-store/src/lib.rs"),
     include_str!("../../supragnosis-store/src/redb_store.rs"),
