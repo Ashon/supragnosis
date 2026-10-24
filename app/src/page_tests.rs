@@ -726,7 +726,7 @@ mod settings_tests {
         let css = include_str!("../assets/shell.css");
         assert!(css.contains("html:not(.shell-fullscreen) header { padding-left: 84px; }"));
         assert!(css.contains("html.shell-asking header { transition: none; }"));
-        // The shell's side, read from this file: the test's own copy of the line is escaped, so it
+        // The shell's side, read from the app's source: the test's own copy of the line is escaped, so it
         // cannot be what matches.
         assert!(super::SRC.contains("window.emit(\"shell-fullscreen\", fs)"));
         // The window grants the full-screen getter by name (design-system.md Section 29.29).

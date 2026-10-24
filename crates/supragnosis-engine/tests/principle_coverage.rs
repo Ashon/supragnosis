@@ -1602,7 +1602,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "every registered command runs the caller check before it acts",
-            // The app's test reads main.rs: each #[tauri::command] opens with the check, and the
+            // The app's test reads its source: each #[tauri::command] opens with the check, and the
             // declared, registered and granted commands are one set.
             Evidence::Scenario(&["every_command_checks_its_caller_first"]),
         ),

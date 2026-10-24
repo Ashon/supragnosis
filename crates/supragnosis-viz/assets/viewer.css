@@ -119,7 +119,7 @@
   #gl.on { display:block; }
   /* Above the docks and the Review page (it overlaps neither) so the search list it holds drops over
      them; only the observation card sits higher. */
-  /* 49px tall: the desktop shell centres its traffic lights on this row (app/src/main.rs). The
+  /* 49px tall: the desktop shell centres its traffic lights on this row (app/src/window.rs). The
      header is the frame's top edge (design-system.md Section 6), so it is the frame's surface. */
   header { position:fixed; top:0; left:0; right:0; z-index:13; height:49px; padding:0 14px;
            display:flex; gap:9px; align-items:center; background:var(--panel); }

@@ -240,7 +240,7 @@ mod status_text_tests {
         }
     }
 
-    /// The body of `fn name(` in this file, to its closing brace at the start of a line.
+    /// The body of `fn name(` in the app's source (`SRC`), to its closing brace at the start of a line.
     fn source_of(name: &str) -> &'static str {
         let src = super::SRC;
         let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));

@@ -50,7 +50,7 @@ tasks:
   # --- development ------------------------------------------------------------------------------
 
   # Every env var below is load-bearing. The shell does attach-or-spawn: if the socket it resolves
-  # is already answering, it attaches and NEVER consults SUPRAGNOSIS_BIN (app/src/main.rs
+  # is already answering, it attaches and NEVER consults SUPRAGNOSIS_BIN (app/src/daemon.rs
   # ensure_daemon). Leaving SUPRAGNOSIS_VIZ_SOCK at its default therefore silently attaches to a
   # normally-installed daemon on ~/.supragnosis/viz.sock and shows you ITS build - you edit code,
   # run this, and stare at stale UI. So dev pins its own socket, db and port and owns the instance.

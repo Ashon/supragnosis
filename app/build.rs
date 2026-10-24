@@ -2,7 +2,7 @@
 /// (docs/onboarding.md Section 6). Declaring them in the app manifest is what makes them closed by
 /// default: Tauri opens every registered command to every window unless the app declares its
 /// commands, and then only a capability can grant one. Keep this list equal to APP_COMMANDS in
-/// src/main.rs - a test there holds the two together.
+/// src/main.rs - a test in src/page_tests.rs holds the two together.
 const APP_COMMANDS: &[&str] = &[
     "settings_state",
     "app_toggle",
