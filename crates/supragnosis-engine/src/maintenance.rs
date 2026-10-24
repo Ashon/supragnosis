@@ -1,5 +1,5 @@
-//! Store maintenance: re-keying, legacy-id migration, owed-projection repayment, the embedding
-//! backfill and reprojection.
+//! Store maintenance: re-keying, legacy-id migration, owed-projection repayment and the last
+//! recovery, the semantic report and embedding backfill, reprojection, and the store handle.
 
 use super::*;
 

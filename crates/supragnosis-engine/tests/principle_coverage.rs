@@ -1725,7 +1725,7 @@ const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
           ])),
         c("a consolidation output changes the belief only through a verdict on a proposal - a \
            `recall` among them - and opening one is ingest",
-          // engine lib.rs unit test: `recall` opens as a proposal and folds like every other kind.
+          // engine unit test (src/tests/folds.rs): `recall` opens as a proposal and folds like every other kind.
           Evidence::Scenario(&["proposal_open_verdict_fold"])),
     ]),
     (6, &[
@@ -2094,7 +2094,7 @@ const PROPOSAL_REGISTRY: &[(u8, &[Clause])] = &[
     (2, &[
         c("a proposal's state is a deterministic fold of its events, recomputed on every read",
           Evidence::Scenario(&[
-            // engine lib.rs unit test - open, merged, rejected from the fold alone.
+            // engine unit test (src/tests/folds.rs) - open, merged, rejected from the fold alone.
             "proposal_open_verdict_fold",
             // A node holding only the replicated log folds the same state.
             "i8_blocking_check_conclusion_is_arrival_order_independent",

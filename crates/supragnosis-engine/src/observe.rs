@@ -269,7 +269,7 @@ impl Engine {
             }
         }
         let observation_id = obs.id.clone();
-        // Serialize the write section (prevents the read-merge-write race of concurrent observations' projections, see the field comment above).
+        // Serialize the write section (prevents the read-merge-write race of concurrent observations' projections, see the `write_guard` field comment in lib.rs).
         // Embedding (above, probabilistic/CPU) is left outside the lock; we lock from here. The read path is not locked.
         let _write = self.write_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.refuse_secrets(&obs)?;

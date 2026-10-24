@@ -1,5 +1,5 @@
-//! The graph views: workspaces, common types, the node-link graph, the hypergraph and
-//! hyperedge reification.
+//! The graph views: the default workspace and host, workspaces, common types, the node-link graph,
+//! the hypergraph and hyperedge reification.
 
 use super::*;
 
