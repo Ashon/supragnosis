@@ -8,8 +8,6 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
-// The graph's address: the shell serves the viewer on its own scheme.
-const GRAPH = "viz://localhost/";
 
 // ---- State -----------------------------------------------------------------------------------
 

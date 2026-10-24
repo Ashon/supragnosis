@@ -2241,8 +2241,8 @@ fn run_client_cli(client: connect::Client, env: &connect::Env, argv: &[String]) 
     Ok(())
 }
 
-/// The schema of every machine-read CLI answer: `status --json`, `connect --json` and
-/// `server --json` (docs/compatibility.md Section 6). Adding a field keeps it. Removing or renaming
+/// The schema of every machine-read CLI answer: `status --json` and `connect --json`
+/// (docs/compatibility.md Section 6). Adding a field keeps it. Removing or renaming
 /// one, changing its type or what a value means raises it, and the desktop app - which reads these -
 /// then says to update itself instead of misreading the answer. Each has an example document in
 /// tests/fixtures/json that this crate's tests and the app's both read.

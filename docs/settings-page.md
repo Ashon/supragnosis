@@ -1,7 +1,8 @@
 # Settings page - the desktop app's settings in one place
 
-> The desktop app's own settings page, shown in the main window in place of the viewer: which server
-> this Mac's AI apps use, how each AI app is connected, and this Mac's daemon. It replaces the tray's
+> The desktop app's own settings page, shown in the main window in place of the viewer: how each AI
+> app is connected, this Mac's daemon, its sync and its versions (which server the AI apps used was
+> here too, until remote profiles were removed in 0.11.0). It replaces the tray's
 > submenus and leaves the tray with what a menu is good at. Companion to
 > [client-connect.md](client-connect.md) Section 5, [remote-server.md](remote-server.md) Section 5
 > and [daemon-lifecycle.md](daemon-lifecycle.md) Section 6, whose tray controls moved here.
@@ -53,11 +54,12 @@ been, and the graph keeps its title bar to itself.
 - **The keyboard does the same.** Cmd+, opens Settings from the app menu, where macOS users look for
   it, and Cmd+1 shows the graph from the View menu. The tray's Open Graph shows the graph, and
   Settings... shows the settings.
-- **The tray opens Settings where the attention is.** A refused credential or an unanswering server
-  opens the Server section; no AI app connected opens AI apps; version drift opens This Mac.
+- **The tray opens Settings where the attention is.** No AI app connected opens AI apps; version
+  drift opens This Mac. (A refused credential or an unanswering server opened the Server section,
+  until 0.11.0.)
   *(Revised by design-system.md step 50c: the gear and Cmd+, reopen the pane last shown; the
-  tray's Settings... opens the first section whose dot shows - Server, AI apps, This Mac - and the
-  last pane while none does, design-system.md Section 29.14.)*
+  tray's Settings... opens the first section whose dot shows - AI apps, This Mac - and the last pane
+  while none does, design-system.md Section 29.14.)*
 - **One place called Settings.** The viewer's own dialog held its build information and, on a hub,
   its peers. Both are on this page - About and Sync - so in the app the gear leads to one place, not
   two.
@@ -66,7 +68,7 @@ been, and the graph keeps its title bar to itself.
   Review page has them. Since design-system.md Section 14 step 7 the title bar is
   the frame's `--panel` with no glass and no rule under it, on both pages. Since design-system.md
   Section 14 step 23 it is a Mac toolbar: it names the place on screen, not the product, and the
-  settings page's title is the pane on screen - "Server", "AI apps" - after "< Graph". One stylesheet
+  settings page's title is the pane on screen - "AI apps", "This Mac" - after "< Graph". One stylesheet
   draws that chrome on both pages (`assets/shell.css`):
   - the settings page links it from the app's own origin;
   - the viewer is the daemon's page, so the shell serves the same file on the viewer's origin, at
@@ -79,17 +81,16 @@ The page follows the shape of the platform's own settings:
 
 - **A sidebar of sections** - Server, AI apps, This Mac, About - each with a status dot, so the
   state of everything is visible before anything is opened.
-  *(Revised by design-system.md step 50c: Server, AI apps, This Mac, Sync and About; a dot shows
+  *(Revised by design-system.md step 50c: Server, AI apps, This Mac, Sync and About - Server until
+  0.11.0; a dot shows
   only while a section needs attention, as design-system.md Section 6a has it; no heading for the
   one group; AI apps' count reads "2 connected", and its dot shows whenever a row needs the person,
   design-system.md Section 29.14.)*
 - **A content pane** with the selected section: a title, one sentence on what it is for, and
   grouped cards of rows. Each row has a name, a line of state, and its control on the right - a
   switch, a button, a status pill.
-- **Dialogs for what needs input or consent.**
-  - Adding a server is a sheet with labelled fields and help text. It checks the shape of what was
-    typed before the CLI does.
-  - Removing a server asks first.
+- **Dialogs for what needs consent.** Stopping a peer's sharing asks first. (Adding a server was a
+  sheet, and removing one asked first, until 0.11.0.)
 - **Feedback where the action was.** A button shows progress while its CLI call runs, and only that
   button waits. The outcome arrives as a notice that a success dismisses on its own and an error
   keeps until it is read. The first load shows the shape of the page rather than a blank.
@@ -189,11 +190,9 @@ Setup page (onboarding.md Section 6), which shows only what is not done.
 
 ## 4. Who may change a setting
 
-The commands behind the page change where this Mac's knowledge goes: which server receives what the
-AI apps record, and which apps are connected. The window that shows the page also shows the viewer,
-which a daemon serves. Once remote-viewer.md's steps land, it will also show a hub's viewer, which a
-machine elsewhere serves. A page from another machine must not be able to point this Mac's AI apps
-at a different server.
+The commands behind the page change where this Mac's knowledge goes: which apps are connected, and
+what a peer may read. The window that shows the page also shows the viewer, which a daemon serves.
+A page a daemon serves must not be able to change them.
 
 - **No command is open by default.** Tauri lets every page call every command an app registers,
   unless the app declares its commands in its build manifest. The app declares them, and one
@@ -209,9 +208,8 @@ at a different server.
   - Navigating away from the settings page, to the viewer or anywhere else, takes the commands with
     it.
 - **The page is the app's, with a strict policy.** It loads nothing remote and runs no inline
-  script or style. It shows what the CLI reports - profile names, URLs, messages - as text, never as
-  markup (S5). A profile's name and URL are the user's own input, but a message can quote a
-  server's answer.
+  script or style. It shows what the CLI reports - app names, paths, messages - as text, never as markup
+  (S5), since a message can quote a server's answer.
 
 ## 5. The tray, after
 

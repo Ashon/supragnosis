@@ -590,6 +590,17 @@ pub fn call_at(
 mod tests {
     use super::*;
 
+    /// A name an invitation's workspace or a principal is built from: letters, digits, '-' or '_',
+    /// at most 64; a path and an empty name are refused, saying which kind of name it was.
+    #[test]
+    fn a_name_is_letters_digits_dashes_and_underscores() {
+        assert_eq!(valid_name("home-lab_2", "workspace"), Ok(()));
+        for bad in ["", "../x", "a b", &"x".repeat(65)] {
+            let why = valid_name(bad, "workspace").expect_err(bad);
+            assert!(why.starts_with("workspace name"), "{why}");
+        }
+    }
+
     /// The admin socket is this user's alone, and its calls answer what they can: with no sync and no
     /// `[server]` they say so rather than fail.
     #[tokio::test(flavor = "multi_thread")]

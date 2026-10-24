@@ -104,10 +104,6 @@ fn the_way_back_goes_back_to_it() {
         "Settings does not hand the way back to Setup"
     );
     assert!(
-        SETTINGS.contains("after: forgetGraphLeft"),
-        "a server switch keeps the other server's address"
-    );
-    assert!(
         SHELL.contains("to = SETTINGS + \"?from=\" + encodeURIComponent(here) + to;"),
         "the gear does not carry the viewer's address"
     );

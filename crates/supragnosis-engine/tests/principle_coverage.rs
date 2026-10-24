@@ -2701,7 +2701,6 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
 ];
 
-// docs/remote-server.md Section 8 - the hub's agent surface (R rows).
 /// Retired in 0.11.0 with the Settings page's Server section (settings-page.md Section 3.1): the page
 /// has no field that takes a credential.
 const RETIRED_SERVER_PANE: &str = "retired in 0.11.0: the Settings page lost its Server section, and no field on it takes a credential";
@@ -2709,6 +2708,8 @@ const RETIRED_SERVER_PANE: &str = "retired in 0.11.0: the Settings page lost its
 /// Removed in 0.11.0 (remote-server.md Section 13): there are no server profiles, and the bridge
 /// reaches only this machine's loopback daemon, the address `parse_loopback_addr` admits.
 const REMOVED_PROFILES: &str = "removed in 0.11.0: no server profile exists, and `bridge_cmd` dials only the loopback address `parse_loopback_addr` admits";
+
+// docs/remote-server.md Section 8 - the hub's agent surface (R rows).
 
 const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
@@ -2792,8 +2793,6 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
         c("no credential appears in an AI app's configuration",
           Evidence::Scenario(&["registrations_run_the_bridge_and_carry_no_secret"])),
         c("no credential appears on a command line",
-          // `server add` argv is name, url, --ca; the credential goes on stdin. The CLI side is by
-          // construction: `ServerCmd::Add { name, url, ca }` has no token argument and reads stdin.
           Evidence::Structural(REMOVED_PROFILES)),
         c("the bridge and the CLI read the credential from a 0600 file",
           // The bridge reads this machine's token file, which `write_secret` makes 0600; the
@@ -2884,8 +2883,8 @@ const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
         "on a remote profile each failure state has its own page, never an empty graph",
         Evidence::Deferred(
             "the app does not show a remote server: remote-viewer.md Section 10 step 3 was built and \
-             withdrawn before release on 2026-10-23, when the hub was kept minimal, and the window \
-             shows one placeholder page, `remote_html`, on a remote profile. Revisit when a remote \
+             withdrawn before release on 2026-10-23, when the hub was kept minimal, and remote \
+             profiles were removed in 0.11.0 (remote-server.md Section 13). Revisit when a remote \
              viewer is wanted again",
         ),
     )]),

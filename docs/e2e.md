@@ -66,7 +66,7 @@ A scenario starts the binary it tests as `supragnosis serve --http 127.0.0.1:0 -
 
 - Every variable the binary reads is removed first: each `SUPRAGNOSIS_*`, and
   `CLAUDE_CODE_SESSION_ID`.
-- `HOME` is a fresh temporary directory, so the token, the server profiles and any AI-app config the
+- `HOME` is a fresh temporary directory, so the token and any AI-app config the
   scenario writes are that directory's.
 - `SUPRAGNOSIS_VIZ_SOCK` is a short path under the system's temporary directory (macOS caps a socket
   path at about 104 bytes).

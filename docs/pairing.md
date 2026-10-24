@@ -347,8 +347,7 @@ widened by these acts. Pairing writes no key a release before it does not know (
 
 ## 5. Settings
 
-The Sync pane (settings-page.md Section 3.4) gains its acts; on a remote profile it is not shown,
-as now (S6).
+The Sync pane (settings-page.md Section 3.4) gains its acts.
 
 - **Without sync set up**, it offers "Let another Mac join this one" and "Join another Mac", in
   place of the pointer to the file.
