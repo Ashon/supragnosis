@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -738,13 +738,13 @@ pub struct PushResp {
 
 type HandlerError = (StatusCode, String);
 
-/// Bearer authentication (6a): hash the presented token and look it up on the allowlist. 401 when
 /// The hash an allowlist entry keeps of a node's bearer credential: blake3, in hex. The hub never
 /// keeps the credential itself (docs/pairing.md PA4).
 pub fn bearer_hash(token: &str) -> String {
     blake3::hash(token.as_bytes()).to_hex().to_string()
 }
 
+/// Bearer authentication (6a): hash the presented token and look it up on the allowlist. 401 when
 /// absent/unknown; the caller then checks per-workspace authorization (403).
 fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEntry, HandlerError> {
     let token = headers
@@ -765,6 +765,28 @@ fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEn
         .ok_or((StatusCode::UNAUTHORIZED, "unknown bearer token".to_string()))
 }
 
+/// Who sent a sync request: the entry its bearer matched, and the admission it was matched against,
+/// so the handler decides with the same view.
+#[derive(Clone)]
+struct Caller {
+    entry: AllowEntry,
+    admitted: Admitted,
+}
+
+/// Every sync route authenticates here, from the headers, before anything reads the body
+/// (sync-correctness.md Section 16, D11): a request with no admitted bearer is answered 401 with
+/// its body unread, so a credential is what it takes to make the hub parse anything.
+async fn authenticated(
+    State(state): State<Arc<ServerState>>,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, HandlerError> {
+    let admitted = state.peers.admitted();
+    let entry = authenticate(req.headers(), &admitted.allowlist)?;
+    req.extensions_mut().insert(Caller { entry, admitted });
+    Ok(next.run(req).await)
+}
+
 fn authorize_workspace(entry: &AllowEntry, workspace: &str) -> Result<(), HandlerError> {
     if entry.shared_workspaces.iter().any(|w| w == workspace) {
         Ok(())
@@ -783,11 +805,10 @@ fn internal(e: impl std::fmt::Display) -> HandlerError {
 
 async fn advertise_handler(
     State(state): State<Arc<ServerState>>,
+    Extension(Caller { entry, .. }): Extension<Caller>,
     headers: HeaderMap,
     Json(req): Json<AdvertiseReq>,
 ) -> Result<Json<AdvertiseResp>, HandlerError> {
-    let admitted = state.peers.admitted();
-    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     // Store calls are offloaded so a blocking backend cannot starve the async runtime (F11).
@@ -803,11 +824,10 @@ async fn advertise_handler(
 
 async fn pull_handler(
     State(state): State<Arc<ServerState>>,
+    Extension(Caller { entry, .. }): Extension<Caller>,
     headers: HeaderMap,
     Json(req): Json<PullReq>,
 ) -> Result<Json<PullResp>, HandlerError> {
-    let admitted = state.peers.admitted();
-    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     let node = state.node.clone();
@@ -856,11 +876,10 @@ async fn pull_handler(
 
 async fn push_handler(
     State(state): State<Arc<ServerState>>,
+    Extension(Caller { entry, admitted }): Extension<Caller>,
     headers: HeaderMap,
     Json(req): Json<PushReq>,
 ) -> Result<Json<PushResp>, HandlerError> {
-    let admitted = state.peers.admitted();
-    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let store = state.store.clone();
     let node = state.node.clone();
@@ -906,11 +925,10 @@ async fn push_handler(
 /// retrieval surface, and streamed to the activity feed like any other hit.
 async fn search_handler(
     State(state): State<Arc<ServerState>>,
+    Extension(Caller { entry, .. }): Extension<Caller>,
     headers: HeaderMap,
     Json(req): Json<SearchReq>,
 ) -> Result<Json<SearchResp>, HandlerError> {
-    let admitted = state.peers.admitted();
-    let entry = authenticate(&headers, &admitted.allowlist)?;
     authorize_workspace(&entry, &req.workspace)?;
     let limit = req.limit.min(100);
     let ws = req.workspace.clone();
@@ -942,10 +960,9 @@ async fn search_handler(
 /// connectivity, auth, AND authorization at startup in one round trip.
 async fn ping_handler(
     State(state): State<Arc<ServerState>>,
+    Extension(Caller { entry, .. }): Extension<Caller>,
     headers: HeaderMap,
 ) -> Result<Json<PingResp>, HandlerError> {
-    let admitted = state.peers.admitted();
-    let entry = authenticate(&headers, &admitted.allowlist)?;
     // Registry only (see advertise) - health checks are heartbeats, not knowledge movement.
     state.seen(&entry.node_id, "ping", &headers);
     Ok(Json(PingResp {
@@ -964,6 +981,7 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .route("/sync/pull", post(pull_handler))
         .route("/sync/push", post(push_handler))
         .route("/sync/search", post(search_handler))
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), authenticated))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT))
         .layer(axum::middleware::from_fn(bounded))
         .with_state(state)
@@ -1754,6 +1772,37 @@ mod tests {
         }
         // Right token, shared workspace -> OK.
         assert!(good.advertise("ws").await.is_ok());
+    }
+
+    /// Section 16 (D11): the credential is checked before the body is read. A body that is not even
+    /// JSON is refused 401 without one, on every route, where reading it first answered 400; with the
+    /// credential, the same body is read and refused for what it is.
+    #[tokio::test]
+    async fn a_request_without_a_credential_is_refused_before_its_body_is_read() {
+        let hub_store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
+        let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
+        let client_node = SyncNode::new(NodeIdentity::from_secret_bytes([1u8; 32]));
+        let allow = vec![entry(&client_node, "secret-token", &["ws"])];
+        let addr = spawn_server(Arc::new(ServerState::new(hub_store, hub, allow))).await;
+        let http = reqwest::Client::new();
+        let send = |route: &str, bearer: Option<&str>| {
+            let mut req = http
+                .post(format!("http://{addr}{route}"))
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body("{not json");
+            if let Some(b) = bearer {
+                req = req.bearer_auth(b);
+            }
+            req.send()
+        };
+        for route in ["/sync/ping", "/sync/advertise", "/sync/pull", "/sync/push", "/sync/search"] {
+            for bearer in [None, Some("wrong-token")] {
+                let status = send(route, bearer).await.unwrap().status();
+                assert_eq!(status, StatusCode::UNAUTHORIZED, "{route} with {bearer:?}");
+            }
+        }
+        let status = send("/sync/push", Some("secret-token")).await.unwrap().status();
+        assert_eq!(status, StatusCode::BAD_REQUEST, "an admitted caller's body is read");
     }
 
     /// A store whose every call fails, as a disk that went away does - the fault-injecting adapter.

@@ -184,6 +184,8 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
             "apply_verifies_rejects_and_stays_idempotent",
             "signature_roundtrip_verifies_and_tamper_fails",
             "wire_auth_rejects_bad_token_and_unshared_workspace",
+            // Nor is a body read before its bearer is admitted (sync-correctness.md Section 16).
+            "a_request_without_a_credential_is_refused_before_its_body_is_read",
             "an_event_this_release_cannot_decode_is_rejected_alone",
             // A signature in another spelling of the same bytes is a bad signature, not a second
             // attestation (sync-correctness.md Section 7).
