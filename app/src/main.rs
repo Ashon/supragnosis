@@ -206,11 +206,6 @@ fn open_url(url: &str) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The active remote server profile, when there is one (docs/remote-server.md Section 5). This
-/// machine's daemon is then not what the AI apps use, and the shell says so instead of showing local
-/// knowledge.
-struct ActiveRemote(Mutex<Option<RemoteServer>>);
-
 /// Whether no AI app is connected yet, the state a new user is in (docs/client-connect.md Section 5):
 /// the tray's act line asks to connect one. And whether any app's row needs the person - an entry
 /// other than the bridge, or settings that could not be read - which marks AI apps (Section 29.14).
@@ -284,14 +279,6 @@ fn review_count(list: &serde_json::Value) -> usize {
             .filter(|p| matches!(p["state"].as_str(), Some("open" | "blocked")))
             .count()
     })
-}
-
-#[derive(Clone)]
-struct RemoteServer {
-    name: String,
-    url: String,
-    answering: bool,
-    credential_refused: bool,
 }
 
 /// The apps `supragnosis connect` knows, by id and display name. Listed here only to build the menu
@@ -625,26 +612,6 @@ fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::Response<Ve
 // data-tauri-drag-region="deep": with the overlay title bar there is no other chrome to drag the
 // window by while the splash is up, and its text covers the middle, which the bare attribute would
 // leave undraggable.
-/// What the viewer shows while a remote profile is active: which server the AI apps use, and that
-/// this window shows a Mac's own knowledge (remote-server.md Section 5 - the way to the hub's page
-/// was withdrawn before release, and a machine that wants that knowledge joins and syncs). Not an
-/// empty graph, which would read as "no knowledge" (P5).
-/// Its way back names the settings page, where the server choice lives (settings-page.md S4); the
-/// tray kept a Server submenu once and this line still pointed at it after the move.
-fn remote_html(r: &RemoteServer) -> String {
-    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-    let state = match (r.answering, r.credential_refused) {
-        (true, true) => "it answers, but refused this machine's credential",
-        (true, false) => "it answers",
-        (false, _) => "it does not answer right now",
-    };
-    format!(
-        r#"<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="30"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>AI apps on this Mac use the server "{name}"</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{url} - {state}</div><div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">this window shows a Mac's own knowledge / Settings (Cmd+,) &gt; Server &gt; This Mac switches back</div></div></body>"#,
-        name = esc(&r.name),
-        url = esc(&r.url),
-    )
-}
-
 /// What the starting page says (docs/design-system.md Section 29.5): one of three things, from the
 /// shell's state and how long the start it made has run. The page holds no timer; the shell reloads
 /// it when this changes, or when the daemon answers.
@@ -889,12 +856,7 @@ fn conflict_of(st: &serde_json::Value) -> Option<Conflict> {
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
 async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
     mark_start();
-    // A remote profile means this machine's daemon is not what the AI apps use - so the shell does
-    // not start one for them (remote-server.md Section 5).
     refresh_status(&app).await;
-    if active_remote(&app).is_some() {
-        return;
-    }
     let state = match ensure_daemon(&sock).await {
         Ok(Some(child)) => Daemon::Spawned(child),
         Ok(None) => Daemon::External,
@@ -1150,17 +1112,14 @@ struct TrayState {
     quit_stops: bool,
 }
 
-/// The section the tray's Settings... opens: the first whose dot shows, in the sidebar's order - the
-/// act's own section when it is Server, then AI apps, then This Mac - or none, which reopens the last
-/// pane (design-system.md Section 29.14).
+/// The section the tray's Settings... opens: the first whose dot shows, in the sidebar's order - AI
+/// apps, then This Mac - or none, which reopens the last pane (design-system.md Section 29.14).
 fn attention_section(
     act: Option<&'static str>,
     apps: bool,
     repairing: bool,
 ) -> Option<&'static str> {
-    if act == Some("server") {
-        Some("server")
-    } else if apps {
+    if apps {
         Some("apps")
     } else if act == Some("daemon") || repairing {
         Some("daemon")
@@ -1173,77 +1132,16 @@ fn attention_section(
 /// ready, then no AI app connected - which Finish Setup... covers while it shows.
 fn tray_act(
     trouble: bool,
-    remote: bool,
     drift: bool,
     no_app: bool,
     finish: bool,
 ) -> Option<(&'static str, &'static str)> {
-    if trouble {
-        Some(if remote {
-            ("Check the Server...", "server")
-        } else {
-            ("Open This Mac...", "daemon")
-        })
-    } else if drift {
+    if trouble || drift {
         Some(("Open This Mac...", "daemon"))
     } else if no_app && !finish {
         Some(("Connect an AI App...", "apps"))
     } else {
         None
-    }
-}
-
-/// The active remote profile, when one is active.
-fn active_remote(app: &tauri::AppHandle) -> Option<RemoteServer> {
-    app.try_state::<ActiveRemote>().and_then(|s| s.0.lock().unwrap().clone())
-}
-
-/// Why this Mac's daemon controls refuse while a remote server is in use (settings-page.md Section
-/// 3.4): the daemon they act on is not the one the AI apps use.
-const THIS_MACS_DAEMON: &str = "this Mac's daemon is not what the AI apps use";
-
-/// A command that acts on this Mac's daemon refuses, saying why, while a remote server is active.
-fn not_while_remote(active: Option<&RemoteServer>, why: &str) -> Result<(), String> {
-    match active {
-        Some(_) => Err(format!("a remote server is active - {why}")),
-        None => Ok(()),
-    }
-}
-
-/// `supragnosis server --json`. `None` when the CLI predates profiles.
-fn cli_server_list() -> Option<serde_json::Value> {
-    run_cli_json(&["server", "--json"])
-}
-
-/// Re-reads the server profiles and records whether a remote one is active. Returns what the CLI
-/// said, for the settings window.
-async fn refresh_servers(app: &tauri::AppHandle) -> Option<serde_json::Value> {
-    let list = tokio::task::spawn_blocking(cli_server_list).await.ok().flatten();
-    let remote = list.as_ref().and_then(|list| {
-        let active = list["active"].as_str().unwrap_or("local");
-        let row = list["servers"].as_array()?.iter().find(|r| {
-            r["name"].as_str() == Some(active) && r["remote"].as_bool().unwrap_or(false)
-        })?;
-        Some(RemoteServer {
-            name: active.to_string(),
-            url: row["url"].as_str().unwrap_or("").to_string(),
-            answering: list["check"]["answering"].as_bool().unwrap_or(false),
-            credential_refused: list["check"]["credential"].as_bool() == Some(false),
-        })
-    });
-    if let Some(state) = app.try_state::<ActiveRemote>() {
-        *state.0.lock().unwrap() = remote;
-    }
-    list
-}
-
-/// The tray's line while a remote profile is active: which server, and whether it answers.
-fn remote_line(r: &RemoteServer) -> String {
-    // The act is the next line, "Check the Server..." (design-system.md Section 29.13).
-    match (r.answering, r.credential_refused) {
-        (true, false) => format!("Server {} - answering", r.name),
-        (true, true) => format!("Server {} - refused the credential", r.name),
-        (false, _) => format!("Server {} - not answering", r.name),
     }
 }
 
@@ -1253,7 +1151,6 @@ const CLI_NEWER_LINE: &str = "supragnosis-server is newer than this app - update
 /// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
 async fn refresh_status(app: &tauri::AppHandle) {
     heal_failed(app).await;
-    refresh_servers(app).await;
     refresh_apps(app).await;
     let (no_app, apps_need) =
         app.try_state::<AppsHint>().map_or((false, false), |h| *h.0.lock().unwrap());
@@ -1266,46 +1163,30 @@ async fn refresh_status(app: &tauri::AppHandle) {
         .and_then(Result::ok)
         .map(|events| essentials(&events));
     let finish = finish_setup_offered(read_prefs(app), steps);
-    let remote = active_remote(app);
     let mut tray = TrayState { finish, ..TrayState::default() };
     let mut repairing = false;
-    match &remote {
-        // This Mac's states do not count while a remote server is used (design-system.md Section
-        // 29.13); the server's do.
-        Some(r) => {
-            tray.line = remote_line(r);
-            tray.trouble = !r.answering || r.credential_refused;
-            tray.act = tray_act(tray.trouble, true, false, no_app, finish);
-        }
-        None => {
-            let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-            if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
-                // Said on the state line, with no act (design-system.md Section 29.13).
-                tray.line = CLI_NEWER_LINE.to_string();
-            } else {
-                let drift = st.as_ref().is_some_and(|v| {
-                    let running = v["version"]["running"].as_str();
-                    running.is_some() && running != v["version"]["here"].as_str()
-                });
-                let guard = app.state::<DaemonGuard>();
-                let mut daemon = guard.0.lock().unwrap();
-                settle_exited(&mut daemon);
-                tray.line = status_text(&daemon, st.as_ref());
-                repairing = st
-                    .as_ref()
-                    .is_some_and(|v| v["store"]["owed_projections"].as_u64().unwrap_or(0) > 0);
-                tray.trouble = daemon_trouble(&daemon, st.as_ref());
-                tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));
-                tray.act = tray_act(tray.trouble, false, drift, no_app, finish);
-            }
-        }
+    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+    if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
+        // Said on the state line, with no act (design-system.md Section 29.13).
+        tray.line = CLI_NEWER_LINE.to_string();
+    } else {
+        let drift = st.as_ref().is_some_and(|v| {
+            let running = v["version"]["running"].as_str();
+            running.is_some() && running != v["version"]["here"].as_str()
+        });
+        let guard = app.state::<DaemonGuard>();
+        let mut daemon = guard.0.lock().unwrap();
+        settle_exited(&mut daemon);
+        tray.line = status_text(&daemon, st.as_ref());
+        repairing = st
+            .as_ref()
+            .is_some_and(|v| v["store"]["owed_projections"].as_u64().unwrap_or(0) > 0);
+        tray.trouble = daemon_trouble(&daemon, st.as_ref());
+        tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));
+        tray.act = tray_act(tray.trouble, drift, no_app, finish);
     }
-    // The review item counts this Mac's daemon only; on a remote profile the tray stays as
-    // remote-viewer.md Section 6 has it.
-    if remote.is_none() {
-        tray.review = waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text);
-    }
-    // Settings... opens the first section whose dot shows - Server, AI apps, This Mac - and the last
+    tray.review = waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text);
+    // Settings... opens the first section whose dot shows - AI apps, This Mac - and the last
     // pane while none does (design-system.md Section 29.14).
     let attention = attention_section(tray.act.map(|(_, s)| s), no_app || apps_need, repairing);
     if let Some(a) = app.try_state::<Attention>() {
@@ -1501,23 +1382,6 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> 
     message
 }
 
-/// Makes a server profile the one AI apps here use. Switching to a remote server leaves any local
-/// daemon running (it is not this app's to stop); switching back to this Mac brings the local daemon
-/// up the usual way.
-async fn use_server(app: &tauri::AppHandle, sock: PathBuf, name: &str) -> Result<String, String> {
-    let n = name.to_string();
-    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "use", &n]))
-        .await
-        .ok()
-        .flatten();
-    let label = if name == "local" { "this Mac".to_string() } else { name.to_string() };
-    let outcome =
-        cli_change(out.as_ref(), |_| format!("AI apps here use {label} from their next session"));
-    bring_up(app.clone(), sock).await;
-    reload_viewer(app);
-    outcome
-}
-
 /// What a CLI change the page asked for came to: `done` says a success in the page's words, and a
 /// refusal is an error carrying the CLI's reason, which the page keeps until it is read
 /// (settings-page.md Section 3) - never a success with the refusal tucked beneath it.
@@ -1533,86 +1397,6 @@ fn cli_change(
         Some((_, (false, why))) => Err(why),
         None => Err("the supragnosis command was not found".to_string()),
     }
-}
-
-/// The arguments of `server add`. The credential is not among them, and cannot be: it reaches the
-/// CLI on stdin only (docs/settings-page.md S2).
-fn server_add_args(name: &str, url: &str, ca: Option<&str>) -> Vec<String> {
-    let mut args = vec!["server".to_string(), "add".into(), name.to_string(), url.to_string()];
-    if let Some(ca) = ca.filter(|c| !c.trim().is_empty()) {
-        args.push("--ca".into());
-        args.push(ca.trim().to_string());
-    }
-    args
-}
-
-/// Adds a remote server profile through the CLI, writing the credential to its stdin.
-fn add_server(name: &str, url: &str, credential: &str, ca: Option<&str>) -> Result<String, String> {
-    let bin = find_server_bin().ok_or("supragnosis CLI not found")?;
-    add_server_with(&bin, name, url, credential, ca)
-}
-
-/// [`add_server`] with the CLI named, so a test can stand one in. The credential goes to stdin and
-/// nowhere else (S2): not into an argument, and not into the answer - should the CLI's refusal quote
-/// it, the refusal reaches the page with the credential replaced.
-fn add_server_with(
-    bin: &std::path::Path,
-    name: &str,
-    url: &str,
-    credential: &str,
-    ca: Option<&str>,
-) -> Result<String, String> {
-    use std::io::Write;
-    let mut child = Command::new(bin)
-        .args(server_add_args(name, url, ca))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        // A CLI that refuses before it reads (a name taken, a CA file missing) has closed its end:
-        // its refusal is the answer, not the broken pipe.
-        match stdin.write_all(format!("{}\n", credential.trim()).as_bytes()) {
-            Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("could not hand the credential to the CLI: {e}"));
-            }
-            _ => {}
-        }
-    }
-    let out = child.wait_with_output().map_err(|e| format!("the CLI did not finish: {e}"))?;
-    let secret = credential.trim();
-    match cli_outcome(&out) {
-        (true, _) => Ok(format!("added {name}")),
-        (false, why) if !secret.is_empty() => Err(why.replace(secret, "[the credential]")),
-        (false, why) => Err(why),
-    }
-}
-
-/// Removes a remote profile and its credential. Removing the active one sends AI apps back to this
-/// Mac, which the CLI says and the app then follows.
-async fn remove_server(
-    app: &tauri::AppHandle,
-    sock: PathBuf,
-    name: &str,
-) -> Result<String, String> {
-    let n = name.to_string();
-    let out = tokio::task::spawn_blocking(move || run_cli(&["server", "remove", &n]))
-        .await
-        .ok()
-        .flatten();
-    let outcome = cli_change(out.as_ref(), |o| {
-        if String::from_utf8_lossy(&o.stdout).contains("use local again") {
-            format!("removed {name} - AI apps here use this Mac again")
-        } else {
-            format!("removed {name}")
-        }
-    });
-    bring_up(app.clone(), sock).await;
-    reload_viewer(app);
-    outcome
 }
 
 /// Restart: bounce whatever we manage, then attach-or-spawn again. A spawned child is killed
@@ -1804,9 +1588,6 @@ fn login_outcome(installed: bool, out: Option<&std::process::Output>) -> Result<
 #[cfg(test)]
 const APP_COMMANDS: &[&str] = &[
     "settings_state",
-    "server_use",
-    "server_add",
-    "server_remove",
     "app_toggle",
     "capture_set",
     "login_set",
@@ -1914,30 +1695,10 @@ struct VizSock(PathBuf);
 /// Everything the settings window shows, gathered from the CLI in one pass.
 async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
     heal_failed(app).await;
-    let servers = refresh_servers(app).await;
     // Both CLI calls run at once; each is a process the other need not wait for.
     let status = tokio::task::spawn_blocking(cli_status);
     let connect = tokio::task::spawn_blocking(cli_connect_list);
     let (status, connect) = (status.await.ok().flatten(), connect.await.ok().flatten());
-    let remote = active_remote(app);
-
-    let profiles: Vec<serde_json::Value> = servers
-        .as_ref()
-        .and_then(|l| l["servers"].as_array().cloned())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| {
-            let remote = r["remote"].as_bool().unwrap_or(false);
-            serde_json::json!({
-                "name": r["name"],
-                "label": if remote { r["name"].clone() } else { serde_json::json!("This Mac") },
-                "url": r["url"],
-                "remote": remote,
-                "active": r["active"],
-            })
-        })
-        .collect();
-    let check = servers.as_ref().map(|l| l["check"].clone()).unwrap_or(serde_json::Value::Null);
 
     let reports = connect.as_ref().and_then(|l| l["clients"].as_array().cloned());
     let apps: Vec<serde_json::Value> = AI_APPS
@@ -1958,10 +1719,9 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
         })
         .collect();
 
-    // Sync is this Mac's daemon's (docs/settings-page.md Section 3.4): read from its viewer socket,
-    // and not at all while a remote profile is active.
-    let federation = if remote.is_none() {
-        let sock = app.state::<VizSock>().0.clone();
+    // Sync is this Mac's daemon's (docs/settings-page.md Section 3.4): read from its viewer socket.
+    let sock = app.state::<VizSock>().0.clone();
+    let federation =
         match tokio::time::timeout(Duration::from_secs(5), uds_fetch(&sock, "/api/federation"))
             .await
         {
@@ -1969,10 +1729,7 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
                 serde_json::from_slice::<serde_json::Value>(&f.body).ok()
             }
             _ => None,
-        }
-    } else {
-        None
-    };
+        };
     let guard = app.state::<DaemonGuard>();
     let (line, who, shell, cause) = {
         let mut daemon = guard.0.lock().unwrap();
@@ -1994,12 +1751,6 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({
         "cli": find_server_bin().is_some(),
         "cli_newer": CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed),
-        "server": {
-            "known": servers.is_some(),
-            "active": servers.as_ref().map(|l| l["active"].clone()),
-            "check": check,
-            "profiles": profiles,
-        },
         "apps": apps,
         "daemon": {
             "line": line,
@@ -2018,7 +1769,6 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             // two models, or null.
             "embedder_conflict": status.as_ref().map(|v| v["embedder_conflict"].clone()),
             "login": login,
-            "remote": remote.map(|r| r.name),
             // The daemon's log, as a person types it (design-system.md Section 29.5).
             "log": tilde(&daemon_log()),
         },
@@ -2040,46 +1790,6 @@ async fn settings_state(
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     Ok(settings_state_of(&app).await)
-}
-
-#[tauri::command]
-async fn server_use(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
-    name: String,
-) -> Result<String, String> {
-    own_page_caller(&webview)?;
-    let sock = app.state::<VizSock>().0.clone();
-    use_server(&app, sock, &name).await
-}
-
-#[tauri::command]
-async fn server_add(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
-    name: String,
-    url: String,
-    credential: String,
-    ca: Option<String>,
-) -> Result<String, String> {
-    own_page_caller(&webview)?;
-    let result =
-        tokio::task::spawn_blocking(move || add_server(&name, &url, &credential, ca.as_deref()))
-            .await
-            .map_err(|e| e.to_string())?;
-    refresh_status(&app).await;
-    result
-}
-
-#[tauri::command]
-async fn server_remove(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
-    name: String,
-) -> Result<String, String> {
-    own_page_caller(&webview)?;
-    let sock = app.state::<VizSock>().0.clone();
-    remove_server(&app, sock, &name).await
 }
 
 #[tauri::command]
@@ -2136,7 +1846,6 @@ async fn login_set(
     on: bool,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     // Turning it off is a choice the app remembers, so Welcome and the tray stop asking
     // (docs/onboarding.md Section 4.1); turning it on forgets it.
     let mut p = read_prefs(&app);
@@ -2170,7 +1879,6 @@ async fn peer_narrow(
     keep: Vec<String>,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    not_while_remote(active_remote(&app).as_ref(), "sync settings are this Mac's daemon's")?;
     if node.trim().is_empty() {
         return Err("no peer named".into());
     }
@@ -2203,7 +1911,6 @@ async fn peer_narrow(
 #[tauri::command]
 async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
     own_page_caller(&webview)?;
-    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     let sock = app.state::<VizSock>().0.clone();
     restart_daemon(&app, sock).await
 }
@@ -2211,7 +1918,6 @@ async fn daemon_restart(webview: tauri::Webview, app: tauri::AppHandle) -> Resul
 #[tauri::command]
 async fn search_rebuild(webview: tauri::Webview, app: tauri::AppHandle) -> Result<String, String> {
     own_page_caller(&webview)?;
-    not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
     let sock = app.state::<VizSock>().0.clone();
     rebuild_index(&app, sock).await
 }
@@ -2669,9 +2375,6 @@ async fn setup_run(
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     let installs = matches!(step.as_str(), "server" | "takeover");
-    if installs {
-        not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;
-    }
     let args: Vec<String> = match step.as_str() {
         "server" => setup_args(&["--step", "server"], None),
         "takeover" => {
@@ -2770,7 +2473,6 @@ async fn welcome_state(
         "prefs": p.to_json(),
         "app": env!("CARGO_PKG_VERSION"),
         "cli": find_server_bin().map(|b| b.display().to_string()),
-        "remote": active_remote(&app).map(|r| r.name),
         "spawned": spawned_pid(&app).is_some(),
     }))
 }
@@ -3200,9 +2902,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             settings_state,
             reveal,
-            server_use,
-            server_add,
-            server_remove,
             app_toggle,
             capture_set,
             login_set,
@@ -3241,18 +2940,6 @@ fn main() {
                     resp(200, ctype, SHELL_CSP, bytes.to_vec())
                 } else if target.starts_with("/__shell/") {
                     resp(404, "text/plain", SHELL_CSP, b"not a shell asset".to_vec())
-                } else if let Some(r) = active_remote(&app) {
-                    // A remote profile: the local socket is not the knowledge the AI apps use.
-                    if target == "/" {
-                        resp(200, "text/html; charset=utf-8", SHELL_CSP, remote_html(&r).into_bytes())
-                    } else {
-                        resp(
-                            502,
-                            "application/json",
-                            SHELL_CSP,
-                            br#"{"error":"a remote server is active - this window does not browse it yet"}"#.to_vec(),
-                        )
-                    }
                 } else {
                     let fetch = uds_request(&sock, "GET", &target, if_none_match.as_deref());
                     match tokio::time::timeout(Duration::from_secs(15), fetch).await {
@@ -3356,7 +3043,6 @@ fn main() {
             )?;
             app.manage(TrayKept(Mutex::new(None)));
             app.manage(FrameNow(Mutex::new(None)));
-            app.manage(ActiveRemote(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new((false, false))));
             app.manage(Attention(Mutex::new(None)));
             app.manage(VizSock(sock.clone()));
@@ -3780,9 +3466,9 @@ mod status_text_tests {
             .contains("title: disconnect ? null : APPS[a.id] + \" connected\", detail: null"));
     }
 
-    /// settings-page.md S4: every setting the tray offered - Start at Login, Restart Daemon, Server
-    /// and AI Apps - is on the page. A source tripwire, one per command: settings.js calls each of
-    /// the four controls' commands by name, through `act` (which says how it went) or `invoke`, and
+    /// settings-page.md S4: every setting the tray offered - Start at Login, Restart Daemon and AI
+    /// Apps - is on the page. A source tripwire, one per command: settings.js calls each of the
+    /// three controls' commands by name, through `act` (which says how it went) or `invoke`, and
     /// each is one the app registers for its own pages.
     #[test]
     fn every_setting_the_tray_offered_is_on_the_page() {
@@ -3790,9 +3476,6 @@ mod status_text_tests {
         for (setting, cmd) in [
             ("Start at Login", "login_set"),
             ("Restart Daemon", "daemon_restart"),
-            ("Server", "server_use"),
-            ("Server", "server_add"),
-            ("Server", "server_remove"),
             ("AI Apps", "app_toggle"),
         ] {
             let quoted = format!("\"{cmd}\"");
@@ -3866,39 +3549,16 @@ mod status_text_tests {
         );
     }
 
-    /// settings-page.md Section 3: an error keeps until it is read. A refused `server use` or `server
-    /// remove` is an error carrying the CLI's reason, returned as it is, and each page call that makes
-    /// one names its own failure - so a refusal never shows as "Switched to" or "Removed" with the
-    /// refusal beneath, and the back link keeps the graph it named.
+    /// settings-page.md Section 3: an error keeps until it is read. A refused CLI change is an error
+    /// carrying the CLI's reason, returned as it is, never a success with the refusal beneath it.
     #[test]
-    fn a_refused_server_change_says_why() {
-        let why = "no server profile named work";
+    fn a_refused_change_says_why() {
+        let why = "the login job could not be loaded";
         assert_eq!(cli_change(Some(&refused(why)), |_| "done".into()), Err(why.to_string()));
         assert_eq!(
             cli_change(Some(&output(0, "x", "")), |o| o.stdout.len().to_string()),
             Ok("1".into())
         );
-        for (helper, command) in [("use_server", "server_use"), ("remove_server", "server_remove")]
-        {
-            assert!(
-                source_of(helper).trim_end().ends_with("outcome"),
-                "{helper} returns its outcome"
-            );
-            let call = format!("{helper}(&app, sock, &name).await");
-            assert!(
-                source_of(command).trim_end().ends_with(&call),
-                "{command} answers as {helper} did"
-            );
-        }
-        let js = include_str!("../assets/settings.js");
-        for cmd in ["\"server_use\"", "\"server_remove\""] {
-            for line in js.lines().filter(|l| l.contains(cmd) && l.contains("act(")) {
-                assert!(
-                    line.contains("failTitle: "),
-                    "a refusal there needs its own title: {line}"
-                );
-            }
-        }
     }
 
     /// daemon-lifecycle.md L6: the app stops a daemon it did not spawn only on a person's act that
@@ -3977,58 +3637,6 @@ mod status_text_tests {
         }
     }
 
-    /// settings-page.md: while a remote profile is active, this Mac's daemon controls are disabled
-    /// with the reason, and the commands behind them refuse. The refusal says why; each command that
-    /// acts on the daemon - the switch, Restart, Rebuild index, a sync narrowing, Setup's install
-    /// steps - asks it right after its caller check, before anything else; and the page draws the
-    /// controls disabled or not at all, under the line that says which server is in use.
-    #[test]
-    fn the_daemon_controls_refuse_while_a_remote_server_is_in_use() {
-        let remote = super::RemoteServer {
-            name: "work".into(),
-            url: "https://hub.example".into(),
-            answering: true,
-            credential_refused: false,
-        };
-        assert_eq!(
-            super::not_while_remote(Some(&remote), super::THIS_MACS_DAEMON),
-            Err("a remote server is active - this Mac's daemon is not what the AI apps use".into())
-        );
-        assert_eq!(super::not_while_remote(None, super::THIS_MACS_DAEMON), Ok(()));
-
-        let src = include_str!("main.rs");
-        let body = |head: &str| {
-            let at = src.find(head).unwrap_or_else(|| panic!("no {head}"));
-            let rest = &src[at..];
-            &rest[..rest.find("\n}\n").expect("it closes")]
-        };
-        for command in
-            ["fn login_set(", "fn daemon_restart(", "fn search_rebuild(", "fn peer_narrow("]
-        {
-            let b = body(command);
-            let after = &b[b.find("own_page_caller(&webview)?;").expect("the caller check")..];
-            let next = after.lines().nth(1).unwrap_or_default().trim();
-            assert!(
-                next.starts_with("not_while_remote(active_remote(&app).as_ref(),"),
-                "{command} asks first: {next}"
-            );
-        }
-        let setup = body("fn setup_run(");
-        assert!(setup.contains("if installs {\n        not_while_remote(active_remote(&app).as_ref(), THIS_MACS_DAEMON)?;"));
-
-        let js = include_str!("../assets/settings.js");
-        for drawn in [
-            "disabled: remote || d.login === null",
-            "remote || drift || conflict ? null : h(\"div\", { class: \"row\" },",
-            "const drift = !remote &&",
-            "const conflict = !remote &&",
-            "if (remote) out.push(h(\"div\", { class: \"callout info\" }",
-            "if (state.daemon && state.daemon.remote) {",
-        ] {
-            assert!(js.contains(drawn), "the page: {drawn}");
-        }
-    }
-
     /// settings-page.md S3: the page decides nothing the CLI or the daemon decides. Every command
     /// the Settings page calls is in one list here, by what it is. A change runs the CLI - in the
     /// command or the helper it calls - and a refusal is an `Err` carrying what the CLI said, which
@@ -4049,9 +3657,6 @@ mod status_text_tests {
         };
         // Each change, with the helpers its body reaches the CLI through.
         let changes: &[(&str, &[&str])] = &[
-            ("server_use", &["use_server", "cli_change"]),
-            ("server_add", &["add_server", "add_server_with"]),
-            ("server_remove", &["remove_server", "cli_change"]),
             ("app_toggle", &["toggle_app"]),
             ("capture_set", &[]),
             ("login_set", &["set_login", "login_outcome", "cli_change"]),
@@ -4103,8 +3708,7 @@ mod status_text_tests {
     }
 
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
-    /// tray's line, Settings' Server and This Mac panes, Setup's first card and the starting page.
-    /// "Answering" is a remote server's word only.
+    /// tray's line, Settings' This Mac pane, Setup's first card and the starting page.
     #[test]
     fn the_daemon_has_one_word_per_state() {
         let child = std::process::Command::new("true").spawn().unwrap();
@@ -4123,7 +3727,6 @@ mod status_text_tests {
         let words = &settings[settings.find("function daemonStatus(").expect("daemonStatus")..];
         let words = &words[..words.find("\n}\n").expect("it closes")];
         for word in [
-            "\"Not in use\"",
             "\"Two managers run Supragnosis\"",
             "\"Update ready - restart\"",
             "\"Starting...\"",
@@ -4134,13 +3737,6 @@ mod status_text_tests {
         ] {
             assert!(words.contains(word), "This Mac's card does not say {word}");
         }
-        let server = &settings[settings.find("function serverStatus(").expect("serverStatus")..];
-        let server = &server[..server.find("\n}\n").expect("it closes")];
-        assert!(
-            server.contains("if (local && state && state.daemon)")
-                && server.contains("daemonStatus(state.daemon)"),
-            "Settings' Server pane says Answering of this Mac"
-        );
         assert!(settings.contains("owed === 0 ? \"Up to date\" : \"Repairing - \""));
         let welcome = include_str!("../assets/welcome.js");
         assert!(welcome.contains("title: \"Keep Supragnosis running\""));
@@ -4198,9 +3794,8 @@ mod status_text_tests {
 #[cfg(test)]
 mod settings_tests {
     use super::{
-        cause_of, managed, manager_pid, own_page_ok, restart_outcome, server_add_args,
-        settings_url, start_page, starting_html, welcome_url, without_entry, Daemon, StartPage,
-        APP_COMMANDS,
+        cause_of, managed, manager_pid, own_page_ok, restart_outcome, settings_url, start_page,
+        starting_html, welcome_url, without_entry, Daemon, StartPage, APP_COMMANDS,
     };
     use std::path::Path;
     use std::time::Duration;
@@ -4268,7 +3863,7 @@ mod settings_tests {
         declared.sort();
         registered.sort();
         listed.sort();
-        assert_eq!(declared.len(), 20, "the scan read the commands");
+        assert_eq!(declared.len(), 17, "the scan read the commands");
         assert_eq!(declared, registered, "every command is registered, and only these");
         assert_eq!(declared, listed, "the capability's list is the same set");
     }
@@ -4299,87 +3894,6 @@ mod settings_tests {
         assert_eq!(super::query_value("team-docs_1.x~"), "team-docs_1.x~");
         assert_eq!(super::query_value("a b,c&workspaces=*"), "a%20b%2Cc%26workspaces%3D%2A");
         assert_eq!(super::query_value(""), "");
-    }
-
-    /// S2 by construction: the arguments of `server add` are built without the credential, which
-    /// reaches the CLI on stdin only.
-    #[test]
-    fn a_credential_never_becomes_an_argument() {
-        assert_eq!(
-            server_add_args("home", "https://hub.example", None),
-            ["server", "add", "home", "https://hub.example"]
-        );
-        assert_eq!(
-            server_add_args("home", "https://hub.example", Some(" /etc/ca.pem ")),
-            ["server", "add", "home", "https://hub.example", "--ca", "/etc/ca.pem"]
-        );
-    }
-
-    /// S2: a credential typed into the page reaches the CLI on stdin and nowhere else. Stand-in CLIs
-    /// take the CLI's place: one records its arguments, environment and stdin, and the credential is
-    /// on stdin alone; one quotes its stdin in a refusal, as a CLI might, and the answer carries the
-    /// refusal with the credential replaced; one refuses before reading, and the answer is its
-    /// refusal rather than the pipe it closed. The page's script reads the field once and writes it
-    /// once, to clear it, before the call, hands the value only to the shape check and the call, and
-    /// neither it nor kit.js, the other script the page loads, logs anything.
-    #[test]
-    fn a_credential_reaches_the_cli_on_stdin_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("sg-server-add-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let stub = |name: &str, body: &str| {
-            let p = dir.join(name);
-            std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
-            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-            p
-        };
-        let secret = "s3cret-token-6f1d";
-        let add = |cli: &std::path::Path, credential: &str| {
-            super::add_server_with(cli, "home", "https://hub.example", credential, None)
-        };
-
-        let records = stub(
-            "records",
-            "printf '%s\\n' \"$@\" > \"$0.args\"\nenv > \"$0.env\"\ncat > \"$0.stdin\"\necho added\n",
-        );
-        assert_eq!(add(&records, &format!(" {secret}\n")), Ok("added home".to_string()));
-        let read = |file: &str| std::fs::read_to_string(dir.join(file)).unwrap();
-        assert_eq!(read("records.args"), "server\nadd\nhome\nhttps://hub.example\n", "no more");
-        assert_eq!(read("records.stdin"), format!("{secret}\n"));
-        assert!(!read("records.env").contains(secret), "nor in the CLI's environment");
-
-        let quotes =
-            stub("quotes", "read line\necho \"Error: the server refused $line\" >&2\nexit 1\n");
-        assert_eq!(add(&quotes, secret), Err("the server refused [the credential]".to_string()));
-        let early = stub("early", "echo 'Error: a profile named \"home\" exists' >&2\nexit 1\n");
-        assert_eq!(add(&early, secret), Err("a profile named \"home\" exists".to_string()));
-        let _ = std::fs::remove_dir_all(&dir);
-
-        // Read without whitespace, so no spacing hides a write.
-        let js: String = include_str!("../assets/settings.js")
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect();
-        let writes: Vec<_> = js.match_indices("cred.value=").collect();
-        assert_eq!(writes.len(), 1, "the field is written once");
-        assert!(js[writes[0].0..].starts_with("cred.value=\"\";"), "and only to clear it");
-        let call = js.find("invoke(\"server_add\"").expect("the call");
-        assert!(writes[0].0 < call, "the field is cleared before the value is handed over");
-        // The value read from the field goes to the shape check and to the call, and nowhere back.
-        assert_eq!(js.matches("cred.value").count(), 2, "read once, written once");
-        assert!(js.contains("credential:cred.value"));
-        let uses: Vec<&str> = js.match_indices("f.credential").map(|(i, _)| &js[i..]).collect();
-        assert_eq!(uses.len(), 2, "checked and handed over, nothing else");
-        assert!(uses[0].starts_with("f.credential.trim())errs.credential="));
-        assert!(uses[1].starts_with("f.credential,ca:f.ca});"));
-        // The scripts settings.html loads.
-        for (file, script) in [
-            ("settings.js", include_str!("../assets/settings.js")),
-            ("kit.js", include_str!("../assets/kit.js")),
-        ] {
-            assert!(!script.contains("console."), "{file} logs nothing");
-        }
     }
 
     /// S5: the settings page renders the text it is given as text. It shows CLI output, which can
@@ -4481,7 +3995,7 @@ mod settings_tests {
         let daemon = body(js, "function renderDaemon(");
         assert!(
             daemon.contains("conflict ? h(\"div\", { class: \"end\" },")
-                && daemon.contains("remote || drift || conflict ? null :"),
+                && daemon.contains("drift || conflict ? null :"),
             "Rebuild index does not take Restart's place on a store the daemon cannot open"
         );
         assert!(
@@ -4617,8 +4131,8 @@ mod settings_tests {
     /// docs/design-system.md Section 6, U26: in the app the title bar drags the window from anywhere
     /// but its controls. Tauri's handler counts a bare data-tauri-drag-region only for a press on that
     /// element itself, and since the bar became a Mac toolbar its two groups cover all of it but the
-    /// padding; so the header drags deep, the search's results opt out, and the splash and the remote
-    /// page, whose text covers their middle, drag deep too.
+    /// padding; so the header drags deep, the search's results opt out, and the splash, whose text
+    /// covers its middle, drags deep too.
     #[test]
     fn the_title_bar_drags_the_window_but_not_its_controls() {
         let shell = include_str!("../assets/shell-init.js");
@@ -4632,7 +4146,7 @@ mod settings_tests {
             .contains("<body data-tauri-drag-region=\"deep\""));
         let src = include_str!("main.rs");
         let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
-        assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 2);
+        assert_eq!(pages.matches("<body data-tauri-drag-region=\"deep\"").count(), 1);
         assert!(!pages.contains("<body data-tauri-drag-region style="));
     }
 
@@ -4864,7 +4378,6 @@ mod settings_tests {
             );
         }
         for key in [
-            "\"server:\" + p.name",
             "\"capture:\" + a.id",
             "\"data-k\": \"daemon\"",
             "\"data-k\": \"model\"",
@@ -5010,8 +4523,7 @@ mod settings_tests {
     }
 
     /// docs/design-system.md Section 10, U19: a button that shows only an icon is named by its act and
-    /// its object, and a refused form says which field and why - to a screen reader too - with focus
-    /// moved to the first such field. A refusal from the CLI says that the credential was cleared.
+    /// its object.
     #[test]
     fn the_settings_page_names_its_buttons_and_its_errors() {
         let js = include_str!("../assets/settings.js");
@@ -5022,15 +4534,6 @@ mod settings_tests {
         assert!(
             body("actionButton").contains("\"aria-label\""),
             "an icon button cannot be named"
-        );
-        assert!(js.contains("\"Remove \" + p.label"), "the remove button has no name");
-        let add = body("openAddServer");
-        for part in ["aria-invalid", "aria-describedby", ".focus()"] {
-            assert!(add.contains(part), "the form's errors do not use {part}");
-        }
-        assert!(
-            add.contains("For safety the credential was cleared. Paste it again."),
-            "a refusal does not say the credential was cleared"
         );
     }
 
@@ -5063,7 +4566,7 @@ mod settings_tests {
             .skip(1)
             .map(|page| &page[..page.find("</body>").expect("a splash ends its body")])
             .collect();
-        assert_eq!(splash.len(), 2, "the shell authors two splash pages");
+        assert_eq!(splash.len(), 1, "the shell authors one splash page");
         for page in splash {
             assert!(
                 !page.contains("monospace") && !page.contains("#7b8494"),
@@ -5113,7 +4616,9 @@ mod settings_tests {
             "the title bar does not say Setup"
         );
         assert!(
-            html.contains("Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync."),
+            html.contains(
+                "Supragnosis keeps your memory on this Mac. It is shared only if you set up sync."
+            ),
             "the privacy line promises what the code does not keep"
         );
         assert!(
@@ -5227,18 +4732,17 @@ mod settings_tests {
 
     /// design-system.md Section 6a: the Settings page says each fact once. Version drift is one card
     /// with the one Restart; a section's dot appears only when it needs attention, in words a screen
-    /// reader reads; the server list has no radio that cannot be pressed; a peer is one row.
+    /// reader reads; a peer is one row.
     #[test]
     fn the_settings_page_says_each_fact_once() {
         let js = include_str!("../assets/settings.js");
-        let css = include_str!("../assets/settings.css");
         assert!(
             js.contains("\"Update ready - restart to load \" + d.installed"),
             "drift is not one card"
         );
         // A store the daemon cannot open takes Restart away too: its card holds Rebuild index (S7).
         assert!(
-            js.contains("remote || drift || conflict ? null :"),
+            js.contains("drift || conflict ? null :"),
             "the startup row's Restart repeats the drift card's"
         );
         assert!(
@@ -5250,11 +4754,6 @@ mod settings_tests {
             "every section carries a dot"
         );
         assert!(js.contains("class: \"sr-only\""), "a dot says nothing to a screen reader");
-        assert!(
-            !js.contains("class: \"radio\"") && !css.contains(".radio"),
-            "the server list draws a radio"
-        );
-        assert!(js.contains("text: \"Active\""), "the active server is not said");
         assert!(
             js.contains(
                 "new Set([...admitted.map((p) => p.node_id), ...known.map((p) => p.node_id)])"
@@ -5486,7 +4985,7 @@ mod welcome_tests {
         }
         // O6: the page says what stays on this Mac, in words the code keeps (design-system.md 6a).
         assert!(include_str!("../assets/welcome.html").contains(
-            "Supragnosis keeps your memory on this Mac. It is shared only if you add a remote server or set up sync."
+            "Supragnosis keeps your memory on this Mac. It is shared only if you set up sync."
         ));
     }
 }
@@ -5511,7 +5010,6 @@ mod window_tests {
         assert!(frame_on_a_screen(&at(1700.0, -100.0), &screens), "the second screen");
         assert!(!frame_on_a_screen(&at(5000.0, 50.0), &screens), "a place on no screen");
         assert_eq!(MIN_WINDOW, (760.0, 480.0), "the Graph keeps its wide layout in the app");
-        assert_eq!(attention_section(Some("server"), true, true), Some("server"));
         assert_eq!(attention_section(Some("daemon"), true, false), Some("apps"));
         assert_eq!(attention_section(None, false, true), Some("daemon"), "repairing");
         assert_eq!(attention_section(None, false, false), None, "the last pane");
@@ -5558,10 +5056,7 @@ mod window_tests {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::{
-        daemon_trouble, key_js, map_items_enabled, press_js, remote_line, tray_act, Daemon,
-        RemoteServer,
-    };
+    use super::{daemon_trouble, key_js, map_items_enabled, press_js, tray_act, Daemon};
 
     /// design-system.md Section 29.13 (D14, the author's list): the trouble shape shows while the
     /// memory cannot be used - could not start, stopped, two managers, the index - and not while it
@@ -5587,29 +5082,13 @@ mod tray_tests {
     }
 
     /// One act line, the first that holds: the memory cannot be used, an update, then no AI app
-    /// connected unless Finish Setup... shows; a remote server's trouble opens Server.
+    /// connected unless Finish Setup... shows.
     #[test]
     fn the_tray_has_one_act_in_order() {
-        assert_eq!(tray_act(true, false, true, true, false), Some(("Open This Mac...", "daemon")));
-        assert_eq!(
-            tray_act(true, true, false, true, false),
-            Some(("Check the Server...", "server"))
-        );
-        assert_eq!(tray_act(false, false, true, true, false), Some(("Open This Mac...", "daemon")));
-        assert_eq!(
-            tray_act(false, false, false, true, false),
-            Some(("Connect an AI App...", "apps"))
-        );
-        assert_eq!(tray_act(false, false, false, true, true), None, "Finish Setup... covers it");
-        let r = |answering, refused| RemoteServer {
-            name: "home".into(),
-            url: "https://h".into(),
-            answering,
-            credential_refused: refused,
-        };
-        assert_eq!(remote_line(&r(true, false)), "Server home - answering");
-        assert_eq!(remote_line(&r(false, false)), "Server home - not answering");
-        assert_eq!(remote_line(&r(true, true)), "Server home - refused the credential");
+        assert_eq!(tray_act(true, true, true, false), Some(("Open This Mac...", "daemon")));
+        assert_eq!(tray_act(false, true, true, false), Some(("Open This Mac...", "daemon")));
+        assert_eq!(tray_act(false, false, true, false), Some(("Connect an AI App...", "apps")));
+        assert_eq!(tray_act(false, false, true, true), None, "Finish Setup... covers it");
     }
 
     /// The map commands act where their control is, open the Graph from another page, and Back and
@@ -5712,8 +5191,6 @@ mod cli_contract_tests {
         include_str!("../../crates/supragnosis-cli/tests/fixtures/json/status.json");
     const CONNECT: &str =
         include_str!("../../crates/supragnosis-cli/tests/fixtures/json/connect.json");
-    const SERVERS: &str =
-        include_str!("../../crates/supragnosis-cli/tests/fixtures/json/servers.json");
 
     fn read(doc: &str) -> serde_json::Value {
         cli_json(doc.as_bytes()).expect("a schema this app reads").expect("JSON")
@@ -5751,7 +5228,7 @@ mod cli_contract_tests {
     /// another field adds it here, and the example has to carry it.
     #[test]
     fn every_field_the_app_reads_is_in_the_clis_examples() {
-        let reads: [(&str, &[&str]); 3] = [
+        let reads: [(&str, &[&str]); 2] = [
             (
                 STATUS,
                 &[
@@ -5774,19 +5251,6 @@ mod cli_contract_tests {
                     "/clients/0/installed",
                     "/clients/0/entry",
                     "/clients/1/capture",
-                ],
-            ),
-            (
-                SERVERS,
-                &[
-                    "/active",
-                    "/servers/0/name",
-                    "/servers/0/url",
-                    "/servers/0/remote",
-                    "/servers/0/active",
-                    "/check/answering",
-                    "/check/credential",
-                    "/check/detail",
                 ],
             ),
         ];

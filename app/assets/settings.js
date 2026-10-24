@@ -14,9 +14,8 @@ const GRAPH = "viz://localhost/";
 // ---- State -----------------------------------------------------------------------------------
 
 const SECTIONS = [
-  { id: "server", label: "Server", icon: "server", blurb: "The Supragnosis server this Mac's AI apps use. A switch applies from each app's next session." },
-  { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches Supragnosis. Every app goes through the bridge, which keeps no copy of the token and follows the server chosen in Server." },
-  { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The Supragnosis daemon on this Mac: the store your AI apps use when This Mac is the server." },
+  { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches Supragnosis. Every app goes through the bridge, which keeps no copy of the token." },
+  { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The Supragnosis daemon on this Mac: the store your AI apps use." },
   { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between machines that run Supragnosis: the hubs it syncs to and, when it is a hub, what each peer may read." },
   { id: "about", label: "About", icon: "info", blurb: "Versions and where things live." },
 ];
@@ -27,36 +26,23 @@ const pending = new Set(); // action keys whose CLI call is running
 const appNotes = {};       // app id -> the next step the CLI named for it
 
 // The pane on screen: the one the address names, or the one last opened, which the page keeps in its
-// own storage so Cmd+, and the gear reopen it (design-system.md Section 29.14); Server otherwise.
+// own storage so Cmd+, and the gear reopen it (design-system.md Section 29.14); AI apps otherwise.
 const LAST_PANE = "supra.settings.pane";
 function current() {
   const id = location.hash.replace("#", "");
   if (SECTIONS.some((s) => s.id === id)) return id;
   let last = null;
-  try { last = localStorage.getItem(LAST_PANE); } catch (_) { /* no storage - Server */ }
-  return SECTIONS.some((s) => s.id === last) ? last : "server";
+  try { last = localStorage.getItem(LAST_PANE); } catch (_) { /* no storage - AI apps */ }
+  return SECTIONS.some((s) => s.id === last) ? last : "apps";
 }
 function keepPane() {
-  try { localStorage.setItem(LAST_PANE, current()); } catch (_) { /* lost, the page opens on Server */ }
+  try { localStorage.setItem(LAST_PANE, current()); } catch (_) { /* lost, the page opens on AI apps */ }
 }
 
 // ---- Status summaries ---------------------------------------------------------------------------
 
-// "Answering" is said of a remote server only; This Mac's row says the daemon's word (Section 9's
-// state words, design-system.md Section 29.6).
-function serverStatus(server) {
-  const local = server && server.profiles && server.profiles.some((p) => p.active && !p.remote);
-  if (local && state && state.daemon) { const st = daemonStatus(state.daemon); return { kind: st.kind, text: st.title }; }
-  const c = server && server.check;
-  if (!c || c.answering === undefined) return { kind: "", text: "" };
-  if (c.answering && c.credential === false) return { kind: "warn", text: "Credential refused" };
-  if (c.answering) return { kind: "ok", text: "Answering" };
-  return { kind: "bad", text: "Not answering" };
-}
-
 function daemonStatus(d) {
   if (!d) return { kind: "", title: "", detail: "" };
-  if (d.remote) return { kind: "", title: "Not in use", detail: "AI apps use the server \"" + d.remote + "\"" };
   if (d.situation === "conflict") return { kind: "bad", title: "Two managers run Supragnosis", detail: "supragnosis status names them; stop the one you did not choose." };
   // A store indexed by another model keeps the daemon from starting, and a restart fails the same
   // way (docs/settings-page.md Section 3.3): the card says why and holds Rebuild index instead.
@@ -88,7 +74,6 @@ function sectionDot(id) {
 }
 function sectionKind(id) {
   if (!state) return null;
-  if (id === "server") return serverStatus(state.server).kind;
   if (id === "apps") {
     // The dot shows while no app has an entry, a row needs the person, or the apps could not be read
     // (Section 29.14).
@@ -188,44 +173,6 @@ async function act(key, cmd, args, opts) {
   }
 }
 
-function renderServer() {
-  const server = state.server;
-  if (!server.known) {
-    return [h("div", { class: "callout warn" }, icon("warn"),
-      h("div", { class: "grow", text: "The supragnosis command did not list server profiles. Update supragnosis-server to manage them here." }))];
-  }
-  const status = serverStatus(server);
-  const rows = server.profiles.map((p) => {
-    const host = p.remote ? p.url : "this Mac's daemon";
-    const end = [];
-    if (p.active && status.text) end.push(h("span", { class: "pill " + status.kind }, h("span", { class: "dot" }), status.text));
-    if (!p.active) end.push(actionButton("use:" + p.name, "Use", null, "", () => act("use:" + p.name, "server_use", { name: p.name }, { title: "Switched to " + p.label, failTitle: "Did not switch to " + p.label, after: forgetGraphLeft })));
-    if (p.remote) end.push(actionButton("remove:" + p.name, null, "trash", "quiet iconbtn danger", () => confirmRemove(p), "Remove " + p.label));
-    // A list, not a radio group: the active row says Active, every other row has Use, so arrowing down
-    // the list cannot switch every AI app's server (design-system.md Section 6a).
-    return h("div", { class: "row", "data-k": "server:" + p.name },
-      h("div", { class: "body" },
-        h("div", { class: "title" }, p.label, p.active ? h("span", { class: "pill gold", text: "Active" }) : null),
-        h("div", { class: "sub mono selectable", text: host })),
-      h("div", { class: "end" }, end));
-  });
-  const trouble = [];
-  // A remote server's trouble; This Mac's is said on its own pane, in the daemon's words.
-  const remoteActive = server.profiles.some((p) => p.active && p.remote);
-  if (remoteActive && status.kind === "warn") trouble.push(h("div", { class: "callout warn" }, icon("key"),
-    h("div", { class: "grow", text: "The server answers but refused this Mac's credential. Ask its operator for a new one, then remove this profile and add it again." })));
-  if (remoteActive && status.kind === "bad") trouble.push(h("div", { class: "callout bad" }, icon("alert"),
-    h("div", { class: "grow" }, "The server in use does not answer. AI apps cannot reach it until it does.",
-      server.check && server.check.detail ? h("div", { class: "sub selectable", text: server.check.detail }) : null)));
-  return [
-    ...trouble,
-    h("div", { class: "group-title", text: "Servers" }),
-    h("div", { class: "card" }, rows),
-    h("div", { class: "row-actions" },
-      h("button", { class: "btn", disabled: pending.size > 0, on: { click: openAddServer } }, icon("plus"), "Add server...")),
-  ];
-}
-
 // The line under an app's name: what the pill does not already say - or, once this visit connected
 // it, the next step the CLI named, said once here and not again in the notice (Section 29.6).
 function appDetail(a) {
@@ -289,15 +236,12 @@ function renderApps() {
 function renderDaemon() {
   const d = state.daemon;
   const st = daemonStatus(d);
-  const remote = !!d.remote;
   const busy = pending.size > 0;
   const out = [];
-  if (remote) out.push(h("div", { class: "callout info" }, icon("info"),
-    h("div", { class: "grow", text: "AI apps on this Mac use the server \"" + d.remote + "\", so this Mac's daemon is not what they use. Its controls apply again once This Mac is the server." })));
   // Version drift is one card at the top, holding the section's only Restart while it shows
   // (design-system.md Section 6a): it was said three times, with a Restart each.
-  const drift = !remote && d.running && d.installed && d.running !== d.installed;
-  const conflict = !remote && !!d.embedder_conflict;
+  const drift = d.running && d.installed && d.running !== d.installed;
+  const conflict = !!d.embedder_conflict;
   out.push(h("div", { class: "card" },
     h("div", { class: "row hero", "data-k": "daemon" },
       h("span", { class: "lead " + st.kind }, icon("power")),
@@ -318,7 +262,7 @@ function renderDaemon() {
 
   const loginInput = h("input", {
     type: "checkbox", role: "switch", checked: d.login === true,
-    disabled: remote || d.login === null || d.login === undefined || busy,
+    disabled: d.login === null || d.login === undefined || busy,
     "aria-label": "Start at Login",
     on: { change: (e) => act("login", "login_set", { on: e.target.checked }, { title: e.target.checked ? "Starts at login" : "No longer starts at login", failTitle: e.target.checked ? "Start at Login was not turned on" : "Start at Login was not turned off" }) },
   });
@@ -331,9 +275,9 @@ function renderDaemon() {
             ? "Needs a newer supragnosis-server"
             : "Keeps the daemon running whenever you are logged in, so AI apps always find it." })),
         h("label", { class: "switch" }, loginInput, h("span", { class: "track" }))),
-      // Not drawn while the card above holds the section's act, or a remote server is in use: a row
+      // Not drawn while the card above holds the section's act: a row
       // with nothing to press said nothing (design-system.md Section 29.6).
-      remote || drift || conflict ? null : h("div", { class: "row" },
+      drift || conflict ? null : h("div", { class: "row" },
         h("div", { class: "body" },
           h("div", { class: "title", text: "Restart the daemon" }),
           h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
@@ -352,7 +296,7 @@ function renderDaemon() {
           h("div", { class: "sub mono selectable", text: d.log || "~/.supragnosis/log" })),
         h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("log") } }, "Show in Finder")))),
     h("div", { class: "group-title", text: "Search" }),
-    h("div", { class: "card" }, searchRow(d, remote)),
+    h("div", { class: "card" }, searchRow(d)),
     h("div", { class: "group-title", text: "Store" }),
     h("div", { class: "card" },
       h("div", { class: "row" },
@@ -410,11 +354,10 @@ async function stopDownload() {
   catch (e) { toast("bad", "The download did not stop", String(e)); }
 }
 
-function searchRow(d, remote) {
+function searchRow(d) {
   const s = d.semantic;
   let title, sub, kind;
-  if (remote) { title = "Not in use"; sub = "The server in use searches with its own model."; kind = ""; }
-  else if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
+  if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
   else if (s.state === "on" && indexing()) {
     const b = s.backfill;
     title = "Indexing"; sub = "Embedding what is in the store: " + b.embedded + " of " + b.found; kind = "ok";
@@ -423,16 +366,16 @@ function searchRow(d, remote) {
   // The page's own sentence; the CLI's note is Copy Diagnostics' (design-system.md Section 29.6).
   else { title = "Keyword only - the model is not downloaded"; sub = "Search matches words until the model (224 MB) is downloaded."; kind = "warn"; }
   let end = null, bar = null;
-  if (!remote && s && s.state === "on" && indexing()) {
+  if (s && s.state === "on" && indexing()) {
     const b = s.backfill, pct = b.found ? Math.round(100 * b.embedded / b.found) : 0;
     bar = h("div", { class: "bar", role: "progressbar", "aria-label": "Indexing",
       "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("span"));
     bar.firstChild.style.width = pct + "%";
-  } else if (!remote && s && s.state === "on" && d.answering) {
+  } else if (s && s.state === "on" && d.answering) {
     // Rebuild index, whenever the daemon runs with a model (docs/settings-page.md Section 3.3).
     end = actionButton("rebuild", "Rebuild index", "restart", "", () => rebuildIndex());
   }
-  if (!remote && s && s.state !== "on") {
+  if (s && s.state !== "on") {
     if (downloading) {
       bar = h("div", { class: "bar" + (modelPct === null ? " busy" : ""), role: "progressbar", "aria-label": "Model download",
         "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": modelPct === null ? null : String(modelPct) }, h("span"));
@@ -464,13 +407,9 @@ if (window.__TAURI__) window.__TAURI__.event.listen("setup-line", (e) => {
 });
 
 // Sync (docs/settings-page.md Section 3.4): what the viewer's Peers tab showed, and its one act -
-// narrowing what an admitted peer may read. Read from this Mac's daemon; a remote profile has none.
+// narrowing what an admitted peer may read. Read from this Mac's daemon.
 function renderSync() {
   const f = state.federation;
-  if (state.daemon && state.daemon.remote) {
-    return [h("div", { class: "callout info" }, icon("info"),
-      h("div", { class: "grow", text: "Sync is this Mac's daemon's. It shows here again once This Mac is the server." }))];
-  }
   if (!f) {
     return [h("div", { class: "callout warn" }, icon("warn"),
       h("div", { class: "grow", text: "Sync status is unavailable - this Mac's daemon did not answer." }))];
@@ -630,7 +569,7 @@ function draw() {
   } else if (!state.cli) {
     body = [h("div", { class: "callout warn" }, icon("warn"),
       h("div", { class: "grow", text: "The supragnosis CLI was not found. Install supragnosis-server (brew install supragnosis-server) and reopen Settings." }))];
-  } else if (state.cli_newer && (id === "server" || id === "apps" || id === "daemon")) {
+  } else if (state.cli_newer && (id === "apps" || id === "daemon")) {
     // docs/compatibility.md Section 6: the CLI answered in a schema this app does not read, so these
     // sections are not drawn from a payload whose meaning moved.
     body = [h("div", { class: "callout warn" }, icon("warn"),
@@ -639,11 +578,10 @@ function draw() {
     // An explicit switch rather than a lookup by name: the id comes from the URL's hash, and a
     // property lookup would also find what every object has (constructor, __proto__).
     switch (id) {
-      case "apps": body = renderApps(); break;
       case "daemon": body = renderDaemon(); break;
       case "sync": body = renderSync(); break;
       case "about": body = renderAbout(); break;
-      default: body = renderServer();
+      default: body = renderApps();
     }
   }
   pane.replaceChildren(h("section", { class: "section", "aria-labelledby": "h-" + id }, sectionHead(id), body));
@@ -672,132 +610,6 @@ function closeDialog() {
   document.getElementById("dialogHost").replaceChildren();
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
   lastFocus = null;
-}
-
-function confirmRemove(p) {
-  const remove = h("button", { class: "btn danger solid" }, icon("trash"), "Remove");
-  remove.addEventListener("click", async () => {
-    closeDialog();
-    await act("remove:" + p.name, "server_remove", { name: p.name }, { title: "Removed " + p.label, failTitle: "Did not remove " + p.label });
-  });
-  openDialog([
-    h("div", { class: "d-head" },
-      h("h3", { id: "d-title", text: "Remove \"" + p.label + "\"?" }),
-      h("p", { text: "Its credential is deleted from this Mac." + (p.active ? " AI apps go back to This Mac from their next session." : "") })),
-    h("div", { class: "d-foot" }, h("button", { class: "btn", on: { click: closeDialog } }, "Cancel"), remove),
-  ], "d-title");
-}
-
-// The shape of what was typed, checked before the CLI sees it. The CLI still decides: anything it
-// refuses comes back as the dialog's error.
-function validate(f, names) {
-  const errs = {};
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(f.name)) errs.name = "Use letters, digits, - or _ (up to 64).";
-  else if (f.name === "local") errs.name = "\"local\" is This Mac.";
-  else if (names.includes(f.name)) errs.name = "A server with this name exists.";
-  let u = null;
-  try { u = new URL(f.url); } catch (_) { errs.url = "Enter the full address, starting with https://"; }
-  if (u) {
-    const loop = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-    if (u.protocol === "http:" && !loop) errs.url = "Plain http would send the credential unencrypted. Use https://";
-    else if (u.protocol !== "https:" && u.protocol !== "http:") errs.url = "Use an https:// address.";
-  }
-  if (!f.credential.trim()) errs.credential = "Paste the credential the server's operator gave you.";
-  return errs;
-}
-
-function field(id, label, input, help, optional) {
-  return h("div", { class: "field", "data-field": id },
-    h("label", { for: id }, label, optional ? h("span", { class: "opt", text: "optional" }) : null),
-    h("div", { class: "input" }, input),
-    help ? h("div", { class: "help", text: help }) : null,
-    h("div", { class: "err", id: id + "-err", hidden: true }));
-}
-
-function openAddServer() {
-  const name = h("input", { id: "f-name", placeholder: "home", spellcheck: false, autocomplete: "off" });
-  const url = h("input", { id: "f-url", placeholder: "https://hub.example:7420", spellcheck: false, autocomplete: "off" });
-  const cred = h("input", { id: "f-cred", type: "password", class: "with-reveal", spellcheck: false, autocomplete: "off" });
-  const reveal = h("button", { type: "button", class: "btn quiet iconbtn reveal", "aria-label": "Show credential" }, icon("eye"));
-  reveal.addEventListener("click", () => {
-    const show = cred.type === "password";
-    cred.type = show ? "text" : "password";
-    reveal.replaceChildren(icon(show ? "eye-off" : "eye"));
-    reveal.setAttribute("aria-label", show ? "Hide credential" : "Show credential");
-  });
-  const ca = h("input", { id: "f-ca", placeholder: "/path/to/ca.pem", spellcheck: false, autocomplete: "off" });
-  const useNow = h("input", { type: "checkbox", checked: true });
-  const error = h("div", { class: "callout bad", hidden: true });
-  const submit = h("button", { class: "btn primary", type: "submit" }, "Add server");
-  const credField = field("f-cred", "Credential", cred, "Stored in a file only you can read. It is not shown again.");
-  credField.querySelector(".input").append(reveal);
-
-  const form = h("form", { novalidate: true },
-    h("div", { class: "d-head" },
-      h("h3", { id: "d-title", text: "Add a server" }),
-      h("p", { text: "A Supragnosis server another machine runs. Its operator gives you the address and a credential." })),
-    h("div", { class: "d-body" },
-      error,
-      field("f-name", "Name", name, "What this Mac calls it."),
-      field("f-url", "Address", url, "The server's https:// address. /mcp is added if you leave the path out."),
-      credField,
-      field("f-ca", "CA bundle", ca, "Only for a server whose certificate a private CA issued.", true),
-      h("label", { class: "check" }, useNow, "Use this server now")),
-    h("div", { class: "d-foot" }, h("button", { type: "button", class: "btn", on: { click: closeDialog } }, "Cancel"), submit));
-
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const f = { name: name.value.trim(), url: url.value.trim(), credential: cred.value, ca: ca.value.trim() || null };
-    const names = state.server.profiles.map((p) => p.name);
-    const errs = validate(f, names);
-    for (const el of form.querySelectorAll(".field")) {
-      const key = { "f-name": "name", "f-url": "url", "f-cred": "credential" }[el.dataset.field];
-      const msg = key && errs[key];
-      el.classList.toggle("invalid", !!msg);
-      const err = el.querySelector(".err");
-      err.hidden = !msg;
-      err.textContent = msg || "";
-      const input = el.querySelector("input");
-      if (msg) {
-        input.setAttribute("aria-invalid", "true");
-        input.setAttribute("aria-describedby", el.dataset.field + "-err");
-      } else {
-        input.removeAttribute("aria-invalid");
-        input.removeAttribute("aria-describedby");
-      }
-    }
-    if (Object.keys(errs).length) {
-      const first = form.querySelector(".field.invalid input");
-      if (first) first.focus();
-      return;
-    }
-    // The credential leaves the field the moment it is handed over, whatever the CLI answers (S2).
-    cred.value = "";
-    submit.disabled = true;
-    submit.replaceChildren(icon("spin", "i-spin"), "Adding...");
-    submit.classList.add("busy");
-    error.hidden = true;
-    try {
-      await invoke("server_add", { name: f.name, url: f.url, credential: f.credential, ca: f.ca });
-      closeDialog();
-      if (useNow.checked) {
-        await act("use:" + f.name, "server_use", { name: f.name }, { title: "Added and switched to " + f.name, failTitle: "Added " + f.name + ", but did not switch to it", after: forgetGraphLeft });
-      } else {
-        toast("ok", "Added " + f.name, "Switch to it from the list when you are ready.");
-        await load();
-      }
-    } catch (e) {
-      error.replaceChildren(icon("alert"), h("div", { class: "grow selectable" },
-        h("div", { text: String(e) }),
-        h("div", { text: "For safety the credential was cleared. Paste it again." })));
-      error.hidden = false;
-      submit.disabled = false;
-      submit.classList.remove("busy");
-      submit.replaceChildren("Add server");
-      cred.focus();
-    }
-  });
-  openDialog(form, "d-title");
 }
 
 // ---- Loading --------------------------------------------------------------------------------
@@ -829,11 +641,10 @@ async function load(quiet) {
   if (daemonUnsettled()) watchDaemon();
 }
 
-// Whether This Mac's daemon is on its way somewhere: not answering, starting, or failed. A remote
-// profile leaves this Mac's daemon out of it.
+// Whether This Mac's daemon is on its way somewhere: not answering, starting, or failed.
 function daemonUnsettled() {
   const d = state && state.daemon;
-  if (!d || d.remote) return false;
+  if (!d) return false;
   return !d.answering || !d.running || d.shell === "starting" || d.shell === "failed" || indexing();
 }
 
@@ -864,13 +675,6 @@ document.addEventListener("keydown", (e) => {
   else location.href = graphBack();
 });
 document.getElementById("close").href = graphBack();
-// The way back named the other server's knowledge once the active server changes: from then on it is
-// the bare graph (design-system.md Section 29.4).
-function forgetGraphLeft() {
-  history.replaceState(null, "", location.pathname + location.hash);
-  document.getElementById("close").href = GRAPH;
-}
-
 // Rebuild index from the starting page (docs/settings-page.md Section 3.3): its click opened this page
 // with act=rebuild, which starts the rebuild only while the daemon still cannot open its store. The
 // parameter is dropped either way, so a reload asks nothing again.
@@ -882,11 +686,11 @@ function actAsked() {
   const q = keep.toString();
   history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
   const d = state && state.daemon;
-  if (act === "rebuild") { if (d && !d.remote && d.embedder_conflict) rebuildIndex(); return; }
+  if (act === "rebuild") { if (d && d.embedder_conflict) rebuildIndex(); return; }
   // The starting page's acts (design-system.md Section 29.5): a restart only while the daemon
   // neither answers nor is being started; a notice says the state otherwise.
   if (act === "restart") {
-    if (!d || d.remote) return;
+    if (!d) return;
     if (!d.answering && d.shell !== "starting") restartDaemon();
     else toast("info", d.answering ? "Not restarted: the daemon answers" : "Not restarted: the daemon is still starting");
     return;

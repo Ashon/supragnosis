@@ -275,8 +275,8 @@ it; and it adds a pseudo-terminal and a terminal widget to the app. The drawer s
 what it changed, and the cards stay the truth about state.
 
 **The privacy line** at the foot: "Supragnosis keeps your memory on this Mac. It is shared only if you
-add a remote server or set up sync." (O6). Adding a server changes which server the AI apps use, and sync
-is set up in supragnosis.toml, so the line names both.
+set up sync." (O6). Sync is set up by joining a hub or in supragnosis.toml. The line also named adding a
+remote server until remote profiles were removed in 0.11.0 (remote-server.md Section 13).
 
 **Who may act.** The page is the app's own, and it changes settings the way the Settings page does:
 it joins that page as a caller the app's commands admit (settings-page.md Section 4), and its commands

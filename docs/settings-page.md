@@ -98,24 +98,9 @@ The sections follow.
 
 ### 3.1 Server
 
-Which server this Mac's AI apps use (remote-server.md Section 3).
-
-- **The profiles.** "This Mac" first, then each remote profile with its URL, the active one
-  marked "Active"; every other row has Use, and no radio is drawn (design-system.md Section 6a). The active one also shows its state: answers, refused the credential, or does not
-  answer.
-- **Use** makes a profile the active one. **Remove** deletes a remote profile and its credential.
-  Removing the active profile is allowed: AI apps go back to this Mac, and the page says so.
-- **Add a server** takes a name, a URL and the credential the server's operator issued, plus an
-  optional CA bundle for a server whose certificate a private CA signed. The shell runs
-  `supragnosis server add <name> <url>`, with `--ca <file>` when one is given.
-  - The credential is written to the CLI's stdin. It never goes into an argument, a log line or a
-    response, and the field is cleared the moment the value is handed over (S2). The first line of
-    the CLI's refusal reaches the page, except that should it quote the credential, the shell puts
-    "[the credential]" in its place first. A CLI that refuses before reading the credential is
-    answered by its refusal, not by the pipe it closed.
-  - The CLI checks the URL (HTTPS, or loopback HTTP) and refuses what it refuses. The page shows
-    that refusal instead of deciding first.
-  - "Use it now", checked by default, makes the new profile active once it is added.
+*Removed in 0.11.0 with remote profiles (remote-server.md Section 13).* The section listed the
+profiles, made one active and added one, its credential written to the CLI's stdin (S2). The page
+now opens on AI apps.
 
 ### 3.2 AI apps
 
@@ -173,15 +158,12 @@ How each AI app reaches supragnosis (client-connect.md Section 4).
   (`act=reveal-log`); `act=restart` restarts the daemon only while it does not answer and the shell
   is not starting it (design-system.md Section 29.5). The starting page holds no command of its own (S1): it is at the
   viewer's address, and a command it could call, a page a daemon serves there could call as well. A page that opens Settings with
-  `act=rebuild` while the store opens changes nothing, and with a remote server active the command
-  refuses (S6).
-- **While a remote profile is active** these controls are disabled, with the reason: this Mac's
-  daemon is not what the AI apps use (remote-server.md Section 5).
+  `act=rebuild` while the store opens changes nothing.
 
 ### 3.4 Sync
 
 How this Mac's knowledge travels between supragnosis nodes (federation.md). It is what the viewer's
-Peers tab showed, read from this Mac's daemon, and not shown while a remote profile is active.
+Peers tab showed, read from this Mac's daemon.
 
 - **This Mac:** its id and its role - a spoke that syncs to hubs, or a hub that serves peers.
   *("This node" until design-system.md step 45.)*
@@ -240,16 +222,16 @@ changes shape while the memory cannot be used. design-system.md Section 29.13.)*
 
 The tray keeps what a menu does well - glancing and opening:
 
-- **The status line.** One line: the server the AI apps use and its state, or this Mac's daemon and
-  its version. If something needs doing - version drift, a refused credential, an unanswering
-  server, no AI app connected - the line says so and points to Settings.
+- **The status line.** One line: this Mac's daemon and its version. If something needs doing -
+  version drift, no AI app connected - the line says so and points to Settings.
 - **Open Viewer.**
 - **Finish Setup...**, while the daemon is not kept running or no AI app is connected (onboarding.md
   Section 6). Turning Start at Login off by choice settles the daemon's half.
 - **Settings...**
 - **Quit Supragnosis.**
 
-Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
+Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4); Server went with remote
+profiles in 0.11.0.
 
 ## 6. Decisions
 
@@ -278,11 +260,11 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 | | Invariant |
 |---|---|
 | **S1** | A settings command runs only for the app's own settings page, at the top level of the main window. The viewer cannot invoke one, whatever page it shows, framed or not. |
-| **S2** | A credential typed into the page reaches the CLI on stdin and nowhere else: not an argument, a log line, a response, or the page once handed over. |
+| **S2** | A credential typed into the page reaches the CLI on stdin and nowhere else: not an argument, a log line, a response, or the page once handed over. *(Retired in 0.11.0: the page takes no credential since Section 3.1 went.)* |
 | **S3** | The page decides nothing the CLI or the daemon decides. Every change is a CLI call, except stopping a peer's sharing, which is the daemon's narrow-only endpoint (Section 3.4); the page shows the answer it gets. |
 | **S4** | Every setting the tray offered is on the page. Moving it lost nothing. |
 | **S5** | The page renders the text it is given as text, never as markup. |
-| **S6** | While a remote profile is active, the daemon controls are disabled with the reason, as the tray's were. |
+| **S6** | While a remote profile is active, the daemon controls are disabled with the reason, as the tray's were. *(Retired in 0.11.0 with remote profiles.)* |
 | **S7** | A daemon that cannot start because its store was indexed by another model is shown with that reason and one click that rebuilds the index - on the page the window shows while it cannot start, on This Mac and in Setup - never only as not running; and the index can be rebuilt from the page whenever the daemon runs with a model. |
 | **S8** | A page in the main window may listen for and emit events, ask whether the window is full screen, and drag it - and nothing else of the platform's: no page makes or changes a menu, the tray, an image, a path or a resource (design-system.md Section 29.29). |
 
@@ -291,7 +273,7 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
 - **client-connect.md Section 5**: the AI Apps submenu became the page's AI apps section. Its rules
   carry over: the click is the consent, and the next step is shown.
 - **remote-server.md Section 5**: the tray's Server submenu became the page's Server section, which
-  can also add and remove profiles.
+  can also add and remove profiles; both were removed in 0.11.0 (remote-server.md Section 13).
 - **daemon-lifecycle.md Section 6**: Start at Login and Restart Daemon moved from the tray to the
   page, with the same behaviour.
 - **The README** describes the page instead of the tray menu.
@@ -321,24 +303,14 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   command list, and keeps the viewer's capability free of them. `every_command_checks_its_caller_first` reads
   the source: every command opens with the caller check, and the commands declared, registered and
   granted are one set, so a command added later cannot act before the check.
-- **S2**: `a_credential_never_becomes_an_argument` - the arguments of `server add` are built without
-  it. `a_credential_reaches_the_cli_on_stdin_only` runs `add_server_with` against stand-in CLIs:
-  one records its arguments, environment and stdin, and the credential is on stdin alone; one quotes
-  its stdin in a refusal, and the answer carries the refusal without the credential; one refuses
-  before reading, and the answer is its refusal. The page's script reads the field once and writes
-  it once, to clear it, before the call, hands the value only to the shape check and the call, and
-  neither it nor kit.js, the other script the page loads, logs anything.
+- **S2**: retired in 0.11.0; its two tests went with the Server section.
 - **S3**: `every_setting_change_is_a_cli_call` - every command the page calls is placed by what it
   is: a change runs the CLI and answers a refusal with what the CLI said, stopping a peer's sharing
   goes to the daemon's endpoint and runs no CLI, and the rest read or act on the system. The
-  stand-in CLIs of the Feedback and S2 cases show a refusal reaching the page.
+  Feedback cases show a refusal reaching the page.
 - **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
-  each control the tray gave up (`login_set`, `daemon_restart`, `server_use`, `server_add`,
-  `server_remove`, `app_toggle`) by name, and each is one of the app's registered commands.
-- **A remote server in use**: `the_daemon_controls_refuse_while_a_remote_server_is_in_use` - the
-  switch, Restart, Rebuild index, a sync narrowing and Setup's install steps refuse with the reason
-  right after their caller check, and the page draws those controls disabled or not at all under
-  the line naming the server in use.
+  each control the tray gave up (`login_set`, `daemon_restart`, `app_toggle`) by name, and each is
+  one of the app's registered commands.
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
   init script that builds the navigation on every page, a policy in the page's head, no inline
   script.
@@ -349,8 +321,8 @@ Start at Login, Restart Daemon, Server and AI Apps moved to the page (S4).
   place of Restart for a store the daemon cannot open, Rebuild index on the Search row, the command
   stopping the app's own daemon before the CLI resets the store and attaching after, and the page
   following the re-embedding.
-- **Feedback (Section 3)**: `a_refused_login_change_says_why` and `a_refused_server_change_says_why`
-  - a change the CLI refuses (Start at Login, Use, Remove) reaches the page as an error carrying the
+- **Feedback (Section 3)**: `a_refused_login_change_says_why` and `a_refused_change_says_why` - a
+  change the CLI refuses reaches the page as an error carrying the
   CLI's reason, returned as it is, under a failure title of the control's own, so it keeps until it
   is read and never shows as the success it was not (daemon-lifecycle.md L4).
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps

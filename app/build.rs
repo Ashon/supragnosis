@@ -5,9 +5,6 @@
 /// src/main.rs - a test there holds the two together.
 const APP_COMMANDS: &[&str] = &[
     "settings_state",
-    "server_use",
-    "server_add",
-    "server_remove",
     "app_toggle",
     "capture_set",
     "login_set",

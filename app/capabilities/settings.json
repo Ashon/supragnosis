@@ -6,9 +6,6 @@
   ],
   "permissions": [
     "allow-settings-state",
-    "allow-server-use",
-    "allow-server-add",
-    "allow-server-remove",
     "allow-app-toggle",
     "allow-capture-set",
     "allow-login-set",

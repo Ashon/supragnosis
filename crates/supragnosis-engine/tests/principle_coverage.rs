@@ -1601,11 +1601,11 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     (2, &[
         c(
             "the credential is never an argument of `server add`: the argument list is built without it",
-            Evidence::Scenario(&["a_credential_never_becomes_an_argument"]),
+            Evidence::Structural(RETIRED_SERVER_PANE),
         ),
         c(
             "the credential reaches the CLI on stdin only, appears in no log line or response, and leaves the page once handed over",
-            Evidence::Scenario(&["a_credential_reaches_the_cli_on_stdin_only"]),
+            Evidence::Structural(RETIRED_SERVER_PANE),
         ),
     ]),
     (3, &[
@@ -1622,13 +1622,12 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
             Evidence::Scenario(&[
                 "every_setting_change_is_a_cli_call",
                 "a_refused_login_change_says_why",
-                "a_refused_server_change_says_why",
-                "a_credential_reaches_the_cli_on_stdin_only",
+                "a_refused_change_says_why",
             ]),
         ),
     ]),
     (4, &[c(
-        "every setting the tray offered - Start at Login, Restart Daemon, Server, AI Apps - is on the page",
+        "every setting the tray offered - Start at Login, Restart Daemon, AI Apps - is on the page, Server having gone with remote profiles in 0.11.0",
         Evidence::Scenario(&["every_setting_the_tray_offered_is_on_the_page"]),
     )]),
     (5, &[c(
@@ -1637,7 +1636,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (6, &[c(
         "while a remote profile is active the daemon controls are disabled with the reason, and the commands behind them refuse",
-        Evidence::Scenario(&["the_daemon_controls_refuse_while_a_remote_server_is_in_use"]),
+        Evidence::Structural(REMOVED_PROFILES),
     )]),
     (7, &[c(
         "a daemon that cannot start because its store was indexed by another model is shown with that reason and one click that \
@@ -2703,6 +2702,10 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
 ];
 
 // docs/remote-server.md Section 8 - the hub's agent surface (R rows).
+/// Retired in 0.11.0 with the Settings page's Server section (settings-page.md Section 3.1): the page
+/// has no field that takes a credential.
+const RETIRED_SERVER_PANE: &str = "retired in 0.11.0: the Settings page lost its Server section, and no field on it takes a credential";
+
 /// Removed in 0.11.0 (remote-server.md Section 13): there are no server profiles, and the bridge
 /// reaches only this machine's loopback daemon, the address `parse_loopback_addr` admits.
 const REMOVED_PROFILES: &str = "removed in 0.11.0: no server profile exists, and `bridge_cmd` dials only the loopback address `parse_loopback_addr` admits";
@@ -2791,7 +2794,7 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
         c("no credential appears on a command line",
           // `server add` argv is name, url, --ca; the credential goes on stdin. The CLI side is by
           // construction: `ServerCmd::Add { name, url, ca }` has no token argument and reads stdin.
-          Evidence::Scenario(&["a_credential_never_becomes_an_argument"])),
+          Evidence::Structural(REMOVED_PROFILES)),
         c("the bridge and the CLI read the credential from a 0600 file",
           // The bridge reads this machine's token file, which `write_secret` makes 0600; the
           // profiles' credential files went with the profiles in 0.11.0 (Section 13).
