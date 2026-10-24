@@ -330,6 +330,17 @@ pub struct InviteAsk {
     pub addresses: Vec<String>,
 }
 
+/// A name a file or a request is built from: letters, digits, '-' or '_', at most 64 characters.
+pub(crate) fn valid_name(name: &str, what: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("{what} name {name:?}: use letters, digits, '-' or '_'"));
+    }
+    Ok(())
+}
+
 /// Makes an invitation (docs/pairing.md Section 4.2): the hub's `[server]` and certificate when it
 /// has none, its wiring when it was not built, the code, the listener opened for it, and the
 /// timer that closes it at its expiry.
@@ -339,8 +350,7 @@ async fn make_invitation(
     ask: InviteAsk,
 ) -> Result<serde_json::Value> {
     for w in &ask.workspaces {
-        crate::profile::valid_name(w)
-            .map_err(|e| anyhow::anyhow!(e.replace("profile", "workspace")))?;
+        valid_name(w, "workspace").map_err(|e| anyhow::anyhow!(e))?;
     }
     let (p, addresses) = (paths.clone(), ask.addresses.clone());
     let srv = tokio::task::spawn_blocking(move || {

@@ -283,8 +283,7 @@ Owed beyond these: per-principal rate limits, and credential rotation without re
 
 Guarded by:
 
-- **Client profiles**: `a_remote_server_is_reached_over_verified_tls_or_loopback`,
-  `the_environment_names_a_server_only_with_a_credential_file`.
+- **Client profiles**: the two tests of `profile.rs`, removed with it in 0.11.0 (Section 13).
 - **The remote policy (R3, R4, R7)**: `every_tool_has_a_remote_policy`,
   `a_principal_reads_only_its_grants`, `a_remote_write_is_the_principals_own`,
   `governance_and_node_operations_are_refused_remotely`.

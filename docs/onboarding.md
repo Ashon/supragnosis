@@ -54,9 +54,6 @@ the path to it.
   recorded it, and left out of these steps.
 - **Not a second place for settings.** The Welcome page uses the Settings page's parts and its acts.
   Changing a choice later happens in Settings, which already has each of them.
-- **Not for a remote profile.** When this Mac's AI apps use a remote server (settings-page.md Section
-  3.1), the daemon, model and first-entry steps are `skipped`, since contacts and entries go to the
-  hub; connecting apps still applies, since the bridge follows the profile.
 
 ## 3. One procedure, two faces
 
@@ -83,7 +80,7 @@ and does only that.
 **States.** `todo` - not done, and setup can do it. `working` - under way: an app connected and not
 yet heard from, a download running. `done`. `attention` - not done, and setup will not do it without
 being asked; the sentence names the command that would. `failed` - an act failed; the sentence says
-why and what to do. `skipped` - does not apply here: a remote profile (Section 2), an app that is not
+why and what to do. `skipped` - does not apply here: an app that is not
 installed, or a node with no search model to fetch (`SUPRAGNOSIS_EMBED=none`, or a build without one).
 
 **The Welcome page draws only what setup says** (O4). Its cards come from `setup --check --events`,
@@ -174,8 +171,8 @@ After connecting, an app still has to load the change, and setup says how for ea
   only the person can start (OpenCode may need its background service restarted; client-connect.md
   Section 13.3).
 
-`connect` itself warns, in its own output, when the server the active profile names does not answer:
-the entry is written, and the app will fail until a server runs.
+`connect` itself warns, in its own output, when the local daemon does not answer: the entry is
+written, and the app will fail until a daemon runs.
 
 ### 4.3 Search by meaning
 
@@ -201,8 +198,7 @@ fetches what is missing.
 
 ### 4.4 Try it
 
-**State:** whether the store holds an observation. **Done** when it does; `skipped` on a remote
-profile.
+**State:** whether the store holds an observation. **Done** when it does.
 
 **Act:** none on the store (O1). The step suggests what to ask in a connected app, about the person's
 real work: "Remember one decision we made in this project today, and why." It is not a sample sentence
@@ -368,8 +364,7 @@ lifecycle's idea of who owns the daemon, so it gets its own document when it is 
 
 ## 12. What this revises
 
-- **client-connect.md Section 4**: `connect` warns when the server the active profile names does not
-  answer.
+- **client-connect.md Section 4**: `connect` warns when the local daemon does not answer.
 - **daemon-lifecycle.md Section 4**: `service install` takes `--no-model`; on Linux it generates and
   enables a systemd user unit and asks for lingering. **L2** recognizes that unit on Linux, and **L7**
   and **L8** read for a user unit as they do for a LaunchAgent.
@@ -437,8 +432,8 @@ had not written it. Twelve findings changed it:
    carries, and an unnamed client still counts.
 6. **"Reached" cannot gate a step.** It lives in memory and the server step may restart the daemon, so
    step 4.2 is done when an app is connected, and reached is shown, not waited on.
-7. **A remote profile skips more.** Contacts and entries go to the hub, so the first-entry step is
-   skipped too.
+7. **A remote profile skipped more.** Contacts and entries went to the hub, so the first-entry step
+   was skipped too, until profiles were removed in 0.11.0 (remote-server.md Section 13).
 8. **"Try it" must not write a made-up fact.** The suggested question is about the person's real work,
    and the step waits for a rise in the store's counts instead of a baseline nobody recorded.
 9. **O1 and O2 overclaimed.** Setup changes more paths than the three named, and apps registered

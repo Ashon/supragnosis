@@ -38,9 +38,8 @@
   },
   "embedder_conflict": null,
   "server": {
-    "name": "lab",
-    "url": "https://lab.example:7420/mcp",
-    "remote": true
+    "name": "local",
+    "remote": false
   },
   "clients": [
     {

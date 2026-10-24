@@ -1321,10 +1321,9 @@ mod tests {
             .match_indices("connect::write_replacing(")
             .map(|(i, _)| main[i..].lines().next().unwrap())
             .collect();
-        assert_eq!(
-            writes,
-            ["connect::write_replacing(&profile::client_path(&home), &profile::render(file))"],
-            "the CLI's one plain write is its own server profiles"
+        assert!(
+            writes.is_empty(),
+            "the CLI writes no file plainly, outside connect's plan: {writes:?}"
         );
         let cmd = &main[main.find("fn connect_cmd(").expect("connect_cmd")..];
         let cmd = &cmd[..cmd.find("\n}\n").expect("it closes")];

@@ -473,8 +473,7 @@ pub fn add(
     read: &Option<String>,
     write: &Option<String>,
 ) -> Result<(String, String)> {
-    crate::profile::valid_name(name)
-        .map_err(|e| anyhow::anyhow!(e.replace("profile", "principal")))?;
+    crate::hub::valid_name(name, "principal").map_err(|e| anyhow::anyhow!(e))?;
     let (read, write) = (split_list(read), split_list(write));
     if read.is_empty() && write.is_empty() {
         anyhow::bail!(
@@ -665,7 +664,6 @@ mod tests {
                 url,
                 token: Arc::new(move || Some(cred.clone())),
                 wait: Duration::from_secs(2),
-                ca_pem: None,
                 unreachable_hint: "check the network".into(),
                 token_source: "the profile's credential file".into(),
             };

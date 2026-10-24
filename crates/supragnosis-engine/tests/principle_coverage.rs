@@ -2703,6 +2703,10 @@ const CRASH_RECOVERY_REGISTRY: &[(u8, &[Clause])] = &[
 ];
 
 // docs/remote-server.md Section 8 - the hub's agent surface (R rows).
+/// Removed in 0.11.0 (remote-server.md Section 13): there are no server profiles, and the bridge
+/// reaches only this machine's loopback daemon, the address `parse_loopback_addr` admits.
+const REMOVED_PROFILES: &str = "removed in 0.11.0: no server profile exists, and `bridge_cmd` dials only the loopback address `parse_loopback_addr` admits";
+
 const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("the local MCP daemon binds loopback only",
@@ -2789,12 +2793,9 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
           // construction: `ServerCmd::Add { name, url, ca }` has no token argument and reads stdin.
           Evidence::Scenario(&["a_credential_never_becomes_an_argument"])),
         c("the bridge and the CLI read the credential from a 0600 file",
-          Evidence::Scenario(&[
-            // A URL without a token file is refused; the target names a file.
-            "the_environment_names_a_server_only_with_a_credential_file",
-            // `write_secret`, which `server add` uses, is 0600 and never at another mode.
-            "the_state_directory_and_its_secrets_are_closed_to_other_accounts",
-          ])),
+          // The bridge reads this machine's token file, which `write_secret` makes 0600; the
+          // profiles' credential files went with the profiles in 0.11.0 (Section 13).
+          Evidence::Scenario(&["the_state_directory_and_its_secrets_are_closed_to_other_accounts"])),
     ]),
     (7, &[c(
         "review, define_type and the sync_* tools are refused on the remote surface",
@@ -2805,14 +2806,9 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (8, &[
         c("a remote profile URL is HTTPS, or plain HTTP to loopback only",
-          Evidence::Scenario(&["a_remote_server_is_reached_over_verified_tls_or_loopback"])),
+          Evidence::Structural(REMOVED_PROFILES)),
         c("there is no option to skip verification",
-          Evidence::Structural(
-            "`ServerEntry` is `deny_unknown_fields` with `url`, `ca` and `token_file` only, and the \
-             bridge's client builder installs nothing but a trusting root via `tls_trusting`, whose \
-             verifier pins the named certificates or delegates to webpki and otherwise answers \
-             UnknownIssuer (sync http.rs); the node side's `insecure_tls` is reported as no longer read",
-          )),
+          Evidence::Structural(REMOVED_PROFILES)),
     ]),
 ];
 
@@ -3505,7 +3501,6 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/setup.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-embed/src/fastembed_provider.rs"),
-    include_str!("../../supragnosis-cli/src/profile.rs"),
     include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
     include_str!("../../supragnosis-cli/tests/daemon_exit.rs"),

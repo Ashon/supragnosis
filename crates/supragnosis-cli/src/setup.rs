@@ -36,7 +36,7 @@ pub enum State {
     /// Not done, and setup will not do it without being asked: the sentence names what would.
     Attention,
     Failed,
-    /// Does not apply here: a remote profile, an app that is not installed, a node with no model.
+    /// Does not apply here: an app that is not installed, a node with no model.
     Skipped,
 }
 
@@ -341,8 +341,6 @@ fn names_and(names: &[String]) -> String {
 /// What setup reads before it decides anything (O3).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Observed {
-    /// The active profile's name when this machine's AI apps use a remote server.
-    pub remote: Option<String>,
     pub runner: Runner,
     pub apps: Vec<App>,
     /// Whether the daemon reported first contact at all. One that does not answer, or is older than
@@ -358,31 +356,22 @@ pub struct Observed {
 /// what was observed, so `setup --check` and the Welcome page compute it the same way every time.
 pub fn checklist(o: &Observed) -> Vec<Event> {
     let mut out = Vec::new();
-    let remote = o.remote.as_deref();
-    out.push(match (remote, &o.runner) {
-        (Some(r), _) => Event::new(
-            "server",
-            None,
-            State::Skipped,
-            format!(
-                "AI apps here use the server \"{r}\", so the daemon here is not what they use."
-            ),
-        ),
-        (None, Runner::Kept(say)) => Event::new("server", None, State::Done, say.clone()),
-        (None, Runner::TakeOver(say)) => Event::new("server", None, State::Todo, say.clone()),
-        (None, Runner::AppChild) => Event::new(
+    out.push(match &o.runner {
+        Runner::Kept(say) => Event::new("server", None, State::Done, say.clone()),
+        Runner::TakeOver(say) => Event::new("server", None, State::Todo, say.clone()),
+        Runner::AppChild => Event::new(
             "server",
             None,
             State::Todo,
             "Running while this app is open. Setup keeps it running at login instead.",
         ),
-        (None, Runner::Stopped) => Event::new(
+        Runner::Stopped => Event::new(
             "server",
             None,
             State::Todo,
             "Stopped. Setup starts it now and at every login.",
         ),
-        (None, Runner::Attention(say)) => Event::new("server", None, State::Attention, say.clone()),
+        Runner::Attention(say) => Event::new("server", None, State::Attention, say.clone()),
     });
 
     // Done when an app is connected through the bridge. Whether it has reached the daemon is shown
@@ -451,32 +440,28 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
         ));
     }
 
-    out.push(match (remote, &o.model) {
-        (Some(_), _) => Event::new("model", None, State::Skipped, "The remote server searches with its own model."),
-        (None, Model::Skipped(why)) => Event::new("model", None, State::Skipped, why.clone()),
-        (None, Model::On) => Event::new("model", None, State::Done, "Search by meaning is on."),
-        (None, Model::Missing(mb)) => Event::new(
+    out.push(match &o.model {
+        Model::Skipped(why) => Event::new("model", None, State::Skipped, why.clone()),
+        Model::On => Event::new("model", None, State::Done, "Search by meaning is on."),
+        Model::Missing(mb) => Event::new(
             "model",
             None,
             State::Todo,
             format!("Search matches words only until the model ({mb} MB) is downloaded. Setup downloads it, and nothing waits for it."),
         ),
-        (None, Model::Broken(note)) => Event::new("model", None, State::Attention, note.clone()),
+        Model::Broken(note) => Event::new("model", None, State::Attention, note.clone()),
     });
 
-    out.push(match (remote, &o.first) {
-        (Some(_), _) => {
-            Event::new("first", None, State::Skipped, "Entries go to the remote server.")
-        }
+    out.push(match &o.first {
         // The workspace rides as the event's id, so the app can open the graph there.
-        (None, entry @ FirstEntry::Some { .. }) => entry_event(entry).expect("an entry"),
-        (None, FirstEntry::Unknown) => {
+        entry @ FirstEntry::Some { .. } => entry_event(entry).expect("an entry"),
+        FirstEntry::Unknown => {
             Event::new("first", None, State::Todo, "Known once the server answers.")
         }
         // While it waits, the sentence says which client has reached the server, and quotes the
         // question in every case; contact chooses the words only, never whether the step is done
         // (Section 5), and a restart forgets it (Section 4.2).
-        (None, FirstEntry::None) if connected > 0 => {
+        FirstEntry::None if connected > 0 => {
             // An unnamed client is counted, never named: "it" would not say which app to ask.
             let unnamed = o.other_contacts.iter().any(|c| c == UNNAMED_CLIENT);
             let reached: Vec<String> = o
@@ -511,15 +496,15 @@ pub fn checklist(o: &Observed) -> Vec<Event> {
             e.checks = TRY_IT_CHECKS.iter().map(|c| c.to_string()).collect();
             e
         }
-        (None, FirstEntry::None) => {
+        FirstEntry::None => {
             Event::new("first", None, State::Todo, "Waits for a connected app.")
         }
     });
     out
 }
 
-/// Whether the first run is set up enough to leave: the daemon is kept running (or a remote profile
-/// is in use) and an app is connected. The model and the first entry follow on their own (O5).
+/// Whether the first run is set up enough to leave: the daemon is kept running and an app is
+/// connected. The model and the first entry follow on their own (O5).
 pub fn essentials_done(list: &[Event]) -> bool {
     let done = |step: &str| {
         list.iter()
@@ -623,7 +608,6 @@ mod tests {
 
     fn fresh() -> Observed {
         Observed {
-            remote: None,
             runner: Runner::Stopped,
             apps: vec![app("claude-code", true, "none"), app("codex", false, "none")],
             contacts_known: true,
@@ -935,19 +919,6 @@ mod tests {
         let l = checklist(&o);
         assert_eq!(state(&l, "app", Some("claude-code")), State::Attention);
         assert!(l.iter().any(|e| e.say.contains("`supragnosis connect claude-code --replace`")));
-    }
-
-    /// A remote profile: this machine's daemon, model and entries are not what the apps use, so
-    /// those steps stand down; connecting apps still applies (Section 2).
-    #[test]
-    fn a_remote_profile_skips_this_machines_daemon_model_and_entries() {
-        let mut o = fresh();
-        o.remote = Some("team".into());
-        let l = checklist(&o);
-        assert_eq!(state(&l, "server", None), State::Skipped);
-        assert_eq!(state(&l, "model", None), State::Skipped);
-        assert_eq!(state(&l, "first", None), State::Skipped);
-        assert_eq!(state(&l, "app", Some("claude-code")), State::Todo);
     }
 
     /// P5: a store that cannot be read is not an empty one, and a model that is on disk but did not
