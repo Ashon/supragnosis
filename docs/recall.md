@@ -5,8 +5,8 @@
 > capture hook this extends), [prompts.md](prompts.md) (the person's half: a reading on request)
 > and [semantic-retrieval.md](semantic-retrieval.md) (the model behind search).
 >
-> Status: **built** for Section 9 step 2 (the hook); step 3, the live eval, is next. Decisions
-> D1-D11 were chosen by the author on 2026-10-25 from the measurement in Section 1.
+> Status: **built** (Section 9 steps 1-3). Decisions D1-D11 were chosen by the author on
+> 2026-10-25 from the measurement in Section 1; the eval's first numbers are in Section 7.
 
 ## 1. Why this exists
 
@@ -38,13 +38,17 @@ What it shows:
   in memory. It is which memory arrives without being asked for.
 - **Subagents never see it.** The session-start hook does not run for a subagent, and the parent's
   brief does not mention the store, so about 900 subagents made 5 calls.
-- **Search answers topic words, not conversation.** Seven of the author's own requests, in the
+- **Search finds English, in its own workspace.** Seven of the author's own requests, in the
   Korean they were written in ("타이틀바는 잘 통일하면 좋겠는데"), each came back with off-topic
-  records, and the same few records topped unrelated queries. English topic words for the same
-  subjects ("hub mode pairing", "pairing") found the right records. The records are in English.
+  records, but for most of them the store holds no record on the subject: the title bar, the
+  minimap and the release steps are in Claude Code's memory files, not here. Where a record exists,
+  the live eval of Section 7 measured it: English queries scoped to their workspace find it within
+  five hits nine times in ten, Korean ones six times in ten, and both do worse when the search
+  names no workspace, as most of the searches in the transcripts did.
 - **Agents write long queries.** They search with five to eight words. The keyword surface needs
   every term (architecture.md Section 4.2), so it matched 1 of 162 hits and search ran as the
-  semantic surface alone.
+  semantic surface alone - which, for English queries in their workspace, Section 7 found good
+  enough.
 
 ## 2. What this is NOT
 
@@ -162,18 +166,20 @@ the project's workspace, and a hit that is an observation opens with
   every workspace before it concludes the knowledge is not recorded, because a project's records
   are sometimes written under another name (Section 10, `default` and `folio`).
 
-- **Two or three topic words** is what the keyword surface can match as it is (every term required,
-  architecture.md Section 4.2): in Section 1's queries, `pairing` was found by both surfaces and the
-  eight-word queries by neither. This replaces the change of the keyword rule that D6 first
-  proposed. Matching some terms instead of every term is what architecture.md Section 4.2 ruled out,
-  with a reason that still holds (a query of common words would return the whole store, and a
-  partial match is the semantic surface's job). Whether the rule should change anyway is a question
-  for the eval of Section 7, answered as a revision of architecture.md Section 4.2 if it is ever
-  yes.
-- **English** because the records are, and because the eval has not measured a model that bridges
-  Korean requests to English records better. D7 stays guidance until it does.
+- **Two or three topic words** hold up where longer queries slip: in the eval of Section 7 they
+  found their record as often as a full English question when the workspace was named (0.92 against
+  0.93) and kept it when no workspace was named (0.92 against 0.80), which is the second search the
+  guidance asks for. This replaces the change of the keyword rule that D6 first proposed. Matching
+  some terms instead of every term is what architecture.md Section 4.2 ruled out, with a reason that
+  still holds (a query of common words would return the whole store, and a partial match is the
+  semantic surface's job), and the eval gives no reason to revisit it: the semantic surface carries
+  English queries of any length in their workspace.
+- **English** because the records are: Korean queries for the same records found them 0.62 of the
+  time against 0.93 in their workspace. D7 stays guidance until a model is measured that closes the
+  gap.
 - **The workspace named** because a read that names none reads every workspace (the agent surface
-  decided on 2026-10-23), and Section 1 saw a project's question answered with another project's
+  decided on 2026-10-23): without it, the Korean queries fell from 0.62 to 0.38 and the long English
+  ones from 0.93 to 0.80, and Section 1 saw a project's question answered with another project's
   records.
 
 ## 6. What to record (D8, D9)
@@ -221,6 +227,22 @@ finds real records. Section 1 needed a measurement this repository did not have.
   numbers only. D3 (recall at every prompt), D7 (a model for Korean) and any change to
   architecture.md Section 4.2 are later decided against the same file.
 
+**First measurement** (2026-10-25, the author's store, 13 subjects in three workspaces, 41 queries:
+15 long English queries, 9 of them the ones agents actually issued; 13 Korean requests; 13 English
+topic words; recall@5 and MRR over the first 10 hits):
+
+| Form | Workspace named: recall@5 | MRR | No workspace: recall@5 | MRR |
+|---|---|---|---|---|
+| Long English | 0.93 | 0.80 | 0.80 | 0.65 |
+| Topic words | 0.92 | 0.79 | 0.92 | 0.79 |
+| Korean | 0.62 | 0.42 | 0.38 | 0.28 |
+| All | 0.83 | 0.68 | 0.71 | 0.58 |
+
+The queries and their labels were written by the same session that found the records, so the
+English numbers flatter a stranger's queries; the agents' own nine are inside them and all but one
+of those found their record within two hits. One subject (which program does Pacenote's own work)
+was missed in every form, which says the label or the record is unclear rather than the form.
+
 ## 8. Invariants
 
 | | Invariant |
@@ -251,8 +273,9 @@ transcripts and the two are compared here.
 
 ## 10. Revisit when
 
-- **D3, recall at every prompt:** when the live eval's recall@5 for Korean requests is good enough
-  that most injected records would be on topic - the threshold is set beside the baseline.
+- **D3, recall at every prompt:** when Korean requests find their record as English ones do now
+  (recall@5 about 0.9, against 0.62 in Section 7), and a request whose subject has no record can be
+  told apart so it injects nothing. Most of Section 1's Korean requests were of that second kind.
 - **D7, a model for Korean:** when the eval can compare a candidate model against the baseline on
   the same query file.
 - **The keyword rule (architecture.md Section 4.2):** when the eval shows that agents' queries, with

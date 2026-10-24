@@ -1,8 +1,9 @@
 //! Embedder factory for evals - used by the EVAL_EMBEDDERS axis (hashing vs fastembed A/B).
 //!
-//! "fastembed" is a real model (bge-small-en-v1.5, ONNX), so it needs a `--features real-embed`
-//! build. It isolates, on the same fixture, the recall-quality difference between lexical hashing
-//! and semantic embedding.
+//! "fastembed" is the release build's real model (the default `Model`, ONNX, from the local model
+//! cache), so it needs a `--features real-embed` build and `supragnosis embed fetch` once. It
+//! isolates, on the same fixture, the recall-quality difference between lexical hashing and
+//! semantic embedding.
 
 use std::sync::Arc;
 
@@ -15,9 +16,10 @@ pub fn make_embedder(name: &str) -> Arc<dyn EmbeddingProvider> {
     match name {
         "hashing" => Arc::new(HashingEmbedder::default()),
         #[cfg(feature = "real-embed")]
-        "fastembed" => Arc::new(
-            supragnosis_embed::FastEmbedProvider::try_default().expect("fastembed initialization"),
-        ),
+        "fastembed" => Arc::new(supragnosis_embed::FastEmbedProvider::lazy(
+            supragnosis_embed::Model::DEFAULT,
+            supragnosis_embed::model_cache_dir(),
+        )),
         #[cfg(not(feature = "real-embed"))]
         "fastembed" => panic!(
             "the fastembed embedder must be built with `--features real-embed` \
