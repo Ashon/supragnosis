@@ -6472,12 +6472,14 @@ impl Engine {
         &self.host
     }
 
-    /// The list of workspaces where knowledge exists (sorted, deterministic - Principle 16). Derived from the
-    /// provenance.workspace of the projected graph (entities/relations) - the set of workspaces for which a graph can
-    /// be drawn. Computed with the existing read ports alone, without a separate store enumeration.
-    /// BTreeSet gives dedup + sort at once, guaranteeing a result independent of arrival order.
+    /// The list of workspaces where knowledge exists (sorted, deterministic - Principle 16): every
+    /// workspace that holds an observation, plus the provenance.workspace of every projected entity and
+    /// relation. The log's half is what lists a workspace whose observations assert no entity - free
+    /// text is knowledge too (Principle 22) - and a store with a workspace index answers it from the
+    /// index's keys, without a walk of the log. BTreeSet gives dedup + sort at once, guaranteeing a result
+    /// independent of arrival order.
     pub fn workspaces(&self) -> Result<Vec<String>, StoreError> {
-        let mut set: BTreeSet<String> = BTreeSet::new();
+        let mut set: BTreeSet<String> = self.store.observation_workspaces()?.into_iter().collect();
         for e in self.store.all_entities(None)? {
             for p in &e.provenance {
                 set.insert(p.workspace.clone());
@@ -8543,6 +8545,29 @@ mod tests {
 
         // Dedup + sort (independent of arrival order).
         assert_eq!(engine.workspaces().unwrap(), vec!["alpha", "gamma"]);
+    }
+
+    /// A workspace that holds only free text - an observation asserting no entity, which is legal
+    /// (Principle 22) - is listed, though nothing in it is projected.
+    #[test]
+    fn a_workspace_of_free_text_is_listed() {
+        let store = Arc::new(InMemoryStore::new());
+        let engine = Engine::new(store.clone(), "h", "alpha");
+        engine
+            .observe(ObserveInput {
+                content: "a note with no entities".into(),
+                workspace: Some("notes".into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![],
+                relations: vec![],
+            })
+            .unwrap();
+        assert!(store.all_entities(None).unwrap().is_empty(), "nothing is projected");
+        assert!(store.all_relations(None).unwrap().is_empty(), "nothing is projected");
+        assert_eq!(engine.workspaces().unwrap(), vec!["notes"]);
     }
 
     /// Hypergraph: the entities co-asserted by one observation are recovered as a single hyperedge -

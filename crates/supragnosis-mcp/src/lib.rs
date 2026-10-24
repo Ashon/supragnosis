@@ -609,8 +609,10 @@ impl SupragnosisServer {
     }
 
     /// The answer to an entity id that is unknown - or, remotely, outside the grants, which must
-    /// read the same (remote-viewer.md Section 3.4).
-    fn unknown_entity(&self, id: &str) -> String {
+    /// read the same (remote-viewer.md Section 3.4). `observed_in` is the workspace of the
+    /// observation the id names when it names one instead: the answer stays not found, and its note
+    /// points at the read that takes the id (Principle 21) where the caller may read that workspace.
+    fn unknown_entity(&self, id: &str, observed_in: Option<&str>) -> String {
         self.engine
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
         let note = if remote::current().is_some() {
@@ -622,7 +624,13 @@ impl SupragnosisServer {
         // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
         // on every surface (design-system.md Section 29.20, remote-viewer.md Section 3.4).
         let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
-        let note = if looks_like_id {
+        let observation = observed_in.is_some_and(|ws| self.remote_sight(ws).is_ok());
+        let note = if observation {
+            format!(
+                "{note}. This id is an observation's, not an entity's: read it as the resource \
+                 supragnosis://observation/{id}, or pass get_entity the id of an entity hit"
+            )
+        } else if looks_like_id {
             note.to_string()
         } else {
             format!(
@@ -732,15 +740,27 @@ impl SupragnosisServer {
     async fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
         let id = req.id.clone();
         let engine = self.engine.clone();
-        match tokio::task::spawn_blocking(move || engine.get_entity(&id)).await {
-            Ok(Ok(Some(view))) => {
+        let looked_up = tokio::task::spawn_blocking(move || {
+            let view = engine.get_entity(&id)?;
+            // An id that names no entity may name an observation: a search_knowledge hit of kind
+            // observation, passed here. The point read says which, and its failure is the store's,
+            // answered as one (Principle 5).
+            let observed_in = match view {
+                Some(_) => None,
+                None => engine.get_observation(&id)?.map(|o| o.workspace().to_string()),
+            };
+            Ok::<_, supragnosis_core::StoreError>((view, observed_in))
+        })
+        .await;
+        match looked_up {
+            Ok(Ok((Some(view), _))) => {
                 // A remote principal sees an entity only in a workspace it holds (R3, R5). The
                 // refusal does not claim absence (P5) - only that this caller may not see it.
                 let ws =
                     view.entity.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default();
                 match self.remote_sight(&ws) {
                     Ok(()) => {}
-                    Err(Unseen::NotGranted) => return self.unknown_entity(&req.id),
+                    Err(Unseen::NotGranted) => return self.unknown_entity(&req.id, None),
                     Err(Unseen::Unservable(why)) => return err_json(&why),
                 }
                 self.engine.emit_from(
@@ -755,7 +775,7 @@ impl SupragnosisServer {
             }
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
             // We do not return "not found" as an error, so the LLM does not misread absence as negation.
-            Ok(Ok(None)) => self.unknown_entity(&req.id),
+            Ok(Ok((None, observed_in))) => self.unknown_entity(&req.id, observed_in.as_deref()),
             // A backend failure differs from absence (Principle 5) - surfaced as an explicit error so it is not misread as "nothing there".
             Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),
