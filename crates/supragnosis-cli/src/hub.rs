@@ -1,7 +1,7 @@
 //! The hub's listener and the daemon's admin socket (docs/pairing.md Sections 4 and 4.1).
 //!
 //! The listener is up only while the bind rule allows it (F10, Principle 24): TLS off loopback and
-//! something admitted - a node, a principal or an open invitation (D5). When it cannot open -
+//! something admitted - a node or an open invitation (D5). When it cannot open -
 //! nothing admitted, no TLS, the port taken, a certificate it cannot read - the node keeps serving
 //! everything else and says why, rather than exiting into launchd's restart of the same exit.
 //! `apply` is the one place that decides, at start, whenever the configuration changes and whenever
@@ -125,7 +125,7 @@ impl HubListener {
                 Err(e) => (0, Some(e.to_string())),
             }
         };
-        let admitted = self.peers.admitted().allowlist.len() + srv.principals.len() + invitations;
+        let admitted = self.peers.admitted().allowlist.len() + invitations;
         let wanted = self.wanted(srv, admitted);
         let current = self
             .running
@@ -148,11 +148,11 @@ impl HubListener {
             }
             Ok((addr, tls)) => {
                 self.stop().await;
-                // Beside the sync API: the principals' surface, and the pairing calls an open
-                // invitation answers (D5). Both count toward the bind rule.
+                // Beside the sync API: the pairing calls an open invitation answers (D5), which
+                // count toward the bind rule.
                 let mut hooks = self.hooks.clone();
                 let pairing = invite::router(self.pairing.clone());
-                let extra_admitted = srv.principals.len() + invitations;
+                let extra_admitted = invitations;
                 hooks.extra = Some(match hooks.extra.take() {
                     Some(mut extra) => {
                         extra.router = extra.router.merge(pairing);
@@ -411,8 +411,7 @@ async fn make_invitation(
     Ok(out)
 }
 
-/// The admin calls: `POST /sync` runs a round now, `GET /sync` says what the last did, `POST
-/// /server/refresh` re-reads the hub's admissions and opens or closes its listener, and the `/hub`
+/// The admin calls: `POST /sync` runs a round now, `GET /sync` says what the last did, and the `/hub`
 /// calls invite, allow, deny, cancel, list and remove (docs/pairing.md Sections 4.2 to 4.6).
 pub fn router(
     engine: Arc<supragnosis_engine::Engine>,
@@ -424,8 +423,6 @@ pub fn router(
     use axum::Json;
     let unsynced = || serde_json::json!({"error": "sync is not set up on this node"});
     let (run_engine, run_sync) = (engine, sync.clone());
-    let no_hub = || serde_json::json!({"error": "this node has no [server] section"});
-    let refresh_hub = hub.clone();
     let invite_hub = (hub.clone(), paths.clone());
     let status_hub = hub.clone();
     let act_hub = hub.clone();
@@ -470,18 +467,6 @@ pub fn router(
                         Some(ctx) => ctx.last_round.read().map(|l| l.clone()).ok().flatten().into(),
                         None => unsynced(),
                     })
-                }
-            }),
-        )
-        .route(
-            "/server/refresh",
-            post(move || {
-                let hub = refresh_hub.clone();
-                async move {
-                    match hub.get() {
-                        Some(hub) => Json(hub.refresh().await),
-                        None => Json(no_hub()),
-                    }
                 }
             }),
         )
@@ -629,12 +614,6 @@ mod tests {
         };
         let sync = call("POST", "/sync").await.unwrap().expect("answers").expect("a daemon");
         assert_eq!(sync["error"], "sync is not set up on this node");
-        let refresh = call("POST", "/server/refresh")
-            .await
-            .unwrap()
-            .expect("answers")
-            .expect("a daemon");
-        assert_eq!(refresh["error"], "this node has no [server] section");
         let open = call("GET", "/hub/invite").await.unwrap().expect("answers").expect("a daemon");
         assert!(open["open"].is_null(), "{open}");
         let path_ = path.clone();

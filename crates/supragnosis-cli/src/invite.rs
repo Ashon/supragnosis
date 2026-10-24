@@ -25,6 +25,13 @@ pub const VALID_FOR: u64 = 600;
 /// of it - used, denied, expired - rather than that the hub never made it (PA2).
 pub const TOMBSTONE_FOR: u64 = 86_400;
 
+/// A new credential: 32 bytes of entropy, hex.
+fn new_credential() -> Result<String> {
+    let mut raw = [0u8; 32];
+    getrandom::fill(&mut raw).map_err(|e| anyhow::anyhow!("entropy source failed: {e}"))?;
+    Ok(raw.iter().map(|b| format!("{b:02x}")).collect())
+}
+
 pub fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -578,7 +585,7 @@ impl Pairing {
         if let Some(fc) = crate::fed::load_at(&self.paths.config)? {
             self.may_admit(&fc, &node_id)?;
         }
-        let credential = crate::principal::new_credential()?;
+        let credential = new_credential()?;
         let workspaces = invite.workspaces.clone();
         let mut peers = self.peers()?;
         // A removed machine's bound is the last event this hub holds from it in each invited

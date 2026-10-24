@@ -315,52 +315,10 @@ fn the_search_bar_lights_only_what_the_engine_answered() {
     );
 }
 
-/// The read tier's search covers the reader's grants and nothing else (design-system.md U6,
-/// remote-viewer.md V3): `*` searches each granted workspace on its own and merges, so a workspace the
-/// reader may not read contributes no hit.
-#[test]
-fn the_read_tier_search_reads_only_the_grants() {
-    use supragnosis_viz::remote::{route, Reader, Servable};
-    let store = Arc::new(InMemoryStore::new());
-    let engine = Engine::new(store, "h", "a").with_embedder(Arc::new(HashingEmbedder::default()));
-    for (ws, name) in [("a", "granted lantern"), ("b", "hidden lantern")] {
-        engine
-            .observe(ObserveInput {
-                content: format!("{name} is a lantern"),
-                workspace: Some(ws.into()),
-                source_ref: None,
-                confidence: None,
-                on_behalf_of: None,
-                derived_from: vec![],
-                entities: vec![EntityInput {
-                    description: None,
-                    name: name.into(),
-                    kind: Some("Thing".into()),
-                }],
-                relations: vec![],
-            })
-            .expect("observe succeeds");
-    }
-    let reader = Reader { name: "alice".into(), readable: ["a".to_string()].into_iter().collect() };
-    let servable: Servable = Arc::new(|_| Ok(()));
-    let a = route(&engine, &reader, &servable, "GET", "/api/search", "q=lantern&workspace=*");
-    assert_eq!(a.status, 200, "{}", a.body);
-    assert!(a.body.contains("granted lantern") || a.body.contains("lantern"), "{}", a.body);
-    assert!(
-        !a.body.contains("hidden lantern"),
-        "a workspace outside the grants is not searched: {}",
-        a.body
-    );
-    let refused = route(&engine, &reader, &servable, "GET", "/api/search", "q=lantern&workspace=b");
-    assert_eq!(refused.status, 403, "{}", refused.body);
-}
-
 /// First contact (docs/onboarding.md Section 5): the local socket serves what the daemon recorded,
-/// a viewer without the record says it keeps none rather than answering an empty list (P5), and the
-/// read tier refuses the path as the node's own (O7).
+/// and a viewer without the record says it keeps none rather than answering an empty list (P5).
 #[tokio::test]
 async fn first_contact_is_the_nodes_own() {
-    use supragnosis_viz::remote::{route, Reader, Servable};
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
     let path = sock_path("clients");
     let _ = std::fs::remove_file(&path);
@@ -382,12 +340,6 @@ async fn first_contact_is_the_nodes_own() {
     let bare = serve_uds("clients-none", engine.clone(), ev_channel()).await;
     let none = json_get(&uds_get(&bare, "/api/clients").await);
     assert!(none["clients"].is_null() && none["note"].as_str().is_some(), "{none}");
-
-    let reader =
-        Reader { name: "alice".into(), readable: ["ws".to_string()].into_iter().collect() };
-    let servable: Servable = Arc::new(|_| Ok(()));
-    let refused = route(&engine, &reader, &servable, "GET", "/api/clients", "");
-    assert_eq!(refused.status, 403, "{}", refused.body);
 }
 
 #[tokio::test]
@@ -878,30 +830,26 @@ fn a_review_decision_takes_one_item_with_its_diff_on_screen() {
 /// design-system.md U1 (Principle 24): every console write reports what happened. The writes used to
 /// be bare fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403,
 /// a merge the fold would block answering 400 with its reason - looked exactly like a success that had
-/// not arrived yet. A tripwire on the shape, like the two guards above. The writes are read from the
-/// read tier's own policy table - every path it refuses as a verdict or a write - so a write added
-/// later is covered without anyone extending a list here. Each must appear in the viewer's source only
-/// as the first argument of `consoleWrite`, which reads the status and shows a notice on its refusal,
-/// unreachable and success branches. The node's own operations (the settings dialog's peer narrowing
-/// among them) are refused for another reason and keep their own error display.
+/// not arrived yet. A tripwire on the shape, like the two guards above. The console's writes - its
+/// verdicts and the acts that write - each appear in the viewer's source only as the first argument
+/// of `consoleWrite`, which reads the status and shows a notice on its refusal, unreachable and
+/// success branches. The node's own operations (the settings dialog's peer narrowing among them)
+/// keep their own error display.
 #[test]
 fn every_console_write_reports_its_outcome() {
-    use supragnosis_viz::remote::{Policy, POLICY, VERDICT, WRITE};
     let js = include_str!("../assets/viewer.js");
-    let writes: Vec<&str> = POLICY
-        .iter()
-        .filter(|(_, p)| matches!(p, Policy::Refused(r) if *r == VERDICT || *r == WRITE))
-        .map(|(path, _)| *path)
-        .collect();
-    assert!(writes.len() >= 5, "the policy table names the console's writes: {writes:?}");
+    let writes = [
+        "/api/review",
+        "/api/resolve",
+        "/api/reify",
+        "/api/propose_merge",
+        "/api/propose_split",
+    ];
     for path in writes {
         let quoted = format!("\"{path}\"");
         let total = js.matches(&quoted).count();
         let reported = js.matches(&format!("consoleWrite({quoted}")).count();
-        assert!(
-            total > 0,
-            "the read tier refuses {path} as a write, but viewer.js never calls it"
-        );
+        assert!(total > 0, "{path} is a console write, but viewer.js never calls it");
         assert_eq!(
             total, reported,
             "{path} must be written through consoleWrite, which reports the outcome - a bare fetch \
@@ -2229,13 +2177,6 @@ async fn the_console_reads_the_same_name_in_other_workspaces() {
     let body = body_of(&r, "404");
     assert!(body.contains("no entity by that id") && !body.contains("abab"), "{body}");
     body_of(&uds_get(&sock, "/api/namesakes?in=infra").await, "400");
-    assert!(
-        matches!(
-            supragnosis_viz::remote::policy("/api/namesakes"),
-            Some(supragnosis_viz::remote::Policy::Refused(_))
-        ),
-        "the read tier serves the namesakes"
-    );
     let _ = std::fs::remove_file(&sock);
 }
 

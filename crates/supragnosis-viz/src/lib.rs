@@ -13,13 +13,11 @@
 //! the owning user can connect, so every request is attributable to the local principal (F19), and
 //! the browser-borne attack classes a localhost port invites (DNS rebinding, CSRF, cross-site
 //! fetch) cannot reach a unix socket at all. Clients are the desktop shell, or any HTTP-over-UDS
-//! client (e.g. `curl --unix-socket`). The authenticated network read tier is federation Phase 3.5
-//! and rides the sync crate's TLS stack, not this server.
+//! client (e.g. `curl --unix-socket`). A hub's read tier for principals served this page over the
+//! network until 0.11.0 removed it (remote-server.md Section 13).
 
 use std::path::Path;
 use std::sync::Arc;
-
-pub mod remote;
 
 mod fonts {
     include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
@@ -30,9 +28,7 @@ mod icons {
 }
 
 /// A file the page ships with it - the faces under `/fonts/` (docs/design-system.md Section 4,
-/// U11) and the icons under `/icons/` (Section 28, U41) - as its content type and bytes. The same
-/// bytes answer on the local console and on a hub's read tier, which serves them as it serves the
-/// page itself.
+/// U11) and the icons under `/icons/` (Section 28, U41) - as its content type and bytes.
 pub fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
     fonts::FONTS
         .iter()
@@ -131,7 +127,7 @@ pub type NarrowShare = Arc<dyn Fn(&str, &[String]) -> Result<Vec<String>, String
 
 /// First contact (docs/onboarding.md Section 5): which AI apps have talked to this daemon since it
 /// started, as `{"clients": [...]}`. Read from the MCP server's log by the wiring layer; served on
-/// this local socket only, and refused on the read tier (O7).
+/// this local socket only (O7).
 pub type ClientsView = Arc<dyn Fn() -> serde_json::Value + Send + Sync>;
 
 pub async fn serve(
@@ -447,14 +443,13 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
         // Which surface the page is on (remote-viewer.md Section 3.5): this socket is the owner's
-        // full console. The hub's read tier answers the same path with the principal and its grants.
+        // full console, the only surface since the hub's read tier was removed in 0.11.0.
         // `node` is this node's host id: the page keys what it remembers locally - the layout - by it
         // (design-system.md Section 5), and names a host "this node" only when it matches (Section 9).
         "/api/surface" => Response {
             status: "200 OK",
             content_type: "application/json",
-            // The workspace an omitted one resolves to, the read tier's key with its meaning: the
-            // node's default here, so the page calls the default by its name (design-system.md
+            // The workspace an omitted one resolves to: the node's default, so the page calls the default by its name (design-system.md
             // Section 29.10).
             body: serde_json::json!({
                 "surface": "local",
@@ -695,8 +690,7 @@ fn observations_response(engine: &Engine, query: &str) -> Response {
     // `id=<observation id>`: that one, in whichever workspace holds it, so a card opens without the
     // scope's log (design-system.md Section 29.7). A list of one, or empty for an unknown id.
     let read = match param("id").filter(|s| !s.is_empty()) {
-        // The local console's reads name each attestation's app (design-system.md Section 29.8);
-        // the read tier answers through remote.rs, which never asks for it.
+        // The local console's reads name each attestation's app (design-system.md Section 29.8).
         Some(id) => engine.observation_local(&id, None).map(|o| o.into_iter().collect::<Vec<_>>()),
         None => engine.observation_log_local(ws_owned.as_deref(), entity.as_deref(), limit),
     };
@@ -1334,8 +1328,7 @@ fn propose_split_response(engine: &Engine, query: &str) -> Response {
 /// trimmed and lower-cased with the workspace - so each workspace costs one lookup, and the page
 /// sends the list it already holds rather than this server scanning for one. A namesake its own
 /// workspace merged into another entity is left out, as the curation report's `duplicates` leaves
-/// it out. The local console's alone: the read tier compares no workspaces (remote-viewer.md
-/// Section 12).
+/// it out.
 fn namesakes_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query
@@ -1823,40 +1816,6 @@ mod tests {
         );
     }
     use super::*;
-
-    /// remote-viewer.md V2: every path this router answers has a declared remote policy, so an
-    /// endpoint added to the viewer cannot reach the hub's read tier undecided. The paths are read
-    /// from this file's own routing - every match arm and every `path ==` test on a path literal -
-    /// the way the escaping guard reads the viewer's source.
-    #[test]
-    fn every_viewer_path_has_a_remote_policy() {
-        let src = include_str!("lib.rs");
-        let mut paths: Vec<&str> = Vec::new();
-        for (i, _) in src.match_indices("\"/") {
-            let rest = &src[i + 1..];
-            let Some(end) = rest.find('"') else { continue };
-            let lit = &rest[..end];
-            let routed =
-                src[..i].ends_with("path == ") || rest[end + 1..].trim_start().starts_with("=>");
-            let path_like = routed
-                && (lit == "/"
-                    || lit.starts_with("/viewer")
-                    || (lit.starts_with("/api/")
-                        && lit[5..]
-                            .chars()
-                            .all(|c| c.is_ascii_lowercase() || c == '_' || c == '/')));
-            if path_like && !paths.contains(&lit) {
-                paths.push(lit);
-            }
-        }
-        assert!(paths.len() >= 20, "the scan found the router's paths: {paths:?}");
-        for p in &paths {
-            assert!(remote::policy(p).is_some(), "{p} has no remote policy (remote-viewer.md V2)");
-        }
-        for (p, _) in remote::POLICY {
-            assert!(paths.contains(p), "{p} has a remote policy but this router does not serve it");
-        }
-    }
 
     #[test]
     fn percent_decode_basics() {

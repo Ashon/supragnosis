@@ -238,13 +238,14 @@ concerns are kept separate: **transport authentication** (who is on the wire), *
 ### 6a. Transport authentication and network bind (P2, P18)
 
 - Bind: `[server] listen = "0.0.0.0:7420"` is permitted for the hub listener ONLY, and ONLY when TLS
-  is enabled and something is admitted - a node on the allowlist, a principal, or an open invitation
+  is enabled and something is admitted - a node on the allowlist or an open invitation
   ([pairing.md](pairing.md), decision D5). A listener that may not bind leaves the rest of the node serving. The MCP loopback
   bind guard is unchanged - it is NOT relaxed - and the viewer does not bind TCP at all (it serves
   over a local unix socket); federation adds a separately-guarded surface. **Revision (specified in
   [remote-server.md](remote-server.md)):** the local daemon's guard stays exactly as stated, and this
-  listener gains a second, governed door - MCP for principals the hub admits, under the same TLS -
-  which is why the bind rule counts principals beside nodes.
+  listener gained a second, governed door - MCP for principals the hub admits, under the same TLS -
+  which is why the bind rule counted principals beside nodes, until 0.11.0 removed that door
+  (remote-server.md Section 13).
 - TLS: terminated in-process with `rustls`. A cert/key path is required to bind non-loopback (F10).
   Guarded end to end by `tls_listener_serves_https_and_refuses_plaintext`, which mints a certificate
   and drives the listener: an admitted peer is answered over HTTPS, a plaintext request on the same

@@ -4016,7 +4016,6 @@ dependencies = [
 name = "supragnosis-mcp"
 version = "0.10.1"
 dependencies = [
- "http",
  "rmcp",
  "serde",
  "serde_json",
@@ -4026,7 +4025,6 @@ dependencies = [
  "supragnosis-store",
  "supragnosis-sync",
  "tokio",
- "tracing",
 ]
 
 [[package]]

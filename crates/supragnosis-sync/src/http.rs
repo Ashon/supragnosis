@@ -1,7 +1,8 @@
 //! Sync transport (M4 Phase 3, docs/federation.md Section 6a): the axum sync API
 //! (`/sync/advertise|pull|push`) with in-process rustls TLS and bearer/allowlist wire auth, plus the
 //! reqwest client. This is the ONLY surface permitted to bind non-loopback, and only with TLS enabled
-//! and at least one admitted node or principal (F10) - the MCP/viz loopback guard is untouched. Wire
+//! and at least one admitted node or open invitation (F10, pairing.md PA1) - the MCP/viz loopback
+//! guard is untouched. Wire
 //! auth here is transport authentication (who is on the wire); content trust stays with the apply
 //! pipeline's signature verification (F6) and the read side (F13).
 
@@ -284,7 +285,7 @@ pub struct AllowEntry {
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
     #[error(
-        "refusing to bind {addr}: {reason} (F10: non-loopback needs TLS and an admitted node or principal)"
+        "refusing to bind {addr}: {reason} (F10: non-loopback needs TLS and an admitted node or an open invitation)"
     )]
     Bind { addr: SocketAddr, reason: String },
     #[error("tls setup failed: {0}")]
@@ -338,8 +339,8 @@ impl TransportError {
 }
 
 /// F10 bind guard: loopback is always fine (local trust surface); a non-loopback bind demands both
-/// in-process TLS and someone admitted - a node on the allowlist, or a principal of the agent
-/// surface the wiring layer mounts beside the sync API (docs/remote-server.md Section 4.1). The
+/// in-process TLS and someone admitted - a node on the allowlist, or an open invitation the pairing
+/// calls the wiring layer mounts beside the sync API answer (docs/pairing.md PA1). The
 /// local MCP daemon's own guard is separate and unchanged.
 pub fn validate_bind(
     addr: &SocketAddr,
@@ -355,8 +356,7 @@ pub fn validate_bind(
     if allowlist_len == 0 {
         return Err(TransportError::Bind {
             addr: *addr,
-            reason: "nothing is admitted (no allowlisted node, no principal, no open invitation)"
-                .into(),
+            reason: "nothing is admitted (no allowlisted node, no open invitation)".into(),
         });
     }
     Ok(())
@@ -465,9 +465,9 @@ pub struct Hooks {
     pub on_search: Option<OnSearch>,
     /// Shared known-peer registry - the wiring layer keeps a clone so the MCP surface can report it.
     pub peer_registry: Option<Arc<PeerRegistry>>,
-    /// A further surface served on this listener - the hub's agent surface for principals
-    /// (docs/remote-server.md Section 4.1). It authenticates its own requests; `admitted` counts
-    /// toward the bind rule.
+    /// A further surface served on this listener - the pairing calls an open invitation answers
+    /// (docs/pairing.md Section 4.2). It authenticates its own requests; `admitted` counts toward
+    /// the bind rule.
     pub extra: Option<ExtraSurface>,
     pub on_consent: Option<OnConsent>,
 }
@@ -476,7 +476,7 @@ pub struct Hooks {
 #[derive(Clone)]
 pub struct ExtraSurface {
     pub router: Router,
-    /// How many principals it admits at startup - the bind rule needs someone admitted.
+    /// How many it admits at startup - the bind rule needs someone admitted.
     pub admitted: usize,
 }
 
@@ -782,7 +782,7 @@ fn authenticate(headers: &HeaderMap, allowlist: &[AllowEntry]) -> Result<AllowEn
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or((StatusCode::UNAUTHORIZED, "missing bearer token".to_string()))?;
     let hash = bearer_hash(token);
-    // Compared in constant time, as the principal surface does: an early-exit string compare tells
+    // Compared in constant time: an early-exit string compare tells
     // a caller, by how long a refusal takes, how much of a hash it has right.
     let same = |a: &str, b: &str| {
         a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
@@ -1002,7 +1002,7 @@ pub fn router(state: Arc<ServerState>) -> Router {
 }
 
 /// Every sync response says which protocol and release answered (Section 12), and a request that
-/// runs past [`CALL_TIMEOUT`] is answered 504, as the hub's principal routes do (Section 11).
+/// runs past [`CALL_TIMEOUT`] is answered 504 (Section 11).
 async fn bounded(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -1680,21 +1680,21 @@ mod tests {
         assert!(validate_bind(&pub_addr, true, 1).is_ok());
     }
 
-    /// F10 / remote-server.md R1: a hub may admit principals and no node, and the bind rule counts
-    /// both. `bind_guard_enforces_f10` drives `validate_bind` with a count; this drives `serve`,
-    /// where the count is assembled (the allowlist plus the agent surface's principals), on an
-    /// address off loopback. It is TEST-NET-1, assigned to no machine, so passing the guard shows
+    /// F10 / pairing.md PA1: a hub may admit no node yet and hold an open invitation, and the bind
+    /// rule counts both. `bind_guard_enforces_f10` drives `validate_bind` with a count; this drives
+    /// `serve`, where the count is assembled (the allowlist plus what the extra surface admits), on
+    /// an address off loopback. It is TEST-NET-1, assigned to no machine, so passing the guard shows
     /// as failing at the bind itself and nothing listens on a public address in a test.
     #[tokio::test]
-    async fn a_principals_only_hub_passes_the_bind_guard() {
+    async fn an_admission_beside_the_allowlist_passes_the_bind_guard() {
         let (_minted, tls) = minted_tls();
         let dir = tls.cert_pem.parent().expect("the temp dir").to_path_buf();
         let hub = Arc::new(SyncNode::new(NodeIdentity::from_secret_bytes([9u8; 32])));
         let store: Arc<dyn AssertionStore> = Arc::new(InMemoryStore::new());
         let off_loopback: SocketAddr = "192.0.2.1:7420".parse().unwrap();
-        let start = |principals: usize| {
+        let start = |admitted: usize| {
             let no_nodes = PeerDirectory::new(vec![], hub.node_id(), &hub.public_key_hex());
-            let extra = ExtraSurface { router: Router::new(), admitted: principals };
+            let extra = ExtraSurface { router: Router::new(), admitted };
             let hooks = Hooks { extra: Some(extra), ..Hooks::default() };
             serve(
                 store.clone(),
@@ -1707,12 +1707,12 @@ mod tests {
         };
         assert!(
             matches!(start(0).await, Err(TransportError::Bind { .. })),
-            "no node and no principal: nobody is admitted, so the listener does not start"
+            "no node and no invitation: nobody is admitted, so the listener does not start"
         );
-        let one_principal = start(1).await;
+        let one = start(1).await;
         assert!(
-            matches!(one_principal, Err(TransportError::Io(_))),
-            "a principal is someone admitted - past the guard, refused only by the OS: {one_principal:?}"
+            matches!(one, Err(TransportError::Io(_))),
+            "an open invitation is someone admitted - past the guard, refused only by the OS: {one:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

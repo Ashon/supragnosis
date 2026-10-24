@@ -1293,70 +1293,45 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     server.abort();
 }
 
-/// docs/remote-server.md R3: every tool the server declares has a remote policy, and the policy
-/// table names nothing the server does not declare. A tool added without deciding what principals
-/// may do with it fails here - it never arrives open on the hub's listener.
-#[test]
-fn every_tool_has_a_remote_policy() {
-    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
-    let declared: BTreeSet<String> =
-        SupragnosisServer::new(engine).tool_names().into_iter().collect();
-    let classified: BTreeSet<String> =
-        supragnosis_mcp::remote::POLICY.iter().map(|(n, _)| n.to_string()).collect();
-    assert_eq!(declared, classified, "the remote policy table and the tool list disagree");
-}
-
 /// docs/onboarding.md Section 5 and O7: the local surface notes the name a client gives itself at
-/// `initialize`, in memory and nowhere else; a hub's surface for principals notes nothing.
+/// `initialize`, in memory and nowhere else.
 #[tokio::test]
-async fn first_contact_is_the_clients_own_name_and_a_hub_records_none() {
+async fn first_contact_is_the_clients_own_name() {
     use supragnosis_core::AssertionStore;
-    for remote in [false, true] {
-        let log = Arc::new(supragnosis_mcp::ClientLog::default());
-        let store = Arc::new(InMemoryStore::new());
-        let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
-        let (server_io, client_io) = tokio::io::duplex(64 * 1024);
-        let noted = log.clone();
-        let server = tokio::spawn(async move {
-            let mut s = SupragnosisServer::new(engine).with_clients(noted);
-            if remote {
-                s = s.with_remote(supragnosis_mcp::remote::Surface {
-                    servable: Arc::new(|_: &str| Ok(())),
-                });
-            }
-            let running = s.serve(server_io).await.expect("server handshake");
-            let _ = running.waiting().await;
-        });
-        let info = rmcp::model::ClientConfig::new(
-            Default::default(),
-            rmcp::model::Implementation::new("claude-code", "2.1.0"),
-        );
-        let client = info.serve(client_io).await.expect("client handshake");
-        client.list_all_tools().await.expect("list tools");
-        let seen = log.snapshot();
-        if remote {
-            assert_eq!(seen, json!({ "clients": [] }), "O7: a hub's listener records nothing");
-        } else {
-            let clients = seen["clients"].as_array().expect("clients");
-            assert_eq!(clients.len(), 1, "{seen}");
-            assert_eq!(
-                (&clients[0]["name"], &clients[0]["version"]),
-                (&json!("claude-code"), &json!("2.1.0"))
-            );
-            assert!(clients[0]["first"].as_u64() <= clients[0]["last"].as_u64(), "{seen}");
-        }
-        assert!(
-            store.all_observations(None).unwrap().is_empty(),
-            "O1: nothing reaches the store"
-        );
-        client.cancel().await.ok();
-        server.abort();
-    }
+    let log = Arc::new(supragnosis_mcp::ClientLog::default());
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let noted = log.clone();
+    let server = tokio::spawn(async move {
+        let s = SupragnosisServer::new(engine).with_clients(noted);
+        let running = s.serve(server_io).await.expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let info = rmcp::model::ClientConfig::new(
+        Default::default(),
+        rmcp::model::Implementation::new("claude-code", "2.1.0"),
+    );
+    let client = info.serve(client_io).await.expect("client handshake");
+    client.list_all_tools().await.expect("list tools");
+    let seen = log.snapshot();
+    let clients = seen["clients"].as_array().expect("clients");
+    assert_eq!(clients.len(), 1, "{seen}");
+    assert_eq!(
+        (&clients[0]["name"], &clients[0]["version"]),
+        (&json!("claude-code"), &json!("2.1.0"))
+    );
+    assert!(clients[0]["first"].as_u64() <= clients[0]["last"].as_u64(), "{seen}");
+    assert!(
+        store.all_observations(None).unwrap().is_empty(),
+        "O1: nothing reaches the store"
+    );
+    client.cancel().await.ok();
+    server.abort();
 }
 
 /// design-system.md Section 29.8: what a local session writes records the app it named itself as,
-/// in this node's own table, and no tool's answer or resource carries it; only a server that serves
-/// no principals sets the name a write records.
+/// in this node's own table, and no tool's answer or resource carries it.
 #[tokio::test]
 async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
     let store = Arc::new(InMemoryStore::new());
@@ -1416,12 +1391,11 @@ async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
     client.cancel().await.ok();
     server.abort();
 
-    // The name is set only on the branch that serves no principals.
+    // The name is set where a tool call runs, and nowhere else.
     let src = include_str!("../src/lib.rs");
-    let local =
-        &src[src.find("let Some(surface) = &self.remote else {").expect("the local branch")..];
-    let local = &local[..local.find("};").expect("it closes")];
-    assert!(local.contains("WRITING_APP.scope(app,"), "a local call names no app");
+    let call = &src[src.find("async fn call_tool(").expect("call_tool")..];
+    let call = &call[..call.find("\n    }\n").expect("it closes")];
+    assert!(call.contains("WRITING_APP.scope(app,"), "a tool call names no app");
     assert_eq!(src.matches("WRITING_APP.scope(").count(), 1, "another path names an app");
 }
 
@@ -1429,16 +1403,10 @@ async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
 
 async fn prompt_server(
     engine: Arc<Engine>,
-    remote: bool,
 ) -> (rmcp::service::RunningService<rmcp::RoleClient, ()>, tokio::task::JoinHandle<()>) {
     let (server_io, client_io) = tokio::io::duplex(256 * 1024);
     let server = tokio::spawn(async move {
-        let mut s = SupragnosisServer::new(engine);
-        if remote {
-            s = s.with_remote(supragnosis_mcp::remote::Surface {
-                servable: Arc::new(|_: &str| Ok(())),
-            });
-        }
+        let s = SupragnosisServer::new(engine);
         let running = s.serve(server_io).await.expect("server handshake");
         let _ = running.waiting().await;
     });
@@ -1471,7 +1439,7 @@ fn prompt_text(r: &rmcp::model::GetPromptResult) -> String {
 #[tokio::test]
 async fn the_prompt_list_is_the_pinned_contract() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, false).await;
+    let (client, server) = prompt_server(engine).await;
     let listed = client.list_prompts(None).await.expect("list prompts");
     assert_eq!(listed.ttl_ms, Some(0));
     assert_eq!(listed.cache_scope, Some(CacheScope::Private));
@@ -1501,7 +1469,7 @@ async fn the_prompt_list_is_the_pinned_contract() {
 async fn a_brief_is_fenced_bounded_and_writes_nothing() {
     let store = Arc::new(InMemoryStore::new());
     let engine = Arc::new(Engine::new(store.clone(), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, false).await;
+    let (client, server) = prompt_server(engine).await;
 
     // Two tier-tied readings of one entity's type: contested.
     for kind in ["Technology", "Database"] {
@@ -1639,7 +1607,7 @@ async fn a_brief_is_fenced_bounded_and_writes_nothing() {
 #[tokio::test]
 async fn an_empty_workspace_brief_says_it_is_empty() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, false).await;
+    let (client, server) = prompt_server(engine).await;
     let brief = |ws: &'static str| {
         let client = &client;
         async move {
@@ -1678,7 +1646,7 @@ async fn an_empty_workspace_brief_says_it_is_empty() {
 #[tokio::test]
 async fn the_topic_curate_and_review_prompts_answer_or_refuse() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, false).await;
+    let (client, server) = prompt_server(engine).await;
     call(
         &client,
         "observe",
@@ -1736,22 +1704,6 @@ async fn the_topic_curate_and_review_prompts_answer_or_refuse() {
     server.abort();
 }
 
-/// PR6: a hub's principals get no prompts until a digest is scoped to their grants - an empty list,
-/// and a refusal that names why.
-#[tokio::test]
-async fn the_remote_surface_lists_no_prompt_and_refuses_each() {
-    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, true).await;
-    assert!(client.list_prompts(None).await.expect("list").prompts.is_empty());
-    let refused = client
-        .get_prompt(rmcp::model::GetPromptRequestParams::new("brief"))
-        .await
-        .expect_err("refused remotely");
-    assert!(refused.to_string().contains("remote surface"), "{refused}");
-    client.cancel().await.ok();
-    server.abort();
-}
-
 /// PR2: a digest is a deterministic function of the node's state and the arguments - each of the
 /// four prompts, asked twice over one store, is the same bytes. The digests are assembled from
 /// reads the P16 rows already pin, through sorted lists and ordered maps; this is the case that
@@ -1759,7 +1711,7 @@ async fn the_remote_surface_lists_no_prompt_and_refuses_each() {
 #[tokio::test]
 async fn a_digest_is_the_same_bytes_twice_over_one_store() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
-    let (client, server) = prompt_server(engine, false).await;
+    let (client, server) = prompt_server(engine).await;
     for (content, names) in [
         ("redb and sled are embedded stores", vec!["redb", "sled"]),
         ("sled is a store", vec!["sled"]),

@@ -5645,23 +5645,6 @@ impl Engine {
         Ok(self.store.owed_projections()?.len())
     }
 
-    /// The nodes whose attestations a workspace's log holds, by origin id (docs/remote-server.md
-    /// R5). An unstamped attestation is this node's own and names no origin.
-    pub fn origins(
-        &self,
-        workspace: &str,
-    ) -> Result<std::collections::BTreeSet<String>, StoreError> {
-        let mut out = std::collections::BTreeSet::new();
-        for obs in self.store.all_observations(Some(workspace))? {
-            for p in &obs.provenance {
-                if let Some(s) = &p.sync {
-                    out.insert(s.origin_node.clone());
-                }
-            }
-        }
-        Ok(out)
-    }
-
     /// Rebuilds the materialized entity/relation projection of a workspace from the observation log,
     /// replayed in (ordering HLC, id) order - the deterministic re-materialization step after sync
     /// apply (F1/F3; architecture.md: "orders by HLC, then re-materializes"). Same log -> same replay

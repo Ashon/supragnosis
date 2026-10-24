@@ -4283,9 +4283,8 @@ No row needs a principle changed. O7 is revised by the author's D13.
 written once, the key moved by every field but the stamp), `an_attestation_names_its_app_on_local_reads_only`
 in the engine's policy cases (local reads only, the name table, the 64-character cut, the event, a
 re-key that keeps it), `a_session_records_its_app_and_no_tool_answer_carries_it` in the MCP surface
-tests (a local session records, no tool or resource answers with it, only the branch that serves no
-principals sets it), `the_read_tier_answers_only_within_the_grants` and its event stream in the
-read tier's tests (never answered, never streamed), and `the_app_names_are_one_table` in
+tests (a local session records, no tool or resource answers with it), the read tier's tests until
+0.11.0 removed the tier (never answered, never streamed), and `the_app_names_are_one_table` in
 `crates/supragnosis-viz/tests/words.rs` (the app pages' and the shell's copies of the names).
 
 ### 29.9 Step 47: the map explains itself
@@ -4400,9 +4399,8 @@ No row needs a principle changed.
 `an_unlisted_workspace_is_named_as_such` and `the_cloud_is_a_region_everywhere` in
 `crates/supragnosis-viz/tests/key.rs`; `the_store_names_its_most_used_types_whatever_the_scope` in
 the viewer's HTTP tests (names only, counted in every workspace, at most sixteen, ties by name); and
-`the_read_tier_answers_only_within_the_grants` and `a_union_with_an_unconsented_workspace_is_refused_whole`
-in the read tier's tests (a type only outside the grants is not named, and an unservable grant is
-skipped rather than refusing the page its colors).
+the read tier's tests until 0.11.0 removed the tier (a type only outside the grants was not named,
+and an unservable grant was skipped rather than refusing the page its colors).
 
 ### 29.10 Step 48: the first entry on screen
 
@@ -5080,8 +5078,8 @@ accept is listed in the node-wide report only),
 `p17_a_region_named_under_all_is_filed_where_it_was_asserted` in the engine's policy cases;
 `every_act_under_all_is_filed_where_its_item_lives` over the viewer's socket;
 `under_all_the_console_files_where_items_live` in the viewer's review tests; and
-`star_is_a_view_on_the_local_surface` and `a_remote_merge_names_only_its_own_workspaces_entities` in
-the agent surface's tests.
+`star_is_a_view_on_the_local_surface` in the agent surface's tests (and, until 0.11.0 removed the
+remote surface, a remote merge naming only entities of its own workspace).
 
 ### 29.16 Step 51b: the same name
 

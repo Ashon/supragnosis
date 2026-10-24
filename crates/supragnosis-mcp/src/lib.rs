@@ -9,7 +9,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 pub mod prompts;
-pub mod remote;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -23,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use supragnosis_engine::{
     AffectedType as EngineAffectedType, DefineTypeInput, Engine, EntityInput as EngineEntityInput,
     Event, ObserveInput, ProposeInput as EngineProposeInput, RelationInput as EngineRelationInput,
-    SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget, GATE_KINDS,
+    SearchMode, TypeDefInput as EngineTypeDefInput, TypeTarget,
 };
 
 // --- Transport DTOs (JSON Schema auto-generated) ----------------------------
@@ -299,13 +298,10 @@ pub struct WorkspaceMapRequest {
 
 // --- Server ------------------------------------------------------------------
 
-/// The principal the remote listener authenticated for this request (docs/remote-server.md R2). It
-/// rides the HTTP request's extensions, which rmcp hands every handler as `http::request::Parts`.
-fn principal_of(context: &RequestContext<RoleServer>) -> Option<remote::Principal> {
-    context
-        .extensions
-        .get::<http::request::Parts>()
-        .and_then(|parts| parts.extensions.get::<remote::Principal>().cloned())
+/// Whether a workspace argument names every workspace: `*`, `all` or nothing (design-system.md
+/// Section 29.15).
+fn is_all(ws: &str) -> bool {
+    matches!(ws.trim(), "" | "*" | "all")
 }
 
 #[derive(Clone)]
@@ -414,9 +410,6 @@ pub struct SupragnosisServer {
     /// The hub's listener state, there from the daemon's start, so a node with no sync that an
     /// invitation made a hub still says what its listener is doing (docs/pairing.md Section 4.1).
     listener: Option<Arc<std::sync::RwLock<serde_json::Value>>>,
-    /// Set when this server serves principals over the network (docs/remote-server.md Section 4):
-    /// every call is then admitted per principal, and one with no principal is refused (R2).
-    remote: Option<remote::Surface>,
     tool_router: ToolRouter<SupragnosisServer>,
 }
 
@@ -427,13 +420,11 @@ impl SupragnosisServer {
             clients: None,
             sync: None,
             listener: None,
-            remote: None,
             tool_router: Self::tool_router(),
         }
     }
 
-    /// Records which clients talk to this server (docs/onboarding.md Section 5). Ignored on a remote
-    /// surface: a hub's listener for principals records nothing (O7).
+    /// Records which clients talk to this server (docs/onboarding.md Section 5).
     pub fn with_clients(mut self, log: Arc<ClientLog>) -> Self {
         self.clients = Some(log);
         self
@@ -443,7 +434,7 @@ impl SupragnosisServer {
     /// or - in a session that skipped `initialize`, as newer protocol versions allow - the client
     /// information the request carries in its metadata, or an unnamed client.
     fn note_contact(&self, context: &RequestContext<RoleServer>) {
-        let (Some(log), None) = (&self.clients, &self.remote) else {
+        let Some(log) = &self.clients else {
             return;
         };
         if let Some(info) = context.peer.peer_info() {
@@ -455,22 +446,6 @@ impl SupragnosisServer {
         }
     }
 
-    /// Serves principals instead of this machine (docs/remote-server.md). The listener in front
-    /// authenticates each request and attaches its [`remote::Principal`]; this server admits each
-    /// call against that principal's grants and refuses any call that arrives without one.
-    pub fn with_remote(mut self, surface: remote::Surface) -> Self {
-        self.remote = Some(surface);
-        self
-    }
-
-    /// The tool names this server declares, for the test that holds the remote policy table to
-    /// them (R3).
-    pub fn tool_names(&self) -> Vec<String> {
-        self.tool_router.list_all().into_iter().map(|t| t.name.to_string()).collect()
-    }
-
-    /// The remote checks for a resource read: an authenticated principal (R2), a granted workspace
-    /// (R3) that may be served (R5). A refusal reads as "not found for you", never as absence.
     /// Search hits as an agent reads them (design-system.md Section 29.20): an entity hit from this node
     /// carries its name, type and workspace, read from its projected row, so two hits named alike
     /// can be told apart. A hit whose row cannot be read keeps what it had.
@@ -527,106 +502,16 @@ impl SupragnosisServer {
     }
 
     /// On this node `*` is the all-workspaces view, and a write is filed in one workspace (design-system.md
-    /// Section 29.15). The remote surface refuses `*` before a write reaches the tool (`admit_write`);
-    /// this is the same answer for the local one, which used to file into a workspace named `*`.
+    /// Section 29.15); it used to file into a workspace named `*`.
     fn all_is_no_place(&self, tool: &str, ws: &str) -> Option<String> {
-        (remote::current().is_none() && remote::is_all(ws))
-            .then(|| format!("{tool} writes to one workspace - name it"))
+        is_all(ws).then(|| format!("{tool} writes to one workspace - name it"))
     }
 
-    fn remote_resource_ok(
-        &self,
-        surface: &remote::Surface,
-        context: &RequestContext<RoleServer>,
-        uri: &str,
-    ) -> Result<(), ErrorData> {
-        let Some(p) = principal_of(context) else {
-            return Err(ErrorData::invalid_request(
-                "this surface serves authenticated principals only",
-                None,
-            ));
-        };
-        let (ws, by_id) = match parse_resource_uri(uri) {
-            Some(ResourceUri::Graph(ws))
-            | Some(ResourceUri::Hypergraph(ws))
-            | Some(ResourceUri::Types(ws)) => (ws.to_string(), None),
-            Some(ResourceUri::Observation(id)) => match self.engine.get_observation(id) {
-                Ok(Some(obs)) => (obs.workspace().to_string(), Some(id)),
-                _ => return Ok(()), // absent or unreadable: the normal path answers that
-            },
-            Some(ResourceUri::Entity(id)) => match self.engine.get_entity(id) {
-                Ok(Some(view)) => {
-                    let ws = view
-                        .entity
-                        .provenance
-                        .first()
-                        .map(|p| p.workspace.clone())
-                        .unwrap_or_default();
-                    if !p.can_read(&ws) {
-                        // An entity id is computable from a workspace and a name: one outside the
-                        // grants answers exactly as an unknown one (remote-viewer.md Section 3.4).
-                        return Err(unknown_entity_resource(id, true));
-                    }
-                    return (surface.servable)(&ws)
-                        .map_err(|why| ErrorData::resource_not_found(why, None));
-                }
-                _ => return Ok(()), // absent or unreadable: the normal path answers that
-            },
-            Some(ResourceUri::Proposal(id)) => match self.engine.proposal_workspace(id) {
-                Ok(Some(ws)) => {
-                    if !p.can_read(&ws) {
-                        // Outside the grants answers exactly as an unknown proposal would.
-                        return Err(unknown_proposal_resource(id, true));
-                    }
-                    return (surface.servable)(&ws)
-                        .map_err(|why| ErrorData::resource_not_found(why, None));
-                }
-                _ => return Ok(()), // absent or unreadable: the normal path answers that
-            },
-            _ => return Ok(()),
-        };
-        if !p.can_read(&ws) {
-            // A workspace URI is refused whether or not the workspace exists. An observation id
-            // outside the grants answers exactly as an unknown one: its id is computable from a
-            // workspace and a content, so a different answer would confirm what was recorded where
-            // (remote-viewer.md Section 3.4).
-            return Err(match by_id {
-                Some(id) => unknown_observation(id, true),
-                None => ErrorData::resource_not_found(
-                    format!("{uri} is not in a workspace granted to {}", p.name),
-                    None,
-                ),
-            });
-        }
-        (surface.servable)(&ws).map_err(|why| ErrorData::resource_not_found(why, None))
-    }
-
-    /// For a remote call that resolved a workspace from an id: may its principal read `ws`, and
-    /// may `ws` be served at all (R3, R5)? Always `Ok` on the local surface.
-    fn remote_sight(&self, ws: &str) -> Result<(), Unseen> {
-        let Some(p) = remote::current() else {
-            return Ok(());
-        };
-        if !p.can_read(ws) {
-            return Err(Unseen::NotGranted);
-        }
-        match &self.remote {
-            Some(surface) => (surface.servable)(ws).map_err(Unseen::Unservable),
-            None => Ok(()),
-        }
-    }
-
-    /// The answer to an entity id that is unknown - or, remotely, outside the grants, which must
-    /// read the same (remote-viewer.md Section 3.4).
+    /// The answer to an entity id that is unknown.
     fn unknown_entity(&self, id: &str) -> String {
         self.engine
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
-        let note = if remote::current().is_some() {
-            "no entity with that id in the workspaces you may read - unknown, not a negation \
-             (open-world assumption)"
-        } else {
-            "unknown - not found is not a negation (open-world assumption)"
-        };
+        let note = "unknown - not found is not a negation (open-world assumption)";
         // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
         // on every surface (design-system.md Section 29.20, remote-viewer.md Section 3.4).
         let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
@@ -697,9 +582,7 @@ impl SupragnosisServer {
         // Run the blocking store call on spawn_blocking so concurrent HTTP requests do not starve
         // the tokio workers (harmless with a single stdio client, but essential for a daemon with multiple connections).
         // Whether this write makes a new workspace, asked before it (design-system.md Section 29.20).
-        // The remote surface already refuses a workspace outside the write grants.
-        let new_ws = remote::current().is_none()
-            && matches!(self.engine.holds_observations(&workspace), Ok(false));
+        let new_ws = matches!(self.engine.holds_observations(&workspace), Ok(false));
         let engine = self.engine.clone();
         let app = writing_app();
         let as_app = app.clone();
@@ -739,15 +622,6 @@ impl SupragnosisServer {
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.get_entity(&id)).await {
             Ok(Ok(Some(view))) => {
-                // A remote principal sees an entity only in a workspace it holds (R3, R5). The
-                // refusal does not claim absence (P5) - only that this caller may not see it.
-                let ws =
-                    view.entity.provenance.first().map(|p| p.workspace.clone()).unwrap_or_default();
-                match self.remote_sight(&ws) {
-                    Ok(()) => {}
-                    Err(Unseen::NotGranted) => return self.unknown_entity(&req.id),
-                    Err(Unseen::Unservable(why)) => return err_json(&why),
-                }
                 self.engine.emit_from(
                     writing_app().as_deref(),
                     Event::GetEntity {
@@ -852,47 +726,9 @@ impl SupragnosisServer {
         if scope == "remote" {
             return to_json(&serde_json::json!({ "scope": "remote", "remote": remote_results }));
         }
-        // A remote principal's `*` is the union of its grants, searched one workspace at a time and
-        // merged by score - never the node-wide search, which would rank across workspaces it may
-        // not read (R3). Ties break on id so the merge is deterministic (P16).
-        if let (Some(p), Some("*")) = (remote::current(), req.workspace.as_deref()) {
-            let limit = req.limit.unwrap_or(20);
-            let mut hits = Vec::new();
-            let mut mode = None;
-            for ws in p.readable() {
-                let (engine, query) = (self.engine.clone(), req.query.clone());
-                match tokio::task::spawn_blocking(move || engine.search(&query, Some(&ws), limit))
-                    .await
-                {
-                    Ok(Ok(out)) => {
-                        mode = Some(out.mode);
-                        hits.extend(out.hits);
-                    }
-                    Ok(Err(e)) => return store_failure_json(&e),
-                    Err(e) => return err_json(&format!("task join error: {e}")),
-                }
-            }
-            hits.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-            hits.truncate(limit);
-            let mut resp = serde_json::json!({ "mode": mode, "hits": self.named_hits(&hits), "workspaces": p.readable() });
-            if hits.is_empty() {
-                resp["note"] =
-                    "no hits in the workspaces granted to you - absence is unknown, not a negation"
-                        .into();
-            }
-            return resp.to_string();
-        }
         let query = req.query.clone();
         // `*` is every workspace here, as an omitted one is (design-system.md Section 29.15).
-        let ws = req
-            .workspace
-            .clone()
-            .filter(|w| remote::current().is_some() || !remote::is_all(w));
+        let ws = req.workspace.clone().filter(|w| !is_all(w));
         let limit = req.limit.unwrap_or(20);
         let engine = self.engine.clone();
         let searched =
@@ -952,31 +788,6 @@ impl SupragnosisServer {
         description = "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance. Reachability runs THROUGH a relation endpoint that no entity row describes yet (partial ingest), but such an endpoint is not listed - so a hit can sit deeper than any listed neighbor. That gap is unknown, not a missing edge."
     )]
     async fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
-        // A remote walk starts only from an entity the principal may read. Relations never cross a
-        // workspace - both endpoints are minted in the observing workspace - so a granted start
-        // keeps the whole walk inside the grant.
-        if remote::current().is_some() {
-            let id2 = req.id.clone();
-            let engine2 = self.engine.clone();
-            match tokio::task::spawn_blocking(move || engine2.get_entity(&id2)).await {
-                Ok(Ok(Some(view))) => {
-                    let ws = view
-                        .entity
-                        .provenance
-                        .first()
-                        .map(|p| p.workspace.clone())
-                        .unwrap_or_default();
-                    match self.remote_sight(&ws) {
-                        Ok(()) => {}
-                        Err(Unseen::NotGranted) => return unknown_remote_start(),
-                        Err(Unseen::Unservable(why)) => return err_json(&why),
-                    }
-                }
-                Ok(Ok(None)) => return unknown_remote_start(),
-                Ok(Err(e)) => return store_failure_json(&e),
-                Err(e) => return err_json(&format!("task join error: {e}")),
-            }
-        }
         let id = req.id.clone();
         let max_depth = req.max_depth.unwrap_or(3);
         let limit = req.limit.unwrap_or(100);
@@ -1025,7 +836,7 @@ impl SupragnosisServer {
     )]
     async fn workspace_map(&self, Parameters(req): Parameters<WorkspaceMapRequest>) -> String {
         // Omitted, '*', 'all' or '' reads every workspace (None), as search_knowledge does.
-        let ws_arg = req.workspace.filter(|w| !remote::is_all(w));
+        let ws_arg = req.workspace.filter(|w| !is_all(w));
         let limit = req.limit.unwrap_or(20);
         // The minimum size cannot go below 2 (size<2 is not a hyperedge).
         let min_size = req.min_size.unwrap_or(2).max(2);
@@ -1191,61 +1002,6 @@ impl SupragnosisServer {
             };
             affected_types.push(EngineAffectedType { target, name: a.name });
         }
-        // Remotely, a gate proposal names only observations its own workspace holds. The engine
-        // checks a target against the whole log, so a principal could otherwise learn whether a
-        // guessed observation exists in a workspace it was never granted - the id is computable
-        // from the workspace and the content (remote-viewer.md Section 3.4). One answer for
-        // "absent" and "elsewhere" keeps the two indistinguishable.
-        if remote::current().is_some() && GATE_KINDS.contains(&req.kind.as_str()) {
-            let ws = req.workspace.as_str();
-            for t in &req.targets {
-                let here =
-                    matches!(self.engine.get_observation(t), Ok(Some(o)) if o.workspace() == ws);
-                if !here {
-                    return err_json(&format!(
-                        "target observation '{t}' is not in workspace '{ws}' - a remote proposal \
-                         names only observations its own workspace holds"
-                    ));
-                }
-            }
-        }
-        // A split names a merge of its own workspace, checked the same way.
-        if remote::current().is_some() && req.kind == "entity_split" {
-            let ws = req.workspace.as_str();
-            for t in &req.targets {
-                let here = matches!(self.engine.proposal_workspace(t), Ok(Some(h)) if h == ws);
-                if !here {
-                    return err_json(&format!(
-                        "merge '{t}' is not a proposal of workspace '{ws}' - a remote split names \
-                         only merges its own workspace holds"
-                    ));
-                }
-            }
-        }
-        // A merge's targets are checked the same way: an entity of another workspace answers exactly
-        // as one that does not exist, so a guessed id says nothing about a workspace the principal
-        // was never granted. The engine's own refusal, which names the other workspace, is for the
-        // local surfaces (design-system.md Section 29.15).
-        if remote::current().is_some() && req.kind == "entity_merge" {
-            let ws = req.workspace.as_str();
-            for t in req.targets.iter().chain(req.into.iter()) {
-                let id = if t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    t.clone()
-                } else {
-                    supragnosis_core::Entity::make_id(ws, t)
-                };
-                let here = matches!(
-                    self.engine.store().get_entity(&id),
-                    Ok(Some(e)) if e.provenance.first().is_some_and(|p| p.workspace == ws)
-                );
-                if !here {
-                    return err_json(&format!(
-                        "target '{t}' is not an entity of workspace '{ws}' - a remote merge names \
-                         only entities its own workspace holds"
-                    ));
-                }
-            }
-        }
         let written = req.workspace.clone();
         let note = no_effect_note(&req.kind);
         let input = EngineProposeInput {
@@ -1298,9 +1054,9 @@ impl SupragnosisServer {
         let (mut ws, prop, dec, note, obo) =
             (req.workspace, req.proposal, req.decision, req.note, req.on_behalf_of);
         // A verdict is filed in its proposal's workspace, the only place it counts (proposal-workflow.md
-        // I2). This node may read every workspace, so an omitted one or `*` means the proposal's own;
-        // the remote surface has already named the principal's (design-system.md Section 29.15).
-        if remote::current().is_none() && ws.as_deref().is_none_or(remote::is_all) {
+        // I2). This node may read every workspace, so an omitted one or `*` means the proposal's own
+        // (design-system.md Section 29.15).
+        if ws.as_deref().is_none_or(is_all) {
             match self.engine.proposal_workspace(&prop) {
                 Ok(Some(home)) => ws = Some(home),
                 Ok(None) => {
@@ -1341,7 +1097,7 @@ impl SupragnosisServer {
         description = "List proposals in a workspace (newest first) with their folded state (open/blocked/merged/rejected/withdrawn), kind, targets, verdict count and the workspace each lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A verdict counts only in its proposal's workspace. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn list_proposals(&self, Parameters(req): Parameters<ListProposalsRequest>) -> String {
-        let ws = req.workspace.filter(|w| !remote::is_all(w));
+        let ws = req.workspace.filter(|w| !is_all(w));
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.list_proposals(ws.as_deref())).await {
             Ok(Ok(list)) => to_json(&list),
@@ -1354,7 +1110,7 @@ impl SupragnosisServer {
         description = "Get one proposal's folded state (kind/targets/into/rationale/state/verdicts/workspace) by id, with its belief diff and checks, read in the workspace it lives in; a merged claim_promotion also carries granted_tier, the tier it granted. A tbox_change or a recall carries no_effect_yet: its kind has no commit effect yet, so it cannot be merged."
     )]
     async fn get_proposal(&self, Parameters(req): Parameters<GetProposalRequest>) -> String {
-        let ws = req.workspace.filter(|w| !remote::is_all(w));
+        let ws = req.workspace.filter(|w| !is_all(w));
         let id = req.id.clone();
         let engine = self.engine.clone();
         match tokio::task::spawn_blocking(move || engine.get_proposal(ws.as_deref(), &id)).await {
@@ -1813,7 +1569,7 @@ impl ServerHandler for SupragnosisServer {
         request: rmcp::model::InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<rmcp::model::InitializeResult, ErrorData>> + Send + '_ {
-        if let (Some(log), None) = (&self.clients, &self.remote) {
+        if let Some(log) = &self.clients {
             log.note(&request.client_info.name, &request.client_info.version);
         }
         context.peer.set_peer_info(request.clone());
@@ -1861,59 +1617,17 @@ impl ServerHandler for SupragnosisServer {
         )
     }
 
-    /// Tool calls, hand-written so the remote surface admits each one first (docs/remote-server.md
-    /// Section 4.3). On the local surface this is exactly what `#[tool_handler]` would generate.
-    ///
-    /// Remotely: no principal on the request is a refusal (R2); [`remote::admit`] rewrites or refuses
-    /// the arguments (R3, R4); every workspace the call will read must be servable (R5); and the call
-    /// then runs as its principal, so tools that resolve a workspace from an id can check it too.
+    /// Tool calls, hand-written so a session's writes, and the activity they cause, name its app
+    /// (design-system.md Section 29.8); otherwise exactly what `#[tool_handler]` would generate.
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         self.note_contact(&context);
-        let Some(surface) = &self.remote else {
-            // A local session: what it writes, and the activity it causes, name its app
-            // (design-system.md Section 29.8). A server that serves principals never sets it (O7).
-            let app = client_name(&context);
-            let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-            return flag_error(WRITING_APP.scope(app, self.tool_router.call(tcc)).await);
-        };
-        let refuse = |why: String| -> Result<CallToolResponse, ErrorData> {
-            Ok(CallToolResult::error(vec![ContentBlock::text(
-                serde_json::json!({ "error": why }).to_string(),
-            )])
-            .into())
-        };
-        let Some(p) = principal_of(&context) else {
-            return refuse("this surface serves authenticated principals only".into());
-        };
-        let mut request = request;
-        let mut args = request.arguments.take().unwrap_or_default();
-        if let Err(why) = remote::admit(&p, &request.name, &mut args) {
-            tracing::info!(principal = %p.name, tool = %request.name, admitted = false, "remote call");
-            return refuse(why);
-        }
-        let ws = args.get("workspace").and_then(|v| v.as_str()).map(str::to_string);
-        // R5: the workspaces this call reads must be servable. `propose` too - its answer can
-        // describe what the workspace already holds.
-        let reads: Vec<String> = match (&ws, remote::policy(&request.name)) {
-            (Some(w), Some(remote::Policy::Read)) if remote::is_all(w) => p.readable(),
-            (Some(w), Some(remote::Policy::Read)) => vec![w.clone()],
-            (Some(w), _) if request.name == "propose" => vec![w.clone()],
-            _ => Vec::new(),
-        };
-        for w in &reads {
-            if let Err(why) = (surface.servable)(w) {
-                tracing::info!(principal = %p.name, tool = %request.name, workspace = %w, admitted = false, "remote call");
-                return refuse(why);
-            }
-        }
-        tracing::info!(principal = %p.name, tool = %request.name, workspace = ?ws, admitted = true, "remote call");
-        request.arguments = Some(args);
+        let app = client_name(&context);
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        flag_error(remote::as_principal(p, self.tool_router.call(tcc)).await)
+        flag_error(WRITING_APP.scope(app, self.tool_router.call(tcc)).await)
     }
 
     /// Tool listing, hand-written so that the SEP-2549 cache hints are always present.
@@ -1955,14 +1669,13 @@ impl ServerHandler for SupragnosisServer {
     }
 
     /// The prompts (docs/prompts.md). Carries the same cache hints as the tool list - a client that
-    /// validates the 2025-11-25 schema rejects a list without them. The remote surface lists none
-    /// until a digest is scoped to a principal's grants (PR6).
+    /// validates the 2025-11-25 schema rejects a list without them.
     fn list_prompts(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> + Send + '_ {
-        let items = if self.remote.is_some() { Vec::new() } else { prompts::list() };
+        let items = prompts::list();
         std::future::ready(Ok(ListPromptsResult::with_all_items(items)
             .with_ttl_ms(0)
             .with_cache_scope(CacheScope::Private)))
@@ -1974,17 +1687,6 @@ impl ServerHandler for SupragnosisServer {
         request: GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResponse, ErrorData> {
-        if self.remote.is_some() {
-            return Err(ErrorData::invalid_request(
-                format!(
-                    "prompt {:?} is not served on the remote surface yet: its digest reads the \
-                     whole workspace, and is not yet scoped to a principal's grants \
-                     (docs/prompts.md Section 6). Use the tools, which are",
-                    request.name
-                ),
-                None,
-            ));
-        }
         let engine = self.engine.clone();
         let args = request.arguments.unwrap_or_default();
         let name = request.name.clone();
@@ -2006,27 +1708,8 @@ impl ServerHandler for SupragnosisServer {
     fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
-        // Remotely the concrete resources are the principal's own workspaces, never the node's
-        // default - which may not be granted, and whose name alone would be a disclosure (R3).
-        if self.remote.is_some() {
-            let items: Vec<Resource> = principal_of(&context)
-                .map(|p| p.readable())
-                .unwrap_or_default()
-                .into_iter()
-                .map(|ws| {
-                    Resource::new(
-                        format!("supragnosis://workspace/{ws}/graph"),
-                        format!("{ws} ontology graph"),
-                    )
-                    .with_mime_type("application/json")
-                })
-                .collect();
-            return std::future::ready(Ok(ListResourcesResult::with_all_items(items)
-                .with_ttl_ms(0)
-                .with_cache_scope(CacheScope::Private)));
-        }
         // Workspace discovery entry point - let the client see which workspaces exist first.
         let ws_list = Resource::new("supragnosis://workspaces", "Workspace list")
             .with_description(
@@ -2171,26 +1854,18 @@ impl ServerHandler for SupragnosisServer {
     fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
         let uri = request.uri;
-        let gate = match &self.remote {
-            Some(surface) => self.remote_resource_ok(surface, &context, &uri),
-            None => Ok(()),
-        };
-        let (engine, remote, reader) =
-            (self.engine.clone(), self.remote.is_some(), principal_of(&context));
+        let engine = self.engine.clone();
         async move {
-            gate?;
             // Every branch reads the store and most fold the whole log (graph, hypergraph,
             // types): synchronous work that holds a worker thread for as long as it takes, and
             // the worker is shared with every other tool call. The tools offload theirs; so does
             // this.
-            let read = tokio::task::spawn_blocking(move || read_uri(&engine, uri, remote, reader))
-                .await
-                .map_err(|e| {
-                    ErrorData::internal_error(format!("resource read failed: {e}"), None)
-                })??;
+            let read = tokio::task::spawn_blocking(move || read_uri(&engine, uri)).await.map_err(
+                |e| ErrorData::internal_error(format!("resource read failed: {e}"), None),
+            )??;
             // rmcp 3 wraps the read result in ReadResourceResponse so a server can answer a read
             // with "I need input first" instead of content. This server never does - every branch
             // of `read_uri` either has the bytes or has an error - so every Ok is the Complete arm.
@@ -2202,24 +1877,12 @@ impl ServerHandler for SupragnosisServer {
     }
 }
 
-/// One resource read: the URI's content, or the error that stands for it. `remote` and `reader`
-/// say whether the read came over the hub's agent surface and for which principal; a remote
-/// enumeration is filtered to the reader's grants (R3).
-fn read_uri(
-    engine: &Engine,
-    uri: String,
-    remote: bool,
-    reader: Option<remote::Principal>,
-) -> Result<ReadResourceResult, ErrorData> {
+/// One resource read: the URI's content, or the error that stands for it.
+fn read_uri(engine: &Engine, uri: String) -> Result<ReadResourceResult, ErrorData> {
     match parse_resource_uri(&uri) {
         // Workspace list (for discovery) - array of workspace names that hold knowledge.
         Some(ResourceUri::Workspaces) => match engine.workspaces() {
             Ok(list) => {
-                // Remotely, enumeration is filtered to the grants (R3).
-                let list: Vec<String> = match &reader {
-                    Some(p) if remote => list.into_iter().filter(|w| p.can_read(w)).collect(),
-                    _ => list,
-                };
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&list), uri)]))
             }
             Err(e) => Err(ErrorData::internal_error(
@@ -2228,7 +1891,7 @@ fn read_uri(
             )),
         },
         Some(ResourceUri::Graph(ws)) => {
-            match engine.graph(Some(ws).filter(|w| remote || !remote::is_all(w))) {
+            match engine.graph(Some(ws).filter(|w| !is_all(w))) {
                 Ok(graph) => {
                     Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&graph), uri)]))
                 }
@@ -2241,7 +1904,7 @@ fn read_uri(
         }
         // Co-occurrence second-order structure (Principle 11): the entity sets an observation asserted together, as hyperedges.
         Some(ResourceUri::Hypergraph(ws)) => match engine
-            .hypergraph(Some(ws).filter(|w| remote || !remote::is_all(w)))
+            .hypergraph(Some(ws).filter(|w| !is_all(w)))
         {
             Ok(hg) => Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&hg), uri)])),
             Err(e) => Err(ErrorData::internal_error(
@@ -2250,23 +1913,21 @@ fn read_uri(
             )),
         },
         // T-Box glossary (Principle 8/11): the workspace's type definitions (entity + relation types + meanings).
-        Some(ResourceUri::Types(ws)) => {
-            match engine.types(Some(ws).filter(|w| remote || !remote::is_all(w))) {
-                Ok(types) => {
-                    Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
-                }
-                Err(e) => Err(ErrorData::internal_error(
-                    format!("storage backend failure (not a missing resource): {e}"),
-                    None,
-                )),
+        Some(ResourceUri::Types(ws)) => match engine.types(Some(ws).filter(|w| !is_all(w))) {
+            Ok(types) => {
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&types), uri)]))
             }
-        }
+            Err(e) => Err(ErrorData::internal_error(
+                format!("storage backend failure (not a missing resource): {e}"),
+                None,
+            )),
+        },
         // Observation back-reference (Principles 2/14): whoever knows the id can query the substance (raw content/provenance/lineage).
         Some(ResourceUri::Observation(id)) => match engine.get_observation(id) {
             Ok(Some(obs)) => {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&obs), uri)]))
             }
-            Ok(None) => Err(unknown_observation(id, remote)),
+            Ok(None) => Err(unknown_observation(id)),
             Err(e) => Err(ErrorData::internal_error(
                 format!("storage backend failure (not a missing resource): {e}"),
                 None,
@@ -2278,7 +1939,7 @@ fn read_uri(
             Ok(Some(view)) => {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&view), uri)]))
             }
-            Ok(None) => Err(unknown_proposal_resource(id, remote)),
+            Ok(None) => Err(unknown_proposal_resource(id)),
             Err(e) => Err(ErrorData::internal_error(
                 format!("storage backend failure (not a missing resource): {e}"),
                 None,
@@ -2288,7 +1949,7 @@ fn read_uri(
             Ok(Some(view)) => {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(to_json(&view), uri)]))
             }
-            Ok(None) => Err(unknown_entity_resource(id, remote)),
+            Ok(None) => Err(unknown_entity_resource(id)),
             Err(e) => Err(ErrorData::internal_error(
                 format!("storage backend failure (not a missing resource): {e}"),
                 None,
@@ -2377,8 +2038,8 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
 // --- Serialization helpers (tools return JSON strings) ----------------------
 
 tokio::task_local! {
-    /// The client name of the local MCP call in progress, as its session named itself - set only on
-    /// a server that serves no principals (design-system.md Section 29.8, onboarding.md O7).
+    /// The client name of the MCP call in progress, as its session named itself (design-system.md
+    /// Section 29.8, onboarding.md O7).
     static WRITING_APP: Option<String>;
 }
 
@@ -2489,82 +2150,42 @@ fn no_effect_note(kind: &str) -> Option<String> {
     })
 }
 
-/// Why a remote call may not see the workspace an id resolved to (remote-viewer.md Section 3.4).
-enum Unseen {
-    /// Outside the principal's grants. Answered exactly as an unknown id: entity and observation
-    /// ids are computable from a workspace and a name or a content, so a distinct answer would
-    /// confirm what exists in a workspace the principal was never granted.
-    NotGranted,
-    /// Granted, but the hub may not serve it (R5). The principal holds the grant, so the refusal
-    /// may say why.
-    Unservable(String),
-}
-
-/// A remote walk whose start is unknown - or outside the grants, which must read the same.
-fn unknown_remote_start() -> String {
-    serde_json::json!({
-        "hits": [],
-        "note": "start entity id not found in a workspace you may read - unknown, not a negation. \
-                 Find the id via search_knowledge first"
-    })
-    .to_string()
-}
-
-/// An observation id that is not here - or, remotely, not in a workspace the principal may read,
-/// which must read the same.
-/// A proposal resource no proposal answers - or, remotely, one outside the reader's grants, said
-/// the same way (Principle 5, remote-viewer.md Section 3.4).
-fn unknown_proposal_resource(id: &str, remote: bool) -> ErrorData {
-    let msg = if remote {
-        format!(
-            "no proposal with id {id} in the workspaces you may read - absence is not a \
-             negation (open-world). Use an id from propose or list_proposals"
-        )
-    } else {
+/// A proposal resource no proposal answers (Principle 5).
+fn unknown_proposal_resource(id: &str) -> ErrorData {
+    ErrorData::resource_not_found(
         format!(
             "proposal id not found: {id} - absence is not a negation (open-world). Use an id \
              from propose or list_proposals"
-        )
-    };
-    ErrorData::resource_not_found(msg, None)
+        ),
+        None,
+    )
 }
 
-/// An entity resource no entity answers - or, remotely, one outside the reader's grants, said the
-/// same way (Principle 5, remote-viewer.md Section 3.4).
-fn unknown_entity_resource(id: &str, remote: bool) -> ErrorData {
-    let msg = if remote {
-        format!(
-            "no entity with id {id} in the workspaces you may read - absence is not a negation \
-             (open-world). Use the kind=entity id from a search_knowledge hit or a graph node"
-        )
-    } else {
+/// An entity resource no entity answers (Principle 5).
+fn unknown_entity_resource(id: &str) -> ErrorData {
+    ErrorData::resource_not_found(
         format!(
             "entity id not found: {id} - absence is not a negation (open-world). Use the \
              kind=entity id from a search_knowledge hit or a graph node"
-        )
-    };
-    ErrorData::resource_not_found(msg, None)
+        ),
+        None,
+    )
 }
 
-fn unknown_observation(id: &str, remote: bool) -> ErrorData {
-    let msg = if remote {
-        format!(
-            "no observation with id {id} in the workspaces you may read - absence is not a \
-             negation (open-world). Use the kind=observation id from a search_knowledge hit"
-        )
-    } else {
+fn unknown_observation(id: &str) -> ErrorData {
+    ErrorData::resource_not_found(
         format!(
             "observation id not found: {id} - absence is not a negation (open-world). Use the \
              kind=observation id from a search_knowledge hit"
-        )
-    };
-    ErrorData::resource_not_found(msg, None)
+        ),
+        None,
+    )
 }
 
 #[cfg(test)]
 mod all_is_a_view {
     //! design-system.md Section 29.15 on the agent surface: `*` is a view, a verdict is filed where
-    //! its proposal lives, and a remote merge names only entities of its own workspace.
+    //! its proposal lives.
     use super::*;
     use supragnosis_core::Entity;
     use supragnosis_store::InMemoryStore;
@@ -2654,73 +2275,6 @@ mod all_is_a_view {
                 .is_some_and(|e| e.contains("no proposal nope in any workspace")),
             "{v}"
         );
-    }
-
-    #[tokio::test]
-    async fn a_remote_merge_names_only_its_own_workspaces_entities() {
-        let (_, s) = server();
-        let p = remote::Principal {
-            name: "alice".into(),
-            read: ["infra".to_string()].into(),
-            write: ["infra".to_string()].into(),
-        };
-        let here = Entity::make_id("infra", "Payment service");
-        let elsewhere = Entity::make_id("secret", "Payment service");
-        let absent = "ab".repeat(32);
-        let mut said = Vec::new();
-        for other in [elsewhere, absent] {
-            let r = remote::as_principal(
-                p.clone(),
-                s.propose(req(serde_json::json!({
-                    "workspace": "infra", "kind": "entity_merge", "targets": [other.clone(), here], "into": here,
-                }))),
-            )
-            .await;
-            let e = json(&r)["error"].as_str().expect("refused").replace(&other, "<id>");
-            assert!(
-                !e.contains("secret"),
-                "the refusal names a workspace the principal was never granted: {e}"
-            );
-            said.push(e);
-        }
-        assert_eq!(said[0], said[1], "an entity elsewhere answers differently from an absent one");
-        let ok = remote::as_principal(
-            p.clone(),
-            s.propose(req(serde_json::json!({
-                "workspace": "infra", "kind": "entity_merge",
-                "targets": ["Payments", "Payment service"], "into": "Payment service",
-            }))),
-        )
-        .await;
-        assert!(json(&ok)["proposal_id"].is_string(), "{ok}");
-        // A split names a merge of its own workspace: one of another answers as an absent one.
-        let secret_merge = s
-            .engine
-            .propose(EngineProposeInput {
-                workspace: Some("secret".into()),
-                kind: "entity_merge".into(),
-                targets: vec![Entity::make_id("secret", "Payment service"), "cd".repeat(32)],
-                into: Some(Entity::make_id("secret", "Payment service")),
-                tier: None,
-                rationale: None,
-                affected_types: vec![],
-                source_ref: None,
-                on_behalf_of: None,
-            })
-            .expect("a merge in secret");
-        let mut said = Vec::new();
-        for other in [secret_merge, "ef".repeat(32)] {
-            let r = remote::as_principal(
-                p.clone(),
-                s.propose(req(serde_json::json!({
-                    "workspace": "infra", "kind": "entity_split", "targets": [other.clone()],
-                }))),
-            )
-            .await;
-            said.push(json(&r)["error"].as_str().expect("refused").replace(&other, "<id>"));
-        }
-        assert_eq!(said[0], said[1], "a merge elsewhere answers differently from an absent one");
-        assert!(!said[0].contains("secret"), "{}", said[0]);
     }
 }
 

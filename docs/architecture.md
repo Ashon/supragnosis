@@ -516,7 +516,7 @@ sections are present, and `peers` awaits the P2P phase.
 - **Hub server (implemented, M4 Phase 4)**: the `[server]` section starts the sync API alongside the
   daemon - axum routes `/sync/ping|advertise|pull|push|search` under bearer auth matched against the
   allowlist, then per-workspace authorization. A **non-loopback bind requires TLS and at least one
-  admitted node or principal** (`validate_bind`), checked at startup and again at serve time; a misconfigured `[server]`
+  admitted node or open invitation** (`validate_bind`), checked at startup and again at serve time; a misconfigured `[server]`
   fails startup loudly rather than running without the role.
 
 ### Ontology live viewer (for local inspection)
@@ -845,7 +845,7 @@ Each milestone does not satisfy the entire set of principles at once. Below is a
   none; `export_delta` returns nothing for a non-shared workspace; the hub authenticates per node
   (bearer) and authorizes per workspace on every route. **Federated retrieval goes through the same
   authorization**, closing the "same knowledge through a different door" concern. A non-loopback hub bind
-  requires TLS **and** at least one admitted node or principal; the viewer has no TCP listener to
+  requires TLS **and** at least one admitted node or open invitation; the viewer has no TCP listener to
   guard (its public read mode was removed with it, overdue entry 4 below).
 - Principle 18 (transport authenticity portion): every exported attestation is ed25519-signed by its
   origin; the receiver **recomputes the content id** from (workspace, content, assertions) before
@@ -1178,9 +1178,9 @@ Phase 5's.
    **REPAID for the network read tier (remote-viewer.md).** The hub's `/viz/` resolves every
    workspace against the reader's grants: enumeration is the grants, an omitted workspace is the
    first grant, `*` is the union of grants computed one workspace at a time, an id outside the grants
-   reads as an unknown one, and the event stream carries only observes in the grants. Guarded by
-   `the_read_tier_answers_only_within_the_grants` and
-   `a_union_with_an_unconsented_workspace_is_refused_whole`; the P17 registry row cites them.
+   reads as an unknown one, and the event stream carries only observes in the grants. The read tier
+   and its tests were removed in 0.11.0 (remote-server.md Section 13); the P17 registry row now
+   rests on federated retrieval over sync.
 
 **Repaid by M3b (formerly M3 latent conditions)**
 - Keyword-search alias parity - REPAID: the file-backed search matches aliases as InMemory does (an

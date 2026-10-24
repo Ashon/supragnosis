@@ -284,16 +284,10 @@ Owed beyond these: per-principal rate limits, and credential rotation without re
 Guarded by:
 
 - **Client profiles**: the two tests of `profile.rs`, removed with it in 0.11.0 (Section 13).
-- **The remote policy (R3, R4, R7)**: `every_tool_has_a_remote_policy`,
-  `a_principal_reads_only_its_grants`, `a_remote_write_is_the_principals_own`,
-  `governance_and_node_operations_are_refused_remotely`.
-- **The hub, end to end over HTTP through the bridge (R2-R4)**:
-  `principals_are_admitted_and_revoked_through_the_file`,
-  `an_id_outside_the_grants_reads_as_an_unknown_one`,
-  `a_principal_sees_and_writes_only_what_it_was_granted`.
-- **Consent (R5)**: `another_nodes_knowledge_needs_its_consent`,
-  `consent_rides_a_header_and_an_older_node_sends_none`, `consent_is_kept_and_can_be_withdrawn`,
-  `serving_is_narrowed_to_what_is_shared`.
+- **The remote policy, the hub end to end and consent (R2-R5, R7)**: the tests of `principal.rs`,
+  `remote.rs` and the MCP surface that held them, removed with them in 0.11.0 (Section 13), and
+  `consent_rides_a_header_and_an_older_node_sends_none` and `serving_is_narrowed_to_what_is_shared`,
+  which hold the spoke's side until step 4.
 
 Checked end to end with two scratch homes - a hub on loopback with one principal, and a client
 whose active profile points at it:

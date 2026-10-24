@@ -52,7 +52,7 @@
       <h1>How a shared memory stays honest.</h1>
       <p class="sub">Twenty-four principles decide what supragnosis keeps, believes, shares and refuses. Each one is split into clauses, and each clause names the tests or the construction that hold it, or says that it is owed, which means the code does not yet guarantee it.</p>
       <!-- registry:count -->
-      <p class="p-count"><b>111</b> clauses: <b>79</b> tested by name, <b>7</b> hold by construction, <b>25</b> owed. <a href="#how-held">How each one is held</a></p>
+      <p class="p-count"><b>111</b> clauses: <b>78</b> tested by name, <b>8</b> hold by construction, <b>25</b> owed. <a href="#how-held">How each one is held</a></p>
       <!-- /registry:count -->
     </section>
 
@@ -77,7 +77,7 @@
           <p class="thesis">Claims rather than facts: who said them, when, and what is believed because of them.</p>
         </div>
         <!-- registry:chapter:1 -->
-        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
         <!-- /registry:chapter:1 -->
       </header>
       <div class="prs">
@@ -196,12 +196,12 @@
             <p class="why">Every node holds part of the picture. Reading a gap as a no turns missing knowledge into a wrong answer.</p>
             <!-- registry:clauses:5 -->
             <details class="clauses">
-              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">5 clauses: 4 tested, 1 owed</span></summary>
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i></span><span class="tally">5 clauses: 3 tested, 1 by construction, 1 owed</span></summary>
               <ul class="cl">
                 <li><i class="cell t"></i><span>absence is a well-formed answer, never an error<span class="st">tested by 3 named tests</span></span></li>
                 <li><i class="cell t"></i><span>absent is distinguished from unavailable, rather than collapsing into an empty result<span class="st">tested by 2 named tests</span></span></li>
                 <li><i class="cell t"></i><span>each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found<span class="st">tested by 4 named tests</span></span></li>
-                <li><i class="cell t"></i><span>an id outside the caller's grants answers as unknown, and a named scope outside them is refused by name<span class="st">tested by 2 named tests</span></span></li>
+                <li><i class="cell s"></i><span>an id outside the caller's grants answers as unknown, and a named scope outside them is refused by name<span class="st">holds by construction</span></span></li>
                 <li><i class="cell o"></i><span>a destroyed id answers as destroyed, recording the act and never the content<span class="st">owed</span></span></li>
               </ul>
             </details>
@@ -488,8 +488,8 @@
               <li><i class="cell t"></i><span>an identifier stays resolvable after the thing it names is merged away<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell t"></i><span>one content counts once even when a re-keying leaves it under two ids<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell t"></i><span>an identity or a signature, once made, verifies under every later build<span class="st">tested by 2 named tests</span></span></li>
-              <li><i class="cell t"></i><span>every entity and observation id the system hands out is a dereferenceable supragnosis:// URI<span class="st">tested by 2 named tests</span></span></li>
-              <li><i class="cell t"></i><span>a proposal id is a dereferenceable supragnosis:// URI as well<span class="st">tested by 2 named tests</span></span></li>
+              <li><i class="cell t"></i><span>every entity and observation id the system hands out is a dereferenceable supragnosis:// URI<span class="st">tested by 1 named test</span></span></li>
+              <li><i class="cell t"></i><span>a proposal id is a dereferenceable supragnosis:// URI as well<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell s"></i><span>a field added to the identity, attestation-order, re-arrival-merge or signing functions is a compile error until it is classified<span class="st">holds by construction</span></span></li>
               <li><i class="cell s"></i><span>the wire envelope and the well-formedness check are forced the same way<span class="st">holds by construction</span></span></li>
             </ul>
@@ -581,7 +581,7 @@
               <li><i class="cell t"></i><span>the MCP daemon admits only the local principal - loopback TCP is host-local, not single-user<span class="st">tested by 2 named tests</span></span></li>
               <li><i class="cell t"></i><span>a workspace boundary is not crossed by a derived suggestion either<span class="st">tested by 1 named test</span></span></li>
               <li><i class="cell t"></i><span>credential-shaped text is refused at every local ingest door, and the refusal does not repeat it<span class="st">tested by 4 named tests</span></span></li>
-              <li><i class="cell t"></i><span>an authenticated network read tier filters workspace enumeration by the reader's grants<span class="st">tested by 4 named tests</span></span></li>
+              <li><i class="cell t"></i><span>a remote search over sync reaches only a workspace the two nodes share: the query is not sent for any other, and the hub refuses one it does not share<span class="st">tested by 2 named tests</span></span></li>
             </ul>
           </details>
           <!-- /registry:clauses:17 -->
@@ -876,7 +876,7 @@
               <a class="col" href="#p2" data-p="2" aria-label="P2, 5 clauses: 5 tested"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
               <a class="col" href="#p3" data-p="3" aria-label="P3, 6 clauses: 5 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
               <a class="col" href="#p4" data-p="4" aria-label="P4, 2 clauses: 1 tested, 1 owed"><span class="cell t"></span><span class="cell o"></span></a>
-              <a class="col" href="#p5" data-p="5" aria-label="P5, 5 clauses: 4 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p5" data-p="5" aria-label="P5, 5 clauses: 3 tested, 1 by construction, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span><span class="cell o"></span></a>
               <a class="col" href="#p6" data-p="6" aria-label="P6, 3 clauses: 2 tested, 1 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
               <a class="col" href="#p7" data-p="7" aria-label="P7, 4 clauses: 2 tested, 2 owed"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
             </div>
@@ -925,7 +925,7 @@
             <div class="grp" data-n="1"><span>6</span></div>
           </div>
         </div>
-        <p class="count"><b>111</b> clauses across <b>24</b> principles: <b>79</b> tested by name, <b>7</b> hold by construction, <b>25</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
+        <p class="count"><b>111</b> clauses across <b>24</b> principles: <b>78</b> tested by name, <b>8</b> hold by construction, <b>25</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>
         <ul class="legend"><li><i class="cell t"></i>Tested by name</li><li><i class="cell s"></i>Holds by construction</li><li><i class="cell p"></i>Owed, today's behavior pinned</li><li><i class="cell o"></i>Owed</li></ul>
         <!-- /registry:ledger -->
         <dl class="gloss">

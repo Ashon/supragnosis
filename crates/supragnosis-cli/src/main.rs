@@ -78,11 +78,6 @@ enum Cmd {
     /// decision behind the change; at a session's start, say what the workspace holds here.
     /// Registered by `connect claude-code` (docs/client-connect.md Section 12)
     Hook(HookArgs),
-    /// The people and agents this hub admits to MCP on its [server] listener (docs/remote-server.md)
-    Principal {
-        #[command(subcommand)]
-        cmd: PrincipalCmd,
-    },
     /// Let another machine join this one: prints a one-time code, then each request's words and
     /// asks to allow it (docs/pairing.md Section 3a)
     Invite(InviteArgs),
@@ -127,25 +122,6 @@ struct RekeyArgs {
     /// Report what would move and write nothing.
     #[arg(long)]
     dry_run: bool,
-}
-
-#[derive(Subcommand)]
-enum PrincipalCmd {
-    /// Admit a person or agent to this hub's agent surface; prints its credential once
-    Add {
-        /// Principal name (letters, digits, '-', '_')
-        name: String,
-        /// Workspaces it may read, comma-separated
-        #[arg(long)]
-        read: Option<String>,
-        /// Workspaces it may write (and read), comma-separated
-        #[arg(long)]
-        write: Option<String>,
-    },
-    /// Revoke a principal - its credential stops working at its next request
-    Remove { name: String },
-    /// List the principals and their grants (never their credentials)
-    List,
 }
 
 #[derive(Args, Default)]
@@ -376,7 +352,6 @@ mod join;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod lifecycle;
 mod pair;
-mod principal;
 mod setup;
 
 fn main() -> Result<()> {
@@ -393,7 +368,6 @@ fn main() -> Result<()> {
         Cmd::Embed { cmd: EmbedCmd::Reset } => embed_reset(),
         Cmd::Embed { cmd: EmbedCmd::Rebuild } => embed_rebuild(),
         Cmd::Hook(a) => hook_cmd(a),
-        Cmd::Principal { cmd } => principal_cmd(cmd),
         Cmd::Invite(a) => invite_cmd(a),
         Cmd::Join(a) => join_cmd(a),
         Cmd::Hub { cmd } => hub_cmd(cmd),
@@ -1156,12 +1130,8 @@ fn build_engine_in(
 /// Actual server run (async). With http, a streamable-http daemon; without it,
 /// stdio. With viz, the live viewer is started alongside it in the same process.
 async fn run(cfg: Config) -> Result<()> {
-    // Federation config first: a hub serves the viewer's read tier to its principals
-    // (docs/remote-viewer.md), and that tier's event stream needs the channel the engine emits into.
     let fedcfg = fed::load()?;
-    // The event channel the engine emits into, for the local viewer and a hub's read tier. Made
-    // whether or not this node is a hub yet: an invitation can make it one while it runs
-    // (docs/pairing.md Section 4.1), and a channel no one subscribes to costs a failed send.
+    // The event channel the engine emits into, for the local viewer.
     let events = Some(tokio::sync::broadcast::channel::<String>(256).0);
     let engine = build_engine(&cfg, events.as_ref())?;
     // What was written before the model gets its vectors once the model is there
@@ -1187,14 +1157,8 @@ async fn run(cfg: Config) -> Result<()> {
     // The hub's listener state: there from the start, so a hub an invitation makes says what its
     // listener is doing at once, in `sync_status` too (docs/pairing.md Section 4.1).
     let listener_state: Arc<std::sync::RwLock<serde_json::Value>> = Default::default();
-    let (sync_ctx, narrow, hub_slot) = build_sync_context(
-        &engine,
-        fedcfg,
-        fed_status.clone(),
-        events.clone(),
-        listener_state.clone(),
-    )
-    .await?;
+    let (sync_ctx, narrow, hub_slot) =
+        build_sync_context(&engine, fedcfg, fed_status.clone(), listener_state.clone()).await?;
     if let Some(ctx) = sync_ctx.as_ref().filter(|c| !c.servers.is_empty()) {
         spawn_sync_rounds(engine.clone(), ctx.clone());
     }
@@ -1247,13 +1211,12 @@ async fn build_sync_context(
     engine: &Arc<Engine>,
     fedcfg: Option<fed::FileConfig>,
     fed_status: Option<supragnosis_viz::FedStatus>,
-    events: Option<tokio::sync::broadcast::Sender<String>>,
     listener_state: Arc<std::sync::RwLock<serde_json::Value>>,
 ) -> Result<SyncWiring> {
     // Runtime peer observability (hub role): who actually checked in, when, how much.
     let peer_registry = Arc::new(supragnosis_sync::http::PeerRegistry::default());
     let Some(fc) = fedcfg else {
-        let slot = hub_slot(engine.clone(), None, events, peer_registry, listener_state);
+        let slot = hub_slot(engine.clone(), None, peer_registry, listener_state);
         return Ok((None, None, slot));
     };
     // One identity + one SyncNode per process - the server role and the sync tools share the HLC
@@ -1266,6 +1229,7 @@ async fn build_sync_context(
     tracing::info!(node_id = %node.node_id(), "federation identity loaded");
     let (links, mut config_notes) = fc.sync.links();
     config_notes.extend(drop_self_admission(node.node_id(), fc.server.as_ref()));
+    config_notes.extend(fed::principals_note(fc.server.as_ref()));
     config_notes.extend(noncanonical_key_notes(&fc));
     let (serve_workspaces, serve_notes) = fc.sync.serve_set();
     config_notes.extend(serve_notes);
@@ -1284,7 +1248,6 @@ async fn build_sync_context(
     let slot = hub_slot(
         engine.clone(),
         Some(node.clone()),
-        events,
         peer_registry.clone(),
         listener_state.clone(),
     );
@@ -1385,7 +1348,6 @@ async fn build_sync_context(
 fn hub_slot(
     engine: Arc<Engine>,
     node: Option<Arc<supragnosis_sync::SyncNode>>,
-    events: Option<tokio::sync::broadcast::Sender<String>>,
     peer_registry: Arc<supragnosis_sync::http::PeerRegistry>,
     listener_state: Arc<std::sync::RwLock<serde_json::Value>>,
 ) -> Arc<hub::HubSlot> {
@@ -1441,37 +1403,14 @@ fn hub_slot(
                 })
                 .map_err(|e| e.to_string())
         });
-        // The agent surface (docs/remote-server.md Section 4): MCP for principals on this
-        // listener. Mounted whenever there is a listener - principals added later are admitted
-        // without a restart - and counted toward the bind rule when `apply` opens it. Knowledge
-        // another node originated is served only with its consent (R5), which nodes give on their
-        // sync rounds and the book keeps.
-        let book =
-            Arc::new(principal::ConsentBook::open(fed::fed_base_dir().join("served-consent.json")));
-        let reader = book.clone();
-        let consented: principal::Consented = Arc::new(move |ws| reader.consented(ws));
-        let recorder = book.clone();
-        let on_consent: supragnosis_sync::http::OnConsent =
-            Arc::new(move |node, ws, serve| recorder.record(node, ws, serve));
-        let extra = supragnosis_sync::http::ExtraSurface {
-            router: principal::router(
-                engine.clone(),
-                Arc::new(principal::Directory::new(fed::config_path())),
-                principal::servable(engine.clone(), node.node_id().to_string(), consented, {
-                    let peers = peer_registry.clone();
-                    Arc::new(move |n: &str| peers.release_of(n))
-                }),
-                events.clone(),
-            ),
-            admitted: 0,
-        };
         let hooks = supragnosis_sync::http::Hooks {
             on_applied: Some(on_applied),
             on_activity: Some(on_activity),
             on_search: Some(on_search),
             peer_registry: Some(peer_registry.clone()),
-            extra: Some(extra),
-            on_consent: Some(on_consent),
+            // The pairing calls ride beside the sync API; the listener adds them when it opens.
+            extra: None,
+            on_consent: None,
         };
         let peers = Arc::new(supragnosis_sync::http::PeerDirectory::new(
             Vec::new(),
@@ -3399,82 +3338,6 @@ fn peer_cmd(cmd: PeerCmd) -> Result<()> {
             }
             let out = admin("POST", "/hub/peer/remove", Some(&serde_json::json!({"name": name})))?;
             println!("Removed {}.", out["removed"].as_str().unwrap_or(&name));
-            Ok(())
-        }
-    }
-}
-
-fn refresh_hub() {
-    match hub::call("POST", "/server/refresh") {
-        Ok(Some(state)) if state["listening"] == true => {
-            println!("the hub listens on {}", state["address"].as_str().unwrap_or("its address"));
-        }
-        Ok(Some(state)) => {
-            if let Some(why) = state["why"].as_str().or(state["error"].as_str()) {
-                println!("the hub is not listening: {why}");
-            }
-        }
-        Ok(None) => {}
-        Err(e) => eprintln!("could not tell the running daemon: {e:#}"),
-    }
-}
-
-/// `supragnosis principal` (docs/remote-server.md Section 4.2). Edits `[server]` in supragnosis.toml
-/// in place - comments and layout survive - and the running hub follows the edit on its next request.
-fn principal_cmd(cmd: PrincipalCmd) -> Result<()> {
-    let path = fed::config_path();
-    let text = std::fs::read_to_string(&path).with_context(|| {
-        format!("{} - principals belong to a hub's [server] section", path.display())
-    })?;
-    match cmd {
-        PrincipalCmd::Add { name, read, write } => {
-            // Under the configuration's lock, on the file as it is now (pairing.md Section 4.4).
-            let (edited, credential) = fed::edit_config(|now| {
-                let (edited, credential) = principal::add(now, &name, &read, &write)?;
-                Ok((edited.clone(), (edited, credential)))
-            })?;
-            let listen = toml::from_str::<fed::FileConfig>(&edited)
-                .ok()
-                .and_then(|c| c.server)
-                .map(|s| (s.listen, s.tls_cert.is_some()))
-                .unwrap_or_default();
-            println!("admitted {name}. Its credential, shown this once and stored only as a hash:");
-            println!();
-            println!("  {credential}");
-            println!();
-            println!("hand it over privately. On their machine:");
-            println!(
-                "  supragnosis server add <profile> {}://<this hub's name>:{}/mcp   (paste the credential when asked)",
-                if listen.1 { "https" } else { "http" },
-                listen.0.rsplit(':').next().unwrap_or("7420")
-            );
-            println!("or, for an agent's own MCP client: Authorization: Bearer <credential>");
-            refresh_hub();
-            Ok(())
-        }
-        PrincipalCmd::Remove { name } => {
-            fed::edit_config(|now| Ok((principal::remove(now, &name)?, ())))?;
-            println!("revoked {name} - its credential stops working at its next request");
-            refresh_hub();
-            Ok(())
-        }
-        PrincipalCmd::List => {
-            let cfg: fed::FileConfig =
-                toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-            let list = cfg.server.map(|s| s.principals).unwrap_or_default();
-            if list.is_empty() {
-                println!(
-                    "no principals - `supragnosis principal add <name> --read <ws> --write <ws>`"
-                );
-            }
-            for p in list {
-                println!(
-                    "  {:<16} read: {:<30} write: {}",
-                    p.name,
-                    p.read.join(","),
-                    p.write.join(",")
-                );
-            }
             Ok(())
         }
     }
@@ -5771,29 +5634,27 @@ mod fed {
     #[derive(Debug, Clone, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct ServerSection {
-        /// Sync API bind (IP:port). Non-loopback demands TLS and an admitted node or principal (F10).
+        /// Sync API bind (IP:port). Non-loopback demands TLS and an admitted node or an open
+        /// invitation (pairing.md PA1).
         pub listen: String,
         pub tls_cert: Option<String>,
         pub tls_key: Option<String>,
         #[serde(default)]
         pub allowlist: Vec<supragnosis_sync::http::AllowEntry>,
-        /// The hub's agent surface (docs/remote-server.md Section 4.2): people and agents admitted to
-        /// MCP on this listener, each with a credential hash and per-workspace grants.
+        /// Principals are no longer read: the hub's agent surface was removed in 0.11.0
+        /// (remote-server.md Section 13). Parsed, whatever their shape, so a config that still
+        /// names them starts the daemon; [`principals_note`] says so.
         #[serde(default)]
-        pub principals: Vec<PrincipalEntry>,
+        pub principals: Vec<toml::Value>,
     }
 
-    /// One principal: a name, the blake3 hash of its bearer credential, and its grants. Unknown keys
-    /// are refused, as in an allowlist entry - this decides who may read and write what.
-    #[derive(Debug, Clone, serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    pub struct PrincipalEntry {
-        pub name: String,
-        pub token_hash: String,
-        #[serde(default)]
-        pub read: Vec<String>,
-        #[serde(default)]
-        pub write: Vec<String>,
+    /// The note for `[[server.principals]]` left in a config: read, and not used.
+    pub fn principals_note(srv: Option<&ServerSection>) -> Option<String> {
+        srv.filter(|s| !s.principals.is_empty()).map(|_| {
+            "[[server.principals]] is no longer read: the hub's agent surface was removed in \
+             0.11.0, and the hub serves only sync and pairing. Remove the entries."
+                .to_string()
+        })
     }
 
     /// `~/.supragnosis` - where the node key, the config and the daemon token live. Public because
@@ -5881,10 +5742,6 @@ mod fed {
                 .with_context(|| format!("installing {}", path.display()))?;
         }
         Ok(out)
-    }
-
-    pub fn edit_config<T>(edit: impl FnOnce(&str) -> Result<(String, T)>) -> Result<T> {
-        edit_config_at(&config_path(), edit)
     }
 
     /// Narrows one peer's `shared_workspaces` in `supragnosis.toml`, preserving the file's comments
@@ -6007,6 +5864,29 @@ mod fed {
             assert_eq!(serve, vec!["team".to_string()]);
             assert_eq!(notes.len(), 1);
             assert!(notes[0].contains("private"));
+        }
+
+        /// remote-server.md Section 13: a hub's config that still names principals, from before 0.11.0,
+        /// parses - so the daemon starts - and the key is said to be no longer read, whatever the
+        /// entries hold.
+        #[test]
+        fn principals_left_in_a_config_are_read_and_said_to_do_nothing() {
+            let left = r#"
+                [server]
+                listen = "127.0.0.1:7420"
+                [[server.principals]]
+                name = "alice"
+                token_hash = "abc"
+                read = ["team"]
+                [[server.principals]]
+                anything = 1
+            "#;
+            let cfg: FileConfig = toml::from_str(left).expect("an old config still parses");
+            let note = principals_note(cfg.server.as_ref()).expect("a note");
+            assert!(note.contains("no longer read") && note.contains("0.11.0"), "{note}");
+            let none: FileConfig =
+                toml::from_str("[server]\nlisten = \"127.0.0.1:7420\"\n").unwrap();
+            assert_eq!(principals_note(none.server.as_ref()), None);
         }
 
         /// The documented supragnosis.toml shape parses; unknown keys are rejected loudly (P24, N8).
@@ -6201,7 +6081,7 @@ mod fed {
 host_label = "hub"
 
 [server]
-listen = "0.0.0.0:7420"   # F10: non-loopback needs TLS and an admitted node or principal
+listen = "0.0.0.0:7420"   # F10: non-loopback needs TLS and an admitted node or an open invitation
 
 # ashons-MacBook-Air
 [[server.allowlist]]

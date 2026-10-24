@@ -138,8 +138,8 @@ only observations its own workspace holds, with one refusal for "absent" and "el
 
 The agent surface shipped in v0.4.5 did not do this. `get_entity`, `traverse` and the observation
 resource answered an id outside the grants in words that differed from their answer for an unknown
-id, and a gate proposal took a target from any workspace. v0.4.6 closes all four (Section 10, step
-0), guarded by `an_id_outside_the_grants_reads_as_an_unknown_one`.
+id, and a gate proposal took a target from any workspace. v0.4.6 closed all four (Section 10, step
+0), under a test removed with the surface in 0.11.0.
 
 ### 3.5 `/api/surface`
 
@@ -384,13 +384,8 @@ Owed beyond these:
 
 Guarded by:
 
-- **Every path classified (V2)**: `every_viewer_path_has_a_remote_policy` reads the local router's
-  own routing and holds it to the policy table, in both directions.
-- **The read tier over HTTP (V1-V4)**: `the_read_tier_answers_only_within_the_grants`,
-  `a_union_with_an_unconsented_workspace_is_refused_whole`.
-- **The event stream (V7)**: `the_read_tier_streams_knowledge_not_activity`.
-- **The union's arithmetic**: `a_union_sums_counts_and_keeps_the_larger_max`.
-- **Reads by id on the agent surface (Section 3.4)**: `an_id_outside_the_grants_reads_as_an_unknown_one`.
+- **V1-V7 and Section 3.4**: the read tier's tests, removed with it in 0.11.0 (remote-server.md
+  Section 13).
 
 ## 12. What building it changed
 

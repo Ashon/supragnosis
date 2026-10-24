@@ -333,12 +333,15 @@ const FEDERATION_REGISTRY: &[(u8, &[Clause])] = &[
     (19, &[
         c("the hub human surface's read tier disables every write and answers only within each \
            user's workspace grants",
-          Evidence::Scenario(&[
-            "every_viewer_path_has_a_remote_policy",
-            "the_read_tier_answers_only_within_the_grants",
-          ])),
+          Evidence::Deferred(
+            "M4 Phase 5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), so \
+             the hub serves no person. Revisit when a hub serves people again",
+          )),
         c("a workspace is served to users only under the spoke's sync+web-read consent",
-          Evidence::Scenario(&["a_union_with_an_unconsented_workspace_is_refused_whole"])),
+          Evidence::Deferred(
+            "M4 Phase 5 - the read tier was removed in 0.11.0 (remote-server.md Section 13), so \
+             the hub serves no person. Revisit when a hub serves people again",
+          )),
         c("the hub human surface authenticates by enrolled user keys and never accepts an \
            unattributable write",
           Evidence::Deferred(
@@ -572,14 +575,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
     )]),
     (6, &[c(
-        "the viewer's search answers with the engine's ranking and mode label over a Read path: workspaces resolve over the reader's grants, a union merges per-workspace hits by score then id, entity hits are canonical, and the MCP surface is unchanged",
-        // crates/supragnosis-viz/tests/http.rs and src/lib.rs: the local path, the read tier's
-        // merge over the grants, the bar, and the policy table held to the router.
+        "the viewer's search answers with the engine's ranking and mode label, entity hits are canonical, and the MCP surface is unchanged",
+        // crates/supragnosis-viz/tests/http.rs: the local path and the bar. The read tier's merge
+        // over a reader's grants went with the tier in 0.11.0 (remote-server.md Section 13).
         Evidence::Scenario(&[
             "the_viewer_search_answers_with_canonical_hits",
-            "the_read_tier_search_reads_only_the_grants",
             "the_search_bar_lights_only_what_the_engine_answered",
-            "every_viewer_path_has_a_remote_policy",
         ]),
     )]),
     (7, &[c(
@@ -920,7 +921,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
             "setup appends nothing to the knowledge log: its checks read, its first-entry step waits for the person's own entry, and every path it changes is named in its events",
             Evidence::Scenario(&[
                 "setup_reads_the_daemon_and_runs_only_its_own_acts",
-                "first_contact_is_the_clients_own_name_and_a_hub_records_none",
+                "first_contact_is_the_clients_own_name",
                 "a_failed_act_says_why_and_names_what_it_ran",
             ]),
         )],
@@ -988,7 +989,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "first contact is the client's own name, kept in the local daemon's memory: never in the store, never on the read tier, never recorded by a hub's remote listener, never sent to a peer",
             Evidence::Scenario(&[
-                "first_contact_is_the_clients_own_name_and_a_hub_records_none",
+                "first_contact_is_the_clients_own_name",
                 "first_contact_is_the_nodes_own",
             ]),
         )],
@@ -2055,7 +2056,7 @@ const PROMPTS_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (6, &[
         c("the remote surface lists no prompt and refuses each by name with the reason",
-          Evidence::Scenario(&["the_remote_surface_lists_no_prompt_and_refuses_each"])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
 ];
 
@@ -2711,106 +2712,66 @@ const REMOVED_PROFILES: &str = "removed in 0.11.0: no server profile exists, and
 
 // docs/remote-server.md Section 8 - the hub's agent surface (R rows).
 
+/// remote-server.md Section 13: the remote MCP surface and the hub's read tier were removed in
+/// 0.11.0, so each R and V clause holds by their absence.
+const REMOVED_SURFACE: &str = "removed in 0.11.0 (remote-server.md Section 13): the hub serves only sync and pairing, so no route serves /mcp or /viz/ and no principal is admitted";
+
 const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("the local MCP daemon binds loopback only",
-          Evidence::Scenario(&["parse_loopback_addr_accepts_loopback_rejects_public"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("MCP leaves loopback only on the hub's listener, and only with TLS",
-          Evidence::Scenario(&[
-            "bind_guard_enforces_f10",
-            "tls_listener_serves_https_and_refuses_plaintext",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("a non-loopback listener needs at least one admitted principal or node",
-          Evidence::Scenario(&[
-            "bind_guard_enforces_f10",
-            // `serve` assembles the count (the allowlist plus the agent surface's principals); a
-            // principals-only hub off loopback died at startup while the daemon counted nodes alone.
-            "a_principals_only_hub_passes_the_bind_guard",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("a listener that cannot start leaves the rest of the daemon serving",
-          Evidence::Scenario(&["a_listener_that_cannot_open_leaves_the_node_serving"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("an open invitation is an admission too",
-          Evidence::Deferred(
-            "docs/pairing.md is specified, not built. Revisit when its Section 10 step 3 lands",
-          )),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (2, &[c(
         "every remote request is authenticated as exactly one admitted principal; none is anonymous",
-        Evidence::Scenario(&[
-            // No credential -> 401; the `admit_request` layer wraps the merged /mcp + /viz router.
-            "the_read_tier_answers_only_within_the_grants",
-            // Wrong credential, revoked, unparsable file: nobody admitted.
-            "principals_are_admitted_and_revoked_through_the_file",
-            // The call ran as the authenticated principal, whatever the client claimed.
-            "a_principal_sees_and_writes_only_what_it_was_granted",
-        ]),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (3, &[
         c("every tool has a declared remote policy, and a tool without one is refused",
-          Evidence::Scenario(&[
-            "every_tool_has_a_remote_policy",
-            "governance_and_node_operations_are_refused_remotely",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("a principal reads and writes only granted workspaces, enumeration and ids included",
-          Evidence::Scenario(&[
-            "a_principal_reads_only_its_grants",
-            "a_remote_write_is_the_principals_own",
-            "a_principal_sees_and_writes_only_what_it_was_granted",
-            "an_id_outside_the_grants_reads_as_an_unknown_one",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (4, &[
         c("a remote write is on_behalf_of the principal; a client's claim cannot replace it",
-          Evidence::Scenario(&[
-            "a_remote_write_is_the_principals_own",
-            "a_principal_sees_and_writes_only_what_it_was_granted",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("a remote write is recorded at no higher than AgentExtracted",
-          Evidence::Scenario(&["a_principal_sees_and_writes_only_what_it_was_granted"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("a remote write is recorded with host = the hub",
-          Evidence::Structural(
-            "`ObserveRequest` carries no host field (content, workspace, source_ref, confidence, \
-             on_behalf_of, derived_from, entities, relations), so the engine stamps `host` from the \
-             label it was built with and a client cannot name one",
-          )),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (5, &[
         c("another node's content is served only with that node's consent for the workspace",
-          Evidence::Scenario(&[
-            "another_nodes_knowledge_needs_its_consent",
-            "consent_rides_a_header_and_an_older_node_sends_none",
-            "consent_is_kept_and_can_be_withdrawn",
-            "serving_is_narrowed_to_what_is_shared",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("without consent the answer is a refusal naming the origin, never a partial view",
-          Evidence::Scenario(&[
-            "another_nodes_knowledge_needs_its_consent",
-            "a_refusal_names_the_release_each_unconsented_node_runs",
-            "a_union_with_an_unconsented_workspace_is_refused_whole",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (6, &[
         c("no credential appears in an AI app's configuration",
-          Evidence::Scenario(&["registrations_run_the_bridge_and_carry_no_secret"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("no credential appears on a command line",
-          Evidence::Structural(REMOVED_PROFILES)),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("the bridge and the CLI read the credential from a 0600 file",
           // The bridge reads this machine's token file, which `write_secret` makes 0600; the
           // profiles' credential files went with the profiles in 0.11.0 (Section 13).
-          Evidence::Scenario(&["the_state_directory_and_its_secrets_are_closed_to_other_accounts"])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (7, &[c(
         "review, define_type and the sync_* tools are refused on the remote surface",
-        Evidence::Scenario(&[
-            "governance_and_node_operations_are_refused_remotely",
-            "a_principal_sees_and_writes_only_what_it_was_granted",
-        ]),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (8, &[
         c("a remote profile URL is HTTPS, or plain HTTP to loopback only",
-          Evidence::Structural(REMOVED_PROFILES)),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("there is no option to skip verification",
-          Evidence::Structural(REMOVED_PROFILES)),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
 ];
 
@@ -2819,81 +2780,51 @@ const REMOTE_SERVER_REGISTRY: &[(u8, &[Clause])] = &[
 const REMOTE_VIEWER_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[
         c("a read-tier request without an admitted credential is answered 401 before any route",
-          Evidence::Scenario(&[
-            "the_read_tier_answers_only_within_the_grants",
-            "principals_are_admitted_and_revoked_through_the_file",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("the page and its assets are behind the same admission as the API",
-          Evidence::Structural(
-            "the `admit_request` layer wraps the merged router after `/viz` is merged into it \
-             (principal.rs), so `/`, `/viewer.css` and `/viewer.js` cannot be routed without \
-             passing it; the read tier has no route outside that router",
-          )),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (2, &[
         c("every path on the read tier has a declared policy, and an undeclared one is refused",
           // Router paths == policy table in both directions; an unknown path answers 404 at runtime.
-          Evidence::Scenario(&["every_viewer_path_has_a_remote_policy"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("no path changes state, and the console's verdict path is unreachable",
           // /api/review, /api/reify, /api/federation, /api/health -> 403; POST -> 405.
-          Evidence::Scenario(&["the_read_tier_answers_only_within_the_grants"])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (3, &[
         c("enumeration, an omitted workspace and a named one resolve against the grants",
-          Evidence::Scenario(&["the_read_tier_answers_only_within_the_grants"])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("`*` is the union of grants, computed per workspace and merged",
-          Evidence::Scenario(&[
-            "the_read_tier_answers_only_within_the_grants",
-            "a_union_sums_counts_and_keeps_the_larger_max",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("an id outside the grants is answered as an unknown id, on both surfaces",
-          Evidence::Scenario(&[
-            "the_read_tier_answers_only_within_the_grants",
-            "an_id_outside_the_grants_reads_as_an_unknown_one",
-          ])),
+          Evidence::Structural(REMOVED_SURFACE)),
         c("the event stream is filtered to the reader's grants",
-          Evidence::Scenario(&["the_read_tier_streams_knowledge_not_activity"])),
+          Evidence::Structural(REMOVED_SURFACE)),
     ]),
     (4, &[c(
         "a union including a workspace the hub may not serve is refused whole, with the reason",
-        Evidence::Scenario(&["a_union_with_an_unconsented_workspace_is_refused_whole"]),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (5, &[c(
         "the credential is read per request from its 0600 file and sent only as a header",
-        Evidence::Deferred(
-            "there is no viewer relay: remote-viewer.md Section 10 steps 2-3 were built and \
-             withdrawn before release on 2026-10-23, when the hub was kept minimal. The hub side \
-             takes the credential from `Authorization` only (principal.rs). Revisit when a remote \
-             viewer is wanted again",
-        ),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (6, &[c(
         "the relay verifies TLS, relays only GET, and cannot outlive the app that started it",
-        Evidence::Deferred(
-            "there is no viewer relay: remote-viewer.md Section 10 steps 2-3 were built and \
-             withdrawn before release on 2026-10-23, when the hub was kept minimal. Revisit when a \
-             remote viewer is wanted again",
-        ),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (7, &[c(
         "the remote stream carries knowledge changes in readable, servable workspaces only",
-        Evidence::Scenario(&["the_read_tier_streams_knowledge_not_activity"]),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (8, &[c(
         "on a remote profile each failure state has its own page, never an empty graph",
-        Evidence::Deferred(
-            "the app does not show a remote server: remote-viewer.md Section 10 step 3 was built and \
-             withdrawn before release on 2026-10-23, when the hub was kept minimal, and remote \
-             profiles were removed in 0.11.0 (remote-server.md Section 13). Revisit when a remote \
-             viewer is wanted again",
-        ),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
     (9, &[c(
         "the local viewer is unchanged: a 0600 unix socket, the full console, no credential",
-        Evidence::Scenario(&[
-            "viz_socket_is_owner_only_and_review_needs_no_browser_headers",
-            "p17_socket_directory_denies_foreign_users_before_the_socket_mode",
-        ]),
+        Evidence::Structural(REMOVED_SURFACE),
     )]),
 ];
 
@@ -3494,7 +3425,6 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-viz/tests/holds.rs"),
     include_str!("../../supragnosis-viz/tests/keys.rs"),
     include_str!("../../supragnosis-viz/src/lib.rs"),
-    include_str!("../../supragnosis-viz/src/remote.rs"),
     include_str!("../../supragnosis-cli/src/main.rs"),
     include_str!("../../supragnosis-cli/src/lifecycle.rs"),
     include_str!("../../supragnosis-cli/src/bridge.rs"),
@@ -3503,11 +3433,9 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/setup.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-embed/src/fastembed_provider.rs"),
-    include_str!("../../supragnosis-cli/src/principal.rs"),
     include_str!("../../supragnosis-cli/tests/golden_stores.rs"),
     include_str!("../../supragnosis-cli/tests/daemon_exit.rs"),
     include_str!("../../supragnosis-cli/tests/embed_reset.rs"),
-    include_str!("../../supragnosis-mcp/src/remote.rs"),
     // The agent surface's own unit tests (design-system.md Section 29.15).
     include_str!("../../supragnosis-mcp/src/lib.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
@@ -3684,7 +3612,7 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
           Evidence::Scenario(&[
             "merge_band_reports_whether_it_could_run_and_over_how_much",
             "p5_a_diff_for_an_unenforced_kind_reports_uncomputable_not_empty",
-            "a_principal_reads_only_its_grants",
+            "wire_auth_rejects_bad_token_and_unshared_workspace",
             "a_brief_is_fenced_bounded_and_writes_nothing",
           ])),
         c("a destroyed id answers as destroyed, recording the act and never the content",
@@ -3694,10 +3622,12 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         )),
         c("an id outside the caller's grants answers as unknown, and a named scope outside them is \
            refused by name",
-          Evidence::Scenario(&[
-            "an_id_outside_the_grants_reads_as_an_unknown_one",
-            "a_principal_reads_only_its_grants",
-          ])),
+          Evidence::Structural(
+            "since 0.11.0 the only caller with grants is a sync peer, and the sync API takes \
+             workspaces, never ids: one the hub does not share with it is refused by name \
+             (wire_auth_rejects_bad_token_and_unshared_workspace); the remote surface that took \
+             ids was removed (remote-server.md Section 13)",
+          )),
     ]),
     (6, "Contradiction Is Signal", &[
         c("a conflict that trust does not settle surfaces as contested instead of resolving silently",
@@ -3867,18 +3797,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
             "the_format_2_store_v0_4_7_wrote_reads_whole",
         ])),
         c("every entity and observation id the system hands out is a dereferenceable supragnosis:// URI",
-          // The entity resource answers what get_entity does, an unknown id is said as unknown, and
-          // on the agent surface an id outside the grants reads exactly as an unknown one.
-          Evidence::Scenario(&[
-            "mcp_resource_graph_surface",
-            "an_id_outside_the_grants_reads_as_an_unknown_one",
-          ])),
+          // The entity resource answers what get_entity does, and an unknown id is said as unknown.
+          Evidence::Scenario(&["mcp_resource_graph_surface"])),
         c("a proposal id is a dereferenceable supragnosis:// URI as well",
-          // Read where it lives, as get_proposal answers it; unknown and outside the grants alike.
-          Evidence::Scenario(&[
-            "mcp_resource_graph_surface",
-            "an_id_outside_the_grants_reads_as_an_unknown_one",
-          ])),
+          // Read where it lives, as get_proposal answers it.
+          Evidence::Scenario(&["mcp_resource_graph_surface"])),
         // The mechanical-enforcement bullet, missing since the 2026-08 closure review.
         c("a field added to the identity, attestation-order, re-arrival-merge or signing functions \
            is a compile error until it is classified",
@@ -4025,12 +3948,11 @@ const REGISTRY: &[(u8, &str, &[Clause])] = &[
         // enumeration, omitted and `*` workspaces, id-based reads and the event stream are all
         // resolved against the reader's grants - a union is computed per granted workspace, never
         // the node-wide projection filtered afterwards (V3, V4).
-        c("an authenticated network read tier filters workspace enumeration by the reader's grants",
+        c("a remote search over sync reaches only a workspace the two nodes share: the query is not \
+           sent for any other, and the hub refuses one it does not share",
           Evidence::Scenario(&[
-            "the_read_tier_answers_only_within_the_grants",
-            "a_union_with_an_unconsented_workspace_is_refused_whole",
-            "the_read_tier_streams_knowledge_not_activity",
-            "every_viewer_path_has_a_remote_policy",
+            "a_remote_search_does_not_leave_for_an_unshared_workspace",
+            "wire_auth_rejects_bad_token_and_unshared_workspace",
         ])),
     ]),
     (18, "Writes Are an Attack Surface", &[

@@ -370,7 +370,7 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
 
 | Threat | What holds |
 |---|---|
-| Someone on the network reaches the listener | TLS, and nothing answered without an admitted node, an admitted principal, or an open invitation's secret for `preview` and `join` (PA1) |
+| Someone on the network reaches the listener | TLS, and nothing answered without an admitted node or an open invitation's secret for `preview` and `join` (PA1) |
 | Someone copies the code | Only the hub's Allow admits anyone, beside three words the person compares with their own machine's; a request from another key ends the invitation; the answer goes only to the request its key signed, so they cannot fetch the person's; ten minutes, one use (PA2, PA11, PA14). Accepted: with the joining machine's node key in hand before it asks, they could search for a key with the same words and ask first (Section 4.3) |
 | A machine pretends to be the hub | Only the certificate the code pins is accepted, from any address; the answer's hub key must derive the node id the code names (PA3, PA14) |
 | A party in the middle reads the join | It cannot: every call after the code travels over the connection pinned to the hub's certificate (PA3) |
@@ -450,7 +450,7 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
 
 | # | Invariant |
 |---|---|
-| PA1 | The hub's listener is open only with TLS and an admitted node, an admitted principal or an open invitation; an open invitation admits only its holder's `preview` and `join`; a listener that cannot open leaves the rest of the node serving and says why. |
+| PA1 | The hub's listener is open only with TLS and an admitted node or an open invitation *(an admitted principal counted too, until 0.11.0 removed principals, remote-server.md Section 13)*; an open invitation admits only its holder's `preview` and `join`; a listener that cannot open leaves the rest of the node serving and says why. |
 | PA2 | An invitation is used at most once and not after its expiry; the hub keeps only its secret's hash, and a used, denied, cancelled or expired one is said as such for a day after its expiry. |
 | PA3 | The joining machine accepts only the certificate whose fingerprint the code names, during the join and after it. |
 | PA4 | The bearer credential a join mints is never displayed: it travels in the join's answer, over the pinned connection, to a `0600` file, and the hub keeps only its hash. |
