@@ -1321,7 +1321,7 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (8, &[c(
         "a store refused for the model it is opened with says how to go on: the refusal names both models, \
          supragnosis embed rebuild and SUPRAGNOSIS_EMBED=none, and status says the same while the daemon cannot start for it",
-        // main.rs's test reads the refusal, status's line and its JSON field over a store embedded by
+        // embedding.rs's test reads the refusal, status's line and its JSON field over a store embedded by
         // another model; the scenario reads the command's own words.
         Evidence::Scenario(&[
             "a_refused_store_names_both_ways_on",
@@ -1339,7 +1339,7 @@ const SEMANTIC_RETRIEVAL_REGISTRY: &[(u8, &[Clause])] = &[
     (10, &[c(
         "supragnosis embed rebuild stops the daemon this CLI manages, resets the store and starts it again; with no daemon running it \
          resets the store and starts the login job when one is installed; a store a process it does not manage holds is refused",
-        // main.rs plans the rebuild for every holder; the scenario holds that a holder it does not
+        // embedding.rs plans the rebuild for every holder; the scenario holds that a holder it does not
         // manage keeps every vector.
         Evidence::Scenario(&[
             "rebuild_stops_only_a_daemon_this_home_manages",
@@ -1573,7 +1573,7 @@ const DAEMON_LIFECYCLE_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (8, &[c(
         "the job is a user LaunchAgent in the gui/<uid> domain or a unit in the person's own systemd manager: no administrator rights, no helper tool, and lingering asked of polkit, never escalated",
-        // main.rs's lifecycle section, read: systemctl only with --user, launchctl only at gui/<uid>,
+        // The CLI's lifecycle code, read: systemctl only with --user, launchctl only at gui/<uid>,
         // one loginctl call for this user's linger, and no sudo, pkexec or doas.
         Evidence::Scenario(&["no_lifecycle_command_asks_for_privilege"]),
     )]),
@@ -2623,7 +2623,7 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("the file is left alone",
           Evidence::Structural(
             "the drop happens in two pure functions over the parsed section - `drop_self_admission` \
-             returns notes (cli main.rs) and `PeerDirectory` filters the id in `derive` (sync \
+             returns notes (cli engine_setup.rs) and `PeerDirectory` filters the id in `derive` (sync \
              http.rs) - and neither is handed the config path, so the file is not something they \
              can reach; the one writer of supragnosis.toml is the narrowing act",
           )),

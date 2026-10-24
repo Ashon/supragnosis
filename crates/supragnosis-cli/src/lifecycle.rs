@@ -3,7 +3,7 @@
 //! Everything here is a pure function of what was observed - which launchd labels are loaded or which
 //! systemd user units are enabled or active, whether the pidfile names a live process, whether the
 //! daemon answers - so the rules are tested as tables and run on every platform. Only observing and
-//! acting shell out, and that lives in managers.rs and service.rs.
+//! acting shell out, and that lives in managers.rs, daemon_ctl.rs and service.rs.
 
 /// Who installed a launchd job, which decides how it is described and retired (Section 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
