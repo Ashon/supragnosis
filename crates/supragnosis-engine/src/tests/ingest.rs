@@ -525,6 +525,29 @@ fn workspaces_lists_distinct_sorted() {
     assert_eq!(engine.workspaces().unwrap(), vec!["alpha", "gamma"]);
 }
 
+/// A workspace that holds only free text - an observation asserting no entity, which is legal
+/// (Principle 22) - is listed, though nothing in it is projected.
+#[test]
+fn a_workspace_of_free_text_is_listed() {
+    let store = Arc::new(InMemoryStore::new());
+    let engine = Engine::new(store.clone(), "h", "alpha");
+    engine
+        .observe(ObserveInput {
+            content: "a note with no entities".into(),
+            workspace: Some("notes".into()),
+            source_ref: None,
+            confidence: None,
+            on_behalf_of: None,
+            derived_from: vec![],
+            entities: vec![],
+            relations: vec![],
+        })
+        .unwrap();
+    assert!(store.all_entities(None).unwrap().is_empty(), "nothing is projected");
+    assert!(store.all_relations(None).unwrap().is_empty(), "nothing is projected");
+    assert_eq!(engine.workspaces().unwrap(), vec!["notes"]);
+}
+
 /// Hypergraph: the entities co-asserted by one observation are recovered as a single hyperedge -
 /// even with no binary relation (just co-mention of entities), context becomes structure (Principle 11 second-order structure).
 #[test]

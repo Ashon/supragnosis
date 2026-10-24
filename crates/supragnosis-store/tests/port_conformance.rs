@@ -757,6 +757,21 @@ fn enumerations_filter_by_workspace() {
     });
 }
 
+/// The workspaces the log holds come back ascending and each once, whatever order they arrived in,
+/// and a workspace with projected rows and no observation is not one of them: the answer is about
+/// the log, which is what an adapter's index has to agree with.
+#[test]
+fn observation_workspaces_are_the_logs_ascending_and_distinct() {
+    for_each_adapter(|store| {
+        assert!(store.observation_workspaces().expect("empty").is_empty());
+        store.put_entity(ent_in("projected-only", "alpha")).expect("put");
+        for (ws, content) in [(WS_OTHER, "two"), (WS, "one"), (WS_OTHER, "three")] {
+            store.add_observation(obs_in(ws, content)).expect("obs");
+        }
+        assert_eq!(store.observation_workspaces().expect("listed"), vec![WS, WS_OTHER]);
+    });
+}
+
 /// The port forbids an internal iteration order from leaking into a response, and an enumeration
 /// is a response. Ordering by id is the form that costs nothing to promise and makes the promise
 /// checkable: every adapter either keeps rows in a sorted structure already or sorts on the way
