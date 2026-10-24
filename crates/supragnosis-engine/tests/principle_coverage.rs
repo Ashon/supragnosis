@@ -3474,6 +3474,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/setup_cli.rs"),
     include_str!("../../supragnosis-cli/src/pairing_cli.rs"),
     include_str!("../../supragnosis-cli/src/serve.rs"),
+    include_str!("../../supragnosis-cli/src/fed.rs"),
     include_str!("../../supragnosis-cli/src/lifecycle.rs"),
     include_str!("../../supragnosis-cli/src/bridge.rs"),
     include_str!("../../supragnosis-cli/src/connect.rs"),
