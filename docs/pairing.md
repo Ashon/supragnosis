@@ -76,8 +76,7 @@ Call them the **hub**, the machine that stays on and that others sync to, and th
 3. **The joining Mac reads it.** Settings > Sync offers "Join another Mac". The person pastes the
    code. The Mac reaches the hub, verifying it as the code says (Section 4.3), and shows the hub's
    name and the workspaces it will receive. Beside each is "Also send", unticked: this Mac sends
-   only what the person ticks. If the hub also serves people it admits (remote-server.md), it asks
-   whether the hub may serve this Mac's contributions to them, unticked. The person presses Join.
+   only what the person ticks. The person presses Join.
 4. **The hub allows it.** The hub's sheet shows "MacBook asks to join" with three short words, and
    the joining Mac shows the same three words with "Allow it on Mac mini". The person sees that
    they match and presses Allow on the hub; Deny, or a request from any other machine with the
@@ -208,7 +207,7 @@ two require the code's secret, the last a joined machine's credential.
   if the certificate is the same. Everything that follows travels over this connection, which no
   one in the middle can read or change.
 - **`preview`**, with the secret, answers the hub's name, the workspaces the invitation keeps in
-  step and whether the hub serves principals, and changes nothing.
+  step and whether the hub serves principals (always false since 0.11.0), and changes nothing.
 - **`join`** carries the secret, the joining machine's node public key and name, and the request's
   proof: that key's signature over the invitation (its secret's hash), the key and the name. The
   hub:
@@ -233,7 +232,8 @@ two require the code's secret, the last a joined machine's credential.
     the invitation's expiry, so neither a dropped connection nor a restart after Allow loses it. It
     gives the answer only to the request with that key's proof;
   - **answers**: the credential, its node public key, the vouched keys (Section 4.3.1), the
-    workspaces, whether it serves principals, and the certificate in PEM;
+    workspaces, whether it serves principals (always false since 0.11.0, kept on the wire for a 0.10
+    joiner), and the certificate in PEM;
   - on Deny or expiry, answers that, and the invitation becomes a tombstone.
 - **The three words** come from the secret and the joining machine's node key, the same on both
   screens. Someone else holding the code makes a request the hub shows with words the person never
@@ -244,8 +244,9 @@ two require the code's secret, the last a joined machine's credential.
   down rather than built against (principles.md Appendix A, assurance against proportion).
 - **The joining machine** checks that the hub key in the answer derives the node id the code names
   and that the PEM's fingerprint is the code's. What the person ticked in the preview counts only
-  where the answer agrees: a ticked workspace the answer does not name is not sent, and the serve
-  question's yes is written only when the answer says the hub serves principals. A join run again
+  where the answer agrees: a ticked workspace the answer does not name is not sent. (A serve
+  question's yes was written only when the answer said the hub served principals, until 0.11.0
+  removed the question.) A join run again
   after the hub's Allow - the preview then says the code is used - asks for the answer first and
   the person's choices after it. Then it writes, under the lock of Section 4.4:
   - in `supragnosis.toml`, only keys a release before pairing knows: a `[[sync.server]]` entry
@@ -358,7 +359,7 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
   it expires, and the Sync pane shows a waiting request. The joined machine's row offers Remove
   this Mac.
 - **On a joining Mac**, the join sheet: the code field; on paste, the hub's name, the workspaces it
-  will receive each with "Also send" unticked, and the serve question when it applies; Join; then
+  will receive each with "Also send" unticked; Join; then
   the three words and "Allow it on Mac mini" until the hub answers. A wrong, expired, used or
   denied code, an unreachable hub (naming the firewall and the network) and a certificate that
   does not match each says what it is and what to do.
@@ -501,7 +502,7 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
    one reaches the other with no call.
 2. **The admin socket and the listener's life** [built] (Sections 4 and 4.1): the admin socket, `supragnosis
    sync` through the daemon, no exit at start for any listener failure, the listener opened and
-   closed at run time as the bind rule allows, principals telling the daemon. Guarded by a case
+   closed at run time as the bind rule allows. Guarded by a case
    that walks one listener through an unreadable certificate, loopback and an unadmitted network
    address, and one that holds the admin socket to its owner.
 3. **The CLI**, on macOS and Linux alike, in four parts:
@@ -515,7 +516,7 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
      invite, allow, deny and cancel; the network's `preview`, `join` and `leave` with "pending",
      the commitment, the three words and the signed and sealed answer; `peers.toml`, the vouched
      keys with their bounds, and `peer remove`; the locked format-preserving edits, the narrowing
-     act's and `principal`'s among them; the wire's known answers; the event channel and the
+     act's among them; the wire's known answers; the event channel and the
      listener's state there from the start, `sync_status` reading the state on a node with no
      sync. Guarded by cases in which the
      test plays the joining machine: an expired, a reused, a denied, a cancelled, a wrong and a
@@ -531,8 +532,8 @@ The Sync pane (settings-page.md Section 3.4) gains its acts.
      restart; the receive list applied to rounds and to `sync_pull`; `hub leave`; an unreachable
      hub naming the platform's firewall. Guarded by a two-node case that invites, allows, joins
      and syncs a workspace each way with no call, and cases for a wrong certificate, a tampered
-     answer, a changed hub nonce, `join` run again, a ticked workspace the answer does not name
-     and a serve yes the answer does not allow, neither written, a chain and leaving.
+     answer, a changed hub nonce, `join` run again, a ticked workspace the answer does not name,
+     a chain, leaving, and leaving what a 0.10 join recorded with serve consent.
    - **3c. The vouched keys** [built] on the joining machine: accepted only for the id derived from each,
      its own skipped, an answer refused when one conflicts with a key written by hand, and each
      verifying events only up to its bound on the apply path. Guarded by those three refusals and

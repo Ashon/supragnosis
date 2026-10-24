@@ -284,7 +284,8 @@ pub struct AnswerBody {
     pub hub_name: String,
     pub workspaces: Vec<String>,
     /// Whether the hub serves principals: always false since 0.11.0 removed them (remote-server.md
-    /// Section 13). Kept on the wire because a 0.10 joiner requires it, and read by no one here.
+    /// Section 13). Kept on the wire because a 0.10 joiner requires it, and declared because this
+    /// struct denies unknown fields and a 0.10 hub sends it; read by no one here.
     pub serves_principals: bool,
     pub vouched: Vec<Vouched>,
     /// The hub's certificate in PEM: the one the code pins.

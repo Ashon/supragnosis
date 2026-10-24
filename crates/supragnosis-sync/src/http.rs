@@ -382,8 +382,9 @@ pub type OnActivity = Arc<dyn Fn(SyncActivity) + Send + Sync>;
 
 /// The header a 0.10 node sent its consent to serve a workspace in, which a 0.10 hub read to serve
 /// it to its principals (docs/remote-server.md Section 4.5). Principals were removed in 0.11.0, so a
-/// 0.11 node says "no" in it on every workspace request, and a 0.10 hub withdraws whatever consent
-/// it held (remote-server.md Section 13); revisit when no 0.10 hub remains.
+/// 0.11 node says "no" in it on each advertise, pull and push, and a 0.10 hub withdraws its consent
+/// for the workspaces the two still sync (remote-server.md Section 13); revisit when no 0.10 hub
+/// remains.
 pub const SERVE_HEADER: &str = "supragnosis-serve";
 
 /// Federated-retrieval hook: the wiring layer injects the engine's hybrid search so a remote read
@@ -1880,9 +1881,8 @@ mod tests {
         }
     }
 
-    /// remote-server.md Section 13: a 0.11 node says no to serving on every workspace request, so a
-    /// 0.10 hub withdraws the consent an earlier release gave it, and a request that names no
-    /// workspace carries no header.
+    /// remote-server.md Section 13: a 0.11 node says no to serving on each workspace request, so a
+    /// 0.10 hub withdraws the consent an earlier release gave it.
     #[tokio::test]
     async fn a_node_says_no_to_serving_on_every_workspace_request() {
         let said = Arc::new(std::sync::Mutex::new(Vec::<Option<String>>::new()));

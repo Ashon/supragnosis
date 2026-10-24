@@ -360,9 +360,9 @@ taken.
   notes say the key is no longer read since 0.11.0 and can be removed (Principle 24). Refusing the
   file would stop a node's own knowledge over a key that now does nothing. `hub leave` still removes
   the `serve_workspaces` entries a 0.10 join recorded.
-- **Consent given before.** A 0.11 spoke still sends the `supragnosis-serve` header, naming no
-  workspace, so a 0.10 hub withdraws whatever consent it held: sharing less, the direction Principle
-  24 allows. The spoke's side of the header is the one piece of consent that stays; revisit when no
+- **Consent given before.** A 0.11 spoke still sends the `supragnosis-serve` header, saying no on
+  each workspace request, so a 0.10 hub withdraws its consent for every workspace the two still
+  sync: sharing less, the direction Principle 24 allows. The spoke's side of the header is the one piece of consent that stays; revisit when no
   0.10 hub remains.
 - **A client that used a server elsewhere.** Nothing reads `client.toml` or `SUPRAGNOSIS_SERVER_*`
   any more, and the bridge uses this machine's daemon. No one uses a server profile today, and an AI
@@ -396,7 +396,7 @@ still holds or retired.
 3. Principals and the read tier: the hub's router and `/server/refresh`, the MCP surface's remote
    mode, the read tier's policy, `[[server.principals]]` read and ignored, and PA1, F10 and
    Principle 24's example without the principal.
-4. Consent: `serve_workspaces` read and ignored, `join --serve`, the header kept naming nothing, and
-   the pairing field kept.
+4. Consent: `serve_workspaces` read and ignored, `join --serve` removed, the header kept saying no,
+   and the pairing field kept.
 5. What is left in other documents, README.md, SECURITY.md and `deploy/`, and the principles page,
    whose answer demo routes two questions through a shared server.

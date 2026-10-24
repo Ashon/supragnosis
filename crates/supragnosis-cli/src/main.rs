@@ -5449,7 +5449,7 @@ mod fed {
         pub fn serve_note(&self) -> Option<String> {
             (!self.serve_workspaces.is_empty()).then(|| {
                 "[sync] serve_workspaces is no longer read: hubs serve no principals since 0.11.0, \
-                 and this node tells every hub it serves nothing. Remove the key."
+                 and this node tells every hub to serve none of its workspaces. Remove the key."
                     .to_string()
             })
         }

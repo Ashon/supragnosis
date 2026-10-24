@@ -55,7 +55,8 @@ pub struct Sidecar {
     /// Every invited workspace (D12): what this machine pulls, whatever the hub would admit.
     pub receive: Vec<String>,
     /// What the join added to `share_workspaces` - and, before 0.11.0, to `serve_workspaces` - so
-    /// leaving removes those and nothing the person wrote.
+    /// leaving removes those and nothing the person wrote. `served` is still written, empty: a 0.10
+    /// build requires the field, and one may read this sidecar after a downgrade.
     pub sent: Vec<String>,
     #[serde(default)]
     pub served: Vec<String>,
@@ -716,6 +717,44 @@ mod tests {
     use supragnosis_engine::{Engine, EntityInput, ObserveInput};
     use supragnosis_store::InMemoryStore;
     use supragnosis_sync::SyncNode;
+
+    /// remote-server.md Section 13: leaving a hub that a 0.10 join recorded with serve consent removes
+    /// the serve_workspaces entries it added - and the key, which it created - with everything else
+    /// it added, and keeps what the person wrote; a hub that does not answer does not stop it.
+    #[tokio::test]
+    async fn leaving_removes_the_serve_consent_a_0_10_join_recorded() {
+        let base = std::env::temp_dir().join(format!("sg-leave-served-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("hubs")).unwrap();
+        let paths = Paths { base: base.clone(), config: base.join("supragnosis.toml") };
+        let (hub, key) = ("a".repeat(32), "b".repeat(64));
+        std::fs::write(
+            &paths.config,
+            format!(
+                "[sync]\nshare_workspaces = [\"mine\", \"acme\"]\nserve_workspaces = [\"acme\"]\n\n\
+                 [[sync.server]]\nurl = \"https://127.0.0.1:1\"\nauth_token = \"t\"\n\n\
+                 [sync.origin_keys]\n{hub} = \"{key}\"\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            paths.sidecar(&hub),
+            format!(
+                "name = \"hub\"\nhub_key = \"{key}\"\nurl = \"https://127.0.0.1:1\"\n\
+                 receive = [\"acme\"]\nsent = [\"acme\"]\nserved = [\"acme\"]\n\
+                 created = [\"server\", \"origin_keys\", \"serve_workspaces\"]\n"
+            ),
+        )
+        .unwrap();
+        let left = leave(&paths).await.expect("leaves");
+        assert!(!left.hub_answered, "nothing listens on port 1");
+        let text = std::fs::read_to_string(&paths.config).unwrap();
+        let fc: crate::fed::FileConfig = toml::from_str(&text).unwrap();
+        assert_eq!(fc.sync.share_workspaces, vec!["mine".to_string()], "{text}");
+        assert!(!text.contains("serve_workspaces"), "the consent and its key are gone: {text}");
+        assert!(fc.sync.server.is_empty() && fc.sync.origin_keys.is_empty(), "{text}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// The test's person: ticks what it was told to, keeps the words it was shown, and says when.
     struct Scripted {

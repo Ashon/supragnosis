@@ -575,7 +575,7 @@ pub fn call_at(
 mod tests {
     use super::*;
 
-    /// A name an invitation's workspace or a principal is built from: letters, digits, '-' or '_',
+    /// A name an invitation's workspace is built from: letters, digits, '-' or '_',
     /// at most 64; a path and an empty name are refused, saying which kind of name it was.
     #[test]
     fn a_name_is_letters_digits_dashes_and_underscores() {

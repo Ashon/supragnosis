@@ -761,8 +761,9 @@ input, not nondeterminism - F16).
   `[[sync.server]] url / auth_token / ca` (insecure_tls is retired - parsed, never read -
   sync-correctness.md Section 10),
   `[server] listen / tls_cert / tls_key / allowlist / principals` (allowlist entries: `node_id ->
-  public key, bearer hash, shared workspaces`; `serve_workspaces` and `principals` are the
-  agent surface's, [remote-server.md](remote-server.md) Section 4). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
+  public key, bearer hash, shared workspaces`; `serve_workspaces` and `principals` were the agent
+  surface's, [remote-server.md](remote-server.md) Section 4, and since 0.11.0 are parsed, never
+  read, and noted). Keys this spec anticipates but the config does not have yet: `peers` (P2P,
   deferred - Section 11), `anchor_key` (the Phase 5 policy anchor, 6a), and a per-server
   `share_workspaces` on a `[[sync.server]]` entry (the entries themselves carry `url` and `auth_token`
   and are honored; a per-server share list arrives with the routing step that obeys it, since a share

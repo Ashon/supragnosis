@@ -372,7 +372,7 @@ listener answers three new calls, `/pair/preview`, `/pair/join` and `/pair/leave
 open invitation as an admission; the bind rule's refusal names it. A node with no `[server]` gets
 one, a certificate of its own under `~/.supragnosis/hub/` and `listen = "0.0.0.0:7420"`, on its
 first invitation, with keys a release before pairing already reads. Every edit of
-`supragnosis.toml` - pairing's, the narrowing act's, `principal`'s - takes a lock file beside it,
+`supragnosis.toml` - pairing's, the narrowing act's - takes a lock file beside it,
 `.supragnosis.toml.lock`. `sync_status` on a node with no sync, which an invitation made a hub,
 answers with its listener's state instead of the not-configured error. The JSON `invite` and `peer
 list` print is not yet under Section 6's contract; it joins when the app reads it (pairing.md step
