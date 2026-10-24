@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | |
 |---|---|
+| [v0.10.3](docs/releases/v0.10.3.md) | Upgrade the server and the app, then restart once; `start` says started only once it is. |
 | [v0.10.2](docs/releases/v0.10.2.md) | Upgrade the server and the app, then restart once; an agent's reads follow a merge. |
 | [v0.10.1](docs/releases/v0.10.1.md) | Upgrade the server and the app, then restart once; a pinch follows the fingers, and a join pins. |
 | [v0.10.0](docs/releases/v0.10.0.md) | Upgrade the server and the app, then restart once; a second machine joins with a code. |
