@@ -232,7 +232,7 @@ fn no_retired_word_reaches_a_page() {
         .collect();
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
     let before_tests = |src: &'static str| without_tests(src);
-    let sources: [(&str, String); 19] = [
+    let sources: [(&str, String); 20] = [
         ("viewer.html", include_str!("../assets/viewer.html").to_string()),
         ("viewer.js", SCRIPT.to_string()),
         ("app/assets/kit.js", include_str!("../../../app/assets/kit.js").to_string()),
@@ -261,6 +261,10 @@ fn no_retired_word_reaches_a_page() {
         ("app/src/daemon.rs", before_tests(include_str!("../../../app/src/daemon.rs"))),
         ("app/src/menu.rs", before_tests(include_str!("../../../app/src/menu.rs"))),
         ("app/src/proxy.rs", before_tests(include_str!("../../../app/src/proxy.rs"))),
+        (
+            "app/src/settings.rs",
+            before_tests(include_str!("../../../app/src/settings.rs")),
+        ),
         ("app/src/splash.rs", before_tests(include_str!("../../../app/src/splash.rs"))),
         ("app/src/tray.rs", before_tests(include_str!("../../../app/src/tray.rs"))),
         ("app/src/window.rs", before_tests(include_str!("../../../app/src/window.rs"))),
