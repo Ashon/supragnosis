@@ -4,8 +4,9 @@
 //!
 //! This module is the decision and its words: pure functions from what was observed to the
 //! checklist, to who runs the daemon and what setup may do about it, and to the lines a step
-//! writes. Observing and acting live in main.rs, which runs this binary's own subcommands for each
-//! act, so the output a person would have seen in a terminal is what reaches the app's log drawer.
+//! writes. Observing and acting live in setup_cli.rs, which runs this binary's own subcommands for
+//! each act, so the output a person would have seen in a terminal is what reaches the app's log
+//! drawer.
 
 use crate::lifecycle::{LabelKind, Manager, Situation, CANONICAL_LABEL};
 use serde::Serialize;
