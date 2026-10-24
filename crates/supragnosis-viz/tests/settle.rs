@@ -3,7 +3,7 @@
 //! demotion that undoes it - is `viz_resolve_files_in_the_observations_workspace_and_can_be_undone`
 //! in http.rs.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const CSS: &str = include_str!("../assets/viewer.css");
 
 fn function(name: &str) -> &'static str {

@@ -1,15 +1,18 @@
 // Security lint for the viewer script. no-unsanitized flags any innerHTML / insertAdjacentHTML /
 // document.write sink whose value is not a plain literal, catching the exact XSS class that once lived
 // in the inline HTML string (an entity/type name from an untrusted observe reaching innerHTML raw).
-// The only escape the rule accepts is the `html` tagged template (viewer.js, next to esc), which
-// escapes every interpolation by default and passes through only fragments that were themselves built
-// with `html`. So a sink is either a literal or an `html` template, and there is no disable comment
-// and no "trust this string" helper to vouch for anything else.
+// The only escape the rule accepts is the `html` tagged template (viewer/06-notices.js, next to esc),
+// which escapes every interpolation by default and passes through only fragments that were themselves
+// built with `html`. So a sink is either a literal or an `html` template, and there is no disable
+// comment and no "trust this string" helper to vouch for anything else.
 // The build does not use this - the crate embeds viewer.js via include_str!; this is dev/CI tooling.
 import nounsanitized from "eslint-plugin-no-unsanitized";
 
 export default [
   {
+    // The viewer script is the parts in viewer/, one classic script with one scope. package.json's
+    // lint joins them in name order, as build.rs does, and reads the result from stdin under this
+    // name, so no-undef sees every part's declarations.
     files: ["viewer.js"],
     plugins: { "no-unsanitized": nounsanitized },
     languageOptions: {

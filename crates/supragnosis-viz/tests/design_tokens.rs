@@ -260,7 +260,7 @@ fn lines_are_thin_and_solid() {
         ("settings.css", SETTINGS),
         ("welcome.css", include_str!("../../../app/assets/welcome.css")),
         ("site/style.css", LANDING),
-        ("viewer.js", include_str!("../assets/viewer.js")),
+        ("viewer.js", include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"))),
         ("site/stage.js", include_str!("../../../site/stage.js")),
         ("site/principles.js", include_str!("../../../site/principles.js")),
     ] {
@@ -275,7 +275,7 @@ fn lines_are_thin_and_solid() {
             assert!(rest.starts_with(']'), "{file} draws a dash pattern");
         }
     }
-    let script = include_str!("../assets/viewer.js");
+    let script = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let ring = &script[script.find("function trustRing(").expect("trustRing")..];
     let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
     for weight in [
@@ -585,7 +585,7 @@ fn increase_contrast_and_forced_colors_are_heard() {
         assert!(block.contains("outline-width:3px"), "{file}: the focus ring stays 2 pixels");
         assert!(block.contains("box-shadow:inset0001px"), "{file}: controls draw no edge");
     }
-    let script = include_str!("../assets/viewer.js");
+    let script = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     assert!(
         script.contains("matchMedia(\"(forced-colors: active)\")"),
         "the map does not hear forced colors"
@@ -782,7 +782,7 @@ fn no_border_draws_an_area() {
         assert!(unused.is_empty(), "{file}: listed lines it no longer draws: {unused:?}");
     }
 
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let start = js
         .find("\nfunction renderBoundaryChips(")
         .expect("viewer.js no longer defines renderBoundaryChips");
@@ -803,7 +803,7 @@ fn no_border_draws_an_area() {
 }
 
 const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
-const VIEWER_JS: &str = include_str!("../assets/viewer.js");
+const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const LANDING_HTML: &str = include_str!("../../../site/index.html");
 const PRINCIPLES_HTML: &str = include_str!("../../../site/principles/index.html");

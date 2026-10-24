@@ -1800,7 +1800,7 @@ mod tests {
         ] {
             assert!(html.contains(needle), "viewer.html lost {what} ({needle})");
         }
-        let js = include_str!("../assets/viewer.js");
+        let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
         assert!(
             js.contains(r#"new EventSource("/api/events")"#) && js.contains("es.onmessage ="),
             "the shell's EventSource stand-in serves /api/events through onmessage only"

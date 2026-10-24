@@ -4,7 +4,7 @@
 //! The landing's stage and the principles page copy the band, and their own tripwires hold each copy
 //! to the viewer's (landing.rs, principles.rs).
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const CSS: &str = include_str!("../assets/viewer.css");
 
 /// The tokens that mean something on the map: human confirmed, healthy, contested.

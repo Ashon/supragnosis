@@ -3,7 +3,7 @@
 //! console's rationale - is `a_decided_confirmation_names_its_source_and_says_its_undo` in http.rs,
 //! and the fold, the undo and the curation rows are in the engine's policy cases.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const CSS: &str = include_str!("../assets/viewer.css");
 

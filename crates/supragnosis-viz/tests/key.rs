@@ -2,7 +2,7 @@
 //! viewer's script for the key, the counted chips, the counts of what is drawn, the store's colors,
 //! the trust filters and the hover card. Each test names the rule it holds.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
 /// The body of a top-level function of the viewer's script, async or not.

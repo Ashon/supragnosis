@@ -3,7 +3,7 @@
 //! its identifier, and every proposal event the engine can write has a sentence in the Log, so a new
 //! kind or event cannot arrive as "opened new_kind: 9f778c20".
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const ENGINE: &str = include_str!("../../supragnosis-engine/src/lib.rs");
 const CORE: &str = include_str!("../../supragnosis-core/src/lib.rs");
 

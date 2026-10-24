@@ -4475,12 +4475,19 @@ mod settings_tests {
             assert!(granted.contains(grant), "{grant} is named but not granted");
         }
         assert!(granted.contains(&allowed[3].1));
-        // The viewer runs in the same window and calls the platform not at all.
-        for viewer in [
-            include_str!("../../crates/supragnosis-viz/assets/viewer.js"),
+        // The viewer runs in the same window and calls the platform not at all. Its script is the
+        // parts the viz crate's build joins (crates/supragnosis-viz/build.rs); this workspace does
+        // not reach that build, so every part is read here.
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../crates/supragnosis-viz/assets/viewer");
+        let parts: Vec<String> = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("read {dir}: {e}"))
+            .map(|e| std::fs::read_to_string(e.expect("a directory entry").path()).expect("a part"))
+            .collect();
+        assert!(!parts.is_empty(), "no part of the viewer script was read");
+        for viewer in parts.iter().map(String::as_str).chain([
             include_str!("../../crates/supragnosis-viz/assets/viewer-sim.js"),
             include_str!("../../crates/supragnosis-viz/assets/viewer-gl.js"),
-        ] {
+        ]) {
             assert!(!viewer.contains("__TAURI"), "the viewer calls the platform");
         }
         // The title bar's drag and double-click zoom are the drag region's two window calls.

@@ -2,7 +2,7 @@
 //! viewer's scripts for the rules that keep its cost in proportion (U28-U39). The timings themselves
 //! are the scale bench's (Section 26.1, U31 and U40), which CI does not run.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 /// The layout (Section 27.5): its constants, a node's radius, and the engine `createLayout` makes.
 const SIM: &str = include_str!("../assets/viewer-sim.js");
 const GL: &str = include_str!("../assets/viewer-gl.js");

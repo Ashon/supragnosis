@@ -9,7 +9,7 @@ const SCRIPT: &str = include_str!("../../../site/principles.js");
 const PAGE: &str = include_str!("../../../site/principles/index.html");
 const LANDING: &str = include_str!("../../../site/index.html");
 const CSS: &str = include_str!("../../../site/style.css");
-const VIEWER: &str = include_str!("../assets/viewer.js");
+const VIEWER: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 /// A top-level function or const of `src`, from its first line to the brace or semicolon that closes
 /// it, brackets counted, each line with its leading whitespace dropped (landing.rs reads the stage

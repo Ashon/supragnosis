@@ -7,7 +7,7 @@
 const STAGE: &str = include_str!("../../../site/stage.js");
 const PAGE: &str = include_str!("../../../site/index.html");
 const LANDING_CSS: &str = include_str!("../../../site/style.css");
-const VIEWER: &str = include_str!("../assets/viewer.js");
+const VIEWER: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 /// The source of a top-level function or const in `src`, from its first line to the brace or
 /// semicolon that closes it, brackets counted, each line with its leading whitespace dropped - the

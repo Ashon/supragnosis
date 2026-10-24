@@ -1,7 +1,7 @@
 //! docs/design-system.md Section 29.12 (step 50a): the map's keys and its View. Source tripwires over
 //! the viewer's script, markup and stylesheet.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const CSS: &str = include_str!("../assets/viewer.css");
 

@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
-const VIEWER_JS: &str = include_str!("../assets/viewer.js");
+const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const VIEWER_CSS: &str = include_str!("../assets/viewer.css");
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");

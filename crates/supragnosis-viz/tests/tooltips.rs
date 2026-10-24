@@ -4,7 +4,7 @@
 //! see.
 
 const HTML: &str = include_str!("../assets/viewer.html");
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");
 const SETTINGS_JS: &str = include_str!("../../../app/assets/settings.js");

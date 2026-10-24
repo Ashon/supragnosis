@@ -8,7 +8,7 @@ const SETTINGS: &str = include_str!("../../../app/assets/settings.css");
 const WELCOME: &str = include_str!("../../../app/assets/welcome.css");
 const SHELL: &str = include_str!("../../../app/assets/shell.css");
 const LANDING: &str = include_str!("../../../site/style.css");
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 const RADII: &[(&str, &str)] = &[
     ("--r-window", "16px"),

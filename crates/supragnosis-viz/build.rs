@@ -5,6 +5,10 @@
 //! `lib.rs` embeds from `OUT_DIR` via `include_str!`, so the crate is still a single self-contained
 //! binary and the build is still pure cargo (these are Rust build-dependencies - no Node).
 //!
+//! `viewer.js` is the one asset kept in parts: `join_viewer` joins `assets/viewer/*.js` into it,
+//! and the joined source is also written unminified to `OUT_DIR/viewer.src.js`, the text the
+//! tests read.
+//!
 //! Minification is conservative on JS: oxc's code generator re-prints the parsed AST with whitespace
 //! and comments removed, but performs NO identifier mangling or dead-code elimination (that is
 //! `oxc_minifier`, which is deliberately not used) - so it is semantics-preserving printing. Parsing
@@ -23,11 +27,17 @@ fn main() {
     let assets = Path::new(&manifest).join("assets");
     let out = Path::new(&out_dir);
 
+    let viewer_js = join_viewer(&assets.join("viewer"));
+    fs::write(out.join("viewer.src.js"), &viewer_js).expect("write viewer.src.js to OUT_DIR");
+
     for name in ["viewer.html", "viewer.css", "viewer.js", "viewer-sim.js", "viewer-gl.js"] {
-        let src = assets.join(name);
-        println!("cargo:rerun-if-changed={}", src.display());
-        let content =
-            fs::read_to_string(&src).unwrap_or_else(|e| panic!("read {}: {e}", src.display()));
+        let content = if name == "viewer.js" {
+            viewer_js.clone()
+        } else {
+            let src = assets.join(name);
+            println!("cargo:rerun-if-changed={}", src.display());
+            fs::read_to_string(&src).unwrap_or_else(|e| panic!("read {}: {e}", src.display()))
+        };
         let processed = if release {
             match name {
                 "viewer.css" => minify_css(&content),
@@ -108,6 +118,47 @@ fn main() {
     }
     table.push_str("];\n");
     fs::write(out.join("icons.rs"), table).expect("write icons.rs to OUT_DIR");
+}
+
+/// The viewer script, served at `/viewer.js`, kept as ordered parts in `assets/viewer/` and joined
+/// here in file-name order. It is a classic script, so its top-level declarations share one scope
+/// whichever part holds them, and each part is cut between two top-level statements and adds
+/// nothing of its own (no header, no separator): the joined text is the one file the parts were
+/// cut from, byte for byte. The two-digit prefix is the order:
+///
+/// - `01-state.js` - the type band and palette, the canvases, List, the page's shared state
+/// - `02-frame.js` - the layout's last report, level of detail, render scheduling, the camera,
+///   type colors
+/// - `03-graph.js` - the remembered layout, the counts, applying a graph, the sync pill
+/// - `04-controls.js` - controls that say what they are, Settings, the legend
+/// - `05-trust.js` - trust and contest on the map, the poll, workspaces, the empty map
+/// - `06-notices.js` - node lookup, `esc` and `html`, icons, notices, the glossary, curation
+/// - `07-review.js` - the Review page and its Show on the map
+/// - `08-log.js` - the observation log, the strip, the event stream, peer markers
+/// - `09-inspector.js` - settling a contested value, the detail inspector, the person's place
+/// - `10-minimap.js` - the minimap, fitting the view, workspace outlines and boundaries
+/// - `11-regions.js` - region clouds, the scene grid, semantic zoom, the layout's host
+/// - `12-draw.js` - haloed labels and the frame's draw
+/// - `13-input.js` - pointer, touch, search, the view menu, keys, the panels, startup
+///
+/// A function may be called from any part, since nothing runs it before the script has loaded, but
+/// code that runs at load reads only what an earlier part or line declared. ESLint reads the joined
+/// text too (`npm run lint` in `assets/`), so `no-undef` still sees the one scope.
+fn join_viewer(dir: &Path) -> String {
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let mut parts: Vec<_> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|e| e.expect("a directory entry").path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("js"))
+        .collect();
+    parts.sort();
+    assert!(!parts.is_empty(), "{} holds no part of the viewer script", dir.display());
+    let mut js = String::new();
+    for p in &parts {
+        println!("cargo:rerun-if-changed={}", p.display());
+        js.push_str(&fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())));
+    }
+    js
 }
 
 fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {

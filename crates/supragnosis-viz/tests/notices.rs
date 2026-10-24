@@ -5,7 +5,7 @@
 //! viewer and the app's pages write it twice, under two policies with no shared script; this reads
 //! both as one.
 
-const VIEWER_JS: &str = include_str!("../assets/viewer.js");
+const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const VIEWER_CSS: &str = include_str!("../assets/viewer.css");
 const KIT: &str = include_str!("../../../app/assets/kit.js");
 const SETTINGS_CSS: &str = include_str!("../../../app/assets/settings.css");

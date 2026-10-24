@@ -6,7 +6,7 @@
 const VIEWER: &str = include_str!("../assets/viewer.css");
 const SETTINGS: &str = include_str!("../../../app/assets/settings.css");
 const WELCOME: &str = include_str!("../../../app/assets/welcome.css");
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 /// The six sizes and their values (Section 4): page 24, sheet 18, section 15, body 13, small 12 and
 /// caption 11 pixels at the default root size.

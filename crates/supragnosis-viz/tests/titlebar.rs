@@ -4,7 +4,7 @@
 //! Esc and Cmd+[. The author chose this over the first title bar on 2026-10-19.
 
 const HTML: &str = include_str!("../assets/viewer.html");
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const CSS: &str = include_str!("../assets/viewer.css");
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");

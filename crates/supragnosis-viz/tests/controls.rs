@@ -4,7 +4,7 @@
 //! and the map's canvas is named. The rest of U19 - dialogs, keys, targets, reflow - is owed until
 //! Section 14 steps 13-16 meet it, and its registry row says so.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
 /// The id of every `<button ... class="tog ...">` in the page.

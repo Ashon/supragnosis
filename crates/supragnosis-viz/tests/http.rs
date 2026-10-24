@@ -263,7 +263,7 @@ async fn the_viewer_search_answers_with_canonical_hits() {
 /// and a seven-node workspace zoomed to the cap ran under both panels.
 #[test]
 fn the_camera_works_in_the_map_window() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let body = |name: &str| {
         let start = js
             .find(&format!("\nfunction {name}("))
@@ -296,7 +296,7 @@ fn the_camera_works_in_the_map_window() {
 /// the typed text in the page - a second ranking would answer a person differently from the agent.
 #[test]
 fn the_search_bar_lights_only_what_the_engine_answered() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     assert!(js.contains(r#"fetch("/api/search?q=""#), "the bar asks the search path");
     let start = js.find("\nfunction activeSet(").expect("viewer.js no longer defines activeSet");
     let rest = &js[start + 1..];
@@ -483,7 +483,7 @@ async fn a_poll_that_finds_nothing_new_costs_nothing() {
 /// served bytes, which are minified in release); ESLint no-unsanitized guards the same source in CI.
 #[test]
 fn viz_source_escapes_untrusted_names() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
     // esc() must escape quotes too, not just <&> - otherwise a name breaks out of a title="..."
     // attribute into an event handler (attribute-injection XSS).
@@ -523,7 +523,7 @@ fn viz_source_escapes_untrusted_names() {
 /// own, outside any condition.
 #[test]
 fn inspector_never_folds_a_contested_belief() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let body = |name: &str| -> &str {
         let start = js
             .find(&format!("\nfunction {name}("))
@@ -582,7 +582,7 @@ fn every_html_sink_takes_an_html_template() {
         !body[..end].contains('\\') && body[end + 1..].trim_start().starts_with(';')
     }
     for (file, js) in [
-        ("viewer.js", include_str!("../assets/viewer.js")),
+        ("viewer.js", include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"))),
         ("viewer-sim.js", include_str!("../assets/viewer-sim.js")),
         ("viewer-gl.js", include_str!("../assets/viewer-gl.js")),
     ] {
@@ -619,7 +619,7 @@ fn every_html_sink_takes_an_html_template() {
 /// workspace, which the workspace chips name.
 #[test]
 fn a_silenced_field_is_said_for_the_scope() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let start = js
         .find("\nfunction renderDetail(")
         .expect("viewer.js no longer defines renderDetail");
@@ -655,7 +655,7 @@ fn a_silenced_field_is_said_for_the_scope() {
 /// appear on an unrelated node.
 #[test]
 fn the_silence_baseline_reads_the_whole_response() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let start = js
         .find("\nfunction scopeBaseline(")
         .expect("viewer.js no longer defines scopeBaseline");
@@ -702,7 +702,7 @@ fn the_silence_baseline_reads_the_whole_response() {
 /// legend-filtered subset, inspector.md D4), and the legend states what a ring means.
 #[test]
 fn the_map_rings_read_the_effective_tier() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let body = |name: &str| -> &str {
         let start = js
             .find(&format!("\nfunction {name}("))
@@ -732,7 +732,7 @@ fn the_map_rings_read_the_effective_tier() {
 /// every loaded node.
 #[test]
 fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let pass = "ctx.globalAlpha = 1; bulk.globalAlpha = 1;\n  for (const n of vis) {\n    if (!n.contested) continue;";
     assert!(
         js.contains(pass),
@@ -760,7 +760,7 @@ fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
 /// draws "unavailable" rather than vanishing when the daemon does not answer.
 #[test]
 fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     assert!(
         js.contains("pill.hidden = contestedCount === 0 || surfaceKind === \"local\";"),
         "the contested pill hides only at zero, or where Review carries the count"
@@ -792,7 +792,7 @@ fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
 /// call of it names one item - no loop over items decides; and every open or blocked proposal is listed.
 #[test]
 fn a_review_decision_takes_one_item_with_its_diff_on_screen() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let start = js
         .find("\nasync function reviewDecide(")
         .expect("viewer.js no longer defines reviewDecide");
@@ -837,7 +837,7 @@ fn a_review_decision_takes_one_item_with_its_diff_on_screen() {
 /// keep their own error display.
 #[test]
 fn every_console_write_reports_its_outcome() {
-    let js = include_str!("../assets/viewer.js");
+    let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
     let writes = [
         "/api/review",
         "/api/resolve",

@@ -2,7 +2,7 @@
 //! map draws, so a screen reader and anyone who cannot tell sixteen colors apart can read the map.
 
 const HTML: &str = include_str!("../assets/viewer.html");
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT

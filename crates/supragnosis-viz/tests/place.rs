@@ -3,7 +3,7 @@
 //! carried in `?from=` and followed only to the viewer - is `the_way_back_goes_only_to_the_viewer` in
 //! the app's tests.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const KIT: &str = include_str!("../../../app/assets/kit.js");
 const SETTINGS: &str = include_str!("../../../app/assets/settings.js");

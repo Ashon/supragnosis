@@ -1,7 +1,7 @@
 //! docs/design-system.md Section 29.11 (step 49, D8): search goes somewhere, and its answer can be
 //! kept on the map as the working set. Source tripwires over the viewer's script and markup.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
 /// The body of a top-level function of the viewer's script, async or not.

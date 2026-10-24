@@ -2,7 +2,7 @@
 //! with one count, and nothing but the person moves what they are reading. Source tripwires over the
 //! viewer's script.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT

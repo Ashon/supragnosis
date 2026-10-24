@@ -1,7 +1,7 @@
 //! docs/design-system.md Section 14 steps 13 and 14: the screens the second pass changes, held by
 //! source tripwires over the viewer's script and stylesheet. Each test names the rule it holds.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const CSS: &str = include_str!("../assets/viewer.css");
 
 /// The body of a top-level function of the viewer's script.

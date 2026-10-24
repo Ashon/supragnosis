@@ -2,7 +2,7 @@
 //! idle controls, a store with no entry leads back to Setup in the app, and the default is called by
 //! its name. Source tripwires over the viewer's script, markup and stylesheet.
 
-const SCRIPT: &str = include_str!("../assets/viewer.js");
+const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const CSS: &str = include_str!("../assets/viewer.css");
 
