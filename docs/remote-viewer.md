@@ -5,8 +5,9 @@
 > shows when it cannot. Step 4 of [remote-server.md](remote-server.md) Section 10, and federation's
 > Phase 3.5 read tier ([federation.md](federation.md) 6d).
 >
-> Status: **steps 0-1 built and frozen; steps 2-4 withdrawn.** The hub's read tier (step 1)
-> shipped in v0.4.7 and takes no new work. The viewer relay and the app's remote window (steps 2-3)
+> Status: **steps 0-1 built, then removed in 0.11.0; steps 2-4 withdrawn.** The hub's read tier
+> (step 1) shipped in v0.4.7, was frozen on 2026-10-23, and is removed with the rest of the remote
+> surface (remote-server.md Section 13). The viewer relay and the app's remote window (steps 2-3)
 > were built and withdrawn before release on 2026-10-23, when the hub was kept minimal: the author's
 > machines sync with the hub and each reads its own console, so no one needs the hub's page in the
 > app ([CLAUDE.md](../CLAUDE.md), principles.md Appendix A, assurance against proportion). The rest

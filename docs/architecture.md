@@ -27,9 +27,9 @@
   [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
   [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, built -
-  Section 10 steps 1-3),
-  [`remote-viewer.md`](remote-viewer.md) (the viewer on the hub: Section 10 steps 0-1 built and
-  frozen, steps 2-4 withdrawn),
+  Section 10 steps 1-3 - and removed in 0.11.0, Section 13),
+  [`remote-viewer.md`](remote-viewer.md) (the viewer on the hub: Section 10 steps 0-1 built, then
+  removed in 0.11.0; steps 2-4 withdrawn),
   [`settings-page.md`](settings-page.md) (the app's settings page, built),
   [`sync-correctness.md`](sync-correctness.md) (sync defects and their rules, built),
   [`compatibility.md`](compatibility.md) (pinned contracts between releases, built - the tripwire of
@@ -707,7 +707,7 @@ Each concern names what is built and what is owed; the milestone of an owed part
      one person's machines: device sync and pairing, and nothing more. Each machine uses its own
      daemon and console, and its AI apps reach that daemon through the bridge as before. The remote MCP
      surface (server profiles that send AI apps to a server elsewhere, principals) and the hub's read
-     tier are frozen as built: no new work, bug fixes only.
+     tier, frozen on 2026-10-23, are removed in 0.11.0 (remote-server.md Section 13).
    - **Open (2026-10-23): a hub as the ledger.** The author asked whether a hub should be the ledger,
      with a conflict resolved by choosing local or hub to overwrite. Not adopted for now: sync is an
      append-only union with no replication-level conflict, the one conflict is a contested belief

@@ -256,6 +256,10 @@ Cozo refusal keeps discharging it for the era before.
     supragnosis-server is newer than the app - update the app" on the tray line and the Settings
     page, and stops reading the payload.
 
+`server --json` goes with its command in 0.11.0, a breaking change named in CHANGELOG.md, and
+`status --json` keeps its `server` field as `{"name": "local", "remote": false}`, so its schema
+stays 1 (remote-server.md Section 13).
+
 `setup --events` and `embed fetch --events` write lines rather than one document: the first line is
 `{"schema": 1}`, each after it one event, and the same rules apply to the event's fields
 (onboarding.md Section 3). Their example is `setup-events.jsonl`, one line per kind of event.
