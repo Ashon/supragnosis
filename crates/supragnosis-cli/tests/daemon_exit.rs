@@ -6,6 +6,13 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// One daemon test at a time: a port one test picked as free is otherwise the one another test's
+/// daemon, asked for port 0, may be given.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn temp_home(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -30,6 +37,7 @@ fn wait_for<T>(what: &str, limit: Duration, mut f: impl FnMut() -> Result<T, Str
 
 #[test]
 fn a_daemon_on_port_zero_says_where_it_listens_and_exits_normally_on_sigterm() {
+    let _one = one_at_a_time();
     let home = temp_home("serve");
     let sock = std::env::temp_dir().join(format!("sg-exit-{}.sock", std::process::id()));
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_supragnosis"))
@@ -125,10 +133,12 @@ impl Drop for Reap {
 /// `start` with a non-zero exit, the reason from its log, and where that log is.
 #[test]
 fn a_start_whose_daemon_exits_first_fails_with_the_reason() {
+    let _one = one_at_a_time();
     let home = temp_home("start-gone");
     let _reap = Reap(home.clone());
     let sock = std::env::temp_dir().join(format!("sg-gone-{}.sock", std::process::id()));
-    let out = start(&home, &format!("0.0.0.0:{}", free_port()), &sock);
+    // nothing listens on port 1, so start forks; the daemon refuses the address before it binds
+    let out = start(&home, "0.0.0.0:1", &sock);
     let (said, err) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert_eq!(out.status.code(), Some(1), "start fails: {said}{err}");
     assert!(!said.contains("started"), "nothing says started: {said}");
@@ -143,6 +153,7 @@ fn a_start_whose_daemon_exits_first_fails_with_the_reason() {
 /// managers of the machine running the test.
 #[test]
 fn a_start_says_started_once_its_daemon_answers() {
+    let _one = one_at_a_time();
     let home = temp_home("start-up");
     let _reap = Reap(home.clone());
     let sock = std::env::temp_dir().join(format!("sg-up-{}.sock", std::process::id()));
