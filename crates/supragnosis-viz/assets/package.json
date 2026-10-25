@@ -9,7 +9,7 @@
     "lint:stage": "cd ../../.. && eslint -c crates/supragnosis-viz/assets/stage.eslint.config.js site/stage.js site/principles.js site/analytics.js"
   },
   "devDependencies": {
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-no-unsanitized": "^4.1.2"
   }
 }
