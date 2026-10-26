@@ -460,8 +460,9 @@ fn main() {
         });
 }
 
-/// Every source file of the app, for the tests that read the source by its text: the modules, then
-/// this file, then the tests, so the text before the first test module is the app's own.
+/// The app's own source, for the tests that read it by its text: every module this file declares, in
+/// its order, then this file. No test file is in it, so a needle cannot match the test's own copy of
+/// it; `src_is_the_apps_modules_and_no_test` holds the list to the `mod` lines above.
 #[cfg(test)]
 const SRC: &str = concat!(
     include_str!("apps.rs"),
@@ -475,8 +476,6 @@ const SRC: &str = concat!(
     include_str!("welcome.rs"),
     include_str!("window.rs"),
     include_str!("main.rs"),
-    include_str!("tests.rs"),
-    include_str!("page_tests.rs"),
 );
 
 #[cfg(test)]

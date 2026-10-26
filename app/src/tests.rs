@@ -1,7 +1,38 @@
 //! The shell's tests: the transport, the status line and the CLI's answers, the Welcome page, the
-//! window, the tray, and the source tripwires that read every file of the app through `SRC`.
+//! window, the tray, and the source tripwires that read the app's own source through `SRC`.
 
 use super::*;
+
+#[cfg(test)]
+mod src_tests {
+    /// `SRC` is every module main.rs declares, in its order, then main.rs, and no test module: a
+    /// needle a test looks for in it cannot match the test's own copy of that needle.
+    #[test]
+    fn src_is_the_apps_modules_and_no_test() {
+        let main = include_str!("main.rs");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut expected = String::new();
+        let mut modules = 0;
+        let mut prev = "";
+        for line in main.lines() {
+            if let Some(name) = line.strip_prefix("mod ").and_then(|l| l.strip_suffix(';')) {
+                if prev != "#[cfg(test)]" {
+                    let path = dir.join(format!("{name}.rs"));
+                    expected += &std::fs::read_to_string(&path)
+                        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                    modules += 1;
+                }
+            }
+            prev = line;
+        }
+        expected += main;
+        assert!(modules > 0, "main.rs's modules were read");
+        assert!(
+            super::SRC == expected,
+            "SRC is not main.rs's modules, in their order, then main.rs, and nothing else"
+        );
+    }
+}
 
 #[cfg(test)]
 mod conditional_tests {
@@ -265,8 +296,7 @@ mod status_text_tests {
     /// which a click calls. A new call that stops a daemon fails this until it is added on purpose.
     #[test]
     fn only_the_persons_act_stops_a_daemon_it_did_not_spawn() {
-        let src = super::SRC;
-        let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
+        let app = super::SRC;
         let within = |at: usize| -> &str {
             let head = app[..at]
                 .rfind("\nfn ")
@@ -347,8 +377,7 @@ mod status_text_tests {
     /// than a setting. A command the page starts calling fails this until it is placed.
     #[test]
     fn every_setting_change_is_a_cli_call() {
-        let src = super::SRC;
-        let app = &src[..src.find("#[cfg(test)]\nmod ").expect("the tests")];
+        let app = super::SRC;
         let body = |name: &str| -> &str {
             let at = ["async fn ", "fn ", "pub(crate) async fn ", "pub(crate) fn "]
                 .iter()

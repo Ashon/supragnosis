@@ -351,9 +351,7 @@ mod settings_tests {
         );
         assert!(starting_html(&StartPage::Starting, None, &settings_url(), Path::new(LOG))
             .contains("<body data-tauri-drag-region=\"deep\""));
-        let src = super::SRC;
-        let pages = &src[..src.find("#[cfg(test)]").expect("the tests")];
-        assert!(!pages.contains("<body data-tauri-drag-region style="));
+        assert!(!super::SRC.contains("<body data-tauri-drag-region style="));
     }
 
     /// docs/design-system.md Section 29.5, P24: the page the window shows while the daemon does not
@@ -445,7 +443,9 @@ mod settings_tests {
         );
 
         // Restart of a failed daemon goes through `supragnosis restart` when a manager owns it.
-        assert!(src.contains("prev @ (Daemon::External | Daemon::Failed(_)) if matches!(prev, Daemon::External) || job =>"));
+        assert!(src.contains(
+            "prev @ (Daemon::External | Daemon::Failed(_))\n            if matches!(prev, Daemon::External) || job =>"
+        ));
         assert!(managed(&serde_json::json!({"managers": [{"label": "launchd"}]})));
         assert!(!managed(&serde_json::json!({"managers": []})));
         assert!(!managed(&serde_json::json!({})));
