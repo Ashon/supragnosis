@@ -3,6 +3,9 @@
 //! its identifier, and every proposal event the engine can write has a sentence in the Log, so a new
 //! kind or event cannot arrive as "opened new_kind: 9f778c20".
 
+use std::fs;
+use std::path::{Path, PathBuf};
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const ENGINE: &str = concat!(
     include_str!("../../supragnosis-engine/src/proposal_types.rs"),
@@ -11,6 +14,19 @@ const ENGINE: &str = concat!(
 const CORE: &str = include_str!("../../supragnosis-core/src/lib.rs");
 
 const TIER_FIELDS: &[&str] = &["trust_tier", "effective_tier", "evaluated_tier"];
+
+/// The files directly in `dir` whose extension is one of `exts`, by name.
+fn files_in(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .map(|e| e.expect("a directory entry").path())
+        .filter(|p| {
+            p.is_file() && p.extension().and_then(|x| x.to_str()).is_some_and(|x| exts.contains(&x))
+        })
+        .collect();
+    out.sort();
+    out
+}
 
 /// The text of every `${...}` interpolation in `src`, nested ones included, brackets counted.
 fn interpolations(src: &str) -> Vec<&str> {
@@ -230,52 +246,41 @@ fn no_retired_word_reaches_a_page() {
         .filter(|w| !w.is_empty())
         .collect();
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
-    let before_tests = |src: &'static str| without_tests(src);
-    let sources: [(&str, String); 21] = [
-        ("viewer.html", include_str!("../assets/viewer.html").to_string()),
-        ("viewer.js", SCRIPT.to_string()),
-        ("app/assets/kit.js", include_str!("../../../app/assets/kit.js").to_string()),
-        (
-            "app/assets/settings.js",
-            include_str!("../../../app/assets/settings.js").to_string(),
-        ),
-        (
-            "app/assets/settings.html",
-            include_str!("../../../app/assets/settings.html").to_string(),
-        ),
-        (
-            "app/assets/welcome.js",
-            include_str!("../../../app/assets/welcome.js").to_string(),
-        ),
-        (
-            "app/assets/welcome.html",
-            include_str!("../../../app/assets/welcome.html").to_string(),
-        ),
-        (
-            "app/assets/shell-init.js",
-            include_str!("../../../app/assets/shell-init.js").to_string(),
-        ),
-        ("app/src/apps.rs", before_tests(include_str!("../../../app/src/apps.rs"))),
-        ("app/src/cli.rs", before_tests(include_str!("../../../app/src/cli.rs"))),
-        ("app/src/daemon.rs", before_tests(include_str!("../../../app/src/daemon.rs"))),
-        ("app/src/menu.rs", before_tests(include_str!("../../../app/src/menu.rs"))),
-        ("app/src/proxy.rs", before_tests(include_str!("../../../app/src/proxy.rs"))),
-        (
-            "app/src/settings.rs",
-            before_tests(include_str!("../../../app/src/settings.rs")),
-        ),
-        ("app/src/splash.rs", before_tests(include_str!("../../../app/src/splash.rs"))),
-        ("app/src/tray.rs", before_tests(include_str!("../../../app/src/tray.rs"))),
-        ("app/src/welcome.rs", before_tests(include_str!("../../../app/src/welcome.rs"))),
-        ("app/src/window.rs", before_tests(include_str!("../../../app/src/window.rs"))),
-        ("app/src/main.rs", before_tests(include_str!("../../../app/src/main.rs"))),
-        (
-            "supragnosis-cli/src/setup.rs",
-            before_tests(include_str!("../../supragnosis-cli/src/setup.rs")),
-        ),
-        // The viewer's server: a refusal it writes reaches a notice.
-        ("supragnosis-viz/src/lib.rs", before_tests(include_str!("../src/lib.rs"))),
-    ];
+    // The sources are read from their directories, so a file added or moved is read without a list
+    // to keep: the viewer's markup and the parts its script is joined from, the app's pages, scripts
+    // and stylesheets, and the shell's code but for its test modules (`#[cfg(test)] mod x;` in
+    // main.rs) - and Setup, and the viewer's server, whose refusals reach a notice.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |p: &Path| fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+    let main = read(&root.join("app/src/main.rs"));
+    let test_mods: Vec<String> = main
+        .split("#[cfg(test)]\nmod ")
+        .skip(1)
+        .filter_map(|rest| rest.split_once(';'))
+        .map(|(name, _)| format!("{name}.rs"))
+        .collect();
+    assert!(!test_mods.is_empty(), "the app's test modules were not read from main.rs");
+    let mut sources: Vec<(String, String)> = Vec::new();
+    for (dir, exts, code) in [
+        ("crates/supragnosis-viz/assets", &["html"][..], false),
+        ("crates/supragnosis-viz/assets/viewer", &["js"][..], false),
+        ("app/assets", &["html", "js", "css"][..], false),
+        ("app/src", &["rs"][..], true),
+    ] {
+        let files = files_in(&root.join(dir), exts);
+        assert!(!files.is_empty(), "{dir} holds no {exts:?}");
+        for f in files {
+            let name = f.file_name().unwrap().to_string_lossy().to_string();
+            if code && test_mods.contains(&name) {
+                continue;
+            }
+            let text = if code { without_tests(&read(&f)) } else { read(&f) };
+            sources.push((format!("{dir}/{name}"), text));
+        }
+    }
+    for file in ["crates/supragnosis-cli/src/setup.rs", "crates/supragnosis-viz/src/lib.rs"] {
+        sources.push((file.to_string(), without_tests(&read(&root.join(file)))));
+    }
     let mut found = Vec::new();
     for (name, src) in sources {
         let text = prose(&src);
