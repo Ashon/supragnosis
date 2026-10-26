@@ -350,9 +350,9 @@ that every change to the MCP surface, the hub and the app had to step around.
 
 **What stays.** The hub's listener for sync and pairing; each machine's daemon, console and bridge
 to its own daemon; federated retrieval over sync (`search_knowledge`'s `scope`); and the local
-viewer's `/api/surface`, which names the node and its default workspace. The viewer's branches for
-the read tier, always taken once the surface was always local, went later with the `surface` field
-they read.
+viewer's `/api/surface` as it is, `surface: "local"` included, so a page loaded before an upgrade
+still finds it. The viewer's branches for the read tier, always taken once the surface was always
+local, went in the tripwire cleanup that followed, and the page no longer reads the field.
 
 **What a machine that used them meets.**
 - **A key that is no longer read.** `[[server.principals]]` and `[sync] serve_workspaces` still

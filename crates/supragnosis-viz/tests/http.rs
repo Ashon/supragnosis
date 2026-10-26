@@ -117,6 +117,7 @@ async fn the_local_surface_names_its_node() {
         Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     let sock = serve_uds("surface", engine, ev_channel()).await;
     let s = json_get(&uds_get(&sock, "/api/surface").await);
+    assert_eq!(s["surface"], "local", "surface: {s}");
     assert_eq!(s["node"], "h", "the node's host id: {s}");
     // The workspace an omitted one resolves to, so the page calls the default by its name
     // (design-system.md Section 29.10).

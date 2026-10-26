@@ -590,7 +590,7 @@ HTTP-over-UDS client (`curl --unix-socket`).
   `/api/reify` (hyperedge promotion: assert a group entity + member_of relations as a
   lineage-bearing observation - free ingest, Principle 11/22),
   `/api/workspaces`, `/api/federation`, `/api/about` (the build), `/api/health` (what the store owes
-  and last repaid, crash-recovery.md K5), `/api/surface` (the node's id and default workspace,
+  and last repaid, crash-recovery.md K5), `/api/surface` (which surface the page is on,
   remote-viewer.md Section 3.5), and `/api/events` (SSE live activity stream).
 - **Implemented views**: the hyperedge overlay (co-occurrence hulls with density-based opacity),
   the **curation console** (contested-belief and merge-cycle signals with per-value confirm actions
