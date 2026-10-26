@@ -12,14 +12,21 @@ let layoutScope = null;     // the storage key the current positions belong to
 let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
 let layoutFresh = true;     // the next graph is the first of its scope
 let layoutDirty = false;    // positions moved since the last save
-async function loadSurface() {
-  try {
-    const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
-    if (s && s.node) surfaceNode = String(s.node);
-    if (s && s.default_workspace) defaultWs = String(s.default_workspace);
-    if (s && s.first_view) surfaceFirstView = s.first_view;
-  } catch (_) { /* no surface answer - nothing is remembered */ }
-  loadVisit();
+// One read of the surface for the whole start, however many chains wait on it; only a page whose
+// address named no scope asks where the first view opens, which costs the server a pass over the store.
+let surfaceRead = null;
+function loadSurface() {
+  if (!surfaceRead) surfaceRead = (async () => {
+    try {
+      const url = "/api/surface" + (firstView ? "?first_view=1" : "");
+      const s = await (await fetch(url, { cache: "no-store" })).json();
+      if (s && s.node) surfaceNode = String(s.node);
+      if (s && s.default_workspace) defaultWs = String(s.default_workspace);
+      if (s && s.first_view) surfaceFirstView = s.first_view;
+    } catch (_) { /* no surface answer - nothing is remembered */ }
+    loadVisit();
+  })();
+  return surfaceRead;
 }
 function loadLayout() {
   storedLayout = null;

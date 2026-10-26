@@ -5510,8 +5510,8 @@ No row needs a principle changed.
 
 **Behaviour.**
 - **The first view.** When the address names no scope, the page opens once, before its first draw,
-  where `/api/surface` says, which the server decides from the node's counts of entities by
-  workspace: on All when other workspaces hold entities and the default holds at most half of them,
+  where `/api/surface` says when asked with `first_view=1` (only such a page asks, since the answer
+  reads every entity), which the server decides from the node's counts of entities by workspace: on All when other workspaces hold entities and the default holds at most half of them,
   saying beside the chips "Showing all workspaces - default holds 2 of 40" (or, as before, "default
   is empty"). When the counts cannot be read, or no workspace holds an entity, it stays on the
   default.

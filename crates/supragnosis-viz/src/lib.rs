@@ -448,7 +448,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // loaded before an upgrade still finds it.
         // `node` is this node's host id: the page keys what it remembers locally - the layout - by it
         // (design-system.md Section 5), and names a host "this node" only when it matches (Section 9).
-        "/api/surface" => surface_response(engine),
+        "/api/surface" => surface_response(engine, query),
         // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
         // apart from /api/about, which describes the build.
         "/api/health" => health_response(engine),
@@ -1604,17 +1604,20 @@ pub fn first_view(default_count: usize, total: usize) -> &'static str {
 }
 
 /// `/api/surface`: which surface and node the page is on, the workspace an omitted one resolves to
-/// (the node's default, so the page calls it by its name, design-system.md Section 29.10), and
-/// where the first view opens, with the counts it was decided from. When the entities cannot be
-/// read `first_view` is left out and the page stays on the default (P5: unread is not empty).
-fn surface_response(engine: &Engine) -> Response {
+/// (the node's default, so the page calls it by its name, design-system.md Section 29.10), and,
+/// asked with `first_view=1`, where the first view opens, with the counts it was decided from. That
+/// half reads every entity, so only a page whose address named no scope asks for it. When the
+/// entities cannot be read `first_view` is left out and the page stays on the default (P5: unread
+/// is not empty).
+fn surface_response(engine: &Engine, query: &str) -> Response {
     let default = engine.default_workspace();
     let mut body = serde_json::json!({
         "surface": "local",
         "node": engine.host(),
         "default_workspace": default,
     });
-    if let Ok(g) = engine.graph(None) {
+    let asked = query.split('&').any(|kv| kv == "first_view=1");
+    if let Some(g) = asked.then(|| engine.graph(None).ok()).flatten() {
         let (held, total) =
             (g.nodes.iter().filter(|n| n.workspace == default).count(), g.nodes.len());
         body["first_view"] = serde_json::json!({

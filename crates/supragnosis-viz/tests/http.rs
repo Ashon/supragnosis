@@ -164,11 +164,14 @@ async fn the_surface_says_where_the_first_view_opens() {
     put("ws", &["Ledger"]);
     put("billing", &["Invoice", "Warehouse", "Nightly export"]);
     let sock = serve_uds("first-view", Arc::clone(&engine), ev_channel()).await;
-    let s = json_get(&uds_get(&sock, "/api/surface").await);
+    let s = json_get(&uds_get(&sock, "/api/surface?first_view=1").await);
     assert_eq!(
         s["first_view"],
         serde_json::json!({"scope": "all", "default_holds": 1, "of": 4})
     );
+    // Not asked, the answer reads no entity and carries no first view.
+    let plain = json_get(&uds_get(&sock, "/api/surface").await);
+    assert!(plain.get("first_view").is_none(), "{plain}");
     let _ = std::fs::remove_file(&sock);
 }
 

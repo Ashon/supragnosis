@@ -580,6 +580,23 @@ fn tbox_change_affected_types_round_trip() {
 /// 9f778c20". A kind or a decision with no word is left without one, which the Log says in words.
 #[test]
 fn every_proposal_event_has_a_sentence() {
+    // ALL is a hand-written list: a new event kind stops this match compiling until it is named
+    // here, and then the assertion holds it to ALL.
+    for event in [
+        ProposalEventKind::Opened,
+        ProposalEventKind::Verdict,
+        ProposalEventKind::Withdrawn,
+        ProposalEventKind::Comment,
+    ] {
+        match event {
+            ProposalEventKind::Opened
+            | ProposalEventKind::Verdict
+            | ProposalEventKind::Withdrawn
+            | ProposalEventKind::Comment => {
+                assert!(ProposalEventKind::ALL.contains(&event), "ALL leaves out {event:?}")
+            }
+        }
+    }
     for kind in PROPOSAL_KINDS {
         for event in ProposalEventKind::ALL {
             let decisions: Vec<Option<&str>> = if event == ProposalEventKind::Verdict {

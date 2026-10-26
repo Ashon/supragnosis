@@ -367,10 +367,15 @@ fn the_layout_steps_on_its_own_thread() {
 #[test]
 fn the_log_draws_its_newest_rows() {
     assert!(SCRIPT.contains("const LOG_ROWS = 200;"), "the Log's page moved");
-    assert!(
-        function("refreshLog").contains("const r = await fetch(url, askedWith(heldLog, url));"),
-        "the Log fetches its whole scope again"
-    );
+    let refresh = function("refreshLog");
+    // Asking for one more than it shows is how the Log knows there are more: no request can see
+    // the page's limit, so this stays a check of the script until the Log's code next changes.
+    for part in [
+        "const url = \"/api/observations?limit=\" + (logLimit + 1)",
+        "const r = await fetch(url, askedWith(heldLog, url));",
+    ] {
+        assert!(refresh.contains(part), "the Log fetches its whole scope again: {part}");
+    }
     let render = function("renderLog");
     for part in [
         "const more = obsLog.length > logLimit, shown = more ? obsLog.slice(0, logLimit) : obsLog;",
