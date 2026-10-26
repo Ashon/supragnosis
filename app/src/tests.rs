@@ -27,6 +27,20 @@ mod src_tests {
         }
         expected += main;
         assert!(modules > 0, "main.rs's modules were read");
+        // A module declared some other way (`pub mod`, a trailing comment, inside another module)
+        // would leave both lists without it: every source file is main.rs, a module read above, or
+        // one of the two test files.
+        let files = std::fs::read_dir(&dir)
+            .expect("src reads")
+            .filter(|e| e.as_ref().is_ok_and(|e| e.path().extension().is_some_and(|x| x == "rs")))
+            .count();
+        assert_eq!(
+            files,
+            modules + 3,
+            "a source file is neither main.rs, a module nor a test file"
+        );
+        // An inline test module in a source file would put test code back into SRC.
+        assert!(!super::SRC.contains("#[test]"), "a test sits in a module SRC reads");
         assert!(
             super::SRC == expected,
             "SRC is not main.rs's modules, in their order, then main.rs, and nothing else"
@@ -850,7 +864,7 @@ mod cli_contract_tests {
 
     /// client-connect.md Section 13.4: every app the CLI's example lists - the CLI holds the
     /// example to every app it knows - has a name in the menu and a name and an icon on both pages,
-    /// from the one table in kit.js (design-system.md Section 6a).
+    /// from kit.js (design-system.md Section 6a).
     #[test]
     fn every_app_page_names_the_apps_connect_lists() {
         let kit = include_str!("../assets/kit.js");

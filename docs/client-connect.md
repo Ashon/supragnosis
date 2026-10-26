@@ -561,7 +561,7 @@ No contradiction.
 - `client_names_map_to_apps_and_unknown_names_to_none` - the first-contact name `opencode`.
 - `every_app_page_names_the_apps_connect_lists` (the app) and `connect_json_matches_its_example`
   (the CLI): the example lists every app the CLI knows, and the menu and both pages name each one
-  from the one table in `kit.js`.
+  from `kit.js`.
 
 ### 13.5 What the second reading changed
 

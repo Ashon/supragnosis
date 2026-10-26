@@ -1782,7 +1782,7 @@ which holds the activity's rows and the footprint in words, and
 `a_who_line_names_the_writer_apart_from_whom_it_wrote_for`, which holds the who-line's grammar and
 the card's Cited, confirmation and links; and by `the_daemon_has_one_word_per_state`
 and `the_ai_app_row_is_built_once` in the app's tests - the state words on the tray, Settings, Setup
-and the starting page, and the AI app's row's words, kept once in `kit.js`.
+and the starting page, and the AI app's row's words in `kit.js`.
 
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:

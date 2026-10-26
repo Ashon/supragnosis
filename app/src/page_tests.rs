@@ -438,7 +438,7 @@ mod settings_tests {
         let watch = &watch[..watch.find("\n}\n").expect("it closes")];
         assert!(watch.contains("Duration::from_secs(1)") && watch.contains("reload_viewer"));
         assert!(
-            src.contains("*SPLASH.lock().unwrap() = None;"),
+            src.contains("if target == \"/\" {\n                                *SPLASH.lock().unwrap() = None;"),
             "the graph's page does not end the watch"
         );
 
@@ -757,7 +757,10 @@ mod settings_tests {
         );
         assert!(js.contains("Open Setup"), "the page does not name the way back");
         assert!(settings.contains("\"Open Setup\""), "About does not say Open Setup");
-        assert!(main.contains("\"Finish Setup...\""), "the tray does not say Finish Setup...");
+        assert!(
+            main.contains("\"tray-finish-setup\",\n                \"Finish Setup...\","),
+            "the tray does not say Finish Setup..."
+        );
         for part in [
             "role: \"progressbar\"",
             "\"aria-valuenow\"",
