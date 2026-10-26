@@ -573,3 +573,31 @@ fn tbox_change_affected_types_round_trip() {
         .affected_types
         .is_empty());
 }
+
+/// design-system.md Section 9, U17: every proposal event the engine can write has a sentence in the
+/// Log - a noun for every kind it opens and a verb for every event, a verdict's for each decision
+/// `review_proposal` casts - so a new kind or event cannot reach a page as "opened new_kind:
+/// 9f778c20". A kind or a decision with no word is left without one, which the Log says in words.
+#[test]
+fn every_proposal_event_has_a_sentence() {
+    for kind in PROPOSAL_KINDS {
+        for event in ProposalEventKind::ALL {
+            let decisions: Vec<Option<&str>> = if event == ProposalEventKind::Verdict {
+                VERDICT_DECISIONS.iter().copied().map(Some).collect()
+            } else {
+                vec![None]
+            };
+            for decision in decisions {
+                let (noun, verb) = proposal_words(kind, event, decision);
+                assert!(
+                    noun.is_some() && verb.is_some(),
+                    "the Log has no sentence for {kind} {event:?} {decision:?}"
+                );
+            }
+        }
+    }
+    let said = proposal_words("entity_merge", ProposalEventKind::Opened, None);
+    assert_eq!(said, (Some("Merge"), Some("proposed")));
+    assert_eq!(proposal_words("new_kind", ProposalEventKind::Opened, None).0, None);
+    assert_eq!(proposal_words("recall", ProposalEventKind::Verdict, Some("comment")).1, None);
+}

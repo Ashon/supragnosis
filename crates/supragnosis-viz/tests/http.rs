@@ -125,6 +125,127 @@ async fn the_local_surface_names_its_node() {
     let _ = std::fs::remove_file(&sock);
 }
 
+/// design-system.md Section 29.21: the first view is where the knowledge is. A default holding at
+/// most half of the node's entities, nothing included, with the rest elsewhere, opens on All; an
+/// empty store, or a default holding most, stays on the default. /api/surface says which, with the
+/// counts the page's note reads.
+#[tokio::test]
+async fn the_surface_says_where_the_first_view_opens() {
+    use supragnosis_viz::first_view;
+    for (held, total, want) in [
+        (0, 0, "default"),
+        (0, 5, "all"),
+        (1, 5, "all"),
+        (2, 4, "all"),
+        (3, 5, "default"),
+        (5, 5, "default"),
+    ] {
+        assert_eq!(first_view(held, total), want, "{held} of {total}");
+    }
+
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    let put = |ws: &str, names: &[&str]| {
+        engine
+            .observe(ObserveInput {
+                content: names.join(" and "),
+                workspace: Some(ws.into()),
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: names
+                    .iter()
+                    .map(|n| EntityInput { name: (*n).into(), kind: None, description: None })
+                    .collect(),
+                relations: vec![],
+            })
+            .expect("observe");
+    };
+    put("ws", &["Ledger"]);
+    put("billing", &["Invoice", "Warehouse", "Nightly export"]);
+    let sock = serve_uds("first-view", Arc::clone(&engine), ev_channel()).await;
+    let s = json_get(&uds_get(&sock, "/api/surface").await);
+    assert_eq!(
+        s["first_view"],
+        serde_json::json!({"scope": "all", "default_holds": 1, "of": 4})
+    );
+    let _ = std::fs::remove_file(&sock);
+}
+
+/// design-system.md Section 29.22: the proposal list the Review page reads marks a kind with no
+/// commit effect yet - a recall, a type change - and leaves an entity merge unmarked; the page's
+/// sentence, tag and idle Accept are drawn from that mark.
+#[tokio::test]
+async fn the_proposals_read_marks_what_has_no_effect() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws"));
+    observe_depends(&engine);
+    let ids: Vec<String> =
+        engine.graph(Some("ws")).unwrap().nodes.into_iter().map(|n| n.id).collect();
+    let open = |kind: &str, targets: Vec<String>, into: Option<String>| {
+        engine
+            .propose(supragnosis_engine::ProposeInput {
+                workspace: None,
+                kind: kind.into(),
+                targets,
+                into,
+                tier: None,
+                rationale: None,
+                affected_types: Vec::new(),
+                source_ref: None,
+                on_behalf_of: None,
+            })
+            .expect("open")
+    };
+    let recall = open("recall", vec!["supragnosis".into()], None);
+    let change = open("tbox_change", vec!["Project".into()], None);
+    let merge = open("entity_merge", ids.clone(), Some(ids[0].clone()));
+    let sock = serve_uds("no-effect", engine, ev_channel()).await;
+    let list = json_get(&uds_get(&sock, "/api/proposals?workspace=ws").await);
+    let mark = |id: &str| {
+        list.as_array().unwrap().iter().find(|p| p["id"] == id).expect("listed")["no_effect_yet"]
+            .clone()
+    };
+    assert_eq!(mark(&recall), true, "{list}");
+    assert_eq!(mark(&change), true, "{list}");
+    assert_ne!(mark(&merge), true, "a merge has its effect: {list}");
+    let _ = std::fs::remove_file(&sock);
+}
+
+/// U37, the server's half of the Log: a read with a limit answers the scope's newest observations,
+/// newest first, so the page asks for one more than it shows to know there are more.
+#[tokio::test]
+async fn the_log_answers_its_newest_rows_first() {
+    // Each entry a millisecond after the last, so newest is the order they were written in.
+    struct Ticking(std::sync::atomic::AtomicU64);
+    impl supragnosis_core::Clock for Ticking {
+        fn now_millis(&self) -> supragnosis_core::Timestamp {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+    let clock = Arc::new(Ticking(1_792_000_000_000.into()));
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "ws").with_clock(clock));
+    for n in 1..=5 {
+        engine
+            .observe(ObserveInput {
+                content: format!("entry {n}"),
+                workspace: None,
+                source_ref: None,
+                confidence: None,
+                on_behalf_of: None,
+                derived_from: vec![],
+                entities: vec![],
+                relations: vec![],
+            })
+            .expect("observe");
+    }
+    let sock = serve_uds("newest", engine, ev_channel()).await;
+    let log = json_get(&uds_get(&sock, "/api/observations?limit=3").await);
+    let said: Vec<&str> =
+        log.as_array().unwrap().iter().map(|o| o["content"].as_str().unwrap()).collect();
+    assert_eq!(said, ["entry 5", "entry 4", "entry 3"], "{log}");
+    let _ = std::fs::remove_file(&sock);
+}
+
 /// Each hit of the viewer's search says how it was reached (design-system.md Section 8, U15): its
 /// words matched, it is only near in meaning, or the graph's enrichment added it as a neighbor. The
 /// groups are read from the lists the search consumed, so a hit that contains the query is never
@@ -1493,8 +1614,8 @@ async fn a_settle_preview_names_the_source_and_its_reach() {
 /// design-system.md Section 29.3: a confirmation the console cast is said on its Decided item by the
 /// source it confirmed, keeps the sentence its notice said as its rationale, and the undo read
 /// answers the act that reverses it with that act's diff - one demotion, back to the tier the source
-/// has without it. The Log names the same source. An id that is no merged gate proposal has nothing
-/// to undo.
+/// has without it. The Log names the same source, with the act's noun and verb. An id that is no
+/// merged gate proposal has nothing to undo.
 #[tokio::test]
 async fn a_decided_confirmation_names_its_source_and_says_its_undo() {
     let store = Arc::new(InMemoryStore::new());
@@ -1561,6 +1682,9 @@ async fn a_decided_confirmation_names_its_source_and_says_its_undo() {
         .find(|o| o["proposal"]["event"] == "verdict")
         .expect("the verdict's row");
     assert_eq!(verdict["proposal"]["targets"][0]["name"], row["labels"][0], "{verdict}");
+    // And say what happened in the engine's words (U17).
+    assert_eq!(verdict["proposal"]["noun"], "Claim confirmation", "{verdict}");
+    assert_eq!(verdict["proposal"]["verb"], "accepted", "{verdict}");
 
     let none = uds_get(&sock, "/api/resolve/undo?proposal=nothing").await;
     assert!(none.contains("404"), "nothing to undo: {none}");

@@ -342,21 +342,16 @@ function wsUnlisted(cur) { return !!(wsListed && cur && cur !== "*" && cur !== "
 let firstView = new URLSearchParams(location.search).get("workspace") === null;   // the address named no scope
 let openedAll = false;   // the page opened on All because the default was empty - said beside the chips
 let openedHeld = null;   // { d, t } when it opened on All because the default held at most half
+let surfaceFirstView = null;   // { scope, default_holds, of } as /api/surface decided it
 // The first view is where the knowledge is (Section 29.21): when the address names no scope, the page
-// decides once, before its first draw, from the node's entities by workspace - All when other
-// workspaces hold entities and the default holds at most half of them. Unread counts keep the default.
-async function decideFirstView() {
-  if (!firstView || currentWs() !== "") return;
-  try {
-    const r = await fetch("/api/graph?workspace=*", { cache: "no-store" });
-    if (!r.ok) return;
-    const nodesAll = (await r.json()).nodes || [];
-    const t = nodesAll.length, d = nodesAll.filter(n => n.workspace === defaultName()).length;
-    if (t > d && d * 2 <= t) {
-      firstView = false; openedAll = true; openedHeld = d ? { d, t } : null;
-      wsInput.value = "*"; renderChipsActive();
-    }
-  } catch (_) { /* unread counts keep the default */ }
+// opens once, before its first draw, where /api/surface says - All when other workspaces hold
+// entities and the default holds at most half of them. No answer keeps the default.
+function decideFirstView() {
+  const v = surfaceFirstView;
+  if (!firstView || currentWs() !== "" || !v || v.scope !== "all") return;
+  const d = v.default_holds, t = v.of;
+  firstView = false; openedAll = true; openedHeld = d ? { d, t } : null;
+  wsInput.value = "*"; renderChipsActive();
 }
 async function anyEntry(ws) {
   const r = await fetch("/api/observations?limit=1" + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });

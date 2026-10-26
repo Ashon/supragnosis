@@ -1767,10 +1767,12 @@ and a region's hue checked over all 512 slots against the signals. The landing's
 page's copies are held to the viewer's by `the_stage_draws_the_viewers_marks` and
 `the_principles_page_draws_the_viewers_marks`.
 
-U17's first half is guarded by `a_tier_is_named_never_spelled` and `every_proposal_event_has_a_sentence`
-in `crates/supragnosis-viz/tests/words.rs`: no interpolation in the viewer's script draws a tier but
-through `tierName`, and the Log's two tables cover every kind in the engine's `PROPOSAL_KINDS`, every
-`ProposalEventKind` and every decision `review_proposal` accepts. Its second half is guarded by
+U17's first half is guarded by `a_tier_is_named_never_spelled` in
+`crates/supragnosis-viz/tests/words.rs` - no interpolation in the viewer's script draws a tier but
+through `tierName` - and by `every_proposal_event_has_a_sentence` in the engine's unit tests: the
+engine sends each Log row's noun and verb from one table, which covers every kind in
+`PROPOSAL_KINDS`, every `ProposalEventKind` and every decision in `VERDICT_DECISIONS`, the ones
+`review_proposal` casts as a verdict. Its second half is guarded by
 `every_log_row_says_who_and_when` in the same file - the tier by name, the writer and the time once a
 minute, marked with the legend's ring - and by `the_setup_page_says_what_is_true_and_how_far_it_is` in
 the app's tests, which holds Setup's one name in its crumb, the tray and About. Its words are guarded
@@ -1813,7 +1815,9 @@ U20 is guarded by `review_is_always_in_the_status_bar_with_one_count`,
 `follow_frames_what_is_in_scope_and_notes_the_rest` and `the_first_view_opens_where_the_knowledge_is`
 in `crates/supragnosis-viz/tests/places.rs`: Review's entry reads Review at zero and counts the contested beliefs inside its one count; Needs you lists only ties; the event
 handler changes no scope and notes a write elsewhere with Show; and a default holding at most half
-of the knowledge, or nothing, with knowledge elsewhere opens on All and says so (Section 29.21).
+of the knowledge, or nothing, with knowledge elsewhere opens on All and says so (Section 29.21). The
+decision at half the knowledge is the server's, guarded by
+`the_surface_says_where_the_first_view_opens` in `http.rs`.
 
 U1 is guarded by `every_console_write_reports_its_outcome`, a source tripwire in
 `crates/supragnosis-viz/tests/http.rs` beside the escaping and D1 guards. It reads the write paths from
@@ -3095,7 +3099,8 @@ know there are more, and shows 200 more on request; its count reads "200+" until
 Its rows are wired by their place in the list rather than found again in it, and an observation it
 does not hold - a curation finding's, a search hit's - is read from the scope's log once.
 
-Guarded by `a_frame_touches_what_the_window_holds` and `the_log_draws_its_newest_rows`.
+Guarded by `a_frame_touches_what_the_window_holds`, `the_log_draws_its_newest_rows` and
+`the_log_answers_its_newest_rows_first`.
 
 ### 27.8 Semantic zoom
 
@@ -5504,11 +5509,12 @@ keeping its one count of the scope (U3, U20) and saying what waits elsewhere onl
 No row needs a principle changed.
 
 **Behaviour.**
-- **The first view.** When the address names no scope, the page decides once, before its first
-  draw, from the node's counts of entities by workspace: it opens on All when other workspaces hold
-  entities and the default holds at most half of them, saying beside the chips "Showing all
-  workspaces - default holds 2 of 40" (or, as before, "default is empty"). When the counts cannot be
-  read, or no workspace holds an entity, it stays on the default.
+- **The first view.** When the address names no scope, the page opens once, before its first draw,
+  where `/api/surface` says, which the server decides from the node's counts of entities by
+  workspace: on All when other workspaces hold entities and the default holds at most half of them,
+  saying beside the chips "Showing all workspaces - default holds 2 of 40" (or, as before, "default
+  is empty"). When the counts cannot be read, or no workspace holds an entity, it stays on the
+  default.
 - **What waits elsewhere.** On the local console the page reads what waits in every workspace - open
   and Blocked proposals, suspected secrets and contested beliefs - from the reads the tray makes, at
   most every 30 seconds while the page is seen, again after each console act, and from the scope's
@@ -5536,8 +5542,9 @@ No row needs a principle changed.
 - It does not drop anything without a person's act: the system rejects nothing on its own.
 - It does not count dream drafts, which the tray does not count either.
 
-**Guarded by** `the_first_view_opens_where_the_knowledge_is` in the viewer's place tests (decided
-once, before the first draw, at half the knowledge or less) and `the_person_finds_what_waits` in its
+**Guarded by** `the_surface_says_where_the_first_view_opens` in the viewer's HTTP tests (at half the
+knowledge or less), `the_first_view_opens_where_the_knowledge_is` in its place tests (an empty
+default, the note and the chip) and `the_person_finds_what_waits` in its
 review tests (the tray's reads, the pill's words, the line in Needs you, Reject all blocked leaving
 out recalls and items no longer blocked, and a partial failure said); browser checks seed a default
 with one entity beside a workspace of five and two Blocked merges, and measure the page opening on
@@ -5667,9 +5674,10 @@ and the reject that is left), `i17_a_recall_merge_without_the_console_marker_nev
 (no recall merge counts, a console-marked one included) and the engine's
 `the_console_marker_is_read_off_every_attestation` (I17's marker reading and the one function);
 `what_has_no_effect_says_so` in the MCP crate's unit tests (the note on `propose`, the refused merge,
-the listed mark), the golden tool list and the prompts test; and `the_console_says_what_has_no_effect`
-in the viewer's review tests (the sentence, no Accept, the row, the hints, the Reject notice, the
-preview, and A checked in the decision itself). Browser checks seed a type change and a recall, and
+the listed mark), the golden tool list and the prompts test; `the_proposals_read_marks_what_has_no_effect`
+in the viewer's HTTP tests (the mark on /api/proposals); and `the_console_says_what_has_no_effect`
+in its review tests (the sentence, no Accept, the row, the hints, the Reject notice, the preview, and
+A checked in the decision itself). Browser checks seed a type change and a recall, and
 read both items, the rows, A pressed with no request sent, the preview bar, the Reject notice and the
 Decided item; the agent's merge is refused with why.
 

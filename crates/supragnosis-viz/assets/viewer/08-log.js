@@ -57,15 +57,9 @@ function tierDot(t) { return html`<span class="tsw tmark t-${String(t)}" title="
 // the server had nothing to add, so an untranslatable row still says something.
 // Returns text, not markup: callers interpolate it into an html template, which escapes it once.
 // What the Log says for a proposal event (Section 9, U17): the proposal's noun and what happened to
-// it, then its targets in names - "Merge proposed: PostgreSQL into Postgres". Every kind the engine
-// opens has its noun and every event its verb; a row the page cannot phrase says "Something changed"
-// and keeps the stored text in its card. A verdict carries its decision, so its verb is the
-// decision's.
-const PROPOSAL_NOUN = {
-  entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Claim confirmation",
-  claim_demotion: "Claim demotion", tbox_change: "Type change", recall: "Recall",
-};
-const EVENT_VERB = { opened: "proposed", merge: "accepted", reject: "rejected", withdrawn: "withdrawn", comment: "discussed" };
+// it, then its targets in names - "Merge proposed: PostgreSQL into Postgres". The engine sends the
+// noun and the verb with the row, from its one table; a row without them - an older node's, or a
+// kind it has no word for - says "Something changed" and keeps the stored text in its card.
 const HASH_ID = /^[0-9a-f]{16,}$/;   // a content address, as observation and entity ids are
 function proposalLine(p) {
   const ts = p.targets || [];
@@ -90,8 +84,7 @@ function proposalLine(p) {
   } else if (ts.length) {
     what = ts.map(named).filter(Boolean).join(", ");
   }
-  const noun = PROPOSAL_NOUN[p.kind];
-  const verb = EVENT_VERB[p.event === "verdict" ? p.decision : p.event];
+  const noun = p.noun, verb = p.verb;
   if (!noun || !verb) return "Something changed" + (what ? ": " + what : "");
   // State is worth saying on a verdict precisely when it disagrees with the decision - an accepted
   // merge that a check blocks is the case a reader must not miss.
@@ -168,7 +161,7 @@ function obsCardHtml(o) {
     const p = o.proposal;
     const full = proposals.find(q => q.id === p.proposal);
     parts.push(html`<div class="osec">Proposal</div>`,
-      html`<div class="ocprop">${PROPOSAL_NOUN[p.kind] || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
+      html`<div class="ocprop">${p.noun || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
       full && full.rationale ? html`<div class="ocwhy">"${full.rationale}"</div>` : "",
       html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">Open in Review</button></div>`);
     const ts = p.targets || [];

@@ -56,20 +56,11 @@ fn follow_frames_what_is_in_scope_and_notes_the_rest() {
     assert!(note.contains("label: \"Show\""), "the notice has no Show");
 }
 
-/// The first view is where the knowledge is: a default holding at most half of the node's entities,
-/// with the rest elsewhere, opens on All, decided once before the first draw (design-system.md
-/// Section 29.21); an empty default with knowledge elsewhere opens on All and says so; and the scope
-/// in use is always a selected chip.
+/// The first view is where the knowledge is (design-system.md Section 29.21): an empty default with
+/// knowledge elsewhere opens on All and says so, and the scope in use is always a selected chip. The
+/// decision at half the knowledge is the server's (`the_surface_says_where_the_first_view_opens`).
 #[test]
 fn the_first_view_opens_where_the_knowledge_is() {
-    let first = SCRIPT
-        .find("async function decideFirstView()")
-        .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
-        .expect("decideFirstView");
-    assert!(
-        first.contains("if (t > d && d * 2 <= t)"),
-        "a default holding most of the knowledge is left"
-    );
     let empty = function("refreshEmpty");
     assert!(
         empty.contains("if (firstView && cur === \"\" && others.length)"),

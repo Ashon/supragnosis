@@ -17,6 +17,7 @@ async function loadSurface() {
     const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
     if (s && s.node) surfaceNode = String(s.node);
     if (s && s.default_workspace) defaultWs = String(s.default_workspace);
+    if (s && s.first_view) surfaceFirstView = s.first_view;
   } catch (_) { /* no surface answer - nothing is remembered */ }
   loadVisit();
 }

@@ -294,6 +294,32 @@ pub(crate) fn admitted_json(dir: &supragnosis_sync::http::PeerDirectory) -> Vec<
         .collect()
 }
 
+/// One host's row in the viewer's federation blob (federation.md 6e, N6): whether it answered, its
+/// build, the drift for the workspaces both sides hold, the two buckets of the surface difference and
+/// the time they were negotiated - null for a host that has not answered, never an empty grant set.
+pub(crate) fn server_entry(
+    url: &str,
+    healthy: bool,
+    version: Option<String>,
+    protocol: Option<u32>,
+    workspaces: Vec<serde_json::Value>,
+    diff: supragnosis_sync::SurfaceDiff,
+    negotiated_at: Option<supragnosis_core::Timestamp>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "url": url,
+        "healthy": healthy,
+        "version": version,
+        "protocol": protocol,
+        // Unchanged key, narrowed meaning: drift rows for the workspaces both sides hold. The two
+        // new buckets are what the old view had no way to say.
+        "workspaces": workspaces,
+        "local_only": diff.local_only,
+        "peer_only": diff.peer_only,
+        "negotiated_at": negotiated_at,
+    })
+}
+
 /// Inputs to the federation status loop, as a struct rather than positional arguments - the list
 /// crossed clippy's threshold when the resolved server links joined it, and a loop that reads eight
 /// unrelated things is easier to call wrongly than to read.
@@ -398,18 +424,15 @@ pub(crate) fn spawn_fed_status(task: FedStatusTask) {
                     });
                     last.insert(server.clone(), healthy);
                 }
-                servers_json.push(serde_json::json!({
-                    "url": server,
-                    "healthy": healthy,
-                    "version": version,
-                    "protocol": protocol,
-                    // Unchanged key, narrowed meaning: drift rows for the workspaces both sides
-                    // hold. The two new buckets are what the old view had no way to say.
-                    "workspaces": ws_json,
-                    "local_only": diff.local_only,
-                    "peer_only": diff.peer_only,
-                    "negotiated_at": negotiated_at,
-                }));
+                servers_json.push(server_entry(
+                    server,
+                    healthy,
+                    version,
+                    protocol,
+                    ws_json,
+                    diff,
+                    negotiated_at,
+                ));
             }
             let peers_json = if is_hub {
                 serde_json::to_value(registry.snapshot()).unwrap_or_default()
@@ -580,5 +603,48 @@ mod link_transport {
         assert!(said("http://hub.example:7420 is plain HTTP"), "{notes:?}");
         assert!(said("/nonexistent/ca.pem"), "{notes:?}");
         let _ = std::fs::remove_file(ca);
+    }
+}
+
+#[cfg(test)]
+mod federation_blob {
+    use super::*;
+
+    /// federation.md 6e and N6: the viewer's federation blob carries what each host admits as the
+    /// three-bucket difference with its time, as `sync_status` does; a host that has not answered
+    /// has no time and no buckets, never an empty grant set read as a revoked one.
+    #[test]
+    fn the_viewer_blob_carries_the_buckets_and_their_time() {
+        let diff = supragnosis_sync::surface_diff(
+            &["ws".into(), "mine".into()],
+            &["ws".into(), "theirs".into()],
+        );
+        let drift = serde_json::json!({"workspace": "ws", "local_ahead": 2, "hub_ahead": 0});
+        let row = server_entry(
+            "https://hub.example",
+            true,
+            Some("0.11.0".into()),
+            Some(3),
+            vec![drift.clone()],
+            diff,
+            Some(1_792_000_000_000),
+        );
+        assert_eq!(row["workspaces"], serde_json::json!([drift]), "{row}");
+        assert_eq!(row["local_only"], serde_json::json!(["mine"]), "{row}");
+        assert_eq!(row["peer_only"], serde_json::json!(["theirs"]), "{row}");
+        assert_eq!(row["negotiated_at"], 1_792_000_000_000u64, "{row}");
+
+        let quiet = server_entry(
+            "https://quiet.example",
+            false,
+            None,
+            None,
+            vec![],
+            Default::default(),
+            None,
+        );
+        assert_eq!(quiet["healthy"], false, "{quiet}");
+        assert!(quiet["negotiated_at"].is_null(), "{quiet}");
+        assert_eq!(quiet["local_only"], serde_json::json!([]), "{quiet}");
     }
 }

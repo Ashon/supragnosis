@@ -360,19 +360,17 @@ fn the_layout_steps_on_its_own_thread() {
     assert!(sync < let_go, "the node is let go before the layout hears where");
 }
 
-/// U37, the Log's half: the Log lists the scope's newest observations, LOG_ROWS at a time, asking for
-/// one more than it shows and with the ETag of what it holds; its rows are wired by their place, not
-/// found again in the list; and an observation it does not hold is read once by id.
+/// U37, the Log's half: the Log lists the scope's newest observations, LOG_ROWS at a time, asking
+/// with the ETag of what it holds; its rows are wired by their place, not found again in the list;
+/// and an observation it does not hold is read once by id. That a limited read answers the newest
+/// rows first is the server's (`the_log_answers_its_newest_rows_first`).
 #[test]
 fn the_log_draws_its_newest_rows() {
     assert!(SCRIPT.contains("const LOG_ROWS = 200;"), "the Log's page moved");
-    let refresh = function("refreshLog");
-    for part in [
-        "const url = \"/api/observations?limit=\" + (logLimit + 1)",
-        "const r = await fetch(url, askedWith(heldLog, url));",
-    ] {
-        assert!(refresh.contains(part), "the Log fetches its whole scope again: {part}");
-    }
+    assert!(
+        function("refreshLog").contains("const r = await fetch(url, askedWith(heldLog, url));"),
+        "the Log fetches its whole scope again"
+    );
     let render = function("renderLog");
     for part in [
         "const more = obsLog.length > logLimit, shown = more ? obsLog.slice(0, logLimit) : obsLog;",

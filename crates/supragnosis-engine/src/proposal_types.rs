@@ -298,6 +298,39 @@ pub const PROPOSAL_KINDS: [&str; 6] = [
     "recall",
 ];
 
+/// The decisions a verdict carries: what `review_proposal` casts as a verdict rather than a comment
+/// or a withdrawal.
+pub const VERDICT_DECISIONS: [&str; 2] = ["merge", "reject"];
+
+/// What a person reads for a proposal event (design-system.md Section 9, U17): the proposal's noun
+/// and what happened to it - "Merge proposed". One table, so the Log never spells a kind or an
+/// event; None for a kind or an event it has no word for, which the Log says as "Something changed".
+pub fn proposal_words(
+    kind: &str,
+    event: ProposalEventKind,
+    decision: Option<&str>,
+) -> (Option<&'static str>, Option<&'static str>) {
+    let noun = match kind {
+        "entity_merge" => Some("Merge"),
+        "entity_split" => Some("Un-merge"),
+        "claim_promotion" => Some("Claim confirmation"),
+        "claim_demotion" => Some("Claim demotion"),
+        "tbox_change" => Some("Type change"),
+        "recall" => Some("Recall"),
+        _ => None,
+    };
+    // A verdict carries its decision, so its verb is the decision's.
+    let verb = match (event, decision) {
+        (ProposalEventKind::Opened, _) => Some("proposed"),
+        (ProposalEventKind::Verdict, Some("merge")) => Some("accepted"),
+        (ProposalEventKind::Verdict, Some("reject")) => Some("rejected"),
+        (ProposalEventKind::Verdict, _) => None,
+        (ProposalEventKind::Withdrawn, _) => Some("withdrawn"),
+        (ProposalEventKind::Comment, _) => Some("discussed"),
+    };
+    (noun, verb)
+}
+
 /// Whether a merge of this kind changes anything. A type change and a recall have no commit effect
 /// yet (architecture.md Section 14), so no merge of either is valid until each has one: the fold
 /// reads it as a comment and the write surfaces refuse it (proposal-workflow.md 7.1 (f),

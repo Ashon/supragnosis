@@ -306,6 +306,9 @@ impl Engine {
                 let payload: serde_json::Value =
                     serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
                 let view = proposals.get(&pid);
+                let decision = payload.get("decision").and_then(|d| d.as_str());
+                let (noun, verb) =
+                    proposal_words(view.map_or("", |v| v.kind.as_str()), ev.event, decision);
                 ProposalEventSummary {
                     event: match ev.event {
                         ProposalEventKind::Opened => "opened",
@@ -314,13 +317,15 @@ impl Engine {
                         ProposalEventKind::Comment => "comment",
                     }
                     .to_string(),
-                    decision: payload.get("decision").and_then(|d| d.as_str()).map(str::to_string),
+                    decision: decision.map(str::to_string),
                     kind: view.map(|v| v.kind.clone()).unwrap_or_default(),
                     state: view.map(|v| v.state.clone()).unwrap_or_default(),
                     targets: view
                         .map(|v| v.targets.iter().map(|t| eref(t)).collect())
                         .unwrap_or_default(),
                     into: view.and_then(|v| v.into.as_deref()).map(eref),
+                    noun,
+                    verb,
                     proposal: pid,
                 }
             });

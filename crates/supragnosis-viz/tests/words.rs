@@ -1,18 +1,11 @@
 //! docs/design-system.md U17: no line a person reads first spells a system identifier. These are
 //! source tripwires over the viewer's script: a tier reaches the screen through `tierName`, never as
-//! its identifier, and every proposal event the engine can write has a sentence in the Log, so a new
-//! kind or event cannot arrive as "opened new_kind: 9f778c20".
+//! its identifier, and a proposal row the page cannot phrase says so in words.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
-const ENGINE: &str = concat!(
-    include_str!("../../supragnosis-engine/src/proposal_types.rs"),
-    include_str!("../../supragnosis-engine/src/review.rs"),
-);
-const CORE: &str = include_str!("../../supragnosis-core/src/lib.rs");
-
 const TIER_FIELDS: &[&str] = &["trust_tier", "effective_tier", "evaluated_tier"];
 
 /// The files directly in `dir` whose extension is one of `exts`, by name.
@@ -56,20 +49,6 @@ fn interpolations(src: &str) -> Vec<&str> {
     out
 }
 
-/// The keys of a `const NAME = { key: ..., };` object literal of the viewer's script.
-fn keys(name: &str) -> Vec<String> {
-    let at = SCRIPT
-        .find(&format!("const {name} = {{"))
-        .unwrap_or_else(|| panic!("no {name}"));
-    let body = &SCRIPT[at + name.len() + 10..];
-    let body = &body[..body.find("};").expect("it closes")];
-    body.split(',')
-        .filter_map(|e| e.split(':').next())
-        .map(|k| k.trim().to_string())
-        .filter(|k| !k.is_empty())
-        .collect()
-}
-
 #[test]
 fn a_tier_is_named_never_spelled() {
     let mut raw = Vec::new();
@@ -110,43 +89,12 @@ fn a_tier_is_named_never_spelled() {
     }
 }
 
+/// A proposal row the page cannot phrase says so in words, and a target's name is never cut short.
+/// The words themselves are the engine's (`every_proposal_event_has_a_sentence` in its unit tests).
 #[test]
-fn every_proposal_event_has_a_sentence() {
-    // The kinds the engine opens.
-    let at = ENGINE.find("pub const PROPOSAL_KINDS").expect("PROPOSAL_KINDS");
-    let list = &ENGINE[at..at + ENGINE[at..].find("];").expect("it closes")];
-    let kinds: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
-    assert!(kinds.len() >= 6, "the kinds were read ({kinds:?})");
-    let nouns = keys("PROPOSAL_NOUN");
-    for k in &kinds {
-        assert!(nouns.iter().any(|n| n == k), "the Log has no noun for {k}");
-    }
-
-    // The events a proposal can carry, and the decisions a verdict can take.
-    let at = CORE.find("pub enum ProposalEventKind {").expect("ProposalEventKind");
-    let body = &CORE[at..at + CORE[at..].find("\n}").expect("it closes")];
-    let mut events: Vec<String> = body
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.ends_with(',') && !l.starts_with("//"))
-        .map(|l| l.trim_end_matches(',').to_lowercase())
-        .collect();
-    assert_eq!(events.len(), 4, "the events were read ({events:?})");
-    events.retain(|e| e != "verdict");
-    let decisions = &ENGINE[ENGINE.find("fn review_proposal(").expect("review_proposal")..];
-    let decisions = &decisions[..decisions.find("=> ProposalEventKind::Verdict").expect("verdict")];
-    let decisions = decisions.rsplit('\n').next().expect("the decision arm");
-    events.extend(decisions.split('"').skip(1).step_by(2).map(str::to_string));
-    let verbs = keys("EVENT_VERB");
-    for e in &events {
-        assert!(verbs.iter().any(|v| v == e), "the Log has no verb for {e}");
-    }
-    assert!(events.contains(&"merge".to_string()) && events.contains(&"reject".to_string()));
-
-    // The line is built from those tables, and a row it cannot phrase says so in words.
+fn a_proposal_row_it_cannot_phrase_says_so() {
     let line = &SCRIPT[SCRIPT.find("function proposalLine(").expect("proposalLine")..];
     let line = &line[..line.find("\n}\n").expect("it closes")];
-    assert!(line.contains("PROPOSAL_NOUN[p.kind]") && line.contains("EVENT_VERB["));
     assert!(line.contains("\"Something changed\""));
     assert!(!line.contains("slice(0, 8)"), "a name is cut short");
 }

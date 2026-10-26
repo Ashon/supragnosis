@@ -18,7 +18,7 @@ impl Engine {
     ) -> Result<String, ObserveError> {
         let cx = &ReadCtx::default();
         let event = match decision.as_str() {
-            "merge" | "reject" => ProposalEventKind::Verdict,
+            d if VERDICT_DECISIONS.contains(&d) => ProposalEventKind::Verdict,
             "comment" => ProposalEventKind::Comment,
             "withdraw" => ProposalEventKind::Withdrawn,
             other => {

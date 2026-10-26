@@ -564,6 +564,14 @@ pub enum ProposalEventKind {
 }
 
 impl ProposalEventKind {
+    /// Every event, so a reader that has a word for each can be checked against the whole list.
+    pub const ALL: [ProposalEventKind; 4] = [
+        ProposalEventKind::Opened,
+        ProposalEventKind::Verdict,
+        ProposalEventKind::Withdrawn,
+        ProposalEventKind::Comment,
+    ];
+
     /// Stable discriminant byte for content-address hashing.
     fn tag(self) -> u8 {
         match self {

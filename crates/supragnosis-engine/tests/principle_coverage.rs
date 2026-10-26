@@ -692,11 +692,13 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (17, &[c(
         "no line a person reads first spells a system identifier: tiers by their legend names, and every proposal kind and event with a sentence and no hash id",
         // crates/supragnosis-viz/tests/words.rs: every interpolation of a tier goes through tierName,
-        // and the Log's tables cover the engine's kinds, events and decisions.
+        // and a row the page cannot phrase says so; the engine's unit tests: its one table of the
+        // Log's words covers every kind, event and decision it sends on a row.
         // review.rs: Decided's titles from the server's labels and its outcomes in words.
         Evidence::Scenario(&[
             "a_tier_is_named_never_spelled",
             "every_proposal_event_has_a_sentence",
+            "a_proposal_row_it_cannot_phrase_says_so",
             "decided_says_what_was_decided",
         ]),
     ), c(
@@ -731,9 +733,10 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (20, &[c(
         "on the local console the status bar always holds the way to Review with one count over tie-only contested items, and follow never changes the scope, the selection or the open sheet",
-        // places.rs: Review's entry and Needs you, follow, and the first view; review.rs: the count
-        // with contested definitions in it (Section 29.3); place.rs: follow waiting while the map is
-        // in use, and a selection a merge folds or a scope leaves (Section 29.4).
+        // places.rs: Review's entry and Needs you, follow, and the first view; http.rs: where
+        // /api/surface says the first view opens; review.rs: the count with contested definitions in
+        // it (Section 29.3); place.rs: follow waiting while the map is in use, and a selection a
+        // merge folds or a scope leaves (Section 29.4).
         Evidence::Scenario(&[
             "review_is_always_in_the_status_bar_with_one_count",
             "one_count_covers_all_of_needs_you",
@@ -741,6 +744,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
             "a_selection_that_leaves_is_followed_or_named",
             "follow_frames_what_is_in_scope_and_notes_the_rest",
             "the_first_view_opens_where_the_knowledge_is",
+            "the_surface_says_where_the_first_view_opens",
         ]),
     )]),
     (21, &[c(
@@ -895,8 +899,12 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         ),
         c(
             "the Log lists the scope's newest 200 observations, asks for one more to know there are more, wires its rows by their place and shows more on request",
-            // scale.rs reads refreshLog, renderLog, wireObsList and observationById.
-            Evidence::Scenario(&["the_log_draws_its_newest_rows"]),
+            // scale.rs reads refreshLog, renderLog, wireObsList and observationById; http.rs asks
+            // the server for a limited log and reads the newest rows first.
+            Evidence::Scenario(&[
+                "the_log_draws_its_newest_rows",
+                "the_log_answers_its_newest_rows_first",
+            ]),
         ),
     ]),
     (38, &[c(
@@ -2616,7 +2624,10 @@ const NEGOTIATED_REGISTRY: &[(u8, &[Clause])] = &[
         c("the difference is three buckets, never the intersection",
           Evidence::Scenario(&["the_surface_difference_reports_both_directions_of_disagreement"])),
         c("sync_status and the viewer's federation blob carry the buckets with their time",
-          Evidence::Scenario(&["a_configuration_workaround_reaches_the_operator_surface"])),
+          Evidence::Scenario(&[
+              "a_configuration_workaround_reaches_the_operator_surface",
+              "the_viewer_blob_carries_the_buckets_and_their_time",
+          ])),
     ]),
     (7, &[
         c("an answer carries the time it was negotiated, and only an answer does",

@@ -1270,19 +1270,8 @@ async fn a_configuration_workaround_reaches_the_operator_surface() {
     let quiet = &negotiated[1];
     assert_eq!(quiet["state"], "unknown", "not an empty grant set: {quiet}");
     assert!(quiet.get("both").is_none() && quiet.get("negotiated_at").is_none(), "{quiet}");
-
-    // The viewer's federation blob carries the same buckets and time, from its own ping.
-    let viewer = include_str!("../../supragnosis-cli/src/sync_wiring.rs");
-    let blob = &viewer[viewer.find("servers_json.push(serde_json::json!({").expect("the blob")..];
-    let blob = &blob[..blob.find("}));").expect("it closes")];
-    for key in [
-        "\"workspaces\": ws_json",
-        "\"local_only\": diff.local_only",
-        "\"peer_only\": diff.peer_only",
-        "\"negotiated_at\": negotiated_at",
-    ] {
-        assert!(blob.contains(key), "the viewer's blob carries {key}");
-    }
+    // The viewer's federation blob carries the same buckets and time, from its own ping: the cli's
+    // `the_viewer_blob_carries_the_buckets_and_their_time`.
 
     client.cancel().await.ok();
     server.abort();

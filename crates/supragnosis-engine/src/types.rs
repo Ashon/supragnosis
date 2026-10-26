@@ -541,6 +541,13 @@ pub struct ProposalEventSummary {
     /// The canonical target of an entity merge.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub into: Option<EntityRef>,
+    /// What the Log calls the proposal ("Merge"), from [`proposal_words`]; absent for a kind it
+    /// has no word for, or one whose opening has not arrived.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub noun: Option<&'static str>,
+    /// What happened to it ("proposed", "accepted"); absent for an event it has no word for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verb: Option<&'static str>,
 }
 
 /// One observation flattened for the log-browser surface (observability). The observation log is

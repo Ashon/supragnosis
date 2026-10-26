@@ -448,18 +448,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // loaded before an upgrade still finds it.
         // `node` is this node's host id: the page keys what it remembers locally - the layout - by it
         // (design-system.md Section 5), and names a host "this node" only when it matches (Section 9).
-        "/api/surface" => Response {
-            status: "200 OK",
-            content_type: "application/json",
-            // The workspace an omitted one resolves to: the node's default, so the page calls the
-            // default by its name (design-system.md Section 29.10).
-            body: serde_json::json!({
-                "surface": "local",
-                "node": engine.host(),
-                "default_workspace": engine.default_workspace(),
-            })
-            .to_string(),
-        },
+        "/api/surface" => surface_response(engine),
         // What this node's store owes and last repaid (crash-recovery.md K5) - runtime state, kept
         // apart from /api/about, which describes the build.
         "/api/health" => health_response(engine),
@@ -1601,6 +1590,40 @@ fn health_response(engine: &Engine) -> Response {
             body: err_body(&e.to_string()),
         },
     }
+}
+
+/// Where a page whose address names no scope opens (design-system.md Section 29.21), from the
+/// node's entities: `"all"` when other workspaces hold some and the default holds at most half of
+/// them - nothing included - and `"default"` otherwise.
+pub fn first_view(default_count: usize, total: usize) -> &'static str {
+    if total > default_count && default_count * 2 <= total {
+        "all"
+    } else {
+        "default"
+    }
+}
+
+/// `/api/surface`: which surface and node the page is on, the workspace an omitted one resolves to
+/// (the node's default, so the page calls it by its name, design-system.md Section 29.10), and
+/// where the first view opens, with the counts it was decided from. When the entities cannot be
+/// read `first_view` is left out and the page stays on the default (P5: unread is not empty).
+fn surface_response(engine: &Engine) -> Response {
+    let default = engine.default_workspace();
+    let mut body = serde_json::json!({
+        "surface": "local",
+        "node": engine.host(),
+        "default_workspace": default,
+    });
+    if let Ok(g) = engine.graph(None) {
+        let (held, total) =
+            (g.nodes.iter().filter(|n| n.workspace == default).count(), g.nodes.len());
+        body["first_view"] = serde_json::json!({
+            "scope": first_view(held, total),
+            "default_holds": held,
+            "of": total,
+        });
+    }
+    Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
 }
 
 fn workspaces_response(engine: &Engine) -> Response {

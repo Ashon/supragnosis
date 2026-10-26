@@ -422,12 +422,10 @@ fn the_person_finds_what_waits() {
 
 /// design-system.md Section 29.22: a kind with no commit effect yet offers no Accept, says why where
 /// the diff would be, and its row, hints, Reject notice and map preview say so too; the decision
-/// itself checks the mark, so A does nothing.
+/// itself checks the mark, so A does nothing. Which kinds are marked is the server's
+/// (`the_proposals_read_marks_what_has_no_effect`).
 #[test]
 fn the_console_says_what_has_no_effect() {
-    assert!(SCRIPT.contains(
-        "const NO_EFFECT_SAID = { tbox_change: [\"a type change\", \"type changes\"], recall: [\"a recall\", \"recalls\"] };"
-    ));
     let render = function("renderReview");
     let detail = function("itemDetail");
     let body = format!("{render}{detail}");
