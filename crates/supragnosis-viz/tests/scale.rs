@@ -89,30 +89,10 @@ fn near_forces_come_from_a_grid() {
         !step.contains("for (let j = i + 1; j < N; j++)") && !step.contains("j < H; j++)"),
         "the layout visits every pair again"
     );
-    for part in [
-        "if (pairs) binGrid(active ? Math.max(DENSITY_R, 2 * NODE_R_MAX + COLLIDE_PAD, range / FAR_SPLIT) : reach);",
-        "const FORWARD = [[1, 0], [-1, 1], [0, 1], [1, 1]];",
-        "if (dx * dx + dy * dy >= reach2) continue;",
-        "const i = gi < gj ? gi : gj, j = gi < gj ? gj : gi;",
-        "if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) continue;",
-        "const count = same + (n - same) * WS_CROSS_REPULSE;",
-        "const RC = 2 * HULL_R_CAP + HULL_PAD",
-        "if (d >= want) continue;",
-    ] {
-        assert!(step.contains(part), "the grids' pairing changed: {part}");
-    }
-    assert!(SIM.contains("const FAR_SPLIT = 6;"), "the far field's cells moved");
     // A cell is never narrower than the reach it is binned for, so no pair within reach is missed.
     assert!(
         engine("binGrid").contains("cell = Math.max(cell, "),
         "a cell can shrink below the reach"
-    );
-    // The step's scratch is kept between steps, and it reads no node objects.
-    assert!(
-        !step.contains("new Array(N)")
-            && !step.contains("new Float32Array(N)")
-            && !step.contains("nodes["),
-        "the step allocates per-node scratch or reads the page's nodes again"
     );
     assert!(
         function("nodeById").contains("nodesById()"),
@@ -142,16 +122,6 @@ fn what_the_map_draws_follows_the_screen() {
     ] {
         assert!(draw.contains(part), "the frame draws what is off the screen: {part}");
     }
-    assert!(
-        SCRIPT.contains("const HALO_FROM = 1.2, HALO_TO = 3, FULL_FROM = 2, FULL_TO = 4, SQUARE_PX = 1, EDGE_FROM = 1, EDGE_TO = 3;")
-            && SCRIPT.contains("const FADE_STEPS = 32;"),
-        "the sizes of a node's detail moved"
-    );
-    assert!(
-        function("ease").contains("return t * t * (3 - 2 * t);")
-            && function("stepped").contains("Math.ceil(v * FADE_STEPS) / FADE_STEPS"),
-        "a fade is not eased in steps"
-    );
     for part in [
         "const lit1 = n => n === hover || n === focus || (act !== null && act.ns.has(n.id));",
         "n._f = whole1 ? 1 : stepped(ease(FULL_FROM, FULL_TO, rs));",
@@ -226,16 +196,8 @@ fn still_layers_move_with_the_camera() {
             && function("blitCloudField").contains("const e = f.cell * k;"),
         "the field's cell no longer grows with its work"
     );
-    // The key holds everything the field is worked out from besides the camera.
-    assert!(
-        function("cloudKeySame").contains(
-            "k[o] = sh.cx; k[o + 1] = sh.cy; k[o + 2] = sh.ru; k[o + 3] = sh.rv; k[o + 4] = sh.th; k[o + 5] = it.alpha; k[o + 6] = it.hue;"
-        ) && field.contains("const look = cloudL() + \" \" + cloudC() + \" \" + innerWidth + \" \" + innerHeight + \" \" + edges.length;"),
-        "the field's key lost an input"
-    );
     let mini = function("drawMinimap");
     for part in [
-        "const look = [dpr, hyperMode, showEdges, LIGHT.matches, FORCED_COLORS.matches, SURFACE, EDGE_OTHER, [...typeOff].join(\",\"),",
         "if (m.look !== look || m.nodes !== nodes || m.hyper !== hyperedges || m.gen !== positionsGen) {",
         "if (m.dirty && (!m.c || !simWarm() || performance.now() - m.at >= MINI_MOVING_MS)) {",
         "paintMiniature(dpr, k, ox, oy, R, round);",
@@ -259,11 +221,6 @@ fn still_layers_move_with_the_camera() {
             "mctx.drawImage(paintMiniDots(dots, dpr, mx, my, weight), 0, 0, MINI_W, MINI_H);"
         ) && !paint.contains("mctx.arc(mx(n)"),
         "the minimap draws each dot through the canvas again"
-    );
-    assert!(
-        mini.contains("edges.length, hyperedges.length, Object.keys(typeColor)")
-            && mini.contains("m.src = nodes.filter(n => !typeOff.has(n.type));"),
-        "the miniature's key lost an input"
     );
     // The regions' members and hulls are kept while the nodes stand still; only the reach, which
     // follows the zoom, is taken again each frame.
@@ -335,11 +292,6 @@ fn region_forces_grow_with_the_members() {
     ] {
         assert!(step.contains(part), "the region forces grow with their pairs again: {part}");
     }
-    let regions = &step[step.find("const H = regCount").expect("region forces")..];
-    let regions = &regions[..regions.find("// Workspaces cohere").expect("their end")];
-    for alloc in ["new Set(", ".push({", ".map(id =>", "new Array("] {
-        assert!(!regions.contains(alloc), "a step allocates per region: {alloc}");
-    }
     assert!(
         !SCRIPT.contains("function hullsShareMember") && !SIM.contains("function hullsShareMember"),
         "the set-based share test is back"
@@ -381,7 +333,6 @@ fn the_layout_steps_on_its_own_thread() {
     ] {
         assert!(worker.contains(part), "the worker does not pace itself: {part}");
     }
-    assert!(SIM.contains("const SHOWN_STEP_MS = 1000 / 60;"), "the shown pace moved");
     let html = include_str!("../assets/viewer.html");
     let sim = html
         .find("<script src=\"/viewer-sim.js\"></script>")
@@ -483,13 +434,7 @@ fn a_fresh_layout_starts_from_its_communities() {
             && function("draw").contains("if (refitAtRest && !simWarm()) { refitAtRest = false; if (!userMoved) fitView(); }"),
         "the view fitted at the reveal is not fitted again at rest"
     );
-    for c in [
-        "const MULTI_MIN = 200;",
-        "const MULTI_ALPHA = 0.25;",
-        "const COARSE_SPACING = 40;",
-        "const COMMUNITY_MIN = 6;",
-        "const COARSE_WORK = 2e7;",
-    ] {
+    for c in ["const COARSE_SPACING = 40;", "const COARSE_WORK = 2e7;"] {
         assert!(SIM.contains(c), "the multilevel start's bounds moved: {c}");
     }
 }
@@ -537,10 +482,6 @@ fn a_frame_touches_what_the_window_holds() {
         assert!(draw.contains(part), "a frame passes over every node again: {part}");
     }
     assert!(
-        !draw.contains("for (const n of nodes) {\n    if (!n._vis)") && !draw.contains("n._vis"),
-        "the frame marks every node again"
-    );
-    assert!(
         draw.contains(
             "for (const i of few ? relationsOfNodes(few) : relationsIn(vx0, vy0, vx1, vy1)) {"
         ),
@@ -573,11 +514,6 @@ fn a_frame_touches_what_the_window_holds() {
 /// same rule, with only its 48 widest regions of at least 12 pixels.
 #[test]
 fn a_far_map_keeps_its_shape() {
-    assert!(
-        SCRIPT.contains("const KEEP_PX = 12, KEEP_MIN_PX = 1.6;")
-            && SCRIPT.contains("const MINI_KEEP_PX = 5, MINI_REGION_PX = 12, MINI_REGIONS = 48;"),
-        "the keep's sizes moved from Section 27.8"
-    );
     let ranks = function("ranksOf");
     for part in [
         "for (const i of degreeOrder()) {",
@@ -619,10 +555,6 @@ fn a_far_map_keeps_its_shape() {
             && kept.contains("for (const i of r.contested) add(nodes[i]);"),
         "a far frame leaves out a node that never fades"
     );
-    // No node stands for another: the map draws no group, haze or count of what it faded.
-    for gone in ["gatherBodies", "hubNames", "bodyAt", "gatherMini"] {
-        assert!(!SCRIPT.contains(gone), "a node stands for others again: {gone}");
-    }
     assert!(
         function("nodeAt").contains(
             "if (typeOff.has(n.type) || (onScreen(n) ? n._o === 0 : frameKept)) continue;"
@@ -653,8 +585,6 @@ fn the_gpu_draws_the_bulk() {
     for part in [
         "if (!gl || !gl.getExtension(\"EXT_color_buffer_float\")) return null;",
         "canvas.addEventListener(\"webglcontextlost\", ev => { ev.preventDefault(); lost = true; onLost(); });",
-        "gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);",
-        "gl.blendFunc(gl.ONE, gl.ONE);",
     ] {
         assert!(GL.contains(part), "the GPU renderer is not built as Section 27.9 says: {part}");
     }

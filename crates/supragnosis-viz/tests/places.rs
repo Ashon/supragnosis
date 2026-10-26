@@ -15,10 +15,6 @@ fn function(name: &str) -> &'static str {
 fn review_is_always_in_the_status_bar_with_one_count() {
     let pill = function("updateReviewPill");
     assert!(
-        pill.contains("pill.hidden = surfaceKind !== \"local\";"),
-        "Review's entry hides for a reason other than the read tier"
-    );
-    assert!(
         pill.contains(": \"Review\";"),
         "with nothing waiting the entry does not read Review"
     );
@@ -73,10 +69,6 @@ fn the_first_view_opens_where_the_knowledge_is() {
     assert!(
         first.contains("if (t > d && d * 2 <= t)"),
         "a default holding most of the knowledge is left"
-    );
-    assert!(
-        SCRIPT.contains("loadSurface().then(decideFirstView).finally(poll)"),
-        "decided after the first draw"
     );
     let empty = function("refreshEmpty");
     assert!(

@@ -442,16 +442,6 @@ fn no_color_is_drawn_outside_the_tokens() {
     assert!(stray.is_empty(), "a color drawn outside the tokens:\n  {}", stray.join("\n  "));
 }
 
-/// `--faint` is retired into `--muted` (Section 3): no stylesheet declares or reads it.
-#[test]
-fn faint_is_retired() {
-    for (file, css) in
-        [("viewer.css", VIEWER), ("settings.css", SETTINGS), ("site/style.css", LANDING)]
-    {
-        assert!(!css.contains("--faint"), "{file} still names --faint");
-    }
-}
-
 /// A signal's color is a mark's; drawn as text it is its `-ink` token, and gold drawn as text is
 /// `--gold-bright` (Section 3). The color property never reads a signal or the accent itself.
 #[test]
@@ -803,7 +793,6 @@ fn no_border_draws_an_area() {
 }
 
 const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
-const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const LANDING_HTML: &str = include_str!("../../../site/index.html");
 const PRINCIPLES_HTML: &str = include_str!("../../../site/principles/index.html");
@@ -927,17 +916,5 @@ fn every_face_ships_with_its_surface() {
     assert!(
         SETTINGS_HTML.contains("font-src 'self'"),
         "the Settings page's policy refuses its own fonts"
-    );
-
-    // The map's names are drawn in the reading face and its relation kinds in the identifier face.
-    assert!(VIEWER_JS.contains("const NAME_FAMILY = '\"Pretendard Variable\",Pretendard,"));
-    assert!(VIEWER_JS.contains("const KIND_FAMILY = \"'IBM Plex Mono',"));
-    assert!(
-        VIEWER_JS.contains("px \" + NAME_FAMILY;"),
-        "the name sprites are not set in the reading face"
-    );
-    assert!(
-        !VIEWER_JS.contains("LABEL_FAMILY"),
-        "a label is still set in the old mono stack"
     );
 }

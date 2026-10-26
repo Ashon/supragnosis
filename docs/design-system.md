@@ -1645,8 +1645,8 @@ social image.
 
 U7's third-pass half is guarded in `crates/supragnosis-viz/tests/design_tokens.rs`:
 `every_text_token_reads_on_every_surface_by_apca` measures APCA 0.0.98G over the three `:root` blocks,
-`text_on_a_pill_reads_over_its_tint` lays each tint on the two panels, `a_signal_drawn_as_text_takes_its_ink`
-reads every color property of the four stylesheets, and `faint_is_retired` keeps `--faint` out. U23 is
+`text_on_a_pill_reads_over_its_tint` lays each tint on the two panels, and
+`a_signal_drawn_as_text_takes_its_ink` reads every color property of the four stylesheets. U23 is
 guarded by `increase_contrast_and_forced_colors_are_heard` in the same file: each stylesheet's Increase
 Contrast block, and the map's palette under forced colors.
 

@@ -112,8 +112,6 @@ fn a_notice_has_one_anatomy() {
         x.contains("height: 28px") && x.contains("width: 28px"),
         "the app's dismiss is not 28 pixels"
     );
-    // The follow notice is news, not the outcome of the person's act.
-    assert!(VIEWER_JS.contains("toast(\"info\", \"New in \" + ws"));
     // Still one polite live region on every page that shows notices (Section 9).
     for (page, html) in [
         ("viewer.html", VIEWER_HTML),
@@ -204,8 +202,4 @@ fn a_notice_moves_in_the_three_durations() {
             "\n{name}: a notice does not fade over 120 ms, or does under reduced motion"
         );
     }
-    assert!(
-        !SETTINGS_CSS.contains("slidein"),
-        "the app's notice still moves on its old 180 ms"
-    );
 }

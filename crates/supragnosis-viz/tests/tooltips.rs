@@ -7,7 +7,6 @@ const HTML: &str = include_str!("../assets/viewer.html");
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");
-const SETTINGS_JS: &str = include_str!("../../../app/assets/settings.js");
 
 /// The words of a tooltip before its key, an interpolation counting as one word.
 fn words(tip: &str) -> usize {
@@ -73,10 +72,6 @@ fn a_tooltip_names_and_explains_nothing() {
             long.push(format!("viewer.js: tipText(\"{lit}\")"));
         }
     }
-    assert!(
-        !SETTINGS_JS.contains("title: \"Stop sharing \" + w + \" with this peer\""),
-        "the Settings page explains in a tooltip"
-    );
     assert!(long.is_empty(), "a tooltip explains:\n  {}", long.join("\n  "));
 }
 

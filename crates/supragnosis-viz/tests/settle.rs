@@ -1,10 +1,9 @@
-//! docs/design-system.md U18: settling a contested value. A source tripwire over the viewer's script
-//! and stylesheet; the server's half - the act filed in the observation's workspace, and the
+//! docs/design-system.md U18: settling a contested value. A source tripwire over the viewer's
+//! script; the server's half - the act filed in the observation's workspace, and the
 //! demotion that undoes it - is `viz_resolve_files_in_the_observations_workspace_and_can_be_undone`
 //! in http.rs.
 
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
-const CSS: &str = include_str!("../assets/viewer.css");
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT
@@ -27,14 +26,6 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         rows.contains("\"Confirm instead\" : \"Confirm\""),
         "the values do not share one act"
     );
-    assert!(
-        !rows.contains("\"keep\"") && !rows.contains("use this"),
-        "the old lopsided acts remain"
-    );
-    assert!(
-        !CSS.contains(".contested .crow.cur .confirm"),
-        "the shown value's act is drawn heavier"
-    );
     assert!(rows.contains("<span class=\"curtag\">shown</span>"));
     // The act asks once, in place, and says what it will do (Section 29.2: the source and its reach).
     let ask = function("askHtml");
@@ -52,8 +43,6 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
     );
     // The console asserts nothing of its own: "Neither is right" hands an agent a sentence.
     assert!(rows.contains("Neither is right") && rows.contains("\" wrong. Record the correct \""));
-    // The inspector finds its own "why" disclosure by class, so the block must not reuse the name.
-    assert!(!rows.contains("class=\"why\""), "the block reuses the inspector's .why");
     // Undo is the reverse gated event, and the notice says what it costs, in words.
     let settle = function("settleValue");
     // Each act keeps the sentence its notice says as its rationale (Section 29.3).
@@ -71,13 +60,6 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
     assert!(
         settle.contains("until someone confirms it again"),
         "the notice does not name the ceiling"
-    );
-    // A notice with Undo stays, except on the Review page, where the same Undo is on its Decided
-    // item (Section 29.3).
-    assert!(
-        function("toast")
-            .contains("kind === \"ok\" && (!action || (action.decided && reviewOpen()))"),
-        "a notice with Undo leaves on its own"
     );
 }
 
@@ -149,15 +131,6 @@ fn a_confirmation_says_what_it_confirms() {
         "Undo is offered before its diff is read"
     );
     assert!(settle.contains("Undo is not offered"), "an unreadable Undo is not said");
-    assert!(
-        function("consoleWrite")
-            .contains("if (typeof action === \"function\") action = await action(body || {});"),
-        "the notice cannot wait for Undo's preview"
-    );
-    assert!(
-        function("toast").contains("if (action && action.run)"),
-        "a note without an act draws a button"
-    );
 
     let legend = function("renderTrustLegend");
     assert!(

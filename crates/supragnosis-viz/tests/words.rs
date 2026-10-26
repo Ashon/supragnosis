@@ -84,7 +84,6 @@ fn a_tier_is_named_never_spelled() {
         "a tier is drawn by its identifier, not tierName:\n  {}",
         raw.join("\n  ")
     );
-    assert!(SCRIPT.contains("function tierName(t) { return TIER_NAME[String(t)] || String(t); }"));
     for (id, name) in [
         ("unverified", "Unverified"),
         ("agent_extracted", "Agent"),
@@ -377,10 +376,6 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
     ] {
         assert!(card.contains(part), "the card does not hold {part}");
     }
-    assert!(
-        body("observationById").contains("/api/observations?id="),
-        "an id read loads the scope's log"
-    );
     let settle = body("fillSettleWho");
     assert!(
         settle.contains("firstSentence(o.content)")

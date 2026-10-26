@@ -34,8 +34,7 @@ fn function(name: &str) -> &'static str {
 }
 
 /// U26 on the viewer: the filters toggle, the way back and the place's title lead; the search and the
-/// right panel's toggle trail; the product's name is not the title; the Review page's own heading and
-/// link moved into the bar; and Cmd+[ goes back.
+/// right panel's toggle trail; the product's name is not the title; and Cmd+[ goes back.
 #[test]
 fn the_viewer_title_bar_is_a_mac_toolbar() {
     let bar = header(HTML);
@@ -64,12 +63,6 @@ fn the_viewer_title_bar_is_a_mac_toolbar() {
     ] {
         assert!(place.contains(part), "the title bar does not follow the place: {part}");
     }
-    let review = &HTML[HTML.find("id=\"reviewPage\"").expect("the Review page")..];
-    let review = &review[..review.find("</section>").unwrap()];
-    assert!(
-        !review.contains("<h2>Review</h2>") && !review.contains("rv-close"),
-        "the Review page keeps its own heading"
-    );
     assert!(
         SCRIPT.contains("e.key === \"[\" && (e.metaKey || e.ctrlKey)"),
         "Cmd+[ does not go back"

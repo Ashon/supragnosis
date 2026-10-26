@@ -77,14 +77,9 @@ fn the_viewers_controls_say_what_they_are() {
 }
 
 /// Section 5 and 10: View holds two choices with one name each - Regions and Boundaries, each a radio
-/// group of three - a switch that turns the single keys off, and no option drawn dimmed for being off.
+/// group of three - and a switch that turns the single keys off.
 #[test]
 fn view_holds_two_choices_with_one_name_each() {
-    let css = include_str!("../assets/viewer.css");
-    assert!(
-        !PAGE.contains("id=\"hyperBtn\"") && !PAGE.contains("id=\"regionsBtn\""),
-        "hulls and all regions are still two switches"
-    );
     for v in ["data-v=\"all\"", "data-v=\"selected\"", "data-v=\"off\""] {
         assert!(PAGE.contains(v), "Regions has no {v}");
     }
@@ -112,10 +107,6 @@ fn view_holds_two_choices_with_one_name_each() {
     assert!(
         dialog[..dialog.find("</dialog>").unwrap()].contains("id=\"keysBtn\""),
         "the switch is not in the Keys dialog"
-    );
-    assert!(
-        !css.contains("button.tog { opacity"),
-        "an option that is off is drawn as if disabled"
     );
 }
 

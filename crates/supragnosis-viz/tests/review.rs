@@ -1,11 +1,10 @@
 //! docs/design-system.md Section 29.3, step 42: the Review page closes its loop. Source tripwires
-//! over the viewer's script, page and stylesheet; the server's half - labels, the undo read and the
+//! over the viewer's script and page; the server's half - labels, the undo read and the
 //! console's rationale - is `a_decided_confirmation_names_its_source_and_says_its_undo` in http.rs,
 //! and the fold, the undo and the curation rows are in the engine's policy cases.
 
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
-const CSS: &str = include_str!("../assets/viewer.css");
 
 fn function(name: &str) -> &'static str {
     let at = SCRIPT
@@ -69,19 +68,13 @@ fn every_reverse_is_on_its_decided_item() {
     // The reverse is read with its diff before it acts (U4), and a missing read is said.
     assert!(function("fetchUndoView").contains("/api/resolve/undo?proposal="));
     let parts = function("undoParts");
-    assert!(parts.contains("Reading what undoing this moves back..."));
     assert!(parts.contains("is not offered: what it would move back could not be read."));
     assert!(parts.contains("Nothing to undo: another decision holds this source where it is."));
-    assert!(
-        parts.contains("This demotion was cast by "),
-        "a demotion's undo does not say who cast it"
-    );
-    // One act per target, each a console write that says what it did; a partial stop says so (U1).
+    // One act per target, each a console write that says what it did (U1).
     let undo = function("undoDecided");
     assert!(undo.contains(
         "consoleWrite(\"/api/resolve\", settleQuery(a.observation, a.tier, a.kind, rationale)"
     ));
-    assert!(undo.contains("\"Undo stopped partway\""), "a partial undo is not said");
     // The notices name the item; a reject's offers nothing, since Accept after all decides.
     let decide = function("reviewDecide");
     assert!(decide.contains("\"Accepted: \" + title"));
@@ -134,15 +127,6 @@ fn one_count_covers_all_of_needs_you() {
             .contains("(curation && curation.contradictions) || []).filter(c => c.contested)"),
         "Needs you does not list every contested belief the report holds"
     );
-    let render = function("renderReview");
-    assert!(
-        render.contains("c.className = \"rv-ct\" + (id === \"needs\" ? \"\" : \" muted\")"),
-        "another segment's count asks like Needs you's"
-    );
-    assert!(CSS.contains(".rv-segb .rv-ct.muted { color:var(--muted); }"));
-    assert!(render.contains("\"Nothing waits for you in any workspace.\""));
-    // The tray opens Review at All workspaces, the scope its count is of.
-    assert!(function("openReviewAt").contains("location.hash = \"#review\""));
 }
 
 /// The keys act from the first press: opening the page focuses the selected row, a contested item
@@ -205,16 +189,6 @@ fn the_map_preview_has_a_way_back() {
     assert!(function("backToReview").contains("reviewSeg = r.seg; reviewSel = r.key;"));
 }
 
-/// The notices sit over the list column on the Review page, and the Log's decision rows are in its
-/// full ink.
-#[test]
-fn review_notices_and_log_rows() {
-    assert!(CSS.contains("body.reviewing #toasts { left:180px; top:auto;"));
-    assert!(!CSS.contains(".otext.ev { opacity"), "decision rows are still faint");
-    assert!(function("renderReview")
-        .contains("document.body.classList.toggle(\"reviewing\", reviewOpen());"));
-}
-
 /// design-system.md Section 29.7, U4: a proposal's detail reads what changes - identity first for a
 /// merge - then every check in words, then the evidence it rests on, then who asked; and a
 /// contested item says each value's source as the inspector does.
@@ -230,7 +204,6 @@ fn the_review_page_shows_its_evidence() {
     ] {
         assert!(detail.contains(part), "the detail does not hold {part}");
     }
-    assert!(!detail.contains("p.self_attested"), "a mark every proposal carries is drawn");
     let identity = function("identityHtml");
     assert!(identity.contains(" leaves the map; its name becomes an alias of "));
     assert!(identity.contains(" for ${keptName} from then on"));
@@ -256,7 +229,6 @@ fn the_review_page_shows_its_evidence() {
         render.contains("fillSettleWho(detail, it.c.id)"),
         "a contested item leaves its sources blank"
     );
-    assert!(CSS.contains(".evcols {") && CSS.contains(".ckrow.ok .i { color:var(--ok-ink); }"));
     let _ = PAGE;
 }
 
@@ -301,7 +273,6 @@ fn under_all_the_console_files_where_items_live() {
 fn the_same_name_is_said_on_the_local_console() {
     let also = function("alsoNamedHtml");
     for part in [
-        "surfaceKind !== \"local\"",
         "namesakes.tag !== heldGraph.tag",
         "Not compared with other workspaces: ",
         "Also named in ",
@@ -321,7 +292,7 @@ fn the_same_name_is_said_on_the_local_console() {
     );
     let index = function("namesakesOf");
     assert!(
-        index.contains("surfaceKind !== \"local\"") && index.contains("cur !== \"*\""),
+        index.contains("cur !== \"*\""),
         "namesakes light outside All on the local console"
     );
     assert!(

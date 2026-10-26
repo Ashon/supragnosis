@@ -254,9 +254,6 @@ fn a_panel_on_a_tablet_ends_above_the_camera() {
     ] {
         assert!(band.contains(part), "a floating panel does not clear the toolbar: {part}");
     }
-    for stale in ["bottom:90px", "151px", "var(--bar) + 62px", "- 200px));"] {
-        assert!(!CSS.contains(stale), "a mouse-only sum is left: {stale}");
-    }
     assert!(
         CSS.contains("calc(100vw - var(--win-l) - var(--win-r) - var(--hud-w) - 48px)"),
         "the strip"

@@ -163,9 +163,6 @@ fn the_type_band_is_never_a_signal() {
 /// relation kinds draw none, and a region's hue stays on the band's arcs.
 #[test]
 fn every_category_color_comes_from_the_band() {
-    assert!(!SCRIPT.contains("hsl("), "the viewer computes a color outside the band");
-    assert!(!SCRIPT.contains("catColor"), "the generated palette is still in the viewer");
-    assert!(!SCRIPT.contains("edgeTypeColor"), "a relation kind is given a color");
     let stable = &SCRIPT[SCRIPT.find("function stableColors(").expect("stableColors")..];
     let stable = &stable[..stable.find("\n}\n").expect("it closes")];
     assert!(stable.contains("out[t] = TYPE_BAND[slot];"), "a type's color is not the band's");

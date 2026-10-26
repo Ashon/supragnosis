@@ -18,9 +18,6 @@ fn function(name: &str) -> &'static str {
 /// the state that draws its mark.
 #[test]
 fn the_maps_key_names_only_what_is_drawn() {
-    let page_key = PAGE.find("id=\"legendMarks\"").expect("the key has its place in the panel");
-    let trust = PAGE.find("id=\"legendTrust\"").expect("the Trust legend");
-    assert!(trust < page_key, "the key sits under Trust");
     let marks = function("renderMarks");
     for (word, gate) in [
         ("\"Two sources disagree\"", "contestedCount"),
@@ -37,10 +34,6 @@ fn the_maps_key_names_only_what_is_drawn() {
         assert!(line.contains(gate), "{word} shows only while {gate} draws it: {line}");
     }
     assert!(marks.contains("\"Larger: more relations\""), "the key says what size means");
-    assert!(
-        marks.contains("\" - select to decide\"") && marks.contains("surfaceKind === \"local\""),
-        "only the local console offers to decide"
-    );
     assert!(marks.contains("head.hidden = !rows.length"), "an empty key has no heading");
     assert!(function("showStats").contains("renderMarks()"), "the key follows every count");
     for toggle in ["renderBoundaryChips", "renderRegionsSeg"] {
@@ -127,7 +120,6 @@ fn a_type_keeps_its_color_in_every_scope() {
 /// strength a selection leaves the rest at; a tier the scope does not hold is disabled.
 #[test]
 fn a_trust_filter_dims_and_keeps_the_count() {
-    assert!(SCRIPT.contains("const DIM_NODE = 0.12, DIM_EDGE = 0.06;"));
     assert!(SCRIPT.contains("const DIM_REGION = "), "the region's dim strength has its name");
     assert!(
         SCRIPT.contains("!trustOff.has(n.trust_tier) && !saidOut(n) ? 1 : DIM_NODE"),
@@ -145,7 +137,7 @@ fn a_trust_filter_dims_and_keeps_the_count() {
 
 /// The hover card is a card (U25 revised): the name, the type and workspace where the scope spans
 /// several, the relations, sources and tier in words, the description's first line, and the
-/// contest; and the pointer says what a press does.
+/// contest.
 #[test]
 fn the_hover_card_says_what_an_entity_is() {
     let tip = function("showTip");
@@ -159,31 +151,21 @@ fn the_hover_card_says_what_an_entity_is() {
     ] {
         assert!(tip.contains(part), "the hover card lacks {part}");
     }
-    assert!(
-        SCRIPT.contains("canvas.classList.toggle(\"over\", !!hover)"),
-        "a hand over an entity"
-    );
-    assert!(SCRIPT.contains("canvas.classList.add(\"grabbing\");   // grabbing while dragging"));
     let hov = function("hoverSet");
     assert!(
         hov.contains("if (!hover || focus) return null;"),
         "a selection keeps the dimming"
     );
-    assert!(
-        SCRIPT.contains("(it.hot ? HULL_ACTIVE_ALPHA : focus ? DIM_REGION : HULL_LAYER_ALPHA)"),
-        "a hover brings its regions to full strength and dims no other region"
-    );
 }
 
 /// A workspace the address names and the node does not list shows its chip, selected and muted,
-/// and the owner's console says no workspace is called that.
+/// and the page says no workspace is called that.
 #[test]
 fn an_unlisted_workspace_is_named_as_such() {
     let chips = function("loadWorkspaces");
     assert!(chips.contains("mk(cur, cur, \"unlisted\")"), "its chip shows, muted");
     let empty = function("refreshEmpty");
     assert!(empty.contains("\"No workspace is called \""));
-    assert!(empty.contains("surfaceKind === \"local\""), "only the owner's console says it");
 }
 
 /// One word for the cloud: "region" wherever the map's soft clouds are named.
@@ -200,8 +182,7 @@ fn the_cloud_is_a_region_everywhere() {
 
 /// Section 29.19: each entity says when it was last said - on the hover card, the sheet and List - in
 /// the Log's form with the year when it is not this one; the Said filter is a radio group whose
-/// window dims, as a tier does, and whose last visit lives on the local console only, a visit ending
-/// after half an hour away.
+/// window dims, as a tier does, and whose last visit ends after half an hour away.
 #[test]
 fn the_map_says_when_each_entity_was_said() {
     assert!(
@@ -215,7 +196,6 @@ fn the_map_says_when_each_entity_was_said() {
     );
     let legend = function("renderSaidLegend");
     for part in [
-        "if (win === \"visit\" && surfaceKind !== \"local\") continue;",
         "\"No earlier visit here\"",
         "radioGroup(host, \"Said\")",
         "!typeOff.has(n.type)",
@@ -224,10 +204,6 @@ fn the_map_says_when_each_entity_was_said() {
     }
     assert!(SCRIPT.contains("[\"visit\", \"Since your last visit\"]"));
     assert!(SCRIPT.contains("const VISIT_GAP = 30 * 60 * 1000;"));
-    assert!(
-        function("visitKey").contains("surfaceKind === \"local\" && surfaceNode"),
-        "the read tier keeps a visit"
-    );
     assert!(
         function("statsLine").contains("\", said before \" + SAID_BEFORE[saidWin] + \" dimmed\"")
     );

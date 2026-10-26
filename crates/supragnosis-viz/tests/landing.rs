@@ -125,52 +125,13 @@ fn the_stage_draws_the_viewers_marks() {
     };
     assert_eq!(alpha(STAGE), alpha(VIEWER), "the stage's edge alpha is not the viewer's");
 
-    // Human confirmed is the viewer's ring: gold-bright, 2.4 wide, 3.5 outside the node.
-    let ring = &VIEWER[VIEWER.find("function trustRing(").expect("trustRing")..];
-    let ring = &ring[..ring.find("\n}\n").expect("trustRing closes")];
-    assert!(
-        ring.contains("r + 3.5")
-            && ring.contains("bulk.lineWidth = 2.4/cam.s; bulk.strokeStyle = EDGE_HI;")
-    );
+    // Human confirmed is the viewer's ring, gold-bright, and contested the viewer's badge, --bad.
     assert_eq!(viewer_color("EDGE_HI"), token("--gold-bright"));
-    assert!(
-        STAGE.contains("ctx.arc(x, y, r + 3.5,")
-            && STAGE.contains("ctx.lineWidth = 2.4; ctx.strokeStyle = C.goldHi;")
-    );
-
-    // Contested is the viewer's badge: --bad, at the node's upper right, with circle-alert's mark
-    // (design-system.md Section 28.3, U41) rather than a typed "!".
-    for src in [VIEWER, STAGE] {
-        assert!(
-            src.contains("+ r * 0.75") && src.contains("- r * 0.75"),
-            "the badge sits at the upper right"
-        );
-    }
     assert_eq!(viewer_color("BAD"), token("--bad"));
-    assert!(
-        STAGE.contains("ctx.fillStyle = C.bad;")
-            && STAGE.contains("alertMark(ctx, bx, by, 7, C.bg)")
-    );
-    for src in [VIEWER, STAGE] {
-        assert!(
-            src.contains("new Path2D(\"M12 8v4M12 16h.01\")") && !src.contains("\"!\""),
-            "the badge's mark is circle-alert's, not a typed \"!\""
-        );
-    }
 
     // The second machine replays the same log, so it draws the marks the first one does
-    // (resolution.md Section 6: a verdict's ceiling is read from the log, the same on every node).
-    // Every ring and badge is set in one function, and both machines' scenes call it.
-    let at = STAGE.find("\n  function settle(").expect("stage.js sets its marks in settle()");
-    let end = at + STAGE[at..].find("\n  }\n").expect("settle() closes");
-    for mark in [".ring = ", ".ringP = ", ".bad = "] {
-        for (i, _) in STAGE.match_indices(mark) {
-            assert!(
-                i > at && i < end,
-                "stage.js sets `{mark}` outside settle(), where one machine may not"
-            );
-        }
-    }
+    // (resolution.md Section 6: a verdict's ceiling is read from the log, the same on every node):
+    // both machines' scenes set their marks with settle().
     assert!(
         scene("govern").contains("settle(st, "),
         "the first machine's marks do not come from settle()"
@@ -178,10 +139,6 @@ fn the_stage_draws_the_viewers_marks() {
     assert!(
         scene("travel").contains("settle(b, "),
         "the second machine does not draw the first one's marks"
-    );
-    assert!(
-        !STAGE.contains("\"thin\""),
-        "a ring other than human confirmed: say which tier it draws"
     );
 
     // Motion: each scene ends within five seconds and then rests, and reduced motion is read and

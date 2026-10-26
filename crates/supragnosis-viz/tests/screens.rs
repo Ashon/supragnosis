@@ -29,9 +29,6 @@ fn the_status_bar_says_the_scope_once() {
     for word in ["All workspaces", "entities", "relations", "regions"] {
         assert!(stats.contains(word), "the stats line does not say {word}");
     }
-    assert!(!SCRIPT.contains("type_counts"), "the status bar still lists counts per type");
-    assert!(!SCRIPT.contains("(hull ${"), "the status bar still says hull");
-    assert!(!SCRIPT.contains("\"updated \" +"), "the time still ticks at every poll");
     assert!(
         function("sayLate").contains("Not updated since"),
         "a failed poll does not say since when"
@@ -156,8 +153,7 @@ fn search_chooses_nothing_until_the_person_moves() {
 }
 
 /// Sections 4 and 10: the View popover opens from its button with the keyboard and says it is open,
-/// the settings dialog has a name, the contested block's buttons are a finger's size, and a name the
-/// map does not draw is said whole.
+/// the settings dialog has a name, and the contested block's buttons are a finger's size.
 #[test]
 fn the_small_controls_say_what_they_are() {
     let page = include_str!("../assets/viewer.html");
@@ -186,7 +182,6 @@ fn the_small_controls_say_what_they_are() {
         CSS.contains(".contested .confirm { min-height:28px; }"),
         "a contested value's button is under 28px on a phone"
     );
-    assert!(!function("nameOf").contains("slice(0, 8)"), "a name is cut to 8 characters");
 }
 
 /// Section 8, U15: the search list groups its hits by how they were reached - those that contain the

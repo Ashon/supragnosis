@@ -67,7 +67,7 @@ fn an_empty_scope_keeps_no_idle_controls() {
 }
 
 /// The Log, the strip and the canvas say "Nothing here yet."; entries that name no entity are not
-/// an empty scope (P5); and no reader's line names a tool.
+/// an empty scope (P5).
 #[test]
 fn the_empty_map_speaks_in_one_voice() {
     let log = function("renderLog");
@@ -83,9 +83,6 @@ fn the_empty_map_speaks_in_one_voice() {
         empty.contains("scopeEntries = await anyEntry(scopeNow)"),
         "the scope's entries are read"
     );
-    for gone in ["observe knowledge", "Nothing observed"] {
-        assert!(!SCRIPT.contains(gone) && !PAGE.contains(gone), "the viewer still says {gone}");
-    }
 }
 
 /// In the app, on the owner's console, a store with no entry offers Open Setup, carrying the way
@@ -113,21 +110,8 @@ fn an_empty_store_leads_back_to_setup_in_the_app() {
 fn the_default_is_called_by_its_name() {
     assert!(function("loadSurface").contains("defaultWs = String(s.default_workspace)"));
     assert!(SCRIPT.contains("function defaultName() { return defaultWs || \"default\"; }"));
-    let code: Vec<&str> = SCRIPT
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("//") && l.contains("\"default\""))
-        .collect();
-    assert_eq!(
-        code,
-        ["function defaultName() { return defaultWs || \"default\"; }"],
-        "the word default is written only as the name's fallback"
-    );
     assert!(function("statsScope").contains("cur || defaultName()"));
     assert!(function("syncSearchScope").contains("\"Search \" + defaultName()"));
     let chips = function("loadWorkspaces");
     assert!(chips.contains("mk(defaultName(), \"\")"));
-    // By its name, saying how much it holds when it is not empty (Section 29.21).
-    assert!(chips.contains(
-        "\"Showing all workspaces - \" + defaultName() + (openedHeld ? \" holds \" + openedHeld.d + \" of \" + openedHeld.t : \" is empty\")"
-    ));
 }

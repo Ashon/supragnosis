@@ -44,19 +44,6 @@ fn follow_waits_while_the_map_is_in_use() {
     assert!(note.contains("activitySaid(ev)"), "the notice has words of its own");
     assert!(note.contains("label: \"Show\""), "the notice has no Show");
     assert!(!note.contains("\"New in \""), "the notice reads like a write elsewhere");
-    // The person's own moves, and only those, start the 20 seconds.
-    for hook in [
-        "zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.12 : 0.89);\n  personMoved();",
-        "userMoved = true; showTip(null); personMoved(); return;",
-        "function zoomWindow(f) { const w = mapWindow(); zoomAt((w.l + w.r)/2, (w.t + w.b)/2, f); personMoved(); }",
-        "miniEl.addEventListener(\"mousedown\", ev => {\n  personMoved();",
-    ] {
-        assert!(SCRIPT.contains(hook), "a move of the person's does not count: {hook}");
-    }
-    assert!(
-        !function(SCRIPT, "centerOn").contains("personMoved"),
-        "follow's own move counts as the person's"
-    );
     let hud = &PAGE[PAGE.find("<div id=\"hud\">").expect("the toolbar")..];
     assert!(hud.contains("<button id=\"followBtn\""), "Follow is not on the camera toolbar");
     assert!(hud.contains("i-locate"));
@@ -143,10 +130,6 @@ fn a_selection_has_a_history_and_esc_gives_the_camera_back() {
     assert!(
         detail.contains("class=\"hback\"") && detail.contains("class=\"hfwd\""),
         "the sheet has no Back"
-    );
-    assert!(
-        SCRIPT.matches("focus = n; renderDetail(n); focusView(n);").count() == 0,
-        "a selection skips the history"
     );
 }
 

@@ -13,21 +13,11 @@ fn function(name: &str) -> &'static str {
     &SCRIPT[at + 1..at + 1 + SCRIPT[at + 1..].find("\n}\n").expect("it closes")]
 }
 
-/// A choice clears the field, so a filled field always means a query in progress; an empty field
-/// offers the last five queries this page ran, kept in its memory and never in the browser's
-/// storage; and an entity hit names its workspace in the hover card's words.
+/// An empty field offers the last five queries this page ran, kept in its memory and never in the
+/// browser's storage; and an entity hit names its workspace in the hover card's words. That a choice
+/// clears the field is held by `search_chooses_nothing_until_the_person_moves` in screens.rs.
 #[test]
 fn a_choice_clears_the_field_and_recent_searches_wait() {
-    let choose = function("chooseSearch");
-    let entity = &choose[choose.find("if (h.kind === \"entity\")").expect("the entity branch")..];
-    assert!(
-        entity.contains("searchEl.value = \"\";"),
-        "a choice leaves the term in the field"
-    );
-    assert!(
-        !choose.contains("searchEl.value = n.name"),
-        "the field still takes the chosen name"
-    );
     let note = function("noteRecent");
     assert!(note.contains("recentQueries.length = Math.min(recentQueries.length, 5)"));
     assert!(

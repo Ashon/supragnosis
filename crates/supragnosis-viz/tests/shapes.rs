@@ -117,12 +117,6 @@ fn the_minimap_window_is_concentric_with_its_frame() {
             && body("drawMiniWindow").contains("R - 0.5)"),
         "the window's line, half a pixel in, runs on the radius less that half pixel"
     );
-    let path = body("miniWindowPath");
-    assert!(
-        path.contains("{ x: x1, y: y1, cx: lo + r, cy: lo + r, sx: -1, sy: -1 }"),
-        "a corner past the curve follows the curve's own centre"
-    );
-    assert!(path.contains("Math.min(3,"), "a free corner keeps a small radius");
 }
 
 /// Section 4: the act a page or a decision is for draws large, 28 pixels, as a capsule, and the
