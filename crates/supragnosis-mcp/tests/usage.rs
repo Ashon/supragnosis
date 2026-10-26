@@ -144,7 +144,7 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     assert!(lines[6].get("commit").is_none(), "a source that is not a commit id is not kept");
     assert!(lines[1]["n"].as_u64() > Some(0) && lines[1]["mode"] == "hybrid", "{}", lines[1]);
     assert!(lines.iter().all(|l| l["t"].is_u64() && l["ms"].is_u64()), "{file}");
-    for secret in [
+    for asked in [
         "zebra",
         "Zebra",
         obs_id.as_str(),
@@ -154,7 +154,7 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
         "no_such_tool",
         "sentence",
     ] {
-        assert!(!file.contains(secret), "the usage log holds {secret:?}: {file}");
+        assert!(!file.contains(asked), "the usage log holds text it was given");
     }
     use std::os::unix::fs::PermissionsExt;
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
