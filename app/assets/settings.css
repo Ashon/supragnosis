@@ -357,7 +357,7 @@ header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3
 .uchart:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 4px; border-radius: var(--r-inset); }
 .uchart .grid { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .uchart .base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.uchart .tick { fill: var(--muted); font: 10px var(--sans); font-variant-numeric: tabular-nums; }
+.uchart .tick { fill: var(--muted); font: var(--text-caption) var(--sans); font-variant-numeric: tabular-nums; }
 .uchart .hit { fill: transparent; }
 .uchart .col.on path { filter: brightness(1.18); }
 .utip {
@@ -377,7 +377,10 @@ header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3
 .unumbers .utable { margin-top: 6px; }
 .utable { width: 100%; border-collapse: collapse; font-size: var(--text-small); color: var(--ink2); }
 .utable th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px 6px 0; }
-.utable td { padding: 4px 8px 4px 0; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+/* Rows are told apart by a tint on every other one, not by a rule (U9). */
+.utable td { padding: 4px 8px 4px 0; overflow-wrap: anywhere; }
+.utable td:first-child, .utable th:first-child { padding-left: 6px; }
+.utable tbody tr:nth-child(odd) { background: var(--panel-2); }
 .utable .n { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Icons used on this page (icons/README.md); .i and the mask are in shell.css. */
