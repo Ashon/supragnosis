@@ -4024,6 +4024,7 @@ dependencies = [
  "supragnosis-store",
  "supragnosis-sync",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

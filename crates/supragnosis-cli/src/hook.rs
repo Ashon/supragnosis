@@ -32,6 +32,8 @@ pub const CONTEXT_CAP: usize = 10_000;
 pub type Git<'a> = &'a dyn Fn(&Path, &[&str]) -> Option<String>;
 /// One GET on the daemon's viewer socket, returning the body when the daemon answered in time.
 pub type Daemon<'a> = &'a dyn Fn(&str) -> Option<String>;
+/// One line for the usage log (docs/usage.md): what the hook just gave or asked.
+pub type Note<'a> = &'a dyn Fn(Value);
 
 /// What the hook may consult. Nothing else reaches it.
 pub struct World<'a> {
@@ -39,6 +41,7 @@ pub struct World<'a> {
     pub now: u64,
     pub git: Git<'a>,
     pub daemon: Daemon<'a>,
+    pub note: Note<'a>,
     /// `SUPRAGNOSIS_WORKSPACE` when it is set: names the workspace instead of the repository.
     pub workspace_override: Option<String>,
 }
@@ -68,6 +71,19 @@ pub fn answer(input: &Value, w: &World) -> Result<Option<Value>, String> {
     }))
 }
 
+/// A usage line for one of the hook's events (docs/usage.md Section 2): no text of what it gave.
+fn noted(w: &World, name: &str, workspace: &str, fields: Value) {
+    let mut line = serde_json::json!({
+        "t": w.now * 1000, "kind": "hook", "name": name, "workspace": workspace, "app": "Claude Code",
+    });
+    if let Value::Object(more) = fields {
+        for (k, v) in more {
+            line[k] = v;
+        }
+    }
+    (w.note)(line);
+}
+
 /// After a `Bash` call that named `git commit` and left a fresh HEAD: the facts of the commit and
 /// the question, once.
 fn after_commit(input: &Value, cwd: &Path, w: &World) -> Option<String> {
@@ -88,6 +104,7 @@ fn after_commit(input: &Value, cwd: &Path, w: &World) -> Option<String> {
         return None;
     }
     let (workspace, repo) = workspace_of(cwd, w);
+    noted(w, "commit_question", &workspace, serde_json::json!({ "commit": id }));
     let short = &id[..id.len().min(7)];
     Some(format!(
         "Commit {short} {subject:?} landed in {repo} (author {author}). Record what this work \
@@ -157,6 +174,7 @@ fn session_start(cwd: &Path, compacted: bool, w: &World) -> Option<String> {
     let (workspace, _) = workspace_of(cwd, w);
     let records = records_of(&workspace, w)?;
     if records.is_empty() {
+        noted(w, "session_start", &workspace, serde_json::json!({ "n": 0, "of": 0 }));
         return Some(no_records(&workspace, w));
     }
     let mut tail = format!(
@@ -173,7 +191,14 @@ fn session_start(cwd: &Path, compacted: bool, w: &World) -> Option<String> {
              {workspace:?}."
         ));
     }
-    Some(index(&workspace, &records, SESSION_LINES, &tail))
+    let (text, shown) = index(&workspace, &records, SESSION_LINES, &tail);
+    noted(
+        w,
+        "session_start",
+        &workspace,
+        serde_json::json!({ "n": shown, "of": records.len() }),
+    );
+    Some(text)
 }
 
 /// At a subagent's start: the same index, shorter (docs/recall.md Section 4). A workspace with no
@@ -182,6 +207,7 @@ fn subagent_start(cwd: &Path, w: &World) -> Option<String> {
     let (workspace, _) = workspace_of(cwd, w);
     let records = records_of(&workspace, w)?;
     if records.is_empty() {
+        noted(w, "subagent_start", &workspace, serde_json::json!({ "n": 0, "of": 0 }));
         return None;
     }
     let tail = format!(
@@ -190,7 +216,14 @@ fn subagent_start(cwd: &Path, w: &World) -> Option<String> {
          observation opens as the resource supragnosis://observation/{{id}} (ReadMcpResourceTool, \
          server supragnosis)."
     );
-    Some(index(&workspace, &records, SUBAGENT_LINES, &tail))
+    let (text, shown) = index(&workspace, &records, SUBAGENT_LINES, &tail);
+    noted(
+        w,
+        "subagent_start",
+        &workspace,
+        serde_json::json!({ "n": shown, "of": records.len() }),
+    );
+    Some(text)
 }
 
 /// One line of the index: the day its record was made, its tier when it is not the common one,
@@ -228,12 +261,12 @@ fn records_of(workspace: &str, w: &World) -> Option<Vec<Record>> {
 /// The index: a header with the shown and total counts, the newest `lines` records inside the
 /// evidence fence, how many are left out, then `tail`. Lines go from the oldest shown until the
 /// whole fits under [`CONTEXT_CAP`] (RC3).
-fn index(workspace: &str, records: &[Record], lines: usize, tail: &str) -> String {
+fn index(workspace: &str, records: &[Record], lines: usize, tail: &str) -> (String, usize) {
     let mut shown = records.len().min(lines);
     loop {
         let text = render(workspace, records, shown, tail);
         if shown == 0 || text.chars().count() <= CONTEXT_CAP {
-            return text;
+            return (text, shown);
         }
         shown -= 1;
     }
@@ -297,7 +330,7 @@ fn first_sentence(content: &str) -> String {
 
 /// The UTC day of a time in seconds since the epoch, as `YYYY-MM-DD` (the civil-from-days
 /// algorithm, so the hook needs no date library).
-fn utc_day(secs: u64) -> String {
+pub(crate) fn utc_day(secs: u64) -> String {
     let z = (secs / 86_400) as i64 + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
@@ -418,7 +451,13 @@ mod tests {
     fn a_commit_that_landed_asks_for_the_decision_behind_it() {
         let repo = repo_with_a_commit("the bridge opens a new connection per request");
         let id = real_git(&repo, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
-        let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &no_daemon,
+            workspace_override: None,
+        };
         let out = answer(&post_tool_use(&repo, "git commit -q -m x"), &w)
             .unwrap()
             .expect("answered");
@@ -436,6 +475,7 @@ mod tests {
 
         // The override names the workspace; the repository is still named in the text.
         let w2 = World {
+            note: &|_| {},
             now: now(),
             git: &real_git,
             daemon: &no_daemon,
@@ -451,14 +491,20 @@ mod tests {
     #[test]
     fn a_command_that_landed_no_commit_gets_no_answer() {
         let repo = repo_with_a_commit("first");
-        let fresh =
-            World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
+        let fresh = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &no_daemon,
+            workspace_override: None,
+        };
         for cmd in ["cargo test", "git status", "git commit-tree HEAD^{tree}", "git log --oneline"]
         {
             assert!(answer(&post_tool_use(&repo, cmd), &fresh).unwrap().is_none(), "{cmd}");
         }
         // The same `git commit` an hour later, when HEAD is what it was: nothing landed.
         let later = World {
+            note: &|_| {},
             now: now() + 3600,
             git: &real_git,
             daemon: &no_daemon,
@@ -561,7 +607,13 @@ mod tests {
         let name = repo.file_name().unwrap().to_str().unwrap().to_string();
         let log = log_of(30, 2, |i| format!("Record {i} settled the thing. Why it did follows."));
         let daemon = daemon_with(&name, log, None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let out = answer(&start("SessionStart", "startup", &repo), &w).unwrap().expect("answered");
         assert_eq!(out["hookSpecificOutput"]["hookEventName"], "SessionStart");
         assert!(out.get("decision").is_none(), "C6: the hook never blocks");
@@ -598,7 +650,13 @@ mod tests {
 
         // A log shorter than the index is shown whole, and says nothing is left out.
         let daemon = daemon_with(&name, log_of(3, 0, |i| format!("Only {i}.")), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let out = answer(&start("SessionStart", "resume", &repo), &w).unwrap().unwrap();
         let text = context_of(&out);
         assert!(
@@ -618,7 +676,13 @@ mod tests {
             {"id": "", "content": "No id.", "hlc": {"wall": NEWEST_MS - 2}}
         ]);
         let daemon = daemon_with(&name, log.to_string(), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let out = answer(&start("SessionStart", "startup", &repo), &w).unwrap().unwrap();
         let text = context_of(&out);
         let lines = fenced(text);
@@ -640,7 +704,13 @@ mod tests {
         let repo = repo_with_a_commit("seed a compaction");
         let name = repo.file_name().unwrap().to_str().unwrap().to_string();
         let daemon = daemon_with(&name, log_of(4, 0, |i| format!("Record {i}.")), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let out = answer(&start("SessionStart", "compact", &repo), &w).unwrap().unwrap();
         let text = context_of(&out);
         assert_eq!(fenced(text).len(), 4, "the index comes first");
@@ -670,12 +740,24 @@ mod tests {
         let input = start("SessionStart", "startup", &repo);
         let listed = Some(serde_json::json!(["default", "folio"]));
         let daemon = daemon_with(&name, log_of(5, 0, |i| format!("Note {i}.")), listed.clone());
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let text = answer(&input, &w).unwrap().unwrap();
         assert_eq!(fenced(context_of(&text)).len(), 5, "{text}");
 
         let daemon = daemon_with(&name, "[]".into(), listed);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let text = answer(&input, &w).unwrap().unwrap();
         assert_eq!(
             context_of(&text),
@@ -685,12 +767,24 @@ mod tests {
             )
         );
         let daemon = daemon_with(&name, "[]".into(), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let text = answer(&input, &w).unwrap().unwrap();
         assert!(context_of(&text)
             .ends_with("holds no records on this node yet; the first observe creates it."));
 
-        let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &no_daemon,
+            workspace_override: None,
+        };
         assert!(answer(&input, &w).unwrap().is_none(), "no daemon, no line");
 
         let one = log_of(1, 0, |_| "One.".into());
@@ -702,6 +796,7 @@ mod tests {
             Some(one.clone())
         };
         let w = World {
+            note: &|_| {},
             now: now(),
             git: &real_git,
             daemon: &spaced,
@@ -717,7 +812,13 @@ mod tests {
                 .filter(|r| r.get("proposal").is_some())
                 .collect();
         let events = daemon_with(&name, Value::Array(only_events).to_string(), None);
-        let w = World { now: now(), git: &real_git, daemon: &events, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &events,
+            workspace_override: None,
+        };
         let text = answer(&input, &w).unwrap().unwrap();
         assert!(context_of(&text).contains("holds no records on this node yet"), "{text}");
         let _ = std::fs::remove_dir_all(&repo);
@@ -733,6 +834,7 @@ mod tests {
         for ws in ["supragnosis".to_string(), "w".repeat(2_500)] {
             let daemon = daemon_with(&ws, log_of(40, 0, long), None);
             let w = World {
+                note: &|_| {},
                 now: now(),
                 git: &real_git,
                 daemon: &daemon,
@@ -769,7 +871,13 @@ mod tests {
         let repo = repo_with_a_commit("seed a subagent of ten");
         let name = repo.file_name().unwrap().to_str().unwrap().to_string();
         let daemon = daemon_with(&name, log_of(30, 1, |i| format!("Record {i}.")), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         let out = answer(&start("SubagentStart", "", &repo), &w).unwrap().expect("answered");
         assert_eq!(out["hookSpecificOutput"]["hookEventName"], "SubagentStart");
         let text = context_of(&out);
@@ -783,8 +891,68 @@ mod tests {
             "{text}"
         );
         let daemon = daemon_with(&name, "[]".into(), None);
-        let w = World { now: now(), git: &real_git, daemon: &daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
         assert!(answer(&start("SubagentStart", "", &repo), &w).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// usage.md Section 2 (UL2): the hook notes each index it gives and each commit question it
+    /// asks - the workspace, the lines shown of how many, the commit - and none of the index's text.
+    #[test]
+    fn a_hook_event_is_noted_without_its_text() {
+        let repo = repo_with_a_commit("seed the usage notes");
+        let name = repo.file_name().unwrap().to_str().unwrap().to_string();
+        let id = real_git(&repo, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        let noted = std::cell::RefCell::new(Vec::<Value>::new());
+        let note = |v: Value| noted.borrow_mut().push(v);
+        let daemon = daemon_with(&name, log_of(30, 0, |i| format!("Secret record {i}.")), None);
+        let w = World {
+            note: &note,
+            now: now(),
+            git: &real_git,
+            daemon: &daemon,
+            workspace_override: None,
+        };
+        answer(&start("SessionStart", "startup", &repo), &w).unwrap().expect("answered");
+        answer(&start("SubagentStart", "", &repo), &w).unwrap().expect("answered");
+        answer(&post_tool_use(&repo, "git commit -m x"), &w).unwrap().expect("answered");
+        let empty = daemon_with(&name, "[]".into(), None);
+        let w = World {
+            note: &note,
+            now: now(),
+            git: &real_git,
+            daemon: &empty,
+            workspace_override: None,
+        };
+        answer(&start("SessionStart", "startup", &repo), &w).unwrap().expect("answered");
+        let noted = noted.into_inner();
+        let said: Vec<(String, Value, Value)> = noted
+            .iter()
+            .map(|v| (v["name"].as_str().unwrap().to_string(), v["n"].clone(), v["of"].clone()))
+            .collect();
+        assert_eq!(
+            said,
+            vec![
+                ("session_start".to_string(), Value::from(25), Value::from(30)),
+                ("subagent_start".to_string(), Value::from(10), Value::from(30)),
+                ("commit_question".to_string(), Value::Null, Value::Null),
+                ("session_start".to_string(), Value::from(0), Value::from(0)),
+            ]
+        );
+        assert_eq!(noted[2]["commit"], id.as_str());
+        for v in &noted {
+            assert_eq!(
+                (v["kind"].as_str(), v["workspace"].as_str()),
+                (Some("hook"), Some(name.as_str()))
+            );
+            assert!(!v.to_string().contains("Secret"), "a note holds the index's text: {v}");
+        }
         let _ = std::fs::remove_dir_all(&repo);
     }
 
@@ -825,7 +993,13 @@ mod tests {
             .output()
             .expect("git runs");
         assert!(added.status.success(), "{}", String::from_utf8_lossy(&added.stderr));
-        let w = World { now: now(), git: &real_git, daemon: &no_daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &real_git,
+            daemon: &no_daemon,
+            workspace_override: None,
+        };
         let name = repo.file_name().unwrap().to_string_lossy().into_owned();
         assert_eq!(workspace_of(&tree, &w), (name.clone(), name.clone()), "from the worktree");
         assert_eq!(
@@ -843,7 +1017,13 @@ mod tests {
                 _ => real_git(dir, args),
             }
         };
-        let w = World { now: now(), git: &old_git, daemon: &no_daemon, workspace_override: None };
+        let w = World {
+            note: &|_| {},
+            now: now(),
+            git: &old_git,
+            daemon: &no_daemon,
+            workspace_override: None,
+        };
         assert_eq!(workspace_of(&repo, &w), (name.clone(), name), "with an old git");
         let _ = std::fs::remove_dir_all(&tree);
         let _ = std::fs::remove_dir_all(&repo);

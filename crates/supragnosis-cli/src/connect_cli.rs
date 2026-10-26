@@ -227,10 +227,22 @@ pub(crate) fn hook_cmd(a: HookArgs) -> Result<()> {
             .ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
     };
+    // The hook's events go to the usage log beside the viewer's socket, as the daemon's calls do
+    // (docs/usage.md Section 2). A line that cannot be written is not the hook's failure (UL3).
+    let usage = crate::serve::usage_path(
+        &std::env::var("SUPRAGNOSIS_VIZ_SOCK")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(crate::config::default_viz_sock),
+    );
+    let note = |line: serde_json::Value| {
+        let _ = supragnosis_mcp::append_usage_line(&usage, &line);
+    };
     let world = hook::World {
         now: unix_now(),
         git: &git,
         daemon: &viz_get,
+        note: &note,
         workspace_override: std::env::var("SUPRAGNOSIS_WORKSPACE").ok(),
     };
     if let Some(v) = hook::answer(&input, &world).map_err(|e| anyhow::anyhow!(e))? {

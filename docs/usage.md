@@ -5,7 +5,7 @@
 > [recall.md](recall.md) (what the hook gives a session; Section 1 measured it from transcripts) and
 > [onboarding.md](onboarding.md) Section 5 (the first-contact log, which this extends in time).
 >
-> Status: **specified**. Decisions D1-D6 were chosen by the author on 2026-10-26.
+> Status: **built**. Decisions D1-D6 were chosen by the author on 2026-10-26.
 
 ## 1. Why this exists
 

@@ -1449,6 +1449,39 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
+// docs/usage.md Section 5 - the usage log (UL rows).
+const USAGE_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[
+        c(
+            "the usage file is created 0600",
+            Evidence::Scenario(&["every_call_is_recorded_with_its_workspace_and_no_text"]),
+        ),
+        c(
+            "the usage file is not in the store, not synced and not sent",
+            Evidence::Structural(
+                "UsageLog holds a path and nothing else, and writes only through append_usage_line; the \
+                 store, sync and engine crates never name usage.jsonl, no MCP tool or resource reads it, \
+                 and the hook appends to it with the same function",
+            ),
+        ),
+    ]),
+    (2, &[c(
+        "no query text, observation content, entity name or resource body is written to the usage file",
+        Evidence::Scenario(&[
+            "every_call_is_recorded_with_its_workspace_and_no_text",
+            "a_hook_event_is_noted_without_its_text",
+        ]),
+    )]),
+    (3, &[c(
+        "a usage line that cannot be written never fails or delays the call it records",
+        Evidence::Scenario(&["a_usage_log_that_cannot_be_written_costs_the_call_nothing"]),
+    )]),
+    (4, &[c(
+        "every tool call, resource read and prompt the daemon's MCP surface answers is recorded with the workspace it named",
+        Evidence::Scenario(&["every_call_is_recorded_with_its_workspace_and_no_text"]),
+    )]),
+];
+
 // docs/recall.md Section 8 - the recall index (RC rows).
 const RECALL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -2930,6 +2963,12 @@ const FAMILIES: &[Family] = &[
         rows: RECALL_REGISTRY,
     },
     Family {
+        doc: "docs/usage.md",
+        text: include_str!("../../../docs/usage.md"),
+        prefix: "UL",
+        rows: USAGE_REGISTRY,
+    },
+    Family {
         doc: "docs/daemon-lifecycle.md",
         text: include_str!("../../../docs/daemon-lifecycle.md"),
         prefix: "L",
@@ -3408,6 +3447,8 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     ("docs/client-connect.md", include_str!("../../../docs/client-connect.md")),
     // Listed the day it was written. Its guards live beside the capture hook's, in the CLI crate.
     ("docs/recall.md", include_str!("../../../docs/recall.md")),
+    // Listed the day it was written. Its guards live in the MCP crate's tests and the CLI's hook.
+    ("docs/usage.md", include_str!("../../../docs/usage.md")),
     // Listed the day it was written. Its guards will split between the CLI (profiles, principals)
     // and the MCP crate, where the remote policy table and its every-tool-is-classified test live.
     ("docs/remote-server.md", include_str!("../../../docs/remote-server.md")),
@@ -3480,6 +3521,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-sync/src/lib.rs"),
     include_str!("../../supragnosis-sync/src/http.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
+    include_str!("../../supragnosis-mcp/tests/usage.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-cli/src/hub.rs"),
     include_str!("../../supragnosis-cli/tests/lifecycle_exit.rs"),

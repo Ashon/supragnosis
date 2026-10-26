@@ -78,6 +78,9 @@ enum Cmd {
     /// decision behind the change; at a session's start, say what the workspace holds here.
     /// Registered by `connect claude-code` (docs/client-connect.md Section 12)
     Hook(HookArgs),
+    /// How this node is used: calls by MCP function and workspace, by app, and what the Claude
+    /// Code hook gave and asked, from the local usage log (docs/usage.md)
+    Usage(usage_cli::UsageArgs),
     /// Let another machine join this one: prints a one-time code, then each request's words and
     /// asks to allow it (docs/pairing.md Section 3a)
     Invite(InviteArgs),
@@ -364,6 +367,7 @@ mod service;
 mod setup_cli;
 mod store_cmds;
 mod sync_wiring;
+mod usage_cli;
 
 use config::*;
 use connect_cli::*;
@@ -404,6 +408,7 @@ fn main() -> Result<()> {
         Cmd::Embed { cmd: EmbedCmd::Reset } => embed_reset(),
         Cmd::Embed { cmd: EmbedCmd::Rebuild } => embed_rebuild(),
         Cmd::Hook(a) => hook_cmd(a),
+        Cmd::Usage(a) => usage_cli::usage_cmd(a),
         Cmd::Invite(a) => invite_cmd(a),
         Cmd::Join(a) => join_cmd(a),
         Cmd::Hub { cmd } => hub_cmd(cmd),
@@ -426,6 +431,7 @@ const MAIN_SOURCES: &[&str] = &[
     include_str!("embedding.rs"),
     include_str!("engine_setup.rs"),
     include_str!("sync_wiring.rs"),
+    include_str!("usage_cli.rs"),
     include_str!("store_cmds.rs"),
     include_str!("connect_cli.rs"),
     include_str!("setup_cli.rs"),

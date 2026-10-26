@@ -73,6 +73,9 @@ pub(crate) async fn run(cfg: Config) -> Result<()> {
 
     match cfg.http.as_deref() {
         Some(http) => {
+            if let Some(sock) = cfg.viz.as_deref() {
+                let _ = USAGE.set(Arc::new(supragnosis_mcp::UsageLog::at(usage_path(sock))));
+            }
             serve_http_daemon(
                 engine,
                 SyncSurface { ctx: sync_ctx, listener: listener_state },
@@ -251,6 +254,16 @@ pub(crate) async fn sigterm() {
 
 /// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
 /// apps talked to it, shared by every MCP session and read by the viewer's `/api/clients`.
+/// The usage log of the daemon's MCP surface (docs/usage.md), set once when the daemon serves HTTP
+/// with a viewer socket; a router built without it (a test's) records nothing.
+static USAGE: std::sync::OnceLock<Arc<supragnosis_mcp::UsageLog>> = std::sync::OnceLock::new();
+
+/// Where the usage log lives: beside the viewer's socket, which is where the daemon keeps what it
+/// knows only about this machine (docs/usage.md Section 2). The hook finds it the same way.
+pub(crate) fn usage_path(viz_sock: &str) -> std::path::PathBuf {
+    std::path::Path::new(viz_sock).with_file_name("usage.jsonl")
+}
+
 pub(crate) fn client_log() -> Arc<supragnosis_mcp::ClientLog> {
     static LOG: std::sync::OnceLock<Arc<supragnosis_mcp::ClientLog>> = std::sync::OnceLock::new();
     LOG.get_or_init(Default::default).clone()
@@ -267,6 +280,9 @@ pub(crate) fn mcp_router(
     let service = StreamableHttpService::new(
         move || {
             let mut server = SupragnosisServer::new(engine.clone()).with_clients(client_log());
+            if let Some(log) = USAGE.get() {
+                server = server.with_usage(log.clone());
+            }
             if let Some(ctx) = &sync_ctx {
                 server = server.with_sync(ctx.clone());
             }

@@ -27,7 +27,7 @@
   [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
   [`recall.md`](recall.md) (what a session knows when it starts, and what it records, built),
-  [`usage.md`](usage.md) (a local record of which tools the agents call, on which workspaces, specified),
+  [`usage.md`](usage.md) (a local record of which tools the agents call, on which workspaces, built),
   [`remote-server.md`](remote-server.md) (server profiles and the hub's agent surface, built -
   Section 10 steps 1-3 - and removed in 0.11.0, Section 13),
   [`remote-viewer.md`](remote-viewer.md) (the viewer on the hub: Section 10 steps 0-1 built, then

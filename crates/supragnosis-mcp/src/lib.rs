@@ -399,10 +399,72 @@ impl ClientLog {
     }
 }
 
+/// The usage log (docs/usage.md): one JSON line per call the daemon's MCP surface answers, appended
+/// to a file beside the viewer's socket. It names functions, workspaces, apps and counts, never what
+/// was asked (UL2), and it never leaves the machine (UL1). A line that cannot be written is said once
+/// in the daemon's log and costs the call nothing (UL3).
+pub struct UsageLog {
+    path: std::path::PathBuf,
+    warned: std::sync::atomic::AtomicBool,
+}
+
+impl UsageLog {
+    pub fn at(path: impl Into<std::path::PathBuf>) -> Self {
+        Self { path: path.into(), warned: Default::default() }
+    }
+
+    fn record(&self, line: serde_json::Value) {
+        if let Err(e) = append_usage_line(&self.path, &line) {
+            if !self.warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(path = %self.path.display(), "the usage log cannot be written: {e}");
+            }
+        }
+    }
+}
+
+/// Appends one usage line to `path`, creating the file 0600 (UL1). One write per line, so the daemon
+/// and the Claude Code hook, two processes appending to the same file, never interleave within one.
+pub fn append_usage_line(path: &std::path::Path, line: &serde_json::Value) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut text = line.to_string();
+    text.push('\n');
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)?
+        .write_all(text.as_bytes())
+}
+
+/// What a call's answer says for the usage log: its outcome, how many it answered, and a search's
+/// mode, read from the answer's JSON without keeping any of its text (UL2).
+fn answered(text: Option<&str>, failed: bool) -> (&'static str, Option<usize>, Option<String>) {
+    if failed {
+        return ("error", None, None);
+    }
+    let Some(v) = text.and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok()) else {
+        return ("ok", None, None);
+    };
+    let mode = v.get("mode").and_then(serde_json::Value::as_str).map(str::to_string);
+    if v.get("found") == Some(&serde_json::Value::Bool(false)) {
+        return ("not_found", None, mode);
+    }
+    let n = v
+        .as_array()
+        .or_else(|| v.get("hits").and_then(serde_json::Value::as_array))
+        .map(Vec::len)
+        .or_else(|| v.get("entities").and_then(serde_json::Value::as_array).map(Vec::len));
+    let empty = n == Some(0) && v.get("entities").is_none();
+    (if empty { "empty" } else { "ok" }, n, mode)
+}
+
 pub struct SupragnosisServer {
     engine: Arc<Engine>,
     /// First contact, recorded on the local daemon's surface only (docs/onboarding.md Section 5).
     clients: Option<Arc<ClientLog>>,
+    /// The usage log, on the local daemon's surface only (docs/usage.md).
+    usage: Option<Arc<UsageLog>>,
     sync: Option<Arc<SyncContext>>,
     /// The hub's listener state, there from the daemon's start, so a node with no sync that an
     /// invitation made a hub still says what its listener is doing (docs/pairing.md Section 4.1).
@@ -415,6 +477,7 @@ impl SupragnosisServer {
         Self {
             engine,
             clients: None,
+            usage: None,
             sync: None,
             listener: None,
             tool_router: Self::tool_router(),
@@ -425,6 +488,50 @@ impl SupragnosisServer {
     pub fn with_clients(mut self, log: Arc<ClientLog>) -> Self {
         self.clients = Some(log);
         self
+    }
+
+    /// Records every call this surface answers in the usage log (docs/usage.md).
+    pub fn with_usage(mut self, log: Arc<UsageLog>) -> Self {
+        self.usage = Some(log);
+        self
+    }
+
+    /// One usage line: the call's kind and name, the workspace it named, its app, what it came to,
+    /// and how long it took (docs/usage.md Section 2).
+    #[allow(clippy::too_many_arguments)]
+    fn note_use(
+        &self,
+        kind: &str,
+        name: &str,
+        workspace: Option<&str>,
+        app: Option<&str>,
+        (outcome, n, mode): (&str, Option<usize>, Option<String>),
+        commit: Option<&str>,
+        started: std::time::Instant,
+    ) {
+        let Some(log) = &self.usage else {
+            return;
+        };
+        let mut line = serde_json::json!({
+            "t": supragnosis_core::now_millis(),
+            "kind": kind,
+            "name": name,
+            "outcome": outcome,
+            "ms": started.elapsed().as_millis() as u64,
+        });
+        let fields = [
+            ("workspace", workspace.map(serde_json::Value::from)),
+            ("app", app.map(serde_json::Value::from)),
+            ("n", n.map(serde_json::Value::from)),
+            ("mode", mode.map(serde_json::Value::from)),
+            ("commit", commit.map(serde_json::Value::from)),
+        ];
+        for (k, v) in fields {
+            if let Some(v) = v {
+                line[k] = v;
+            }
+        }
+        log.record(line);
     }
 
     /// Notes a request's client in the first-contact log: the name its session's `initialize` gave,
@@ -1643,8 +1750,40 @@ impl ServerHandler for SupragnosisServer {
     ) -> Result<CallToolResponse, ErrorData> {
         self.note_contact(&context);
         let app = client_name(&context);
+        let started = std::time::Instant::now();
+        let name = request.name.to_string();
+        let arg = |k: &str| {
+            request
+                .arguments
+                .as_ref()
+                .and_then(|a| a.get(k))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        let (workspace, source) = (arg("workspace"), arg("source_ref"));
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        flag_error(WRITING_APP.scope(app, self.tool_router.call(tcc)).await)
+        let resp = flag_error(WRITING_APP.scope(app.clone(), self.tool_router.call(tcc)).await);
+        if self.usage.is_some() {
+            let said = match &resp {
+                Ok(CallToolResponse::Complete(r)) => answered(
+                    r.content.first().and_then(|c| c.as_text()).map(|t| t.text.as_str()),
+                    r.is_error == Some(true),
+                ),
+                Ok(_) => ("ok", None, None),
+                Err(_) => ("error", None, None),
+            };
+            let commit = source.as_deref().and_then(|s| s.strip_prefix("git:"));
+            self.note_use(
+                "tool",
+                &name,
+                workspace.as_deref(),
+                app.as_deref(),
+                said,
+                commit,
+                started,
+            );
+        }
+        resp
     }
 
     /// Tool listing, hand-written so that the SEP-2549 cache hints are always present.
@@ -1702,12 +1841,20 @@ impl ServerHandler for SupragnosisServer {
     async fn get_prompt(
         &self,
         request: GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResponse, ErrorData> {
+        let started = std::time::Instant::now();
         let engine = self.engine.clone();
         let args = request.arguments.unwrap_or_default();
         let name = request.name.clone();
+        let workspace =
+            args.get("workspace").and_then(serde_json::Value::as_str).map(str::to_string);
+        let used = name.clone();
         let built = tokio::task::spawn_blocking(move || prompts::get(&engine, &name, &args)).await;
+        let failed = !matches!(built, Ok(Ok(_)));
+        let app = client_name(&context);
+        let said = if failed { ("error", None, None) } else { ("ok", None, None) };
+        self.note_use("prompt", &used, workspace.as_deref(), app.as_deref(), said, None, started);
         match built {
             Ok(Ok(result)) => Ok(result.into()),
             Ok(Err(prompts::PromptError::Invalid(why))) => {
@@ -1871,11 +2018,43 @@ impl ServerHandler for SupragnosisServer {
     fn read_resource(
         &self,
         request: ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
         let uri = request.uri;
         let engine = self.engine.clone();
+        let started = std::time::Instant::now();
+        let app = client_name(&context);
+        let (kind, workspace) = resource_use(&uri);
         async move {
+            let read = self.read_resource_inner(engine, uri).await;
+            let said = match &read {
+                Ok(_) => ("ok", None, None),
+                Err(e) if e.code == rmcp::model::ErrorCode::RESOURCE_NOT_FOUND => {
+                    ("not_found", None, None)
+                }
+                Err(_) => ("error", None, None),
+            };
+            self.note_use(
+                "resource",
+                kind,
+                workspace.as_deref(),
+                app.as_deref(),
+                said,
+                None,
+                started,
+            );
+            read
+        }
+    }
+}
+
+impl SupragnosisServer {
+    async fn read_resource_inner(
+        &self,
+        engine: Arc<Engine>,
+        uri: String,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        {
             // Every branch reads the store and most fold the whole log (graph, hypergraph,
             // types): synchronous work that holds a worker thread for as long as it takes, and
             // the worker is shared with every other tool call. The tools offload theirs; so does
@@ -2003,6 +2182,21 @@ enum ResourceUri<'a> {
 }
 
 /// Resource URI parser. Returns None on malformed input. A segment must not contain `/`.
+/// A resource read's kind, and the workspace its URI names, for the usage log (docs/usage.md): the
+/// kind's word only, never an id (UL2).
+fn resource_use(uri: &str) -> (&'static str, Option<String>) {
+    match parse_resource_uri(uri) {
+        Some(ResourceUri::Workspaces) => ("workspaces", None),
+        Some(ResourceUri::Graph(ws)) => ("graph", Some(ws.to_string())),
+        Some(ResourceUri::Hypergraph(ws)) => ("hypergraph", Some(ws.to_string())),
+        Some(ResourceUri::Types(ws)) => ("types", Some(ws.to_string())),
+        Some(ResourceUri::Observation(_)) => ("observation", None),
+        Some(ResourceUri::Entity(_)) => ("entity", None),
+        Some(ResourceUri::Proposal(_)) => ("proposal", None),
+        None => ("unknown", None),
+    }
+}
+
 fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
     // Exact match first - "workspaces" (plural) does not overlap the "workspace/" (singular+slash) prefix.
     if uri == "supragnosis://workspaces" {
