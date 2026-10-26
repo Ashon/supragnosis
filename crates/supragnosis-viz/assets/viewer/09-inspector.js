@@ -245,7 +245,6 @@ function contestedRows(o) {
   const committed = String(o.tier) === "human_confirmed";
   const tied = o.contested && comps.length ? comps[0].trust_tier : "";
   const curTier = committed ? "human_confirmed" : (tied || o.tier || "");
-  const local = surfaceKind === "local";
   const head = o.contested && committed
     ? "These values are all Human confirmed, so the newer one is shown until you decide."
     : o.contested
@@ -255,10 +254,10 @@ function contestedRows(o) {
     const instead = committed && !shown;
     const ctx = { key: obs, obs, value, name: o.name, field: o.field, entity: o.entity || "",
       instead, curObs: o.curObs, curValue: o.current };
-    const act = local && obs && !(committed && shown) && !(instead && !o.entity)
+    const act = obs && !(committed && shown) && !(instead && !o.entity)
       ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}" data-ctx="${JSON.stringify(ctx)}">${instead ? "Confirm instead" : "Confirm"}</button>`
       : "";
-    const asking = local && settleAsk === obs && act;
+    const asking = settleAsk === obs && act;
     // An open question whose diff was read before the log last moved reads it again (I7/I12 are owed,
     // so this narrows the gap between preview and cast; Section 29.2).
     if (asking && settleView && settleView.key === obs && settleView.state !== "reading" && settleView.gen !== graphGen) {
@@ -283,7 +282,7 @@ function contestedRows(o) {
   const key = o.name + "|" + o.field;
   return html`<div class="chead">${head}</div>${row(o.current, curTier, o.curObs, true)}${
     comps.map(c => row(c.value, c.trust_tier, c.observation, false))}${
-    local ? html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary><span class="i i-chevron-right" aria-hidden="true"></span>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>` : ""}`;
+    html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary><span class="i i-chevron-right" aria-hidden="true"></span>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>`}`;
 }
 // The block's acts, wired after each draw; `redraw` draws the block's surface again.
 function wireSettle(host, redraw) {
@@ -504,12 +503,12 @@ function stepSelection(dir) {
   }
 }
 // Also named in (Section 29.16): the same name's entities in other workspaces, read once per selected
-// entity on the local console and kept while the graph does not change, so a poll re-draws the line
+// entity and kept while the graph does not change, so a poll re-draws the line
 // without reading again. Nothing shows while the read is in flight, and an answer for an entity no
 // longer selected is dropped.
 let namesakes = null;   // { id, tag, list } or { id, tag, why }
 function alsoNamedHtml(node) {
-  if (surfaceKind !== "local" || !node.workspace) return "";
+  if (!node.workspace) return "";
   if (!namesakes || namesakes.id !== node.id || namesakes.tag !== heldGraph.tag) { readNamesakes(node); return ""; }
   if (namesakes.why) return html`<div class="meta">Not compared with other workspaces: ${namesakes.why}</div>`;
   return namesakes.list.map(m => html`<div class="meta also">Also named in ${m.workspace}: ${m.name} (${m.type}) <button type="button" class="linkish nsshow" data-id="${m.id}" aria-label="${"Show " + m.name + " in " + m.workspace}">Show</button></div>`);
@@ -619,7 +618,6 @@ function resetLayout() {
 // What waits for the person about this entity, under the inspector's header (Section 29.7): one line
 // per Needs-you item that names it, with Open in Review.
 function waitsHtml(node) {
-  if (surfaceKind !== "local") return html``;
   const items = needsItems().filter(it =>
     (it.kind === "proposal" && ((it.p.targets || []).includes(node.id) || it.p.into === node.id))
     || (it.kind === "contested" && it.c.id === node.id));
@@ -682,8 +680,8 @@ function renderDetail(node) {
       html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span>${
         // Keep this entity and what its drawn relations reach in view (Section 29.11).
         relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">Show related</button>` : ""}${
-        // Say two entities of one workspace are one (Section 29.17), on the local console.
-        surfaceKind === "local" && node.workspace ? html`<button type="button" class="linkish sameas">Same as...</button>` : ""}</div>`,
+        // Say two entities of one workspace are one (Section 29.17).
+        node.workspace ? html`<button type="button" class="linkish sameas">Same as...</button>` : ""}</div>`,
         groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
       html`</div>`,
       html`<div class="relcol"><div class="sec">Evidence</div><div class="logcol"></div></div>`,

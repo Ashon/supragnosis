@@ -147,16 +147,14 @@ fn a_confirmation_says_what_it_confirms() {
     }
 }
 
-/// design-system.md Section 29.26: a claim's card offers its demotion on the local console, asks
+/// design-system.md Section 29.26: a claim's card offers its demotion, asks
 /// first - what flips, whose ring drops, what else it states, what Unverified means and the ceiling,
 /// then the checks - and casts only then; its notice offers Undo from the act's own undo read, and
 /// Esc closes the question before the card.
 #[test]
 fn a_person_can_demote_a_claim() {
     let card = function("obsCardHtml");
-    assert!(card.contains(
-        "surfaceKind === \"local\" && !o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0"
-    ));
+    assert!(card.contains("if (!o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {"));
     assert!(card.contains(">Demote this claim</button>"));
     let ask = function("demoteHtml");
     for part in [

@@ -23,13 +23,6 @@ function noteTrustAndContest() {
   renderTrustLegend();
   renderSaidLegend();
   renderTierNote();
-  const pill = document.getElementById("contestedPill");
-  if (pill) {
-    // On the local console the count rides Review's entry (Section 6, U20); on a read tier, where
-    // nothing is decided, this pill keeps it alone - and is absent only for a known zero (U8).
-    pill.hidden = contestedCount === 0 || surfaceKind === "local";
-    pill.textContent = contestedCount + " contested";
-  }
 }
 let trustMeansOpen = false;   // the disclosure survives the legend's redraw
 // Said (Section 29.19): a window of time dims every entity not said in it, as a dimmed tier does.
@@ -54,7 +47,6 @@ function renderSaidLegend() {
   host.innerHTML = "";
   const drawn = nodes.filter(n => !typeOff.has(n.type));
   for (const [win, label] of SAID_WINDOWS) {
-    if (win === "visit" && surfaceKind !== "local") continue;   // the read tier remembers nothing (Section 5)
     const since = win === "any" ? 0 : saidSince(win);
     const el = document.createElement("button");
     el.type = "button";
@@ -74,12 +66,12 @@ function renderSaidLegend() {
   }
   radioGroup(host, "Said");
 }
-// The last visit (Section 29.19), on the local console only: a visit ends after half an hour with the
+// The last visit (Section 29.19): a visit ends after half an hour with the
 // page unseen, and the last visit to a scope is when this browser last showed it before this visit,
 // kept per node and scope so a reload in the middle of a visit keeps it.
 const VISIT_GAP = 30 * 60 * 1000;
 let visit = null;   // { seen, last: {scope: ms}, since: {scope: ms | null} }
-function visitKey() { return surfaceKind === "local" && surfaceNode ? "supra.visit." + surfaceNode : null; }
+function visitKey() { return surfaceNode ? "supra.visit." + surfaceNode : null; }
 function loadVisit() {
   const key = visitKey();
   if (!key) return;
@@ -403,9 +395,8 @@ async function refreshEmpty() {
     return;
   }
   const line = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
-  // A name the node does not list is said as such on the owner's console (Section 29.9); the read
-  // tier refuses an unknown workspace before this shows.
-  const unknown = surfaceKind === "local" && wsUnlisted(cur);
+  // A name the node does not list is said as such (Section 29.9).
+  const unknown = wsUnlisted(cur);
   const kids = scopeEntries
     // Entries that name no entity are not an empty scope (P5): the Log holds them.
     ? [line("Nothing on the map yet.", "e-title"), line("The entries here name no entity - the Log holds them.", "e-sub")]
@@ -425,9 +416,9 @@ async function refreshEmpty() {
     }
     kids.push(row);
   }
-  // In the app, on the owner's console, a store with no entry leads back to Setup, which says what
+  // In the app, a store with no entry leads back to Setup, which says what
   // to ask (Section 29.10). The shell gives its address; a browser has none and shows no button.
-  if (window.supragnosisSetup && surfaceKind === "local" && !storeEntries) {
+  if (window.supragnosisSetup && !storeEntries) {
     const b = document.createElement("button");
     b.type = "button"; b.className = "chip"; b.textContent = "Open Setup";
     b.onclick = () => { location.href = window.supragnosisSetup + "?from=" + encodeURIComponent(String(location.href).split("#")[0]); };

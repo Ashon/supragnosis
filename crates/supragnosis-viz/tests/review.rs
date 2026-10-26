@@ -136,9 +136,9 @@ fn the_keys_act_from_the_first_press() {
     assert!(SCRIPT.contains(
         "window.addEventListener(\"hashchange\", () => { recallArmed = null; if (reviewOpen()) reviewFocus = true;"
     ));
-    assert!(SCRIPT.contains(
-        "else if (/^[1-9]$/.test(e.key) && item && item.kind === \"contested\" && surfaceKind === \"local\")"
-    ));
+    assert!(
+        SCRIPT.contains("else if (/^[1-9]$/.test(e.key) && item && item.kind === \"contested\") {")
+    );
     let detail = function("itemDetail");
     assert!(
         detail.matches("skipButton()").count() >= 3,

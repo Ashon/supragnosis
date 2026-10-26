@@ -20,7 +20,7 @@ fn function(name: &str) -> &'static str {
 fn the_maps_key_names_only_what_is_drawn() {
     let marks = function("renderMarks");
     for (word, gate) in [
-        ("\"Two sources disagree\"", "contestedCount"),
+        ("\"Two sources disagree - select to decide\"", "contestedCount"),
         ("\"Soft cloud: a region - entities said together\"", "drawnCounts().reg"),
         ("\"Outline: a workspace\"", "boundaryMode === \"workspace\""),
         ("\"Outline: the machine that signed\"", "boundaryMode === \"origin\""),

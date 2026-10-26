@@ -1,7 +1,7 @@
 // --- The Review page (docs/design-system.md Section 7, U4) ---------------------------------------
 // Everything that waits for a person's decision, in one place: Needs you (suspected secrets, open and
 // blocked proposals, contested beliefs), Suggestions and Health. It is a route of this page (#review),
-// so it works in the app, on a hub's read tier and in a browser alike. A decision acts on one item,
+// so it works in the app and in a browser alike. A decision acts on one item,
 // and only once that item's belief diff and checks are on screen; there is no decide-all (P23).
 const reviewEl = document.getElementById("reviewPage");
 let reviewSeg = "needs";      // needs | decided | suggestions | health
@@ -90,12 +90,12 @@ function decidedItems() {
 function segItems(seg = reviewSeg) {
   return seg === "needs" ? needsItems() : seg === "decided" ? decidedItems() : signalItems(seg);
 }
-// What waits in other workspaces (Section 29.21), on the local console: the reads the tray makes, at
+// What waits in other workspaces (Section 29.21): the reads the tray makes, at
 // most every 30 seconds while the page is seen and again after a console act; nothing is said about
 // elsewhere when the proposal read fails, and the proposals alone count when the curation read does.
 let waitAll = null, waitAllAt = 0;
 async function refreshElsewhere(force) {
-  if (surfaceKind !== "local" || document.hidden) return;
+  if (document.hidden) return;
   if (!force && Date.now() - waitAllAt < 30000) return;
   waitAllAt = Date.now();
   const cur = currentWs();
@@ -140,9 +140,9 @@ function updateReviewPill() {
   if (!pill) return;
   const n = reviewCount();
   const contested = curation ? needsItems().filter(it => it.kind === "contested").length : contestedCount;
-  // Always the way to Review on the local console (Section 6, U20), with one count: what waits under
-  // Needs you, and how many of those are contested beliefs. Absent on a read tier (U8).
-  pill.hidden = surfaceKind !== "local";
+  // Always the way to Review (Section 6, U20), with one count: what waits under Needs you, and how
+  // many of those are contested beliefs.
+  pill.hidden = false;
   const away = n ? 0 : waitElsewhere();
   pill.className = "spill" + (n || away ? " warn" : "");
   // One count, the scope's; with nothing here, what waits elsewhere (Section 29.21).
@@ -179,13 +179,12 @@ function renderReview() {
   // The window's document title names the page as the title bar does (Section 29.6, U26).
   document.title = (reviewOpen() ? "Review" : "Graph") + " - Supragnosis";
   if (!reviewOpen()) { reviewSig = ""; return; }
-  const local = surfaceKind === "local";
   const items = segItems();
   // Redraw only when what is shown changed: a redraw replaces the buttons under the pointer and the
   // keyboard focus, which every 2.5-second poll would otherwise take away. Each item's state is in
   // it, so a decided item leaves at the next read (Section 29.3).
   // What waits elsewhere and the Blocked count draw lines of their own (Section 29.21).
-  const sig = JSON.stringify([reviewSeg, reviewSel, local, recallArmed, currentWs(), items.map(itemSig), waitElsewhere(), blockedItems().length,
+  const sig = JSON.stringify([reviewSeg, reviewSel, recallArmed, currentWs(), items.map(itemSig), waitElsewhere(), blockedItems().length,
     ["needs", "decided", "suggestions", "health"].map(s => s === reviewSeg ? items.length : segItems(s).length),
     reviewView && [reviewView.id, (reviewView.checks || []).length], undoView && [undoView.id, undoView.state],
     reviewEvidence && [reviewEvidence.id, reviewEvidence.cols.map(c => c.list.length), !!reviewEvidence.opened]]);
@@ -221,7 +220,7 @@ function renderReview() {
   const away = all || reviewSeg !== "needs" ? 0 : waitElsewhere();
   const empty = { needs: all ? "Nothing waits for you in any workspace." : "Nothing waits for you in this workspace." + (away ? " " + away + " wait in other workspaces." : ""),
     decided: "Nothing decided here yet.", suggestions: "No suggestions here.", health: "Nothing to report here." }[reviewSeg];
-  const blocked = reviewSeg === "needs" && surfaceKind === "local" ? blockedItems() : [];
+  const blocked = reviewSeg === "needs" ? blockedItems() : [];
   const head = html`${away && items.length ? html`<div class="rv-else">${away} more wait in other workspaces. <button type="button" class="linkish" data-allws="1">Show all workspaces</button></div>` : ""}${
     blocked.length >= 2 ? html`<div class="rv-else">${blocked.length} were accepted, but a check holds each back. <button type="button" class="linkish" data-blocked="1">Reject all blocked</button></div>` : ""}`;
   list.innerHTML = html`${signalHint(reviewSeg)}${head}${items.length
@@ -233,10 +232,9 @@ function renderReview() {
   // Kept until a row takes it: the first draw can come before the proposals have been read.
   if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) { on.focus(); reviewFocus = false; } }
   const it = items.find(x => x.key === reviewSel);
-  detail.innerHTML = html`${it ? itemDetail(it, local) : html`<div class="empty">${items.length ? "Select an item." : empty}</div>`}`;
-  if (!local) detail.querySelectorAll(".propmerge, .reify").forEach(b => b.remove());   // the read tier changes nothing
+  detail.innerHTML = html`${it ? itemDetail(it) : html`<div class="empty">${items.length ? "Select an item." : empty}</div>`}`;
   if (it && it.kind === "proposal" && (!reviewView || reviewView.id !== it.p.id)) fetchReviewView(it.p.id);
-  if (it && it.kind === "proposal" && undoable(it.p) && local && (!undoView || undoView.id !== it.p.id)) fetchUndoView(it.p.id);
+  if (it && it.kind === "proposal" && undoable(it.p) && (!undoView || undoView.id !== it.p.id)) fetchUndoView(it.p.id);
   // A contested item's values confirm as 1 to 9, in the order shown (U19: only while focus is here).
   if (it && it.kind === "contested") detail.querySelectorAll('[data-settle="ask"]').forEach((b, i) => { if (i < 9) b.setAttribute("aria-keyshortcuts", String(i + 1)); });
   wireCuration(detail);
@@ -255,7 +253,7 @@ function renderReview() {
 function skipButton() {
   return html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">Skip <kbd aria-hidden="true">J</kbd></button>`;
 }
-function itemDetail(it, local) {
+function itemDetail(it) {
   if (it.kind === "secret") {
     const f = it.f;
     return [html`<h3>A credential may be in the log</h3>`,
@@ -270,7 +268,7 @@ function itemDetail(it, local) {
       html`<div class="contested hot">${contestedRows({ name: c.name, field: def ? "definition" : (c.field === "kind" ? "type" : c.field), entity: def ? "" : c.id,
         current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested, ws: c.workspace || (nodeById(c.id) || {}).workspace || "" })}</div>`,
       html`<div class="rv-acts">${def ? "" : html`<button type="button" class="btn" data-map="1">Show on the map</button>`}${skipButton()}</div>`,
-      local ? html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> confirm a value. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>` : html`<p class="why">This view is read-only.</p>`];
+      html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> confirm a value. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>`];
   }
   if (it.kind === "signal") return signalDetail(it);
   const p = it.p, v = reviewView && reviewView.id === p.id ? reviewView : null;
@@ -298,7 +296,6 @@ function itemDetail(it, local) {
   parts.push(html`<div class="sec">Who asked</div>`, opened
     ? html`<div class="hint"><button type="button" class="linkish" data-obs="${opened.id}">${whoLine(opened.effective_tier, authorOf(opened))}</button></div>`
     : html`<div class="hint">${p.opened_at ? new Date(p.opened_at).toLocaleString() : ""}</div>`);
-  if (!local) { parts.push(html`<p class="why">This view is read-only.</p>`); return parts; }
   const acts = [];
   const ready = !!v;   // the diff and checks are on screen
   const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
@@ -661,9 +658,9 @@ window.addEventListener("keydown", e => {
   const item = segItems().find(x => x.key === reviewSel);
   if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); stepReview(1); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); stepReview(-1); }
-  else if (e.key === "a" && surfaceKind === "local") reviewDecide(item, "merge");
-  else if (e.key === "r" && surfaceKind === "local") reviewDecide(item, "reject");
-  else if (/^[1-9]$/.test(e.key) && item && item.kind === "contested" && surfaceKind === "local") {
+  else if (e.key === "a") reviewDecide(item, "merge");
+  else if (e.key === "r") reviewDecide(item, "reject");
+  else if (/^[1-9]$/.test(e.key) && item && item.kind === "contested") {
     const ask = [...document.querySelectorAll('#rvDetail [data-settle="ask"]')][Number(e.key) - 1];
     if (ask) { e.preventDefault(); ask.click(); }
   }

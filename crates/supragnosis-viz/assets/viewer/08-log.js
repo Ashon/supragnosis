@@ -148,9 +148,8 @@ function obsCardHtml(o) {
     const what = g.promotion ? tierName(o.effective_tier) + by : "Lowered to " + tierName(o.effective_tier) + by;
     parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
   }
-  // A person can demote a claim (Section 29.26): on the local console, for knowledge that reads above
-  // Unverified. It asks first, with what the act does, and casts only then.
-  if (surfaceKind === "local" && !o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {
+  // A person can demote a claim (Section 29.26): knowledge that reads above Unverified. It asks first, with what the act does, and casts only then.
+  if (!o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {
     parts.push(demoteAsk && demoteAsk.id === o.id ? demoteHtml(o)
       : html`<div class="oc-act"><button type="button" class="linkish" data-demote="open">Demote this claim</button></div>`);
   }
@@ -393,15 +392,15 @@ function stripShown() {
 // machine that wrote the authoring attestation: this one when it carries no sync stamp or its stamp's
 // origin is this node - a host name decides nothing, since every unconfigured node is "localhost" -
 // and any other by its origin id's first eight characters. A console verdict written here is "this
-// console" on the local console: the console is a path any program of the user can take, so it
-// names where the act was cast, not who cast it (resolution.md Section 6).
+// console": the console is a path any program of the user can take, so it names where the act was
+// cast, not who cast it (resolution.md Section 6).
 let ownNode = null;   // this node's sync id, from the Sync read; null until known
 function writtenHere(a) { return !a.origin_node || (!!ownNode && a.origin_node === ownNode); }
 function writerOf(a) {
   if (!a) return "";
   const mine = writtenHere(a);
   const machine = mine ? here() : String(a.origin_node).slice(0, 8);
-  if (a.source_ref === "surface:console") return mine && surfaceKind === "local" ? "this console" : "the console at " + machine;
+  if (a.source_ref === "surface:console") return mine ? "this console" : "the console at " + machine;
   // The app this node recorded for it (Section 29.8): "Claude Code on this Mac".
   return a.app && mine ? a.app + " on " + machine : machine;
 }

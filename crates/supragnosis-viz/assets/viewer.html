@@ -109,14 +109,11 @@
   <span id="kept" class="spill" hidden><span class="kn"></span><button type="button" class="kx" title="Clear" aria-label="Clear"><span class="i i-x" aria-hidden="true"></span></button></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
   <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span><button type="button" id="retry" class="spill" hidden>Retry</button>
-  <!-- The way to Review (design-system.md Section 6, U20): always here on the local console, with
-       what waits in this scope and how many of those are contested beliefs. Absent on a read tier. -->
-  <!-- How many contested beliefs the loaded scope holds, whatever the legend hides (U3): on a read
-       tier, where there is no Review entry; absent only when there are none (U8). -->
+  <!-- The way to Review (design-system.md Section 6, U20): always here, with what waits in this scope
+       and how many of those are contested beliefs. -->
   <button id="reviewPill" class="spill warn" type="button" hidden title="Open the Review page"></button>
-  <button id="contestedPill" class="spill bad" type="button" hidden title="Contested beliefs"></button>
   <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is
-       not set up and on a read tier. -->
+       not set up. -->
   <button id="syncPill" class="spill" type="button" hidden title="Sync settings"></button>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->

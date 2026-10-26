@@ -85,14 +85,12 @@ fn the_empty_map_speaks_in_one_voice() {
     );
 }
 
-/// In the app, on the owner's console, a store with no entry offers Open Setup, carrying the way
-/// back; a browser, where the shell gives no address, and the read tier show no button, and a
-/// store that could not be read is not empty.
+/// In the app, a store with no entry offers Open Setup, carrying the way back; a browser, where the
+/// shell gives no address, shows no button, and a store that could not be read is not empty.
 #[test]
 fn an_empty_store_leads_back_to_setup_in_the_app() {
     let empty = function("refreshEmpty");
-    assert!(empty
-        .contains("if (window.supragnosisSetup && surfaceKind === \"local\" && !storeEntries) {"));
+    assert!(empty.contains("if (window.supragnosisSetup && !storeEntries) {"));
     assert!(
         empty.contains("window.supragnosisSetup + \"?from=\""),
         "Open Setup carries the way back"

@@ -615,8 +615,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (8, &[c(
         "a status pill is absent only for a known zero or a feature this node does not have set up; unavailable, refused and unknown are drawn as states",
-        // crates/supragnosis-viz/tests/http.rs: the contested pill hides only at zero, the sync pill
-        // only off the local console or where sync is not configured, and draws "unavailable".
+        // crates/supragnosis-viz/tests/http.rs: the sync pill hides only where sync is not
+        // configured, and draws "unavailable".
         Evidence::Scenario(&["a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up"]),
     )]),
     (9, &[c(

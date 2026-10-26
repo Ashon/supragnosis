@@ -7,14 +7,14 @@ function nodesById() {
   if (byIdOf !== nodes) { byIdOf = nodes; byIdMap = new Map(nodes.map(n => [n.id, n])); }
   return byIdMap;
 }
-// The drawn entities of other workspaces with the same name (Section 29.16), under All on the local
-// console only: the read tier compares no workspaces. Indexed once per node list, by the page's lower
+// The drawn entities of other workspaces with the same name (Section 29.16), under All only. Indexed
+// once per node list, by the page's lower
 // case of the trimmed name - the id's rule, which can differ from the server's on rare characters.
 let namesOf = null, namesMap = new Map();
 const nameKey = n => String(n.name).trim().toLowerCase();
 function namesakesOf(n) {
   const cur = currentWs();
-  if (!n || surfaceKind !== "local" || (cur !== "*" && cur !== "all") || !n.workspace) return [];
+  if (!n || (cur !== "*" && cur !== "all") || !n.workspace) return [];
   if (namesOf !== nodes) {
     namesOf = nodes; namesMap = new Map();
     for (const m of nodes) { const k = nameKey(m); if (!namesMap.has(k)) namesMap.set(k, []); namesMap.get(k).push(m); }
@@ -147,7 +147,7 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
   try { body = await r.json(); } catch (_) { /* a refusal without a JSON body */ }
   if (quiet) return r.ok ? { ok: true, body: body || {} } : { ok: false, why: (body && body.error) || "the server answered " + r.status };
   if (!r.ok) {
-    toast("bad", r.status === 403 ? "This view is read-only" : "Refused", (body && body.error) || ("HTTP " + r.status));
+    toast("bad", "Refused", (body && body.error) || ("HTTP " + r.status));
     return null;
   }
   waitAllAt = 0;   // what waits elsewhere is read again after an act (Section 29.21)
@@ -326,23 +326,23 @@ function nchipHtml(n) {
 // How a stray verdict's act is said (Section 29.15).
 const STRAY_ACTS = { merge: "accept", reject: "reject", withdraw: "withdrawal" };
 function signalDetail(it) {
-  const b = it.body, local = surfaceKind === "local";
+  const b = it.body;
   const parts = [html`<h3>${it.title}</h3>`];
   if (b.pair) {
     const m = b.pair;
     parts.push(html`<div class="ms" data-a="${m.a}" data-b="${m.b}"${b.src ? html` data-src="${b.src}"` : ""}>`,
       nchipHtml({ id: m.a, name: m.a_name }), html`<span class="msx">~</span>`, nchipHtml({ id: m.b, name: m.b_name }),
       html`<span class="mssim">${b.meta}</span>`,
-      local ? html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>` : "", html`</div>`);
+      html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`, html`</div>`);
     // What Propose does is said here, once, rather than in the button's tooltip (Section 4, U25).
-    if (local) parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
+    parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
   } else if (b.group) {
     parts.push(html`<div class="chips">${b.group.map(nchipHtml)}</div>`);
     if (b.meta) parts.push(html`<p class="hint">${b.meta}</p>`);
     if (b.hint) parts.push(html`<p class="hint">${b.hint}</p>`);
   } else if (b.bag) {
     const nm = b.bag.member_names.slice(0, 10).join(", ") + (b.bag.member_names.length > 10 ? ", ..." : "");
-    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}${local ? html`<button class="reify" title="${tipText("Name this region")}">Name this region</button>` : ""}</div>`);
+    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}<button class="reify" title="${tipText("Name this region")}">Name this region</button></div>`);
   } else if (b.node) {
     parts.push(html`<div class="chips">${nchipHtml(b.node)}</div>`, html`<p class="hint">Observed with no relation to anything else.</p>`);
   } else if (b.settled) {

@@ -788,9 +788,7 @@ document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("syncPill").onclick = () => { settingsTab = "sync"; openSettings(); };
 document.getElementById("miniBtn").onclick = e => { showMini = !showMini; setSwitch(e.currentTarget, showMini); };
 
-// The contested pill and the review pill open the Review page, where contested beliefs wait under
-// Needs you.
-document.getElementById("contestedPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };
+// The review pill opens the Review page, where contested beliefs wait under Needs you.
 document.querySelector("#kept .kx").onclick = clearWorkSet;
 document.getElementById("showAll").onclick = showAll;
 document.getElementById("reviewPill").onclick = () => { reviewSeg = "needs"; location.hash = "#review"; };

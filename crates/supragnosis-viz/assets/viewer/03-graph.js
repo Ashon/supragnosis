@@ -1,15 +1,12 @@
 // --- Remembered layout (docs/design-system.md Section 5) ------------------------------------------
-// The local console keeps each workspace's node positions in this browser, keyed by the node's host id
-// from /api/surface and the workspace, and the next load starts from them: a workspace seen before
-// appears at once instead of behind the settling loader. The read tier remembers nothing - the app
-// shows every server from one origin, and a principal's positions would outlive a revoked grant - so
-// the key exists only when /api/surface says "local". A position is a convenience; losing one costs a
-// settling.
-let surfaceNode = null;     // this node's host id on the local console, null elsewhere
+// The console keeps each workspace's node positions in this browser, keyed by the node's host id from
+// /api/surface and the workspace, and the next load starts from them: a workspace seen before appears
+// at once instead of behind the settling loader. Until /api/surface names the node nothing is kept. A
+// position is a convenience; losing one costs a settling.
+let surfaceNode = null;     // this node's host id, from /api/surface; null until it answers
 // The page's own machine, in words (design-system.md Section 9, D2): "this machine", or the word the
-// app's shell gives - "this Mac" - since the viewer stays browser-neutral; and only on the local
-// console, the one surface whose machine it is. Any other surface names the server.
-function here() { return surfaceNode ? (window.supragnosisHere || "this machine") : "this server"; }
+// app's shell gives - "this Mac" - since the viewer stays browser-neutral.
+function here() { return window.supragnosisHere || "this machine"; }
 function hereTitle() { const w = here(); return w.charAt(0).toUpperCase() + w.slice(1); }
 let layoutScope = null;     // the storage key the current positions belong to
 let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
@@ -18,8 +15,7 @@ let layoutDirty = false;    // positions moved since the last save
 async function loadSurface() {
   try {
     const s = await (await fetch("/api/surface", { cache: "no-store" })).json();
-    if (s && s.surface) surfaceKind = String(s.surface);
-    if (s && s.surface === "local" && s.node) surfaceNode = String(s.node);
+    if (s && s.node) surfaceNode = String(s.node);
     if (s && s.default_workspace) defaultWs = String(s.default_workspace);
   } catch (_) { /* no surface answer - nothing is remembered */ }
   loadVisit();
@@ -45,9 +41,8 @@ addEventListener("pagehide", saveLayout);
 function statsScope(cur) {
   return cur === "*" || cur === "all" ? "All workspaces" : cur || defaultName();
 }
-// The scope addressed as "" by its name: the workspace an omitted one resolves to, as /api/surface
-// says (the node's default locally, the first grant on the read tier), and "default" until it has
-// said (design-system.md Section 29.10).
+// The scope addressed as "" by its name: the workspace an omitted one resolves to, the node's default
+// as /api/surface says, and "default" until it has said (design-system.md Section 29.10).
 let defaultWs = null;
 function defaultName() { return defaultWs || "default"; }
 // What the map draws, counted from the filters alone - never from the zoom, the Relations switch or
@@ -159,7 +154,7 @@ function renderMarks() {
     rows.push(r);
   };
   if (nodes.length) {
-    if (contestedCount) row("mk-badge", "Two sources disagree" + (surfaceKind === "local" ? " - select to decide" : ""));
+    if (contestedCount) row("mk-badge", "Two sources disagree - select to decide");
     row("mk-size", "Larger: more relations");
     if (hyperMode && allRegions && drawnCounts().reg) row("mk-cloud", "Soft cloud: a region - entities said together");
     // Only while two or more outlines are drawn (Section 29.12).
@@ -318,13 +313,11 @@ function applyGraph(g) {
 // registry (who checked in, what they did, how long ago). Data = /api/federation (wiring-layer blob).
 // The status bar's sync pill (docs/design-system.md Section 6, U8): one line for what sync is doing,
 // opening Settings > Sync. It replaces the dock's Peers tab, whose rows now live in that section (and
-// in the viewer's own settings dialog outside the app). Absent only where sync is not set up, or on a
-// read tier, which has no peers view; unavailable and not-yet-answered are states it draws.
-let surfaceKind = null;     // "local" on the owner's console, another word on a read tier, null unknown
+// in the viewer's own settings dialog outside the app). Absent only where sync is not set up;
+// unavailable and not-yet-answered are states it draws.
 async function refreshSyncPill() {
   const pill = document.getElementById("syncPill");
   if (!pill) return;
-  if (surfaceKind !== "local") { pill.hidden = true; return; }
   let f = null;
   try {
     const r = await fetch("/api/federation", { cache: "no-store" });

@@ -117,7 +117,6 @@ async fn the_local_surface_names_its_node() {
         Arc::new(Engine::new(store, "h", "ws").with_embedder(Arc::new(HashingEmbedder::default())));
     let sock = serve_uds("surface", engine, ev_channel()).await;
     let s = json_get(&uds_get(&sock, "/api/surface").await);
-    assert_eq!(s["surface"], "local", "surface: {s}");
     assert_eq!(s["node"], "h", "the node's host id: {s}");
     // The workspace an omitted one resolves to, so the page calls the default by its name
     // (design-system.md Section 29.10).
@@ -736,10 +735,8 @@ fn a_contested_node_is_marked_and_counted_whatever_hides_it() {
 }
 
 /// design-system.md U8 (Principles 5 and 24): a status pill's absence means one thing - a known
-/// zero, or a feature this node does not have set up. The contested pill hides only at a count of
-/// zero, or on the local console, where Review's entry carries the count (U20); the sync pill hides
-/// only off the local console (a read tier has no peers view) or where sync is not configured, and
-/// draws "unavailable" rather than vanishing when the daemon does not answer.
+/// zero, or a feature this node does not have set up. The sync pill hides only where sync is not
+/// configured, and draws "unavailable" rather than vanishing when the daemon does not answer.
 #[test]
 fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
     let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
@@ -749,7 +746,7 @@ fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
     let rest = &js[start + 1..];
     let body = &rest[..rest.find("\n}\n").expect("refreshSyncPill has no closing brace")];
     let hides = body.matches("pill.hidden = true").count();
-    assert_eq!(hides, 2, "the sync pill hides in exactly two places");
+    assert_eq!(hides, 1, "the sync pill hides in exactly one place");
     assert!(
         body.contains("else if (f.configured === false) { pill.hidden = true; return; }"),
         "it hides where sync is not set up"

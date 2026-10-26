@@ -442,17 +442,17 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         "/api/namesakes" => namesakes_response(engine, query),
         "/api/workspaces" => workspaces_response(engine),
         "/api/about" => about_response(),
-        // Which surface the page is on (remote-viewer.md Section 3.5): this socket is the owner's
-        // full console, the only surface since the hub's read tier was removed in 0.11.0.
-        // `node` is this node's host id: the page keys what it remembers locally - the layout - by it
-        // (design-system.md Section 5), and names a host "this node" only when it matches (Section 9).
+        // What the page needs to know about the node serving it (remote-viewer.md Section 3.5). This
+        // socket is the owner's full console, the only surface since the hub's read tier was removed
+        // in 0.11.0, so the answer no longer names a surface. `node` is this node's host id: the page
+        // keys what it remembers locally - the layout - by it (design-system.md Section 5), and names
+        // a host "this node" only when it matches (Section 9).
         "/api/surface" => Response {
             status: "200 OK",
             content_type: "application/json",
             // The workspace an omitted one resolves to: the node's default, so the page calls the
             // default by its name (design-system.md Section 29.10).
             body: serde_json::json!({
-                "surface": "local",
                 "node": engine.host(),
                 "default_workspace": engine.default_workspace(),
             })
