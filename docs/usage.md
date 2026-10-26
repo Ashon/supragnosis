@@ -82,12 +82,15 @@ the one reader of the file and the page counts nothing itself.
   its calls by function, by workspace and by app, as `[name, count]` pairs; how many were writes,
   found nothing (`empty`), named nothing (`not_found`) or failed (`errors`); and the hook's session
   and subagent indexes and commit questions. A question counts in the hour it was first asked, and
-  as answered when an `observe` in the window names its commit.
-- **Writes** are the calls that change what this node holds: `observe`, `define_type`, `propose`,
-  `review` and `sync_pull`. Every other call reads. Reads against writes is the question recall.md
+  as answered when an `observe` in the window that did not fail names its commit.
+- **Writes** are the calls to the functions that change what this node holds: `observe`,
+  `define_type`, `propose`, `review` and `sync_pull`, whether or not the call succeeded; failures
+  are counted apart. Every other call reads. Reads against writes is the question recall.md
   Section 1 asked of transcripts, now asked of every app.
-- **Local days.** The page adds the hours into the person's local days. A time zone that is not a
-  whole number of hours from UTC puts half an hour at each day's edge into the neighbouring day.
+- **Local days.** The page adds the hours into the person's local days, from the day the window
+  starts to the day it was read, so a 7-day window draws eight columns and the first is partial. A
+  time zone that is not a whole number of hours from UTC puts half an hour at each day's edge into
+  the neighbouring day.
 - **What the pane shows**, for the window chosen: four figures (calls with reads and writes, the
   share that found nothing or failed, the indexes the hook gave, the commit questions answered);
   calls per day split by function, workspace, app or read and write, the five largest and the rest

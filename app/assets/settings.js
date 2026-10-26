@@ -597,9 +597,12 @@ function draw() {
 // the CLI's: the page adds its hours into local days and keeps the five largest series apart.
 const USAGE_WINDOWS = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
 const USAGE_SPLITS = [["name", "Function"], ["workspace", "Workspace"], ["app", "App"], ["rw", "Read or write"]];
-const usage = { since: "7d", split: "name", data: null, error: null, reading: false, shown: false };
+// `of` is the window the data on screen was read for and `at` when, so the days end where the read
+// did and the words name the window the numbers are of.
+const usage = { since: "7d", split: "name", data: null, of: null, at: 0, error: null, reading: false, shown: false };
 
-// Reads the window chosen. The last numbers stay on screen, dimmed, until the next arrive.
+// Reads the window chosen. The last numbers stay on screen, dimmed, until the next arrive; a read
+// that fails takes the numbers of another window off the screen.
 async function readUsage() {
   const since = usage.since;
   usage.reading = true;
@@ -607,11 +610,11 @@ async function readUsage() {
   try {
     const data = await invoke("usage_read", { since });
     if (since !== usage.since) return;
-    usage.data = data;
-    usage.error = null;
+    Object.assign(usage, { data, of: since, at: Date.now(), error: null });
   } catch (e) {
     if (since !== usage.since) return;
     usage.error = String(e);
+    if (usage.of !== since) usage.data = null;
   }
   usage.reading = false;
   render();
@@ -623,14 +626,15 @@ const total = (hours, f) => hours.reduce((n, hr) => n + f(hr), 0);
 const counted = (n) => n >= 10000 ? Math.round(n / 1000) + "K" : n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(n);
 const dayName = (t) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-// One column per local day the window touches, oldest first, each with the hours in it. The first
-// day is the window's start, so it can be partial.
-function usageDays(data) {
+// One column per local day from the window's start to the read, oldest first, each with the hours in
+// it. The first day starts where the window does, so it can be partial. An hour that starts before
+// the first day or after the last (a half-hour time zone) joins the nearest.
+function usageDays(data, until) {
   const days = [];
-  for (let t = dayStart(data.since); t <= Date.now(); t = dayStart(t + DAY * 1.5)) days.push({ t, hours: [] });
+  for (let t = dayStart(data.since); t <= until; t = dayStart(t + DAY * 1.5)) days.push({ t, hours: [] });
   for (const hr of data.by_hour) {
-    const day = days.find((d) => d.t === dayStart(hr.t));
-    if (day) day.hours.push(hr);
+    const day = days.find((d) => d.t === dayStart(hr.t)) || (hr.t < days[0].t ? days[0] : days[days.length - 1]);
+    day.hours.push(hr);
   }
   return days;
 }
@@ -756,12 +760,13 @@ function renderUsage() {
     h("div", { class: "grow" }, "The usage log could not be read.", h("div", { class: "sub selectable", text })));
   if (!usage.data) return out.concat(usage.error ? [failed(usage.error)] : renderSkeleton());
   if (usage.error) out.push(failed(usage.error));
-  return out.concat(h("div", { class: "ubody" + (usage.reading ? " reading" : ""), "aria-busy": String(usage.reading) }, usageBody(usage.data)));
+  const dim = usage.reading || usage.of !== usage.since;
+  return out.concat(h("div", { class: "ubody" + (dim ? " reading" : ""), "aria-busy": String(usage.reading) }, usageBody(usage.data)));
 }
 
 function usageBody(data) {
-  const days = usageDays(data), hours = days.flatMap((d) => d.hours), hk = data.hook;
-  const since = USAGE_WINDOWS.find(([id]) => id === usage.since)[1];
+  const days = usageDays(data, usage.at), hours = days.flatMap((d) => d.hours), hk = data.hook;
+  const since = USAGE_WINDOWS.find(([id]) => id === usage.of)[1];
   if (!data.calls && !hours.length) {
     return h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow",
       text: "Nothing was recorded in the last " + since + ". The daemon writes the usage log as AI apps call it, and the Claude Code hook as it gives a session its index or asks about a commit." }));

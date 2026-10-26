@@ -174,7 +174,8 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
         *tally.names.entry(label(kind, name)).or_default() += 1;
         *tally.workspaces.entry(workspace.clone()).or_default() += 1;
         *tally.apps.entry(app).or_default() += 1;
-        if name == "observe" {
+        // A failed observe recorded nothing, so it answers no question.
+        if name == "observe" && v["outcome"].as_str() != Some("error") {
             if let Some(c) = v["commit"].as_str() {
                 recorded.insert(c.to_string());
             }
@@ -396,6 +397,7 @@ mod tests {
             r#"{"t":10800006,"kind":"resource","name":"observation","app":"Y","outcome":"ok"}"#,
             r#"{"t":10800007,"kind":"hook","name":"commit_question","workspace":"a","commit":"abc1234ffff"}"#,
             r#"{"t":10800008,"kind":"hook","name":"commit_question","workspace":"a","commit":"1234567"}"#,
+            r#"{"t":10800009,"kind":"tool","name":"observe","workspace":"a","app":"Y","outcome":"error","commit":"1234567"}"#,
         ];
         let sum = summarize(lines.iter().copied(), 0);
         let pair = |n: &str, c: u64| (n.to_string(), c);
@@ -406,12 +408,19 @@ mod tests {
         assert_eq!((two.calls, two.writes, two.session_indexes), (2, 1, 1));
         assert_eq!(two.by_name, vec![pair("observe", 1), pair("search_knowledge", 1)]);
         assert_eq!(two.by_workspace, vec![pair("a", 2)]);
-        assert_eq!((two.commit_questions, two.answered), (1, 0), "asked first in this hour");
-        assert_eq!((three.calls, three.writes, three.not_found), (2, 0, 1));
-        assert_eq!(three.by_name, vec![pair("get_entity", 1), pair("resource:observation", 1)]);
+        assert_eq!(
+            (two.commit_questions, two.answered),
+            (1, 0),
+            "asked first in this hour, and the observe that names it failed"
+        );
+        assert_eq!((three.calls, three.writes, three.not_found, three.errors), (3, 1, 1, 1));
+        assert_eq!(
+            three.by_name,
+            vec![pair("get_entity", 1), pair("observe", 1), pair("resource:observation", 1)]
+        );
         assert_eq!(
             (three.by_workspace.clone(), three.by_app.clone()),
-            (vec![pair("-", 2)], vec![pair("Y", 2)])
+            (vec![pair("-", 2), pair("a", 1)], vec![pair("Y", 3)])
         );
         assert_eq!((three.commit_questions, three.answered), (1, 1), "the observe names it");
     }

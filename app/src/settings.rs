@@ -225,14 +225,24 @@ pub(crate) async fn usage_read(
     if !USAGE_WINDOWS.contains(&since.as_str()) {
         return Err(format!("{since:?} is not a window the Usage pane reads"));
     }
-    on_cli(&app, move |cli| run_cli_json(cli, &["usage", "--json", "--since", &since]))
+    let out = on_cli(&app, move |cli| cli.run(&["usage", "--json", "--since", &since]))
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            "The supragnosis CLI gave no usage summary. It may be older than this app: update \
-             supragnosis-server."
-                .to_string()
-        })
+        .ok_or_else(cli_missing)?;
+    // What the CLI said when it refused - an older one names the command it does not know. The
+    // schema is read here rather than by run_cli_json, so this read never sets CLI_NEWER, which the
+    // status read keeps (compatibility.md Section 6).
+    if !out.status.success() {
+        return Err(cli_outcome(&out).1);
+    }
+    match cli_json(&out.stdout) {
+        Ok(Some(v)) => Ok(v),
+        Ok(None) => Err("The supragnosis CLI's usage summary was not JSON.".to_string()),
+        Err(s) => Err(format!(
+            "This supragnosis-server answers in schema {s}, newer than the app. Update the app \
+             (brew upgrade --cask supragnosis)."
+        )),
+    }
 }
 
 /// "Copy diagnostics" (Section 6): `setup --check --events` and `status --json` together, for a
