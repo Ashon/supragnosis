@@ -145,7 +145,7 @@ pub(crate) fn starting_html(
 /// something else (docs/design-system.md Section 29.5): the page itself has no timer.
 pub(crate) static SPLASH: Mutex<Option<String>> = Mutex::new(None);
 
-pub(crate) fn splash_drawn(app: &tauri::AppHandle, sock: PathBuf, key: String) {
+pub(crate) fn splash_drawn(app: &tauri::AppHandle<Rt>, sock: PathBuf, key: String) {
     let watching = SPLASH.lock().unwrap().replace(key).is_some();
     if !watching {
         let app = app.clone();
@@ -162,7 +162,7 @@ pub(crate) fn splash_reloads(drawn: &str, answering: bool, now: &str) -> bool {
     answering || now != drawn
 }
 
-async fn watch_splash(app: tauri::AppHandle, sock: PathBuf) {
+async fn watch_splash(app: tauri::AppHandle<Rt>, sock: PathBuf) {
     loop {
         tokio::time::sleep(SPLASH_BEAT).await;
         let Some(drawn) = SPLASH.lock().unwrap().clone() else {
@@ -170,7 +170,7 @@ async fn watch_splash(app: tauri::AppHandle, sock: PathBuf) {
         };
         let answering = UnixStream::connect(&sock).await.is_ok();
         heal_failed(&app).await;
-        let now = splash_key(&app, splash_conflict().await.as_ref());
+        let now = splash_key(&app, splash_conflict(&app).await.as_ref());
         if splash_reloads(&drawn, answering, &now) {
             *SPLASH.lock().unwrap() = None;
             reload_viewer(&app);
@@ -180,7 +180,7 @@ async fn watch_splash(app: tauri::AppHandle, sock: PathBuf) {
 }
 
 /// What the starting page would say now, as the key `SPLASH` keeps.
-pub(crate) fn splash_key(app: &tauri::AppHandle, conflict: Option<&Conflict>) -> String {
+pub(crate) fn splash_key(app: &tauri::AppHandle<Rt>, conflict: Option<&Conflict>) -> String {
     let since = START_AT.lock().unwrap().map(|t| t.elapsed());
     let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
     format!("{page:?}|{conflict:?}")
@@ -189,14 +189,14 @@ pub(crate) fn splash_key(app: &tauri::AppHandle, conflict: Option<&Conflict>) ->
 /// The store the daemon cannot open, for the starting page (docs/settings-page.md Section 3.3): the
 /// model it was indexed by and the one the daemon runs, from `status --json`. Read at most every five
 /// seconds, since the page asks again every second.
-pub(crate) async fn splash_conflict() -> Option<Conflict> {
+pub(crate) async fn splash_conflict(app: &tauri::AppHandle<Rt>) -> Option<Conflict> {
     static LAST: Mutex<Option<(std::time::Instant, Option<Conflict>)>> = Mutex::new(None);
     if let Some((at, c)) = LAST.lock().unwrap().clone() {
         if at.elapsed() < Duration::from_secs(5) {
             return c;
         }
     }
-    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+    let st = on_cli(app, cli_status).await.ok().flatten();
     let c = st.as_ref().and_then(conflict_of);
     *LAST.lock().unwrap() = Some((std::time::Instant::now(), c.clone()));
     c

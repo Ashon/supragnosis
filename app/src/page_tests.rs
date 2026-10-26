@@ -6,10 +6,13 @@ use super::*;
 #[cfg(test)]
 mod settings_tests {
     use super::{
-        cause_of, managed, manager_pid, own_page_ok, restart_outcome, settings_url, start_page,
-        starting_html, welcome_url, without_entry, Daemon, RestartBy, StartPage, APP_COMMANDS,
+        cause_of, heals, managed, manager_pid, own_page_ok, refresh_status, restart_outcome,
+        search_rebuild, settings_state, settings_url, start_page, starting_html, welcome_url,
+        without_entry, Daemon, RestartBy, StartPage, APP_COMMANDS, RESTART_WAIT,
     };
+    use crate::tests::fake;
     use std::path::Path;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     const LOG: &str = "/nowhere/.supragnosis/log/app-daemon.err.log";
@@ -175,23 +178,63 @@ mod settings_tests {
     /// for a login job the CLI started again, and attaches; and the page follows the re-embedding.
     #[test]
     fn a_store_the_daemon_cannot_open_is_rebuilt_from_the_page() {
-        let src = super::SRC;
         let body = |src: &'static str, sig: &str| -> &'static str {
             let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
             &src[at..at + src[at..].find("\n}\n").expect("it closes")]
         };
-        let rebuild = body(src, "async fn rebuild_index(");
-        for part in [
-            "if let Daemon::Spawned(mut child) = prev {",
-            "run_cli(&[\"embed\", \"rebuild\"])",
-            "wait_for_socket(&sock, Duration::from_secs(30))",
-            "bring_up(app.clone(), sock).await;",
-        ] {
-            assert!(rebuild.contains(part), "the rebuild does not run as the page says: {part}");
+        // The command, run on the app's own daemon with a recorder in place of the CLI: that daemon
+        // is stopped and gone when `embed rebuild` resets the store. A login job the CLI starts again
+        // answers a moment later, and is waited for and attached to, with no daemon of the app's own
+        // spawned into its lock; with no login job, the app starts its own after the rebuild.
+        for job in [true, false] {
+            let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+            let pid = child.id().to_string();
+            let scene = if job {
+                fake::login_job()
+            } else {
+                fake::Scene {
+                    service: "absent",
+                    managers: serde_json::json!([]),
+                    ..fake::login_job()
+                }
+            };
+            let held = fake::app(Daemon::Spawned(child), scene);
+            let alive_then = Arc::new(Mutex::new(None));
+            let (seen, sock) = (alive_then.clone(), held.sock.clone());
+            *held.cli.at_call.lock().unwrap() = Some(Box::new(move |call: &str| {
+                if call == "embed rebuild" {
+                    let alive = std::process::Command::new("kill")
+                        .args(["-0", &pid])
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .unwrap();
+                    *seen.lock().unwrap() = Some(alive.success());
+                    if job {
+                        let sock = sock.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(500));
+                            fake::serve_socket(&sock);
+                        });
+                    }
+                }
+            }));
+            let rebuilt = held.run(search_rebuild(held.page(), held.handle()));
+            assert_eq!(rebuilt, Ok("done".to_string()), "the CLI's line is the answer");
+            assert_eq!(
+                *alive_then.lock().unwrap(),
+                Some(false),
+                "the app's daemon holds the store"
+            );
+            let calls = held.cli.take();
+            let rebuild = calls.iter().position(|c| c == "embed rebuild").expect("it rebuilds");
+            let serve = calls.iter().position(|c| c == "serve");
+            if job {
+                assert_eq!(serve, None, "a daemon of the app's own raced the login job: {calls:?}");
+                assert!(matches!(*held.daemon(), Daemon::External), "not attached to the job's");
+            } else {
+                assert!(serve.is_some_and(|s| s > rebuild), "no daemon after it: {calls:?}");
+            }
         }
-        let kill = rebuild.find("child.kill()").expect("the app's own daemon is stopped");
-        let cli = rebuild.find("run_cli(&[\"embed\", \"rebuild\"])").expect("the CLI rebuilds");
-        assert!(kill < cli, "the app's own daemon is stopped before the CLI resets its store");
         // Settings is told why the daemon cannot start, in the CLI's own words, and nothing when
         // it can.
         let mut st: serde_json::Value = serde_json::from_str(include_str!(
@@ -318,22 +361,28 @@ mod settings_tests {
         assert_eq!(manager_pid(Some(&st)), Some(4242));
         assert_eq!(manager_pid(Some(&serde_json::json!({ "managers": [] }))), None);
 
-        let src = super::SRC;
         let body = |src: &'static str, sig: &str| -> &'static str {
             let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
             &src[at..at + src[at..].find("\n}\n").expect("it closes")]
         };
-        for reader in ["async fn refresh_status(", "async fn settings_state_of("] {
-            assert!(
-                body(src, reader).contains("heal_failed(app).await"),
-                "{reader} keeps a stale failure"
-            );
-        }
-        assert!(
-            body(src, "async fn restart_daemon(")
-                .contains("wait_for_socket(&sock, Duration::from_secs(30))"),
-            "a restart races the login job it restarted"
-        );
+        // A failed state whose socket answers is attached to, and nothing else is.
+        assert!(heals(&Daemon::Failed("x".into()), true));
+        assert!(!heals(&Daemon::Failed("x".into()), false), "a failure that holds is kept");
+        assert!(!heals(&Daemon::External, true) && !heals(&Daemon::Starting, true));
+        // Both readers of the state heal it: the tray's beat and the Settings page.
+        let failed = || {
+            let held = fake::app(Daemon::Failed("the daemon exited".into()), fake::login_job());
+            held.answering();
+            held
+        };
+        let held = failed();
+        held.run(refresh_status(&held.handle()));
+        assert!(matches!(*held.daemon(), Daemon::External), "the tray keeps a stale failure");
+        let held = failed();
+        let st = held.run(settings_state(held.page(), held.handle())).unwrap();
+        assert_eq!(st["daemon"]["shell"], "attached", "Settings keeps a stale failure");
+        // A restart, and a rebuild, wait this long for the login job before deciding.
+        assert_eq!(RESTART_WAIT, Duration::from_secs(30));
         let js = include_str!("../assets/settings.js");
         assert!(body(js, "function restartDaemon(").contains(".then(watchDaemon)"));
         assert!(body(js, "async function load(").contains("if (daemonUnsettled()) watchDaemon();"));

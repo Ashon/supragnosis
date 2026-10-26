@@ -31,12 +31,12 @@ impl WelcomePrefs {
     }
 }
 
-fn prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn prefs_path(app: &tauri::AppHandle<Rt>) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("welcome.json"))
 }
 
 /// The remembered choices. A file that is missing or unreadable is a first launch.
-pub(crate) fn read_prefs(app: &tauri::AppHandle) -> WelcomePrefs {
+pub(crate) fn read_prefs(app: &tauri::AppHandle<Rt>) -> WelcomePrefs {
     prefs_path(app)
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
@@ -44,7 +44,7 @@ pub(crate) fn read_prefs(app: &tauri::AppHandle) -> WelcomePrefs {
         .unwrap_or_default()
 }
 
-pub(crate) fn write_prefs(app: &tauri::AppHandle, p: WelcomePrefs) -> Result<(), String> {
+pub(crate) fn write_prefs(app: &tauri::AppHandle<Rt>, p: WelcomePrefs) -> Result<(), String> {
     let path = prefs_path(app).ok_or("the app's settings directory is not known")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
@@ -101,7 +101,7 @@ pub(crate) fn setup_events(out: &std::process::Output) -> Result<Vec<serde_json:
 }
 
 /// The pid of the daemon this app spawned, which setup cannot see on its own (Section 3).
-pub(crate) fn spawned_pid(app: &tauri::AppHandle) -> Option<u32> {
+pub(crate) fn spawned_pid(app: &tauri::AppHandle<Rt>) -> Option<u32> {
     match &*app.state::<DaemonGuard>().0.lock().unwrap() {
         Daemon::Spawned(c) => Some(c.id()),
         _ => None,
@@ -124,11 +124,12 @@ pub(crate) fn setup_args(base: &[&str], app_daemon: Option<u32>) -> Vec<String> 
 
 /// `setup --check --events`: the checklist, read only (O3).
 pub(crate) fn setup_check_blocking(
+    cli: &dyn Cli,
     app_daemon: Option<u32>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let args = setup_args(&["--check"], app_daemon);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = run_cli(&args).ok_or_else(cli_missing)?;
+    let out = cli.run(&args).ok_or_else(cli_missing)?;
     setup_events(&out)
 }
 
@@ -155,24 +156,16 @@ pub(crate) struct RunningSteps(pub(crate) Mutex<std::collections::HashMap<String
 /// Answers how it ended. The child leads its own process group, so `setup_stop` can stop the
 /// download `setup --step model` started as well as setup itself.
 async fn run_streamed(
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<Rt>,
     key: &str,
     args: Vec<String>,
 ) -> Result<serde_json::Value, String> {
-    let bin = find_server_bin().ok_or_else(cli_missing)?;
-    let app = app.clone();
     let key = key.to_string();
-    tokio::task::spawn_blocking(move || {
+    let held = app.clone();
+    on_cli(app, move |cli| {
+        let app = held;
         use std::io::BufRead;
-        let mut cmd = Command::new(&bin);
-        cmd.args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-        with_login_env(&mut cmd);
-        let mut child =
-            cmd.spawn().map_err(|e| format!("could not run the supragnosis CLI: {e}"))?;
+        let mut child = cli.stream(&args)?;
         app.state::<RunningSteps>().0.lock().unwrap().insert(key.clone(), child.id());
         let emit = {
             let app = app.clone();
@@ -226,12 +219,12 @@ async fn run_streamed(
 /// daemon rather than as a process it does not know.
 #[tauri::command]
 pub(crate) async fn setup_check(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     let pid = spawned_pid(&app);
-    let events = tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+    let events = on_cli(&app, move |c| setup_check_blocking(c, pid))
         .await
         .map_err(|e| e.to_string())??;
     Ok(serde_json::json!({ "events": events }))
@@ -242,8 +235,8 @@ pub(crate) async fn setup_check(
 /// spawned is stopped first for the two that install the login job, since setup cannot stop it.
 #[tauri::command]
 pub(crate) async fn setup_run(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     step: String,
     no_capture: Option<bool>,
 ) -> Result<serde_json::Value, String> {
@@ -301,8 +294,8 @@ pub(crate) async fn setup_run(
 /// or offering to start them again (design-system.md Section 14 step 13).
 #[tauri::command]
 pub(crate) async fn setup_running(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<Vec<String>, String> {
     own_page_caller(&webview)?;
     let mut keys: Vec<String> =
@@ -315,8 +308,8 @@ pub(crate) async fn setup_running(
 /// group goes, so the download setup started stops with it, and the next run fetches what is missing.
 #[tauri::command]
 pub(crate) async fn setup_stop(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     step: String,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
@@ -338,8 +331,8 @@ pub(crate) async fn setup_stop(
 /// What the Welcome page needs besides the checklist: what the app remembers, and its own facts.
 #[tauri::command]
 pub(crate) async fn welcome_state(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     let p = read_prefs(&app);
@@ -355,8 +348,8 @@ pub(crate) async fn welcome_state(
 /// off in its plan.
 #[tauri::command]
 pub(crate) async fn welcome_set(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     later: Option<bool>,
     login_off: Option<bool>,
 ) -> Result<serde_json::Value, String> {
@@ -375,11 +368,11 @@ pub(crate) async fn welcome_set(
 
 /// At launch, after the daemon is up: the Welcome page opens if Section 6 says it should, and is
 /// then remembered as seen.
-pub(crate) async fn welcome_at_start(app: tauri::AppHandle) {
+pub(crate) async fn welcome_at_start(app: tauri::AppHandle<Rt>) {
     let p = read_prefs(&app);
     let steps = if p.seen {
         let pid = spawned_pid(&app);
-        tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+        on_cli(&app, move |c| setup_check_blocking(c, pid))
             .await
             .ok()
             .and_then(Result::ok)

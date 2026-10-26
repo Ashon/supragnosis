@@ -17,8 +17,8 @@ pub(crate) const AI_APPS: &[(&str, &str)] = &[
 ];
 
 /// `supragnosis connect --json`. `None` when the CLI predates it.
-pub(crate) fn cli_connect_list() -> Option<serde_json::Value> {
-    run_cli_json(&["connect", "--json"])
+pub(crate) fn cli_connect_list(cli: &dyn Cli) -> Option<serde_json::Value> {
+    run_cli_json(cli, &["connect", "--json"])
 }
 
 /// One AI app's row on the settings page, from the CLI's report on it: what state it is in, the
@@ -89,8 +89,8 @@ pub(crate) fn capture_args(on: bool) -> Vec<&'static str> {
 }
 
 /// Re-reads which AI apps are connected, for the status line's hint while none is.
-pub(crate) async fn refresh_apps(app: &tauri::AppHandle) {
-    let list = tokio::task::spawn_blocking(cli_connect_list).await.ok().flatten();
+pub(crate) async fn refresh_apps(app: &tauri::AppHandle<Rt>) {
+    let list = on_cli(app, cli_connect_list).await.ok().flatten();
     let rows = list.as_ref().and_then(|l| l["clients"].as_array());
     let any =
         rows.is_some_and(|rs| rs.iter().any(|r| r["entry"].as_str().is_some_and(|e| e != "none")));
@@ -110,7 +110,7 @@ pub(crate) async fn refresh_apps(app: &tauri::AppHandle) {
 /// consent to replace another supragnosis entry (client-connect.md Section 5). The CLI decides and
 /// does; the answer is what it said.
 /// A failure is an error, so a page never draws it as done (U1).
-async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> {
+async fn toggle_app(app: &tauri::AppHandle<Rt>, id: &str) -> Result<String, String> {
     let name = AI_APPS
         .iter()
         .find(|(i, _)| *i == id)
@@ -118,7 +118,7 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> 
         .unwrap_or(id)
         .to_string();
     let wanted = id.to_string();
-    let connected = tokio::task::spawn_blocking(cli_connect_list)
+    let connected = on_cli(app, cli_connect_list)
         .await
         .ok()
         .flatten()
@@ -132,9 +132,9 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> 
         .is_some_and(|r| r["entry"].as_str() == Some("bridge"));
     let flag = if connected { "--remove" } else { "--replace" };
     let args = ["connect".to_string(), id.to_string(), flag.to_string()];
-    let out = tokio::task::spawn_blocking(move || {
+    let out = on_cli(app, move |c| {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_cli(&args)
+        c.run(&args)
     })
     .await
     .ok()
@@ -160,8 +160,8 @@ async fn toggle_app(app: &tauri::AppHandle, id: &str) -> Result<String, String> 
 
 #[tauri::command]
 pub(crate) async fn app_toggle(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     id: String,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
@@ -177,13 +177,13 @@ pub(crate) async fn app_toggle(
 /// bridge, which is the only row the page draws the switch on.
 #[tauri::command]
 pub(crate) async fn capture_set(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     on: bool,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let args = capture_args(on);
-    let out = tokio::task::spawn_blocking(move || run_cli(&args)).await.ok().flatten();
+    let out = on_cli(&app, move |c| c.run(&args)).await.ok().flatten();
     refresh_status(&app).await;
     match out {
         None => Err("supragnosis CLI not found".into()),
@@ -200,7 +200,7 @@ pub(crate) async fn capture_set(
 /// as the Dock's Quit asks, waited for, and opened again; Cursor is opened. A refusal - macOS asks the
 /// person once whether this app may control Claude - leaves the instruction to do it by hand.
 #[tauri::command]
-pub(crate) async fn app_helper(webview: tauri::Webview, id: String) -> Result<String, String> {
+pub(crate) async fn app_helper(webview: tauri::Webview<Rt>, id: String) -> Result<String, String> {
     own_page_caller(&webview)?;
     tokio::task::spawn_blocking(move || match id.as_str() {
         "claude-desktop" => restart_claude_desktop(),

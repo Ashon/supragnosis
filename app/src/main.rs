@@ -58,6 +58,16 @@ use tray::*;
 use welcome::*;
 use window::*;
 
+/// The runtime the app runs on: the platform's webview, and in the tests Tauri's mock of it, so a
+/// test can hold the app and run its commands, its tray and its exit.
+mod rt {
+    #[cfg(not(test))]
+    pub(crate) type Rt = tauri::Wry;
+    #[cfg(test)]
+    pub(crate) type Rt = tauri::test::MockRuntime;
+}
+use rt::Rt;
+
 /// The commands the app's own pages call - the list `generate_handler!` registers below. build.rs
 /// declares the same list in the app manifest, so none of them is open to any page by default;
 /// capabilities/settings.json grants them to the main window, and each one refuses unless that
@@ -88,8 +98,9 @@ fn main() {
     let sock = viz_sock();
 
     let proxy_sock = sock.clone();
-    tauri::Builder::default()
+    tauri::Builder::<Rt>::new()
         .manage(DaemonGuard(Mutex::new(Daemon::Starting)))
+        .manage(CliHeld(std::sync::Arc::new(FoundCli)))
         .manage(RunningSteps(Mutex::new(std::collections::HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             settings_state,
@@ -157,7 +168,7 @@ fn main() {
                         _ if target == "/" => {
                             let since = START_AT.lock().unwrap().map(|t| t.elapsed());
                             let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
-                            let conflict = splash_conflict().await;
+                            let conflict = splash_conflict(&app).await;
                             let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
                             splash_drawn(&app, sock.clone(), splash_key(&app, conflict.as_ref()));
                             resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
@@ -248,7 +259,7 @@ fn main() {
                 let (id, words, key, _) = menu_item(id).expect("an item of MENU_ITEMS");
                 MenuItem::with_id(app, id, words, true, key)
             };
-            let mut map_items: Vec<(&'static str, MenuItem<tauri::Wry>)> = Vec::new();
+            let mut map_items: Vec<(&'static str, MenuItem<Rt>)> = Vec::new();
             for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
                 let text = sub.text()?;
                 if text == "View" {
@@ -271,7 +282,7 @@ fn main() {
                     let at = |id: &str| kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap();
                     // Text that can grow (design-system.md Section 10, U21): the root's size, not the
                     // webview's zoom, so the title bar and its traffic lights stay put.
-                    let items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
+                    let items: Vec<Box<dyn tauri::menu::IsMenuItem<Rt>>> = vec![
                         Box::new(item("graph")?),
                         Box::new(item("review")?),
                         Box::new(PredefinedMenuItem::separator(app)?),
@@ -354,45 +365,17 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 // Every menu event reaches this listener; it acts only on the tray's own ids.
-                .on_menu_event(move |app, event| match tray_press(event.id().as_ref()) {
-                    Some(TrayPress::OpenGraph) => {
-                        if let Err(e) = show_graph(app) {
-                            tracing::error!(error = %e, "failed to open the graph");
-                        }
+                .on_menu_event(move |app, event| {
+                    if let Some(press) = tray_press(event.id().as_ref()) {
+                        tray_pressed(app, press);
                     }
-                    Some(TrayPress::Review) => {
-                        if let Err(e) = show_review_all(app) {
-                            tracing::error!(error = %e, "failed to open the review page");
-                        }
-                    }
-                    Some(TrayPress::FinishSetup) => {
-                        if let Err(e) = show_welcome(app) {
-                            tracing::error!(error = %e, "failed to open the welcome page");
-                        }
-                    }
-                    Some(TrayPress::Settings) => {
-                        let section =
-                            app.try_state::<Attention>().and_then(|a| *a.0.lock().unwrap());
-                        if let Err(e) = show_settings(app, section) {
-                            tracing::error!(error = %e, "failed to open the settings");
-                        }
-                    }
-                    Some(TrayPress::Quit) => app.exit(0),
-                    None => {}
                 })
                 .build(app)?;
 
             // The Welcome page opens at once on the first launch; on a later one, once the daemon is
             // up and setup has said whether the daemon and the apps are set up (Section 6).
             let first = !read_prefs(app.handle()).seen;
-            let up = app.handle().clone();
-            let up_sock = sock.clone();
-            tauri::async_runtime::spawn(async move {
-                bring_up(up.clone(), up_sock).await;
-                if !first {
-                    welcome_at_start(up).await;
-                }
-            });
+            tauri::async_runtime::spawn(start_up(app.handle().clone(), sock.clone(), first));
             // An upgrade replaces the binary under a running daemon without telling anyone; the
             // status line is where that becomes visible (docs/daemon-lifecycle.md Section 5), so it
             // is re-read on a slow beat rather than only when the shell itself acts.
@@ -434,17 +417,7 @@ fn main() {
                     api.prevent_exit();
                 }
             }
-            RunEvent::Exit => {
-                keep_frame(app);
-                let prev = std::mem::replace(
-                    &mut *app.state::<DaemonGuard>().0.lock().unwrap(),
-                    Daemon::Starting,
-                );
-                if let Some(mut child) = reaped_on_exit(prev) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-            }
+            RunEvent::Exit => on_exit(app),
             // Relaunching the running instance (Finder/Spotlight/dock) does not start a new
             // process - macOS delivers reopen instead. With the window closed the shell is
             // tray-only (Accessory), so without this arm "opening the app again" does nothing;

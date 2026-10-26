@@ -1688,8 +1688,9 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
         "a daemon that cannot start because its store was indexed by another model is shown with that reason and one click that \
          rebuilds the index - on the starting page, on This Mac and in Setup - and the index can be rebuilt from the page whenever \
          the daemon runs with a model",
-        // The app's test reads settings.js and rebuild_index: the reason, the button in Restart's place,
-        // the Search row's button, the order of stop and reset, and the page following the re-embedding.
+        // The app's test reads settings.js and runs the rebuild against a recorder in place of the CLI:
+        // the reason, the button in Restart's place, the Search row's button, the app's own daemon
+        // gone before the reset, the wait for a login job, and the page following the re-embedding.
         Evidence::Scenario(&["a_store_the_daemon_cannot_open_is_rebuilt_from_the_page"]),
     )]),
     (8, &[c(

@@ -64,3 +64,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 # UnixStream + AsyncRead/Write + timeouts for the HTTP-over-UDS client and the SSE bridge.
 tokio = { version = "1", features = ["net", "io-util", "time"] }
+
+[dev-dependencies]
+# Tauri's mock runtime, which the tests run the app on (main.rs's `Rt`): a test holds the app, its
+# commands, its tray and its exit, with a recorder in place of the CLI.
+tauri = { version = "2", features = ["test"] }

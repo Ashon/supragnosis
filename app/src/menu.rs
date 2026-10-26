@@ -4,7 +4,7 @@
 use super::*;
 
 /// The menu bar's map commands, by id, so each page's load report can enable the ones that act there.
-pub(crate) struct MapItems(pub(crate) Vec<(&'static str, MenuItem<tauri::Wry>)>);
+pub(crate) struct MapItems(pub(crate) Vec<(&'static str, MenuItem<Rt>)>);
 
 /// What a press of one of the menu bar's own items does (design-system.md Section 29.13).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -86,7 +86,7 @@ pub(crate) fn map_items_enabled(url: &str, controls: &[String]) -> Vec<(&'static
     ]
 }
 
-pub(crate) fn enable_map_items(app: &tauri::AppHandle, report: &serde_json::Value) {
+pub(crate) fn enable_map_items(app: &tauri::AppHandle<Rt>, report: &serde_json::Value) {
     let url = report["url"].as_str().unwrap_or("");
     let controls: Vec<String> = report["controls"]
         .as_array()
@@ -133,7 +133,7 @@ pub(crate) fn key_js(key: &str, needs_history: bool) -> String {
 /// The menu bar's map commands (design-system.md Section 29.13): on the Graph page they press the
 /// page's own control; on Review, Settings or Setup they open the Graph and do nothing else; Back and
 /// Forward send the page on screen its own Cmd+[ and Cmd+].
-pub(crate) fn map_command(app: &tauri::AppHandle, id: &str) -> tauri::Result<()> {
+pub(crate) fn map_command(app: &tauri::AppHandle<Rt>, id: &str) -> tauri::Result<()> {
     let control = match id {
         "view-filters" => Some(("panelL", false)),
         "view-log" => Some(("panelR", false)),
@@ -166,7 +166,7 @@ pub(crate) fn map_command(app: &tauri::AppHandle, id: &str) -> tauri::Result<()>
 
 /// Opens Settings' This Mac with an act the page reports itself (Section 29.5): `diagnostics` focuses
 /// Copy Diagnostics, `reveal-log` shows the log in Finder.
-pub(crate) fn show_settings_act(app: &tauri::AppHandle, act: &str) -> tauri::Result<()> {
+pub(crate) fn show_settings_act(app: &tauri::AppHandle<Rt>, act: &str) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         let current = w.url().ok();

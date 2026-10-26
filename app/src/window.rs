@@ -66,7 +66,7 @@ pub(crate) fn own_page_ok(label: &str, url: &tauri::Url) -> bool {
     label == "main" && OWN_PAGES.iter().any(|p| is_page(url, p))
 }
 
-pub(crate) fn own_page_caller(webview: &tauri::Webview) -> Result<(), String> {
+pub(crate) fn own_page_caller(webview: &tauri::Webview<Rt>) -> Result<(), String> {
     let url = webview.url().map_err(|e| e.to_string())?;
     if own_page_ok(webview.label(), &url) {
         Ok(())
@@ -78,7 +78,7 @@ pub(crate) fn own_page_caller(webview: &tauri::Webview) -> Result<(), String> {
 
 /// Reloads the viewer if that is what the main window shows - not the settings page, which re-reads
 /// its own state after every change.
-pub(crate) fn reload_viewer(app: &tauri::AppHandle) {
+pub(crate) fn reload_viewer(app: &tauri::AppHandle<Rt>) {
     if let Some(w) = app.get_webview_window("main") {
         if w.url().is_ok_and(|u| u.scheme() == "viz") {
             let _ = w.eval("location.reload()");
@@ -112,14 +112,14 @@ pub(crate) fn text_scale_script(scale: f64) -> String {
     )
 }
 
-fn view_prefs_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn view_prefs_path(app: &tauri::AppHandle<Rt>) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("view.json"))
 }
 
 /// Keeps one of the view preferences - the text's size, the window's frame - beside the others, so
 /// writing one never drops another (design-system.md Section 29.14).
 fn keep_view_pref(
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<Rt>,
     key: &str,
     value: serde_json::Value,
 ) -> std::io::Result<()> {
@@ -156,7 +156,7 @@ pub(crate) fn keep_view_pref_at(
 }
 
 /// The window's kept frame, when it is on a screen now.
-fn kept_frame(app: &tauri::AppHandle) -> Option<WindowFrame> {
+fn kept_frame(app: &tauri::AppHandle<Rt>) -> Option<WindowFrame> {
     let view = view_prefs_at(&view_prefs_path(app)?);
     let screens: Vec<(f64, f64, f64, f64)> = app
         .available_monitors()
@@ -228,7 +228,7 @@ pub(crate) fn frame_on_a_screen(f: &WindowFrame, screens: &[(f64, f64, f64, f64)
 /// the app quits.
 pub(crate) struct FrameNow(pub(crate) Mutex<Option<WindowFrame>>);
 
-pub(crate) fn note_frame(w: &tauri::Window) {
+pub(crate) fn note_frame(w: &tauri::Window<Rt>) {
     let (Ok(p), Ok(z), Ok(s)) = (w.outer_position(), w.inner_size(), w.scale_factor()) else {
         return;
     };
@@ -245,7 +245,7 @@ pub(crate) fn note_frame(w: &tauri::Window) {
     }
 }
 
-pub(crate) fn keep_frame(app: &tauri::AppHandle) {
+pub(crate) fn keep_frame(app: &tauri::AppHandle<Rt>) {
     let Some(f) = app.try_state::<FrameNow>().and_then(|n| *n.0.lock().unwrap()) else {
         return;
     };
@@ -256,7 +256,7 @@ pub(crate) fn keep_frame(app: &tauri::AppHandle) {
 }
 
 /// The kept text size; 100% when the file is missing or unreadable.
-pub(crate) fn read_text_scale(app: &tauri::AppHandle) -> f64 {
+pub(crate) fn read_text_scale(app: &tauri::AppHandle<Rt>) -> f64 {
     view_prefs_path(app).map_or(1.0, |p| text_scale_of(&view_prefs_at(&p)))
 }
 
@@ -266,7 +266,7 @@ pub(crate) fn text_scale_of(view: &serde_json::Value) -> f64 {
 }
 
 /// Steps the text size, keeps it, and gives it to the page on screen.
-pub(crate) fn set_text_scale(app: &tauri::AppHandle, step: i32) -> tauri::Result<()> {
+pub(crate) fn set_text_scale(app: &tauri::AppHandle<Rt>, step: i32) -> tauri::Result<()> {
     let Some(state) = app.try_state::<TextScale>() else {
         return Ok(());
     };
@@ -285,7 +285,7 @@ pub(crate) fn set_text_scale(app: &tauri::AppHandle, step: i32) -> tauri::Result
 }
 
 /// Turns the main window to the Welcome page, creating the window first if needed.
-pub(crate) fn show_welcome(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_welcome(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         let current = w.url().ok();
@@ -304,7 +304,10 @@ pub(crate) fn graph_url() -> tauri::Url {
 /// Turns the main window to the settings page (docs/settings-page.md Section 3.0), creating the
 /// window first if the app has retreated to the tray. With a section, opens that section; without
 /// one, a window already on the settings page stays where it is.
-pub(crate) fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> tauri::Result<()> {
+pub(crate) fn show_settings(
+    app: &tauri::AppHandle<Rt>,
+    section: Option<&str>,
+) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         let current = w.url().ok();
@@ -321,7 +324,7 @@ pub(crate) fn show_settings(app: &tauri::AppHandle, section: Option<&str>) -> ta
 /// Turns the main window to the Review page (docs/design-system.md Section 7): a route of the viewer's
 /// own page, `#review`. From the settings page that is a navigation; on the viewer it is the hash, so
 /// the graph's state is kept.
-pub(crate) fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_review(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         if let Some(u) = w.url().ok().filter(|u| own_page_ok("main", u)) {
@@ -337,7 +340,7 @@ pub(crate) fn show_review(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 /// The tray's Review item opens the page at All workspaces, the scope its count is of
 /// (docs/design-system.md Section 7). The menu bar's Review keeps the scope on screen.
-pub(crate) fn show_review_all(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_review_all(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         if w.url().is_ok_and(|u| own_page_ok("main", &u)) {
@@ -353,7 +356,7 @@ pub(crate) fn show_review_all(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 /// Turns the main window to the graph, creating it first if needed.
-pub(crate) fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_graph(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
     show_viewer(app)?;
     if let Some(w) = app.get_webview_window("main") {
         if let Some(u) = w.url().ok().filter(|u| own_page_ok("main", u)) {
@@ -374,7 +377,7 @@ pub(crate) fn shell_init_script() -> String {
 /// Shows the viewer window (creating it on first use / after the app retreated to the tray) and
 /// returns the app to the dock. Closing the window hides it and drops back to Accessory (menu
 /// bar only) - see on_window_event.
-pub(crate) fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn show_viewer(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(w) = app.get_webview_window("main") {

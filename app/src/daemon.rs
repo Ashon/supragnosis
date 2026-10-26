@@ -23,6 +23,17 @@ pub(crate) fn reaped_on_exit(daemon: Daemon) -> Option<Child> {
     }
 }
 
+/// The app's exit: the window's frame is kept, and the child [`reaped_on_exit`] names is stopped.
+pub(crate) fn on_exit(app: &tauri::AppHandle<Rt>) {
+    keep_frame(app);
+    let prev =
+        std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
+    if let Some(mut child) = reaped_on_exit(prev) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
 impl Daemon {
     /// What the shell knows of the daemon by itself, in the state words every surface uses
     /// (docs/design-system.md Section 9, step 45).
@@ -108,15 +119,9 @@ fn mcp_addr() -> String {
     }
 }
 
-/// Attach-or-spawn. A live socket means an externally managed daemon - attach and own nothing.
-/// Otherwise spawn `supragnosis serve` (logs to ~/.supragnosis/log/app-daemon.*.log) and wait
-/// briefly for its socket; the viz:// proxy serves a retry page until it answers, so a slow start
-/// is not fatal.
-async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
-    if UnixStream::connect(sock).await.is_ok() {
-        tracing::info!(sock = %sock.display(), "attached to a running daemon");
-        return Ok(None);
-    }
+/// Spawns `supragnosis serve` as this app's own daemon (logs to ~/.supragnosis/log/app-daemon.*.log),
+/// for [`FoundCli::serve`].
+pub(crate) fn spawn_daemon(sock: &Path) -> anyhow::Result<(Child, PathBuf)> {
     let bin = find_server_bin().context(
         "supragnosis server binary not found - set SUPRAGNOSIS_BIN, or install it to ~/.local/bin \
          (scripts/install.sh)",
@@ -138,7 +143,7 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
     let err = std::fs::File::create(logs.join("app-daemon.err.log"))?;
     let http_addr = mcp_addr();
     tracing::info!(bin = %bin.display(), http = %http_addr, sock = %sock.display(), "spawning the daemon");
-    let mut child = Command::new(&bin)
+    let child = Command::new(&bin)
         .args(["serve", "--http", &http_addr, "--viz"])
         .arg(sock)
         .stdin(Stdio::null())
@@ -146,6 +151,19 @@ async fn ensure_daemon(sock: &Path) -> anyhow::Result<Option<Child>> {
         .stderr(err)
         .spawn()
         .with_context(|| format!("failed to spawn {}", bin.display()))?;
+    Ok((child, bin))
+}
+
+/// Attach-or-spawn. A live socket means an externally managed daemon - attach and own nothing.
+/// Otherwise spawn `supragnosis serve` and wait briefly for its socket; the viz:// proxy serves a
+/// retry page until it answers, so a slow start is not fatal.
+async fn ensure_daemon(cli: &dyn Cli, sock: &Path) -> anyhow::Result<Option<Child>> {
+    if UnixStream::connect(sock).await.is_ok() {
+        tracing::info!(sock = %sock.display(), "attached to a running daemon");
+        return Ok(None);
+    }
+    let (mut child, bin) = cli.serve(sock)?;
+    let logs = home().join(".supragnosis/log");
     let mut socket_up = false;
     for _ in 0..40 {
         // A dead child will never bind the socket - detect it NOW and surface the reason,
@@ -237,10 +255,11 @@ pub(crate) fn tilde(p: &Path) -> String {
 }
 
 /// Runs attach-or-spawn and publishes the outcome (state + tray status line).
-pub(crate) async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
+pub(crate) async fn bring_up(app: tauri::AppHandle<Rt>, sock: PathBuf) {
     mark_start();
     refresh_status(&app).await;
-    let state = match ensure_daemon(&sock).await {
+    let cli = app.state::<CliHeld>().0.clone();
+    let state = match ensure_daemon(&*cli, &sock).await {
         Ok(Some(child)) => Daemon::Spawned(child),
         Ok(None) => Daemon::External,
         Err(e) => {
@@ -252,25 +271,32 @@ pub(crate) async fn bring_up(app: tauri::AppHandle, sock: PathBuf) {
     refresh_status(&app).await;
 }
 
+/// The app's start: attach-or-spawn, then, on a launch after the first, the Welcome page if
+/// setup says a step waits (docs/onboarding.md Section 6).
+pub(crate) async fn start_up(app: tauri::AppHandle<Rt>, sock: PathBuf, first: bool) {
+    bring_up(app.clone(), sock).await;
+    if !first {
+        welcome_at_start(app).await;
+    }
+}
+
+/// How long a restart, and a rebuild, wait for a login job's daemon to answer before deciding
+/// (docs/daemon-lifecycle.md Section 6).
+pub(crate) const RESTART_WAIT: Duration = Duration::from_secs(30);
+
 /// Restart: bounce whatever we manage, then attach-or-spawn again. A spawned child is killed
 /// directly; an external daemon is bounced through the CLI (`supragnosis restart` knows every
 /// manager the product installs). A refused restart (a conflict, an unrecognized holder) says why,
 /// instead of the shell quietly re-attaching to the process it failed to replace (L4).
 pub(crate) async fn restart_daemon(
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<Rt>,
     sock: PathBuf,
 ) -> Result<String, String> {
     // A failed daemon that something manages is restarted through that manager, as an attached one
     // is: the shell spawns none of its own beside it (docs/daemon-lifecycle.md Section 6,
     // design-system.md Section 29.5).
     let failed = matches!(*app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Failed(_));
-    let job = failed
-        && tokio::task::spawn_blocking(cli_status)
-            .await
-            .ok()
-            .flatten()
-            .as_ref()
-            .is_some_and(managed);
+    let job = failed && on_cli(app, cli_status).await.ok().flatten().as_ref().is_some_and(managed);
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
     mark_start();
@@ -284,18 +310,14 @@ pub(crate) async fn restart_daemon(
             Ok("restarted the daemon this app runs".to_string())
         }
         RestartBy::Cli => {
-            let before = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
-            let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
+            let before = on_cli(app, cli_status).await.ok().flatten();
+            let out = on_cli(app, |c| c.run(&["restart"])).await.ok().flatten();
             // launchd may still be starting the new process when the CLI returns, or retrying one
             // that lost the store lock to the old process while it exited, and the CLI then reports
             // a failure that a few seconds settle. Wait for the socket, as set_login does, so the
             // shell attaches to that daemon rather than spawning a second one into its lock.
-            let up = wait_for_socket(&sock, Duration::from_secs(30)).await;
-            let after = if up {
-                tokio::task::spawn_blocking(cli_status).await.ok().flatten()
-            } else {
-                None
-            };
+            let up = wait_for_socket(&sock, RESTART_WAIT).await;
+            let after = if up { on_cli(app, cli_status).await.ok().flatten() } else { None };
             let outcome = restart_outcome(
                 out.as_ref().map(cli_outcome),
                 manager_pid(before.as_ref()),
@@ -378,7 +400,7 @@ pub(crate) fn manager_pid(st: Option<&serde_json::Value>) -> Option<u64> {
 /// starting, or a restart reported failed while launchd brought the daemon back. Whenever the state
 /// is read, a Failed daemon whose socket answers is attached to, so the tray line and the Settings
 /// page say what is true instead of the failure that has passed.
-pub(crate) async fn heal_failed(app: &tauri::AppHandle) {
+pub(crate) async fn heal_failed(app: &tauri::AppHandle<Rt>) {
     let (Some(guard), Some(sock)) = (app.try_state::<DaemonGuard>(), app.try_state::<VizSock>())
     else {
         return;
@@ -387,13 +409,17 @@ pub(crate) async fn heal_failed(app: &tauri::AppHandle) {
         return;
     }
     let sock = sock.0.clone();
-    if UnixStream::connect(&sock).await.is_ok() {
-        let mut guard = guard.0.lock().unwrap();
-        if matches!(*guard, Daemon::Failed(_)) {
-            tracing::info!(sock = %sock.display(), "the daemon answers again - attached");
-            *guard = Daemon::External;
-        }
+    let answering = UnixStream::connect(&sock).await.is_ok();
+    let mut guard = guard.0.lock().unwrap();
+    if heals(&guard, answering) {
+        tracing::info!(sock = %sock.display(), "the daemon answers again - attached");
+        *guard = Daemon::External;
     }
+}
+
+/// Whether a read of the state attaches to the daemon again: a failed one whose socket answers.
+pub(crate) fn heals(daemon: &Daemon, answering: bool) -> bool {
+    answering && matches!(daemon, Daemon::Failed(_))
 }
 
 /// Waits for the viewer socket to answer, so a daemon launchd is still starting is attached to
@@ -413,11 +439,11 @@ pub(crate) async fn wait_for_socket(sock: &Path, limit: Duration) -> bool {
 /// (docs/daemon-lifecycle.md Section 6). Turning it on is the consent to take over from another
 /// manager; the answer says what happened.
 pub(crate) async fn set_login(
-    app: &tauri::AppHandle,
+    app: &tauri::AppHandle<Rt>,
     sock: PathBuf,
     on: bool,
 ) -> Result<String, String> {
-    let installed = tokio::task::spawn_blocking(cli_status)
+    let installed = on_cli(app, cli_status)
         .await
         .ok()
         .flatten()
@@ -441,7 +467,7 @@ pub(crate) async fn set_login(
         }
         &["service", "install", "--take-over"]
     };
-    let out = tokio::task::spawn_blocking(move || run_cli(args)).await.ok().flatten();
+    let out = on_cli(app, move |c| c.run(args)).await.ok().flatten();
     let outcome = login_outcome(installed, out.as_ref());
     if !installed {
         wait_for_socket(&sock, Duration::from_secs(10)).await;
@@ -468,7 +494,10 @@ pub(crate) struct VizSock(pub(crate) PathBuf);
 /// `supragnosis embed rebuild` stops and starts again. The store is reset either way, and the shell
 /// then attaches to the daemon that comes back, or spawns its own where none runs - and that start's
 /// backfill embeds every row with the model it runs.
-pub(crate) async fn rebuild_index(app: &tauri::AppHandle, sock: PathBuf) -> Result<String, String> {
+pub(crate) async fn rebuild_index(
+    app: &tauri::AppHandle<Rt>,
+    sock: PathBuf,
+) -> Result<String, String> {
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
     refresh_status(app).await;
@@ -476,10 +505,7 @@ pub(crate) async fn rebuild_index(app: &tauri::AppHandle, sock: PathBuf) -> Resu
         let _ = child.kill();
         let _ = child.wait();
     }
-    let out = tokio::task::spawn_blocking(|| run_cli(&["embed", "rebuild"]))
-        .await
-        .ok()
-        .flatten();
+    let out = on_cli(app, |c| c.run(&["embed", "rebuild"])).await.ok().flatten();
     let outcome = match out.as_ref().map(cli_outcome) {
         Some((true, line)) => Ok(line),
         Some((false, why)) => Err(why),
@@ -487,13 +513,13 @@ pub(crate) async fn rebuild_index(app: &tauri::AppHandle, sock: PathBuf) -> Resu
     };
     // A login job the CLI started again: wait for its socket, as a restart does, so the shell
     // attaches to it rather than spawning a second daemon into its lock.
-    let job = tokio::task::spawn_blocking(cli_status)
+    let job = on_cli(app, cli_status)
         .await
         .ok()
         .flatten()
         .is_some_and(|st| st["service"]["state"].as_str().is_some_and(|s| s != "absent"));
     if outcome.is_ok() && job {
-        wait_for_socket(&sock, Duration::from_secs(30)).await;
+        wait_for_socket(&sock, RESTART_WAIT).await;
     }
     bring_up(app.clone(), sock).await;
     outcome

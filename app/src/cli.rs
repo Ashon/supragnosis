@@ -3,13 +3,58 @@
 
 use super::*;
 
-/// Runs the CLI the shell found, blocking. `None` when there is no CLI to run.
-pub(crate) fn run_cli(args: &[&str]) -> Option<std::process::Output> {
-    let bin = find_server_bin()?;
-    let mut cmd = Command::new(bin);
-    cmd.args(args).stdin(Stdio::null());
-    with_login_env(&mut cmd);
-    cmd.output().ok()
+/// The supragnosis CLI as the app runs it. Every call the app makes to it goes through the one the
+/// app holds ([`CliHeld`]), so which commands the app runs, and on whose act, is what a test records
+/// by holding a recorder in its place (daemon-lifecycle.md L6).
+pub(crate) trait Cli: Send + Sync {
+    /// `supragnosis <args>`, run to its end. `None` when there is no CLI to run.
+    fn run(&self, args: &[&str]) -> Option<std::process::Output>;
+    /// `supragnosis <args>` started for a page to follow: its output piped, leading a process group
+    /// of its own. `Err` says why it did not start.
+    fn stream(&self, args: &[String]) -> Result<Child, String>;
+    /// `supragnosis serve` started as this app's own daemon on `sock`, with the binary it runs.
+    fn serve(&self, sock: &Path) -> anyhow::Result<(Child, PathBuf)>;
+}
+
+/// The CLI the shell found ([`find_server_bin`]), run with the login shell's environment.
+pub(crate) struct FoundCli;
+
+impl Cli for FoundCli {
+    fn run(&self, args: &[&str]) -> Option<std::process::Output> {
+        let bin = find_server_bin()?;
+        let mut cmd = Command::new(bin);
+        cmd.args(args).stdin(Stdio::null());
+        with_login_env(&mut cmd);
+        cmd.output().ok()
+    }
+
+    fn stream(&self, args: &[String]) -> Result<Child, String> {
+        let bin = find_server_bin().ok_or_else(cli_missing)?;
+        let mut cmd = Command::new(&bin);
+        cmd.args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        with_login_env(&mut cmd);
+        cmd.spawn().map_err(|e| format!("could not run the supragnosis CLI: {e}"))
+    }
+
+    fn serve(&self, sock: &Path) -> anyhow::Result<(Child, PathBuf)> {
+        spawn_daemon(sock)
+    }
+}
+
+/// The CLI the app holds.
+pub(crate) struct CliHeld(pub(crate) std::sync::Arc<dyn Cli>);
+
+/// Runs `f` with the CLI the app holds, on a blocking thread: each call waits on a process.
+pub(crate) fn on_cli<T: Send + 'static>(
+    app: &tauri::AppHandle<Rt>,
+    f: impl FnOnce(&dyn Cli) -> T + Send + 'static,
+) -> tokio::task::JoinHandle<T> {
+    let cli = app.state::<CliHeld>().0.clone();
+    tokio::task::spawn_blocking(move || f(&*cli))
 }
 
 /// What the person's login shell sets that the CLI's calls need, read once per launch
@@ -143,8 +188,8 @@ pub(crate) fn cli_json(stdout: &[u8]) -> Result<Option<serde_json::Value>, u64> 
 
 /// Runs a `--json` command. `None` when there is no answer to read: no CLI, a CLI that does not
 /// know the command, or one newer than this app (which [`CLI_NEWER`] records).
-pub(crate) fn run_cli_json(args: &[&str]) -> Option<serde_json::Value> {
-    let out = run_cli(args)?;
+pub(crate) fn run_cli_json(cli: &dyn Cli, args: &[&str]) -> Option<serde_json::Value> {
+    let out = cli.run(args)?;
     if !out.status.success() {
         return None;
     }
@@ -155,8 +200,8 @@ pub(crate) fn run_cli_json(args: &[&str]) -> Option<serde_json::Value> {
 
 /// `supragnosis status --json`. `None` when the CLI predates it - the tray then falls back to what
 /// the shell itself knows and disables the switch rather than failing on click.
-pub(crate) fn cli_status() -> Option<serde_json::Value> {
-    run_cli_json(&["status", "--json"])
+pub(crate) fn cli_status(cli: &dyn Cli) -> Option<serde_json::Value> {
+    run_cli_json(cli, &["status", "--json"])
 }
 
 /// The one line the CLI said that matters: its error on failure, its first line on success.
