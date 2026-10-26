@@ -886,6 +886,27 @@ mod tray_tests {
         ] {
             assert_eq!(menu_item(id).map(|m| m.1), Some(words), "the menu bar lacks {id}");
         }
+        // What each item does, so two items that trade acts fail here.
+        for (id, press) in [
+            ("settings", MenuPress::Settings),
+            ("setup", MenuPress::Setup),
+            ("graph", MenuPress::Graph),
+            ("review", MenuPress::Review),
+            ("help-docs", MenuPress::Docs),
+            ("help-diagnostics", MenuPress::Diagnostics),
+            ("help-log", MenuPress::ShowLog),
+            ("help-issue", MenuPress::Issue),
+        ] {
+            assert_eq!(menu_item(id).map(|m| m.3), Some(press), "{id} does another item's act");
+        }
+        for (id, press) in [
+            ("tray-open", TrayPress::OpenGraph),
+            ("tray-review", TrayPress::Review),
+            ("tray-finish-setup", TrayPress::FinishSetup),
+            ("tray-settings", TrayPress::Settings),
+        ] {
+            assert_eq!(tray_press(id), Some(press), "{id} does another item's act");
+        }
         for (id, _) in map_items_enabled("viz://localhost/", &[]) {
             assert_eq!(
                 menu_item(id).map(|m| m.3),

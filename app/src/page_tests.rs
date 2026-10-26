@@ -809,18 +809,19 @@ mod settings_tests {
     /// rem size follows it, the choice is kept, and the script a page is given sets it.
     #[test]
     fn view_sets_the_root_text_size() {
-        let main = super::SRC;
-        for part in [
-            "\"Make Text Bigger\"",
-            "Some(\"CmdOrCtrl+=\")",
-            "\"Make Text Smaller\"",
-            "Some(\"CmdOrCtrl+-\")",
-            "\"Actual Size\"",
-            "Some(\"CmdOrCtrl+0\")",
-            "\"view.json\"",
+        use super::menu::{menu_item, MenuPress};
+        for (id, words, key, step) in [
+            ("text-bigger", "Make Text Bigger", "CmdOrCtrl+=", 1),
+            ("text-smaller", "Make Text Smaller", "CmdOrCtrl+-", -1),
+            ("text-actual", "Actual Size", "CmdOrCtrl+0", 0),
         ] {
-            assert!(main.contains(part), "the root text size is missing {part}");
+            assert_eq!(
+                menu_item(id),
+                Some((id, words, Some(key), MenuPress::Text(step))),
+                "View's {words} is not the step it names"
+            );
         }
+        assert!(super::SRC.contains("\"view.json\""), "the choice is not kept in view.json");
         assert_eq!(super::step_text_scale(1.0, 1), 1.125);
         assert_eq!(super::step_text_scale(2.0, 1), 2.0);
         assert_eq!(super::step_text_scale(1.0, -1), 1.0);
