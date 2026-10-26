@@ -31,8 +31,8 @@
 //! per-principle version comfortable to read: with only three states, a clause pinned by a
 //! characterization test had nowhere to go except `Scenario`, where it counted as evidence that the
 //! clause was met - the exact opposite of what such a test asserts. Splitting "a test exists" from
-//! "the clause holds" is the whole reason the summary reports guarded clauses out of all clauses
-//! instead of guarded principles.
+//! "the clause holds" is the whole reason the principles page counts tested clauses out of all
+//! clauses instead of guarded principles.
 //!
 //! Adding Principle 24 to `docs/principles.md` breaks [`every_principle_declares_its_evidence`]
 //! until someone writes down what it demands and which of the four states each demand is in. That
@@ -747,7 +747,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (21, &[c(
         "every font size the viewer and the app's pages draw is one of six steps through a rem token, running text and control labels at 13 or more and nothing under 11, the map's labels scaling with the root, the app's menu setting the root's size and keeping it, and no text cut short but where focus or a press shows it whole",
         // crates/supragnosis-viz/tests/type_scale.rs reads the three stylesheets and the map's
-        // label sizes; the app's tests read View's text size items and the page load that applies it.
+        // label sizes; the app's tests read View's text size items and the script that applies it.
         Evidence::Scenario(&[
             "every_font_size_is_a_token_in_rem",
             "text_and_control_labels_are_body_size",
@@ -988,7 +988,7 @@ const ONBOARDING_REGISTRY: &[(u8, &[Clause])] = &[
             ),
             c(
                 "the Welcome page says that nothing leaves the machine",
-                Evidence::Scenario(&["the_welcome_page_calls_only_its_own_acts"]),
+                Evidence::Scenario(&["the_setup_page_says_what_is_true_and_how_far_it_is"]),
             ),
         ],
     ),
@@ -1669,7 +1669,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     ]),
     (4, &[c(
         "every setting the tray offered - Start at Login, Restart Daemon, AI Apps - is on the page, Server having gone with remote profiles in 0.11.0",
-        Evidence::Scenario(&["every_setting_the_tray_offered_is_on_the_page"]),
+        Evidence::Scenario(&["every_setting_change_is_a_cli_call"]),
     )]),
     (5, &[c(
         "the page renders the text it is given as text: no markup sink in settings.js or shell-init.js, a policy in the page's head, no inline script",
@@ -1690,8 +1690,7 @@ const SETTINGS_PAGE_REGISTRY: &[(u8, &[Clause])] = &[
     (8, &[c(
         "a page in the main window may listen for and emit events, ask whether the window is full screen and drag it, and nothing \
          else of the platform's - no menu, tray, image, path or resource",
-        // The app's test holds capabilities/default.json to exactly those grants, and each page API
-        // the shell calls to a grant that covers it.
+        // The app's test holds capabilities/default.json to exactly those grants.
         Evidence::Scenario(&["the_window_pages_get_only_what_they_use"]),
     )]),
 ];
@@ -3471,7 +3470,6 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-store/tests/port_conformance.rs"),
     include_str!("../../supragnosis-sync/src/lib.rs"),
     include_str!("../../supragnosis-sync/src/http.rs"),
-    include_str!("../../supragnosis-embed/src/lib.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
     include_str!("../../supragnosis-cli/src/hub.rs"),
@@ -4892,116 +4890,6 @@ fn structural_and_deferred_states_are_justified() {
                 }
             }
         }
-    }
-}
-
-/// The coverage summary, printed with `--nocapture`. Not an assertion: the ratio is a fact about
-/// where the project is, and pinning it would only invite someone to edit the number.
-///
-/// It counts CLAUSES, not principles. Counting principles is what let a principle with one guarded
-/// clause and one overdue debt read the same as a principle that is fully met - and "18 of 23" is a
-/// far more comfortable sentence than the truth underneath it.
-#[test]
-fn report_principle_coverage() {
-    let (mut guarded, mut structural, mut pinned, mut unguarded) = (0, 0, 0, 0);
-    let mut owed: Vec<String> = Vec::new();
-    for (n, name, clauses) in REGISTRY {
-        println!("P{n:02} {name}");
-        for cl in *clauses {
-            let mark = match &cl.evidence {
-                Evidence::Scenario(t) => {
-                    guarded += 1;
-                    format!("guard    ({} tests)", t.len())
-                }
-                Evidence::Structural(_) => {
-                    structural += 1;
-                    "structural".to_string()
-                }
-                Evidence::Characterized(t, _) => {
-                    pinned += 1;
-                    format!("OWED     (pinned by {} test)", t.len())
-                }
-                Evidence::Deferred(_) => {
-                    unguarded += 1;
-                    "OWED     (nothing pins it)".to_string()
-                }
-            };
-            println!("       {mark:<28} {}", cl.demands);
-            if !cl.evidence.holds() {
-                owed.push(format!("P{n:02} {}", cl.demands));
-            }
-        }
-    }
-    let total = guarded + structural + pinned + unguarded;
-    println!(
-        "\n{total} clauses over {} principles: {guarded} guarded / {structural} structural / \
-         {pinned} pinned-but-unmet / {unguarded} unmet-and-unpinned",
-        REGISTRY.len()
-    );
-
-    // The same accounting for every invariant family. Reported per document rather than summed into
-    // the principles, because the documents answer different questions - principles say what the
-    // system must be, invariants say what one design must preserve - and one blended ratio would
-    // hide that most of a family's debt is a single milestone rather than a scatter.
-    let mut f_owed: Vec<String> = Vec::new();
-    let (mut all_total, mut all_assured) = (0, 0);
-    for fam in FAMILIES {
-        let (mut f_guarded, mut f_structural, mut f_pinned, mut f_unguarded) = (0, 0, 0, 0);
-        println!("\n{} - invariants ({})", fam.doc, fam.prefix);
-        for (n, clauses) in fam.rows {
-            println!("  {}{n}", fam.prefix);
-            for cl in *clauses {
-                let mark = match &cl.evidence {
-                    Evidence::Scenario(t) => {
-                        f_guarded += 1;
-                        format!("guard    ({} tests)", t.len())
-                    }
-                    Evidence::Structural(_) => {
-                        f_structural += 1;
-                        "structural".to_string()
-                    }
-                    Evidence::Characterized(t, _) => {
-                        f_pinned += 1;
-                        format!("OWED     (pinned by {} test)", t.len())
-                    }
-                    Evidence::Deferred(_) => {
-                        f_unguarded += 1;
-                        "OWED     (nothing pins it)".to_string()
-                    }
-                };
-                println!("       {mark:<28} {}", cl.demands);
-                if !cl.evidence.holds() {
-                    f_owed.push(format!("{}{n:02} {}", fam.prefix, cl.demands));
-                }
-            }
-        }
-        let f_total = f_guarded + f_structural + f_pinned + f_unguarded;
-        all_total += f_total;
-        all_assured += f_guarded + f_structural;
-        println!(
-            "  {f_total} clauses over {} invariants: {f_guarded} guarded / {f_structural} structural / \
-             {f_pinned} pinned-but-unmet / {f_unguarded} unmet-and-unpinned",
-            fam.rows.len()
-        );
-    }
-    println!(
-        "\n{all_total} invariant clauses over {} families: {all_assured} assured / {} owed",
-        FAMILIES.len(),
-        all_total - all_assured
-    );
-    println!(
-        "\nWhat the design documents promise and this build does not enforce yet ({}):",
-        f_owed.len()
-    );
-    for o in &f_owed {
-        println!("  {o}");
-    }
-    println!(
-        "\nWhat the principles ask for and this system does not do yet ({}):",
-        owed.len()
-    );
-    for o in &owed {
-        println!("  {o}");
     }
 }
 

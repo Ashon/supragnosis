@@ -306,8 +306,8 @@ profiles in 0.11.0.
   is: a change runs the CLI and answers a refusal with what the CLI said, stopping a peer's sharing
   goes to the daemon's endpoint and runs no CLI, and the rest read or act on the system. The
   Feedback cases show a refusal reaching the page.
-- **S4**: `every_setting_the_tray_offered_is_on_the_page` - the page's script calls the command of
-  each control the tray gave up (`login_set`, `daemon_restart`, `app_toggle`) by name, and each is
+- **S4**: `every_setting_change_is_a_cli_call` - among the commands the page's script calls are
+  those of each control the tray gave up (`login_set`, `daemon_restart`, `app_toggle`), and each is
   one of the app's registered commands.
 - **S5**: `the_settings_page_never_renders_markup` - no markup sink in the page's script or in the
   init script that builds the navigation on every page, a policy in the page's head, no inline

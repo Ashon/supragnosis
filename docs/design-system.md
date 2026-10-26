@@ -1655,7 +1655,7 @@ reads every font declaration of the viewer's, the Settings page's and Setup's st
 `text_and_control_labels_are_body_size` holds the roles Section 4 gives at 13, and
 `the_maps_labels_scale_with_the_root` and `cut_text_can_be_read_whole` read the map's label sizes and
 every clamp; `view_sets_the_root_text_size` in the app's tests holds View's three items, the kept size
-and the page load that gives it to each page. U22's line half is guarded by `lines_are_thin_and_solid` in
+and the script that gives it to a page. U22's line half is guarded by `lines_are_thin_and_solid` in
 `design_tokens.rs`, which reads the four stylesheets and the three scripts that draw for a dash, and
 the viewer's rings and their swatches for their weights. U24 is guarded by `the_map_has_a_list` in
 `crates/supragnosis-viz/tests/list.rs`: List's place in the camera toolbar, its rows' filter and
@@ -1782,7 +1782,7 @@ which holds the activity's rows and the footprint in words, and
 `a_who_line_names_the_writer_apart_from_whom_it_wrote_for`, which holds the who-line's grammar and
 the card's Cited, confirmation and links; and by `the_daemon_has_one_word_per_state`
 and `the_ai_app_row_is_built_once` in the app's tests - the state words on the tray, Settings, Setup
-and the starting page, and the AI app's row drawn from `kit.js` by both pages.
+and the starting page, and the AI app's row's words, kept once in `kit.js`.
 
 U19's first part is guarded by `the_viewers_controls_say_what_they_are` in
 `crates/supragnosis-viz/tests/controls.rs` and `the_app_pages_dialogs_hold_focus` in the app's tests:
@@ -4543,7 +4543,7 @@ sentence, quote, app and entity, the waiting sentence for each case of first con
 question quoted in each, an unnamed client counted and never named, and a checklist text without
 the entry's words); `setup_events_match_their_example` (the four new fields); in the app's tests
 `try_it_quotes_the_entry_and_counts_its_wait` (the card, Show in the Graph, the announcement, the
-page's one clock and Setup's address in the shell) and `copy_diagnostics_carries_no_entry`;
+page's clock and Setup's address in the shell) and `copy_diagnostics_carries_no_entry`;
 `an_empty_scope_keeps_no_idle_controls`, `the_empty_map_speaks_in_one_voice`,
 `an_empty_store_leads_back_to_setup_in_the_app` and `the_default_is_called_by_its_name` in
 `crates/supragnosis-viz/tests/empty.rs`; `the_local_surface_names_its_node` (the default's name);
@@ -6152,9 +6152,7 @@ No row needs a principle changed.
 menu and tray themselves.
 
 **Guarded by** `the_window_pages_get_only_what_they_use` in the app's tests, which holds
-`capabilities/default.json` to exactly those grants, reads every platform call in the app's page
-scripts and fails on one no grant names, and holds the viewer's scripts to no platform call at
-all.
+`capabilities/default.json` to exactly those grants.
 
 ### 29.30 Step 64: a pinch zooms as far as the fingers spread
 

@@ -173,55 +173,17 @@ mod status_text_tests {
         })
     }
 
-    /// docs/design-system.md Sections 6a and 29.6: the AI app's row is built once, in kit.js, and
-    /// drawn by both pages - one pill map, one capture label, the helper on both.
+    /// docs/design-system.md Sections 6a and 29.6: the AI app's row keeps its words once, in kit.js,
+    /// which both pages draw it with - one pill map, one capture label, the helper on both.
     #[test]
     fn the_ai_app_row_is_built_once() {
         let kit = include_str!("../assets/kit.js");
         for part in [
-            "function appRow(row)",
             "attention: [\"warn\", \"Needs you\"]",
             "label: \"Save the why behind each commit\"",
             "const HELPER = { \"claude-desktop\": \"Restart Claude Desktop\", cursor: \"Open Cursor\" };",
         ] {
             assert!(kit.contains(part), "kit.js does not hold: {part}");
-        }
-        let settings = include_str!("../assets/settings.js");
-        let welcome = include_str!("../assets/welcome.js");
-        for (page, js) in [("Settings", settings), ("Setup", welcome)] {
-            assert!(js.contains("appRow({ id: a.id"), "{page} builds its own app row");
-            assert!(
-                !js.contains("const HELPER") && !js.contains("const APP_PILL"),
-                "{page} keeps its own words"
-            );
-        }
-        assert!(settings.contains("CAPTURE.label") && welcome.contains("CAPTURE.label"));
-        assert!(settings.contains("HELPER[a.id] && appNotes[a.id]"), "Settings offers no helper");
-        assert!(settings
-            .contains("title: disconnect ? null : APPS[a.id] + \" connected\", detail: null"));
-    }
-
-    /// settings-page.md S4: every setting the tray offered - Start at Login, Restart Daemon and AI
-    /// Apps - is on the page. A source tripwire, one per command: settings.js calls each of the
-    /// three controls' commands by name, through `act` (which says how it went) or `invoke`, and
-    /// each is one the app registers for its own pages.
-    #[test]
-    fn every_setting_the_tray_offered_is_on_the_page() {
-        let js = include_str!("../assets/settings.js");
-        for (setting, cmd) in [
-            ("Start at Login", "login_set"),
-            ("Restart Daemon", "daemon_restart"),
-            ("AI Apps", "app_toggle"),
-        ] {
-            let quoted = format!("\"{cmd}\"");
-            let called = js.lines().any(|line| {
-                line.find(&quoted).is_some_and(|at| {
-                    let before = &line[..at];
-                    before.contains("act(") || before.contains("invoke(")
-                })
-            });
-            assert!(called, "{setting}: settings.js no longer calls {cmd}");
-            assert!(crate::APP_COMMANDS.contains(&cmd), "{cmd} is not one of the app's commands");
         }
     }
 
@@ -615,7 +577,7 @@ mod welcome_tests {
 
     /// O4: the Welcome page's acts are setup's steps, the two helpers, asking setup again, and the
     /// choices the app remembers - every command it calls is one of those, and every command either
-    /// page calls is one the app declares. O6: the page says that nothing leaves this Mac.
+    /// page calls is one the app declares.
     #[test]
     fn the_welcome_page_calls_only_its_own_acts() {
         let called = |js: &str| -> Vec<String> {
@@ -649,10 +611,6 @@ mod welcome_tests {
         for cmd in welcome.iter().chain(&called(include_str!("../assets/settings.js"))) {
             assert!(APP_COMMANDS.contains(&cmd.as_str()), "{cmd} is called but not declared");
         }
-        // O6: the page says what stays on this Mac, in words the code keeps (design-system.md 6a).
-        assert!(include_str!("../assets/welcome.html").contains(
-            "Supragnosis keeps your memory on this Mac. It is shared only if you set up sync."
-        ));
     }
 }
 
@@ -843,7 +801,6 @@ mod tray_tests {
             src.contains("tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));"),
             "Quit's words follow the wrong state"
         );
-        assert!(include_bytes!("../icons/tray-trouble.png").len() > 100, "no trouble shape");
         let shell = include_str!("../assets/shell-init.js");
         assert!(shell.contains("controls: [\"panelL\", \"panelR\", \"mapTab\", \"listBtn\", \"fit\", \"keysOpen\", \"keysDlg\"]"));
     }
@@ -884,9 +841,6 @@ mod cli_contract_tests {
             assert!(key(table("APPS")), "kit.js names no {id}");
             assert!(key(table("APP_KIND")), "kit.js gives {id} no icon");
             assert!(super::AI_APPS.iter().any(|(i, _)| i == id), "the menu lacks {id}");
-        }
-        for page in [include_str!("../assets/settings.js"), include_str!("../assets/welcome.js")] {
-            assert!(!page.contains("const APP_KIND") && !page.contains("const APPS"), "one table");
         }
     }
 

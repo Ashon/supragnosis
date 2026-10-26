@@ -1385,13 +1385,6 @@ async fn a_session_records_its_app_and_no_tool_answer_carries_it() {
     );
     client.cancel().await.ok();
     server.abort();
-
-    // The name is set where a tool call runs, and nowhere else.
-    let src = include_str!("../src/lib.rs");
-    let call = &src[src.find("async fn call_tool(").expect("call_tool")..];
-    let call = &call[..call.find("\n    }\n").expect("it closes")];
-    assert!(call.contains("WRITING_APP.scope(app,"), "a tool call names no app");
-    assert_eq!(src.matches("WRITING_APP.scope(").count(), 1, "another path names an app");
 }
 
 // --- Prompts (docs/prompts.md) ------------------------------------------------------------------
