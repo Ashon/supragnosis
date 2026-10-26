@@ -8,7 +8,7 @@ use super::*;
 pub(crate) struct TrayKept(pub(crate) Mutex<Option<TrayState>>);
 
 /// The app menu's Quit, whose words follow the tray's (D15).
-pub(crate) struct AppQuit(pub(crate) PredefinedMenuItem<tauri::Wry>);
+pub(crate) struct AppQuit(pub(crate) PredefinedMenuItem<Rt>);
 
 /// What a press of one of the tray's items does (design-system.md Section 29.13).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,6 +35,23 @@ pub(crate) const TRAY_IDS: &[(&str, TrayPress)] = &[
 /// The press the tray's item `id` makes; `None` for any other id, the menu bar's among them.
 pub(crate) fn tray_press(id: &str) -> Option<TrayPress> {
     TRAY_IDS.iter().find(|(i, _)| *i == id).map(|(_, p)| *p)
+}
+
+/// What a press of the tray's item does: each opens a page of the main window, or quits the app.
+pub(crate) fn tray_pressed(app: &tauri::AppHandle<Rt>, press: TrayPress) {
+    let (shown, what) = match press {
+        TrayPress::OpenGraph => (show_graph(app), "the graph"),
+        TrayPress::Review => (show_review_all(app), "the review page"),
+        TrayPress::FinishSetup => (show_welcome(app), "the welcome page"),
+        TrayPress::Settings => {
+            let section = app.try_state::<Attention>().and_then(|a| *a.0.lock().unwrap());
+            (show_settings(app, section), "the settings")
+        }
+        TrayPress::Quit => return app.exit(0),
+    };
+    if let Err(e) = shown {
+        tracing::error!(error = %e, "failed to open {what}");
+    }
 }
 
 /// Whether quitting the app stops the memory: only while the daemon is this app's own child, which
@@ -244,7 +261,7 @@ pub(crate) fn tray_act(
 const CLI_NEWER_LINE: &str = "supragnosis-server is newer than this app - update the app";
 
 /// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
-pub(crate) async fn refresh_status(app: &tauri::AppHandle) {
+pub(crate) async fn refresh_status(app: &tauri::AppHandle<Rt>) {
     heal_failed(app).await;
     refresh_apps(app).await;
     let (no_app, apps_need) =
@@ -252,7 +269,7 @@ pub(crate) async fn refresh_status(app: &tauri::AppHandle) {
     // "Finish Setup..." while the daemon or the AI apps are not set up (docs/onboarding.md
     // Section 6), from setup's own checklist. A CLI that predates setup offers nothing.
     let pid = spawned_pid(app);
-    let steps = tokio::task::spawn_blocking(move || setup_check_blocking(pid))
+    let steps = on_cli(app, move |c| setup_check_blocking(c, pid))
         .await
         .ok()
         .and_then(Result::ok)
@@ -260,7 +277,7 @@ pub(crate) async fn refresh_status(app: &tauri::AppHandle) {
     let finish = finish_setup_offered(read_prefs(app), steps);
     let mut tray = TrayState { finish, ..TrayState::default() };
     let mut repairing = false;
-    let st = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
+    let st = on_cli(app, cli_status).await.ok().flatten();
     if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
         // Said on the state line, with no act (design-system.md Section 29.13).
         tray.line = CLI_NEWER_LINE.to_string();
@@ -293,7 +310,7 @@ pub(crate) async fn refresh_status(app: &tauri::AppHandle) {
 /// The tray's menu and icon, and the app menu's Quit, from what the tray says (design-system.md
 /// Section 29.13). Built again only when it changed, in one fixed order: the state line, the act,
 /// Finish Setup..., the review item, Open Graph, Settings..., Quit.
-fn apply_tray(app: &tauri::AppHandle, t: &TrayState) {
+fn apply_tray(app: &tauri::AppHandle<Rt>, t: &TrayState) {
     let Some(kept) = app.try_state::<TrayKept>() else {
         return;
     };
@@ -306,7 +323,7 @@ fn apply_tray(app: &tauri::AppHandle, t: &TrayState) {
     }
     let name = app.package_info().name.clone();
     let quit = quit_label(t.quit_stops, &name);
-    let built = (|| -> tauri::Result<Menu<tauri::Wry>> {
+    let built = (|| -> tauri::Result<Menu<Rt>> {
         let menu = Menu::new(app)?;
         menu.append(&MenuItem::with_id(app, "tray-status", &t.line, false, None::<&str>)?)?;
         if let Some((words, _)) = t.act {

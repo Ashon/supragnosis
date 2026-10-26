@@ -6,11 +6,11 @@ use super::*;
 // --- The settings page (docs/settings-page.md) ---------------------------------------------
 
 /// Everything the settings window shows, gathered from the CLI in one pass.
-async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
+async fn settings_state_of(app: &tauri::AppHandle<Rt>) -> serde_json::Value {
     heal_failed(app).await;
     // Both CLI calls run at once; each is a process the other need not wait for.
-    let status = tokio::task::spawn_blocking(cli_status);
-    let connect = tokio::task::spawn_blocking(cli_connect_list);
+    let status = on_cli(app, cli_status);
+    let connect = on_cli(app, cli_connect_list);
     let (status, connect) = (status.await.ok().flatten(), connect.await.ok().flatten());
 
     // Sync is this Mac's daemon's (docs/settings-page.md Section 3.4): read from its viewer socket.
@@ -95,8 +95,8 @@ pub(crate) fn settings_state_json(
 
 #[tauri::command]
 pub(crate) async fn settings_state(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<serde_json::Value, String> {
     own_page_caller(&webview)?;
     Ok(settings_state_of(&app).await)
@@ -104,8 +104,8 @@ pub(crate) async fn settings_state(
 
 #[tauri::command]
 pub(crate) async fn login_set(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     on: bool,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
@@ -136,8 +136,8 @@ pub(crate) fn query_value(v: &str) -> String {
 /// read nothing". The daemon writes supragnosis.toml and answers what the peer now holds.
 #[tauri::command]
 pub(crate) async fn peer_narrow(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
     node: String,
     keep: Vec<String>,
 ) -> Result<String, String> {
@@ -173,8 +173,8 @@ pub(crate) async fn peer_narrow(
 
 #[tauri::command]
 pub(crate) async fn daemon_restart(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
@@ -183,8 +183,8 @@ pub(crate) async fn daemon_restart(
 
 #[tauri::command]
 pub(crate) async fn search_rebuild(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let sock = app.state::<VizSock>().0.clone();
@@ -193,7 +193,10 @@ pub(crate) async fn search_rebuild(
 
 /// "Copy log" and "Copy diagnostics": the page hands the text to the system clipboard.
 #[tauri::command]
-pub(crate) async fn clipboard_copy(webview: tauri::Webview, text: String) -> Result<(), String> {
+pub(crate) async fn clipboard_copy(
+    webview: tauri::Webview<Rt>,
+    text: String,
+) -> Result<(), String> {
     own_page_caller(&webview)?;
     use std::io::Write;
     let mut child = Command::new("pbcopy")
@@ -211,15 +214,15 @@ pub(crate) async fn clipboard_copy(webview: tauri::Webview, text: String) -> Res
 /// report. Both are read only, and neither carries the token.
 #[tauri::command]
 pub(crate) async fn diagnostics(
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let shell = shell_line(&app.state::<DaemonGuard>().0.lock().unwrap());
     let log = daemon_log();
     let log_text = std::fs::read_to_string(&log);
     let pid = spawned_pid(&app);
-    tokio::task::spawn_blocking(move || {
+    on_cli(&app, move |cli| {
         let args = setup_args(&["--check"], pid);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let text = |o: Option<std::process::Output>| {
@@ -230,8 +233,8 @@ pub(crate) async fn diagnostics(
             })
             .unwrap_or_else(cli_missing)
         };
-        let setup = text(run_cli(&args));
-        let status = text(run_cli(&["status", "--json"]));
+        let setup = text(cli.run(&args));
+        let status = text(cli.run(&["status", "--json"]));
         diagnostics_report(&shell, &args.join(" "), &setup, &status, &log, log_text)
     })
     .await
@@ -306,7 +309,7 @@ pub(crate) fn without_entry(text: &str) -> String {
 /// node's `supragnosis.toml` - and nothing a caller names. The caller is one of the app's own pages
 /// (S1).
 #[tauri::command]
-pub(crate) async fn reveal(webview: tauri::Webview, what: String) -> Result<(), String> {
+pub(crate) async fn reveal(webview: tauri::Webview<Rt>, what: String) -> Result<(), String> {
     own_page_caller(&webview)?;
     let path = reveal_target(&what)?;
     if !path.exists() {

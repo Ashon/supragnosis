@@ -378,11 +378,13 @@ Guarded by:
   `restart` run with `PATH` holding only a scripted launchctl that reports a conflict, and each
   exits 1 naming every manager and `--take-over`, with no verb but `list` run. Nothing on that
   `PATH` can reach the machine's own launchd, and the address points at a port nothing listens on.
-- `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: every CLI call in the app that can
-  stop a daemon, listed with the function it sits in, each reached from one command of the app's
-  pages.
+- `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: the app runs on Tauri's mock runtime
+  with a recorder in place of the CLI, against a login job, Homebrew's service, an update ready and
+  two managers. Its start, status beat, starting page and tray items ask the CLI only to read; a
+  call that stops a daemon comes only from the switch, Setup's Set up and Take over, Restart and
+  Rebuild index, each the one its click asks for.
 - `quitting_leaves_a_daemon_it_did_not_spawn` - L6: on exit the app reaps only the child it
-  spawned, and the exit path runs no CLI command.
+  spawned, and the exit, run with the recorder, asks the CLI nothing.
 
 Checked on this machine without changing it:
 - With a scratch stdio server holding a scratch store, `status --json` reported `store_held: true`,

@@ -170,7 +170,7 @@ pub(crate) fn resp(status: u16, ctype: &str, csp: &str, body: Vec<u8>) -> http::
 /// Tauri event (the webview side is the EventSource facade injected at init). Reconnects forever -
 /// the daemon may not be up yet, or may restart underneath us; the viewer also polls, so a lost
 /// frame degrades liveness, never correctness.
-pub(crate) async fn sse_bridge(app: tauri::AppHandle, sock: PathBuf) {
+pub(crate) async fn sse_bridge(app: tauri::AppHandle<Rt>, sock: PathBuf) {
     loop {
         if let Ok(mut s) = UnixStream::connect(&sock).await {
             if s.write_all(b"GET /api/events HTTP/1.1\r\n\r\n").await.is_ok() {

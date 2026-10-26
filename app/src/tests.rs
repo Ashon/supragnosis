@@ -3,6 +3,204 @@
 
 use super::*;
 
+/// The app on Tauri's mock runtime with a recorder in place of its CLI (cli.rs's `Cli`): every call
+/// the app makes to the CLI is written down, as its words joined by spaces, and answered as the
+/// test's [`Scene`] says. The recorder starts no process but a shell that prints what a streamed run
+/// is to print, and no daemon: its `serve` is written down and refused. Nothing reaches this Mac's
+/// daemon, its login job or the person's settings: the app's directories and the viewer socket are
+/// in a directory of the test's own.
+#[cfg(test)]
+pub(crate) mod fake {
+    use super::*;
+    use std::sync::Arc;
+
+    /// What the recorder answers. `status --json` says the login job's state (`service`) and the
+    /// managers it names; `connect --json` lists no app; setup's checklist has no step. Any other
+    /// call succeeds, or is refused with `refuse`, on stderr as the CLI writes a refusal.
+    #[derive(Clone)]
+    pub(crate) struct Scene {
+        pub(crate) service: &'static str,
+        pub(crate) managers: serde_json::Value,
+        pub(crate) running: &'static str,
+        pub(crate) refuse: Option<&'static str>,
+    }
+
+    /// A login job runs the daemon (`service install`'s, the canonical LaunchAgent).
+    pub(crate) fn login_job() -> Scene {
+        Scene {
+            service: "generated",
+            managers: serde_json::json!([{ "type": "launchd", "source": "canonical", "pid": 4242 }]),
+            running: "0.10.1",
+            refuse: None,
+        }
+    }
+
+    /// Homebrew's service runs the daemon, and no login job of the app's is installed.
+    pub(crate) fn homebrew() -> Scene {
+        Scene {
+            service: "absent",
+            managers: serde_json::json!([{ "type": "launchd", "source": "homebrew", "pid": 4343 }]),
+            ..login_job()
+        }
+    }
+
+    pub(crate) fn output(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    /// What a test runs at each call, with its words.
+    pub(crate) type AtCall = Box<dyn Fn(&str) + Send + Sync>;
+
+    pub(crate) struct Recorder {
+        scene: Scene,
+        calls: Mutex<Vec<String>>,
+        /// Run at each call, with its words, before it is answered.
+        pub(crate) at_call: Mutex<Option<AtCall>>,
+    }
+
+    impl Recorder {
+        /// The calls since the last `take`, in order.
+        pub(crate) fn take(&self) -> Vec<String> {
+            std::mem::take(&mut *self.calls.lock().unwrap())
+        }
+
+        fn record(&self, call: String) {
+            if let Some(f) = &*self.at_call.lock().unwrap() {
+                f(&call);
+            }
+            self.calls.lock().unwrap().push(call);
+        }
+
+        fn answer(&self, args: &[&str]) -> std::process::Output {
+            let s = &self.scene;
+            match args {
+                ["status", "--json"] => output(
+                    0,
+                    &serde_json::json!({
+                        "schema": 1,
+                        "situation": if s.managers.as_array().map_or(0, Vec::len) > 1 { "conflict" } else { "one" },
+                        "managers": s.managers,
+                        "service": { "state": s.service },
+                        "answering": true,
+                        "version": { "running": s.running, "here": "0.10.1" },
+                    })
+                    .to_string(),
+                    "",
+                ),
+                ["connect", "--json"] => output(0, r#"{"schema":1,"clients":[]}"#, ""),
+                ["setup", "--check", ..] => output(0, "{\"schema\":1}\n", ""),
+                _ => match s.refuse {
+                    Some(why) => output(1, "", &format!("\nError: {why}\n")),
+                    None => output(0, "done\n", ""),
+                },
+            }
+        }
+    }
+
+    impl Cli for Recorder {
+        fn run(&self, args: &[&str]) -> Option<std::process::Output> {
+            self.record(args.join(" "));
+            Some(self.answer(args))
+        }
+
+        fn stream(&self, args: &[String]) -> Result<Child, String> {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            self.record(args.join(" "));
+            let o = self.answer(&args);
+            Command::new("/bin/sh")
+                .args(["-c", "printf '%s' \"$1\"; printf '%s' \"$2\" >&2; exit \"$3\"", "sh"])
+                .arg(String::from_utf8_lossy(&o.stdout).as_ref())
+                .arg(String::from_utf8_lossy(&o.stderr).as_ref())
+                .arg(o.status.code().unwrap_or(1).to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())
+        }
+
+        fn serve(&self, _sock: &Path) -> anyhow::Result<(Child, PathBuf)> {
+            self.record("serve".into());
+            anyhow::bail!("the recorder starts no daemon")
+        }
+    }
+
+    /// The app, held for a test: its main window shows the Settings page.
+    pub(crate) struct Held {
+        pub(crate) app: tauri::App<Rt>,
+        pub(crate) cli: Arc<Recorder>,
+        pub(crate) sock: PathBuf,
+        dir: PathBuf,
+    }
+
+    pub(crate) fn app(daemon: Daemon, scene: Scene) -> Held {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("sg-app-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("viz.sock");
+        let cli =
+            Arc::new(Recorder { scene, calls: Mutex::new(Vec::new()), at_call: Mutex::new(None) });
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().app.app_directories_override =
+            Some(tauri::utils::config::AppDirectoriesOverride::Root(dir.clone()));
+        let app = tauri::test::mock_builder()
+            .manage(DaemonGuard(Mutex::new(daemon)))
+            .manage(RunningSteps(Mutex::new(std::collections::HashMap::new())))
+            .manage(VizSock(sock.clone()))
+            .manage(CliHeld(cli.clone()))
+            .build(context)
+            .unwrap();
+        WebviewWindowBuilder::new(&app, "main", WebviewUrl::External(settings_url()))
+            .build()
+            .unwrap();
+        Held { app, cli, sock, dir }
+    }
+
+    impl Held {
+        pub(crate) fn handle(&self) -> tauri::AppHandle<Rt> {
+            self.app.handle().clone()
+        }
+
+        /// The main window on the Settings page, as a click there calls a command.
+        pub(crate) fn page(&self) -> tauri::Webview<Rt> {
+            let w = self.app.get_webview_window("main").unwrap();
+            w.navigate(settings_url()).unwrap();
+            w.as_ref().clone()
+        }
+
+        /// The viewer socket answers from now on: a daemon is running. Each connection is closed at
+        /// once, so a read of the socket fails as fast as the attach succeeds.
+        pub(crate) fn answering(&self) {
+            serve_socket(&self.sock);
+        }
+
+        pub(crate) fn daemon(&self) -> std::sync::MutexGuard<'_, Daemon> {
+            self.app.state::<DaemonGuard>().inner().0.lock().unwrap()
+        }
+
+        pub(crate) fn run<T>(&self, f: impl std::future::Future<Output = T>) -> T {
+            tauri::async_runtime::block_on(f)
+        }
+    }
+
+    pub(crate) fn serve_socket(sock: &Path) {
+        let listener = std::os::unix::net::UnixListener::bind(sock).unwrap();
+        std::thread::spawn(move || listener.incoming().for_each(drop));
+    }
+
+    impl Drop for Held {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+}
+
 #[cfg(test)]
 mod src_tests {
     /// `SRC` is every module main.rs declares, in its order, then main.rs, and no test module: a
@@ -125,9 +323,13 @@ mod csp_tests {
 #[cfg(test)]
 mod status_text_tests {
     use super::{
-        app_row, cli_change, cli_outcome, cli_path, login_env_from_output, login_outcome,
-        read_login_env, status_text, Daemon,
+        app_row, app_toggle, capture_set, cli_change, cli_outcome, cli_path, daemon_restart,
+        diagnostics, login_env_from_output, login_outcome, login_set, peer_narrow, read_login_env,
+        refresh_status, search_rebuild, settings_state, setup_check, setup_run, setup_running,
+        setup_stop, splash_conflict, start_up, status_text, tray_pressed, welcome_set,
+        welcome_state, write_prefs, Daemon, TrayPress, WelcomePrefs, TRAY_IDS,
     };
+    use std::process::Command;
     use std::time::Duration;
 
     /// An AI app's row in the settings window says its state and labels its one button with what a
@@ -247,14 +449,6 @@ mod status_text_tests {
         }
     }
 
-    /// The body of `fn name(` in the app's source (`SRC`), to its closing brace at the start of a line.
-    fn source_of(name: &str) -> &'static str {
-        let src = super::SRC;
-        let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
-        let rest = &src[start..];
-        &rest[..rest.find("\n}\n").expect("it closes")]
-    }
-
     /// daemon-lifecycle.md L4: the app never discards the CLI's exit status. `cli_outcome` reads the
     /// status and the line that matters - the error on failure, past blank lines and the `Error:`
     /// prefix - and a refused Start at Login change is an error carrying that reason all the way to
@@ -280,9 +474,17 @@ mod status_text_tests {
         assert_eq!(login_outcome(false, Some(&ok)), Ok("starts at login".to_string()));
         assert_eq!(login_outcome(true, Some(&ok)), Ok("no longer starts at login".to_string()));
 
-        // The outcome reaches the page as it is: returned last, never re-wrapped as a success.
-        assert!(source_of("set_login").trim_end().ends_with("outcome"));
-        assert!(source_of("login_set").trim_end().ends_with("set_login(&app, sock, on).await"));
+        // The switch's command, against a CLI that refuses: the reason reaches the page as it is,
+        // never re-wrapped as a success, turning it on and off.
+        for (on, scene) in [(true, super::fake::homebrew()), (false, super::fake::login_job())] {
+            let held = super::fake::app(
+                Daemon::External,
+                super::fake::Scene { refuse: Some(why), ..scene },
+            );
+            held.answering();
+            let got = held.run(super::login_set(held.page(), held.handle(), on));
+            assert_eq!(got, Err(why.to_string()), "turning it {}", if on { "on" } else { "off" });
+        }
         let js = include_str!("../assets/settings.js");
         let switch = js.lines().find(|l| l.contains("\"login_set\"")).expect("the switch");
         assert!(
@@ -304,61 +506,184 @@ mod status_text_tests {
     }
 
     /// daemon-lifecycle.md L6: the app stops a daemon it did not spawn only on a person's act that
-    /// asks for it. Every CLI call that can stop a daemon is listed with the function it sits in -
-    /// the switch's `set_login`, Setup's `setup_run`, and `restart_daemon` and `rebuild_index`,
-    /// which bring it back - and each of those is reached from one command of the app's own pages,
-    /// which a click calls. A new call that stops a daemon fails this until it is added on purpose.
+    /// asks for it. Every way into the app runs here against a recorder in place of the CLI, with a
+    /// daemon a login job runs, one Homebrew's service runs, one whose update is ready and two
+    /// managers at once: the start, the status beat and the starting page's read in each state the
+    /// shell can hold, each tray item (Quit's end is the exit, `quitting_leaves_a_daemon_it_did_not_spawn`),
+    /// and every command of the app's pages but the three that act on the desktop and hold no CLI.
+    /// A call that stops a daemon - `stop`, `restart`, `service uninstall`, a `--take-over`, `embed
+    /// rebuild`, setup's server step - comes only from the Start at Login switch, Setup's Set up and
+    /// Take over, and Restart and Rebuild index, which bring it back, each the one its click asks
+    /// for. Everything else only reads (`status`, `connect`, setup's checklist) or starts the app's
+    /// own daemon. A beat that restarts a daemon whose update is ready, a start that takes over
+    /// Homebrew's service, a tray item that restarts rather than opening This Mac, or a command that
+    /// does more than its click asks fails this.
     #[test]
     fn only_the_persons_act_stops_a_daemon_it_did_not_spawn() {
-        let app = super::SRC;
-        let within = |at: usize| -> &str {
-            let head = app[..at]
-                .rfind("\nfn ")
-                .max(app[..at].rfind("\nasync fn "))
-                .max(app[..at].rfind("\npub(crate) fn "))
-                .max(app[..at].rfind("\npub(crate) async fn "))
-                .unwrap();
-            let name = &app[head..];
-            let name = &name[name.find("fn ").unwrap() + 3..];
-            &name[..name.find('(').unwrap()]
+        use super::fake::{self, Scene};
+        let stops = |c: &str| {
+            let w: Vec<&str> = c.split(' ').collect();
+            match w[0] {
+                "stop" | "restart" => true,
+                "service" => w.contains(&"uninstall") || w.contains(&"--take-over"),
+                "embed" => w.get(1) == Some(&"rebuild"),
+                "setup" => {
+                    !w.contains(&"--check")
+                        && !w.contains(&"model")
+                        && !w.iter().any(|a| a.starts_with("app="))
+                }
+                _ => false,
+            }
         };
-        let mut stops: Vec<(&str, &str)> = Vec::new();
-        for call in [
-            "\"service\", \"uninstall\"",
-            "\"--take-over\"",
-            "run_cli(&[\"restart\"",
-            "\"embed\", \"rebuild\"",
-            "\"--step\", \"server\"",
-            "&[\"stop\"",
-        ] {
-            for (at, _) in app.match_indices(call) {
-                stops.push((call, within(at)));
+        // What a way in asked of the CLI: every call but a read and the app's own `serve`.
+        let acts = |calls: Vec<String>| -> Vec<String> {
+            calls
+                .into_iter()
+                .filter(|c| {
+                    !matches!(c.as_str(), "status --json" | "connect --json" | "serve")
+                        && !c.starts_with("setup --check --events")
+                })
+                .collect()
+        };
+        let none: Vec<String> = Vec::new();
+        let failed = || Daemon::Failed("the daemon exited".into());
+        let two = serde_json::json!([
+            { "type": "launchd", "source": "canonical", "pid": 1 },
+            { "type": "launchd", "source": "homebrew", "pid": 2 },
+        ]);
+        let scenes = [
+            ("a login job", fake::login_job()),
+            ("Homebrew's service", fake::homebrew()),
+            ("an update ready", Scene { running: "0.9.0", ..fake::login_job() }),
+            ("two managers", Scene { managers: two, ..fake::login_job() }),
+        ];
+
+        // Nobody's act: the start, the beat, the starting page and the tray.
+        for (name, scene) in &scenes {
+            for answers in [true, false] {
+                let held = fake::app(Daemon::Starting, scene.clone());
+                if answers {
+                    held.answering();
+                }
+                let h = held.handle();
+                // A launch after the first, so the start asks setup whether a step waits.
+                write_prefs(&h, WelcomePrefs { seen: true, ..WelcomePrefs::default() }).unwrap();
+                held.run(start_up(h.clone(), held.sock.clone(), false));
+                // The reads are heard, so no act is not a recorder that heard nothing.
+                let calls = held.cli.take();
+                assert!(calls.iter().any(|c| c.starts_with("setup --check")), "{calls:?}");
+                assert_eq!(acts(calls), none, "the start, with {name}");
+                for daemon in [Daemon::External, failed(), Daemon::Starting] {
+                    *held.daemon() = daemon;
+                    held.run(refresh_status(&h));
+                    held.run(splash_conflict(&h));
+                    for (_, press) in TRAY_IDS.iter().filter(|(_, p)| *p != TrayPress::Quit) {
+                        tray_pressed(&h, *press);
+                    }
+                    let calls = held.cli.take();
+                    assert!(calls.iter().any(|c| c == "status --json"), "{calls:?}");
+                    assert_eq!(
+                        acts(calls),
+                        none,
+                        "the beat, the starting page or the tray, {name}"
+                    );
+                }
             }
         }
-        stops.sort();
-        let mut want = vec![
-            ("\"--step\", \"server\"", "setup_run"),
-            ("\"--take-over\"", "set_login"),
-            ("\"--take-over\"", "setup_run"),
-            ("\"embed\", \"rebuild\"", "rebuild_index"),
-            ("\"service\", \"uninstall\"", "set_login"),
-            ("run_cli(&[\"restart\"", "restart_daemon"),
-        ];
-        want.sort();
-        assert_eq!(stops, want, "every CLI call that can stop a daemon, where it sits");
 
-        // Each is reached only from the command a page's control calls.
-        for (helper, command) in [
-            ("set_login(&", "login_set"),
-            ("restart_daemon(&", "daemon_restart"),
-            ("rebuild_index(&", "search_rebuild"),
-        ] {
-            let callers: Vec<&str> = app.match_indices(helper).map(|(at, _)| within(at)).collect();
-            assert_eq!(callers, [command], "{helper} is called by {command} alone");
+        // The pages' commands, each against a daemon it did not spawn: what each asks of the CLI.
+        let run = |scene: Scene, daemon: Daemon, command: &str| -> Vec<String> {
+            let held = fake::app(daemon, scene);
+            held.answering();
+            let (h, page) = (held.handle(), held.page());
+            held.run(async {
+                let _ = match command {
+                    "settings_state" => settings_state(page, h).await.map(drop),
+                    "setup_check" => setup_check(page, h).await.map(drop),
+                    "setup_running" => setup_running(page, h).await.map(drop),
+                    "welcome_state" => welcome_state(page, h).await.map(drop),
+                    "welcome_set" => welcome_set(page, h, Some(true), Some(true)).await.map(drop),
+                    "diagnostics" => diagnostics(page, h).await.map(drop),
+                    "peer_narrow" => peer_narrow(page, h, "peer".into(), vec![]).await.map(drop),
+                    "setup_stop" => setup_stop(page, h, "model".into()).await.map(drop),
+                    "app_toggle" => app_toggle(page, h, "claude-code".into()).await.map(drop),
+                    "capture_set" => capture_set(page, h, false).await.map(drop),
+                    "login_set off" => login_set(page, h, false).await.map(drop),
+                    "login_set on" => login_set(page, h, true).await.map(drop),
+                    "daemon_restart" => daemon_restart(page, h).await.map(drop),
+                    "search_rebuild" => search_rebuild(page, h).await.map(drop),
+                    other => {
+                        let step = other.strip_prefix("setup_run ").expect("a page's command");
+                        setup_run(page, h, step.into(), None).await.map(drop)
+                    }
+                };
+            });
+            acts(held.cli.take())
+        };
+        // Each command, the scene it runs in, and what it asks of the CLI.
+        type Case = (&'static str, fn() -> Scene, &'static [&'static str]);
+        let commands: &[Case] = &[
+            ("settings_state", fake::login_job, &[]),
+            ("setup_check", fake::login_job, &[]),
+            ("setup_running", fake::login_job, &[]),
+            ("welcome_state", fake::login_job, &[]),
+            ("welcome_set", fake::login_job, &[]),
+            ("diagnostics", fake::login_job, &[]),
+            ("peer_narrow", fake::login_job, &[]),
+            ("setup_stop", fake::login_job, &[]),
+            ("app_toggle", fake::login_job, &["connect claude-code --replace"]),
+            ("capture_set", fake::login_job, &["connect claude-code --no-capture"]),
+            ("setup_run model", fake::login_job, &["setup --step model --events"]),
+            (
+                "setup_run app=claude-code",
+                fake::login_job,
+                &["setup --step app=claude-code --events"],
+            ),
+            ("login_set off", fake::login_job, &["service uninstall"]),
+            ("login_set on", fake::homebrew, &["service install --take-over"]),
+            ("daemon_restart", fake::homebrew, &["restart"]),
+            ("search_rebuild", fake::login_job, &["embed rebuild"]),
+            ("setup_run server", fake::homebrew, &["setup --step server --events"]),
+            (
+                "setup_run takeover",
+                fake::homebrew,
+                &["service install --take-over --no-model"],
+            ),
+        ];
+        let mut stoppers: Vec<&str> = Vec::new();
+        for (command, scene, want) in commands {
+            for daemon in [Daemon::External, failed()] {
+                assert_eq!(run(scene(), daemon, command), *want, "{command}");
+            }
+            if want.iter().any(|c| stops(c)) {
+                stoppers.push(command);
+            }
         }
-        for command in ["login_set", "daemon_restart", "search_rebuild", "setup_run"] {
-            assert!(crate::APP_COMMANDS.contains(&command), "{command} is a page's command");
-        }
+        let persons = [
+            "login_set off",
+            "login_set on",
+            "daemon_restart",
+            "search_rebuild",
+            "setup_run server",
+            "setup_run takeover",
+        ];
+        assert_eq!(stoppers, persons, "the acts that stop a daemon, each with what its click asks");
+        // The daemon this app spawned is its own to stop: a restart does that itself.
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        assert_eq!(run(fake::login_job(), Daemon::Spawned(child), "daemon_restart"), none);
+
+        // Every command the pages call ran here, but the clipboard's, Finder's and the other apps'
+        // helpers, which act on the desktop and hold no CLI.
+        let mut ran: Vec<&str> = commands
+            .iter()
+            .map(|(c, ..)| c.split(' ').next().unwrap())
+            .chain(["clipboard_copy", "reveal", "app_helper"])
+            .collect();
+        ran.sort();
+        ran.dedup();
+        let mut all = crate::APP_COMMANDS.to_vec();
+        all.sort();
+        assert_eq!(ran, all, "a command of the pages is not run here");
     }
 
     /// daemon-lifecycle.md L6: quitting the app never stops a launchd-managed daemon. On exit the app
@@ -374,40 +699,42 @@ mod status_text_tests {
         let mut reaped = super::reaped_on_exit(Daemon::Spawned(child)).expect("its own child");
         let _ = reaped.wait();
 
-        let src = super::SRC;
-        let exit = &src[src.find("RunEvent::Exit => {").expect("the exit arm")..];
-        let exit = &exit[..exit.find("\n            }\n").expect("it closes")];
-        assert!(exit.contains("reaped_on_exit(prev)"), "{exit}");
-        for acts in ["run_cli", "Command::new", "stop", "service"] {
-            assert!(!exit.contains(acts), "the exit path does not reach {acts}: {exit}");
+        // The exit itself, as the tray's Quit and the platform's end the app, with a recorder in
+        // place of the CLI: it asks the CLI nothing; and the child it spawned is gone after it.
+        for daemon in [Daemon::External, Daemon::Failed("x".into()), Daemon::Starting] {
+            let held = super::fake::app(daemon, super::fake::login_job());
+            super::on_exit(&held.handle());
+            assert_eq!(held.cli.take(), Vec::<String>::new(), "the exit runs the CLI");
         }
+        let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id().to_string();
+        let held = super::fake::app(Daemon::Spawned(child), super::fake::login_job());
+        super::on_exit(&held.handle());
+        assert_eq!(held.cli.take(), Vec::<String>::new(), "the exit runs the CLI");
+        let alive = std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!alive.success(), "the app's own daemon outlives the app");
     }
 
     /// settings-page.md S3: the page decides nothing the CLI or the daemon decides. Every command
-    /// the Settings page calls is in one list here, by what it is. A change runs the CLI - in the
-    /// command or the helper it calls - and a refusal is an `Err` carrying what the CLI said, which
-    /// the page shows. Stopping a peer's sharing is the one change that goes to the daemon's
-    /// narrow-only endpoint instead, and runs no CLI. The rest read, or act on the system rather
-    /// than a setting. A command the page starts calling fails this until it is placed.
+    /// the Settings page calls is in one list here, by what it is. A change runs the CLI, and
+    /// against a CLI that refuses it, the refusal is the command's error carrying what the CLI said,
+    /// which the page shows - setup's run says it as its `why`. Stopping a peer's sharing is the one
+    /// change that goes to the daemon's narrow-only endpoint instead, and runs no CLI. The rest read,
+    /// or act on the system rather than a setting. A command the page starts calling fails this
+    /// until it is placed.
     #[test]
     fn every_setting_change_is_a_cli_call() {
-        let app = super::SRC;
-        let body = |name: &str| -> &str {
-            let at = ["async fn ", "fn ", "pub(crate) async fn ", "pub(crate) fn "]
-                .iter()
-                .find_map(|k| app.find(&format!("\n{k}{name}(")))
-                .unwrap_or_else(|| panic!("no fn {name}"));
-            let rest = &app[at + 1..];
-            &rest[..rest.find("\n}\n").expect("it closes")]
-        };
-        // Each change, with the helpers its body reaches the CLI through.
-        let changes: &[(&str, &[&str])] = &[
-            ("app_toggle", &["toggle_app"]),
-            ("capture_set", &[]),
-            ("login_set", &["set_login", "login_outcome", "cli_change"]),
-            ("daemon_restart", &["restart_daemon"]),
-            ("search_rebuild", &["rebuild_index"]),
-            ("setup_run", &["run_streamed"]),
+        let changes = [
+            "app_toggle",
+            "capture_set",
+            "login_set",
+            "daemon_restart",
+            "search_rebuild",
+            "setup_run",
         ];
         let reads = ["settings_state", "setup_running", "diagnostics"];
         let system = ["clipboard_copy", "reveal", "app_helper", "setup_stop"];
@@ -424,32 +751,45 @@ mod status_text_tests {
         }
         called.sort();
         called.dedup();
-        let mut placed: Vec<&str> = changes.iter().map(|(c, _)| *c).collect();
+        let mut placed: Vec<&str> = changes.to_vec();
         placed.extend(reads);
         placed.extend(system);
         placed.push("peer_narrow");
         placed.sort();
         assert_eq!(called, placed, "every command the page calls, placed by what it is");
 
-        for (command, helpers) in changes {
-            let reach: String =
-                std::iter::once(*command).chain(helpers.iter().copied()).map(body).collect();
-            assert!(
-                reach.contains("run_cli(")
-                    || reach.contains("Command::new(bin)")
-                    || reach.contains("run_streamed("),
-                "{command} runs the CLI"
-            );
-            assert!(
-                reach.contains("cli_outcome")
-                    || reach.contains("cli_change")
-                    || reach.contains("restart_outcome(")
-                    || reach.contains("\"why\": (!status.success())"),
-                "{command}: a refusal carries what the CLI said"
-            );
+        use super::fake;
+        let why = "the CLI refused this on purpose";
+        let read = |c: &String| c == "status --json" || c == "connect --json";
+        for change in changes {
+            // The switch turns Start at Login on here, where no login job is installed.
+            let scene = if change == "login_set" { fake::homebrew() } else { fake::login_job() };
+            let held = fake::app(Daemon::External, fake::Scene { refuse: Some(why), ..scene });
+            held.answering();
+            let (h, page) = (held.handle(), held.page());
+            let got = held.run(async {
+                match change {
+                    "app_toggle" => app_toggle(page, h, "claude-code".into()).await,
+                    "capture_set" => capture_set(page, h, true).await,
+                    "login_set" => login_set(page, h, true).await,
+                    "daemon_restart" => daemon_restart(page, h).await,
+                    "search_rebuild" => search_rebuild(page, h).await,
+                    _ => setup_run(page, h, "model".into(), None).await.and_then(|o| {
+                        match (o["ok"].as_bool(), o["why"].as_str()) {
+                            (Some(false), Some(w)) => Err(w.to_string()),
+                            _ => Ok(o.to_string()),
+                        }
+                    }),
+                }
+            });
+            let err = got.expect_err(&format!("{change} says it was done"));
+            assert!(err.contains(why), "{change} drops what the CLI said: {err}");
+            assert!(!held.cli.take().iter().all(read), "{change} does not run the CLI");
         }
-        let narrow = body("peer_narrow");
-        assert!(narrow.contains("/api/peer/share") && !narrow.contains("run_cli("));
+        let held = fake::app(Daemon::External, fake::login_job());
+        let narrowed = held.run(peer_narrow(held.page(), held.handle(), "peer".into(), vec![]));
+        assert!(narrowed.is_err(), "no daemon answers here");
+        assert_eq!(held.cli.take(), Vec::<String>::new(), "stopping a peer's sharing runs the CLI");
     }
 
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
