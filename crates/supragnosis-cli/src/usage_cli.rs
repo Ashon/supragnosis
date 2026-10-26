@@ -36,7 +36,7 @@ pub(crate) struct HookUse {
     pub session_lines: u64,
     pub subagent_indexes: u64,
     pub commit_questions: u64,
-    /// Commit questions whose commit an `observe` in the window names as its source.
+    /// Commit questions, by commit, whose commit an `observe` in the window names as its source.
     pub answered_with_a_record: u64,
 }
 
@@ -55,7 +55,8 @@ pub(crate) struct Summary {
 /// Reads `--since` as milliseconds: `7d`, `12h`.
 pub(crate) fn since_millis(arg: &str) -> Result<u64> {
     let arg = arg.trim();
-    let (n, unit) = arg.split_at(arg.len().saturating_sub(1));
+    let cut = arg.char_indices().last().map_or(0, |(i, _)| i);
+    let (n, unit) = arg.split_at(cut);
     let n: u64 = n
         .parse()
         .with_context(|| format!("--since {arg:?} is not a number of days or hours (7d, 12h)"))?;
@@ -97,7 +98,6 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
                 }
                 "subagent_start" => sum.hook.subagent_indexes += u64::from(n > 0),
                 "commit_question" => {
-                    sum.hook.commit_questions += 1;
                     if let Some(c) = v["commit"].as_str() {
                         asked.insert(c.to_string());
                     }
@@ -129,7 +129,10 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
             _ => {}
         }
     }
-    // A commit question is answered when the record names the commit; a short id names the full one.
+    // Questions are counted by commit, since a second commit command within the minute asks about
+    // the same commit again. A question is answered when a record names the commit; a short id
+    // names the full one.
+    sum.hook.commit_questions = asked.len() as u64;
     sum.hook.answered_with_a_record = asked
         .iter()
         .filter(|q| recorded.iter().any(|r| q.starts_with(r.as_str()) || r.starts_with(q.as_str())))
@@ -205,8 +208,9 @@ pub(crate) fn usage_cmd(a: UsageArgs) -> Result<()> {
         .unwrap_or_else(config::default_viz_sock);
     let path = serve::usage_path(&sock);
     let since = supragnosis_core::now_millis().saturating_sub(since_millis(&a.since)?);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
+    // Read lossily: one torn line must not cost the rest of the file.
+    let text = match std::fs::read(&path) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             println!(
                 "nothing recorded yet at {} - the daemon writes it as apps call it",
@@ -248,6 +252,7 @@ mod tests {
             r#"{"t":1009,"kind":"hook","name":"subagent_start","workspace":"supragnosis","n":10,"of":90}"#,
             r#"{"t":1010,"kind":"hook","name":"commit_question","workspace":"supragnosis","commit":"abcdef1234aaaa"}"#,
             r#"{"t":1011,"kind":"hook","name":"commit_question","workspace":"supragnosis","commit":"9999999"}"#,
+            r#"{"t":1012,"kind":"hook","name":"commit_question","workspace":"supragnosis","commit":"9999999"}"#,
             "not json",
             r#"{"kind":"tool"}"#,
         ];
@@ -289,5 +294,6 @@ mod tests {
         assert_eq!(since_millis("7d").unwrap(), 7 * 86_400_000);
         assert_eq!(since_millis("12h").unwrap(), 12 * 3_600_000);
         assert!(since_millis("7w").is_err() && since_millis("d").is_err());
+        assert!(since_millis("7일").is_err(), "a multibyte unit is refused, not a panic");
     }
 }

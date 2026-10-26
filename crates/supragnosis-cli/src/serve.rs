@@ -252,8 +252,6 @@ pub(crate) async fn sigterm() {
     }
 }
 
-/// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
-/// apps talked to it, shared by every MCP session and read by the viewer's `/api/clients`.
 /// The usage log of the daemon's MCP surface (docs/usage.md), set once when the daemon serves HTTP
 /// with a viewer socket; a router built without it (a test's) records nothing.
 static USAGE: std::sync::OnceLock<Arc<supragnosis_mcp::UsageLog>> = std::sync::OnceLock::new();
@@ -264,6 +262,8 @@ pub(crate) fn usage_path(viz_sock: &str) -> std::path::PathBuf {
     std::path::Path::new(viz_sock).with_file_name("usage.jsonl")
 }
 
+/// First contact (docs/onboarding.md Section 5): the one log this daemon process keeps of which AI
+/// apps talked to it, shared by every MCP session and read by the viewer's `/api/clients`.
 pub(crate) fn client_log() -> Arc<supragnosis_mcp::ClientLog> {
     static LOG: std::sync::OnceLock<Arc<supragnosis_mcp::ClientLog>> = std::sync::OnceLock::new();
     LOG.get_or_init(Default::default).clone()

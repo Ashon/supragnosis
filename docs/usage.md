@@ -25,14 +25,14 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
 |---|---|
 | `t` | When, in milliseconds since the epoch |
 | `kind` | `tool`, `resource`, `prompt` or `hook` |
-| `name` | The MCP tool (`search_knowledge`), the resource's kind (`observation`, `entity`, `graph`, ...), the prompt (`brief`), or the hook's event (`session_start`, `subagent_start`, `commit_question`) |
+| `name` | The MCP tool (`search_knowledge`), the resource's kind (`observation`, `entity`, `graph`, ...), the prompt (`brief`), or the hook's event (`session_start`, `subagent_start`, `commit_question`); `unknown` for a tool or prompt the surface does not have, since that name is the caller's text |
 | `workspace` | The workspace the call named, as given (`*` included); absent when it named none |
 | `app` | The app's recorded name (`Claude Code`), absent for an app that gave none |
-| `outcome` | `ok`, `error`, `not_found` (an id that names nothing) or `empty` (a read that found nothing) |
-| `n` | How many it answered: hits, entities reached, rows, entities written; on a hook event, the index lines shown |
+| `outcome` | `ok`, `error`, `not_found` (an id `get_entity`, `get_proposal` or a resource read cannot find) or `empty` (a read that found nothing; `traverse` from an unknown id reads this way) |
+| `n` | How many it answered: hits, entities reached, rows, clusters, entities written; on a hook event, the index lines shown |
 | `of` | On a hook index, how many records the workspace holds |
 | `mode` | A search's mode, `hybrid` or `keyword` |
-| `commit` | On `observe` with a `git:` source and on a commit question, the commit id |
+| `commit` | On `observe` whose source is `git:` and 7 to 64 hex digits, and on a commit question, the commit id; any other source text is not kept |
 | `ms` | How long the daemon took to answer |
 
 - **The daemon writes** a line for every tool call, resource read and prompt it answers on its MCP
@@ -63,8 +63,9 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
 
 - calls by MCP function and workspace, with how many failed, found nothing or named nothing;
 - calls by app;
-- the hook: indexes given to sessions and subagents, commit questions, and how many of those were
-  followed by an `observe` of the same commit.
+- the hook: indexes given to sessions and subagents, commit questions counted by commit (a second
+  commit command within the minute asks about the same commit again), and how many of those
+  commits an `observe` names.
 
 `--since` takes a number with `d` or `h`, and defaults to 7 days; `--json` gives the same tables as
 data. A page in the app or the viewer is owed until the command shows what such a page would need.

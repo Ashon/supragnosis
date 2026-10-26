@@ -1766,12 +1766,14 @@ const CONSOLIDATION_REGISTRY: &[(u8, &[Clause])] = &[
         c("the committed weight consumes no node-local signal",
           Evidence::Structural(
             "`recall_weights(log, gates)` takes the observation log and the gate-grant fold and \
-             nothing else, and no port method records an access or a query - there is no usage \
-             telemetry anywhere in the system for a weight to consume")),
+             nothing else, and no port method records an access or a query; the daemon's usage log \
+             (usage.md) is a file beside the viewer's socket that no store or engine code reads, so \
+             no weight can consume it")),
         c("usage may re-rank only the already-exempt surfaces, layered after the converged ordering \
            and labelled by `mode`",
           Evidence::Deferred(
-            "M6 step 4 (consolidation.md Section 8) - no usage tracking and no re-rank layer exist; \
+            "M6 step 4 (consolidation.md Section 8) - no re-rank layer exists, and the usage log \
+             (usage.md) feeds no ranking; \
              `search` labels its `mode` today (hybrid_search_adds_semantic_recall), which is the \
              label the re-rank will reuse, but there is no re-rank for a case to catch leaking into \
              the keyword ordering")),

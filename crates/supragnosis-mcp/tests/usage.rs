@@ -68,6 +68,17 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     call("get_entity", json!({ "id": "ab".repeat(32) }))
         .await
         .expect("get_entity answers");
+    call("workspace_map", json!({ "workspace": "nowhere" }))
+        .await
+        .expect("the map answers");
+    let _ = call("no_such_tool", json!({})).await;
+    call(
+        "observe",
+        json!({ "workspace": "alpha", "content": "plain", "on_behalf_of": "quokka",
+                "source_ref": "git:not a commit but a sentence" }),
+    )
+    .await
+    .expect("observe answers");
     call("review", json!({ "proposal": "nope", "decision": "reject" }))
         .await
         .expect("review answers");
@@ -115,9 +126,12 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
         said,
         vec![
             line("tool", "observe", Some("alpha"), "ok"),
-            line("tool", "search_knowledge", Some("alpha"), said[1].3.as_str()),
-            line("tool", "search_knowledge", None, said[2].3.as_str()),
+            line("tool", "search_knowledge", Some("alpha"), "ok"),
+            line("tool", "search_knowledge", None, "ok"),
             line("tool", "get_entity", None, "not_found"),
+            line("tool", "workspace_map", Some("nowhere"), "empty"),
+            line("tool", "unknown", None, "error"),
+            line("tool", "observe", Some("alpha"), "ok"),
             line("tool", "review", None, "error"),
             line("resource", "observation", None, "ok"),
             line("resource", "graph", Some("alpha"), "ok"),
@@ -127,10 +141,19 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
         "{file}"
     );
     assert_eq!(lines[0]["commit"], "abc1234", "an observe from a commit names it");
-    assert!(lines[1]["n"].is_u64() && lines[1]["mode"] == "hybrid", "{}", lines[1]);
+    assert!(lines[6].get("commit").is_none(), "a source that is not a commit id is not kept");
+    assert!(lines[1]["n"].as_u64() > Some(0) && lines[1]["mode"] == "hybrid", "{}", lines[1]);
     assert!(lines.iter().all(|l| l["t"].is_u64() && l["ms"].is_u64()), "{file}");
-    for secret in ["zebra", "Zebra", obs_id.as_str(), "quokka", &"ab".repeat(32), &"cd".repeat(32)]
-    {
+    for secret in [
+        "zebra",
+        "Zebra",
+        obs_id.as_str(),
+        "quokka",
+        &"ab".repeat(32),
+        &"cd".repeat(32),
+        "no_such_tool",
+        "sentence",
+    ] {
         assert!(!file.contains(secret), "the usage log holds {secret:?}: {file}");
     }
     use std::os::unix::fs::PermissionsExt;
