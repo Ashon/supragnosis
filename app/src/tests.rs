@@ -662,7 +662,10 @@ mod welcome_tests {
 /// field read here that the CLI never sends fails here, and a field the CLI renames fails there.
 #[cfg(test)]
 mod window_tests {
-    use super::{attention_section, frame_on_a_screen, WindowFrame, MIN_WINDOW};
+    use super::{
+        attention_section, frame_on_a_screen, initial_frame, keep_view_pref_at, text_scale_of,
+        WindowFrame, MIN_WINDOW,
+    };
 
     /// design-system.md Section 29.14: a kept frame opens where it was while its title bar is on a
     /// screen now, and is forgotten otherwise; the window has a smallest size that keeps the Graph's
@@ -680,19 +683,55 @@ mod window_tests {
         assert_eq!(attention_section(Some("daemon"), true, false), Some("apps"));
         assert_eq!(attention_section(None, false, true), Some("daemon"), "repairing");
         assert_eq!(attention_section(None, false, false), None, "the last pane");
-        let src = super::SRC;
-        assert!(src.contains(".min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)"));
-        assert!(src.contains("Some(f) => builder.inner_size(f.w, f.h).position(f.x, f.y),"));
-        assert!(src.contains("None => builder.inner_size(1280.0, 860.0).center(),"));
-        assert!(
-            src.contains("keep_view_pref(app, \"text_scale\""),
-            "the text size overwrites the frame"
+
+        // The window opens where it was kept, no smaller than the smallest window and cut to the
+        // screen it opens on; with nothing kept, or a place on no screen, centred (None).
+        let kept = |x: f64, y: f64, w: f64, h: f64| serde_json::json!({ "window": { "x": x, "y": y, "w": w, "h": h } });
+        let frame = |x, y, w, h| Some(WindowFrame { x, y, w, h });
+        assert_eq!(
+            initial_frame(&kept(100.0, 50.0, 1280.0, 860.0), &screens),
+            frame(100.0, 50.0, 1280.0, 860.0)
         );
-        assert!(
-            src.contains("let tmp = path.with_extension(\"json.tmp\");")
-                && src.contains("std::fs::rename(&tmp, &path)"),
-            "a write cut short can lose both preferences"
+        assert_eq!(
+            initial_frame(&kept(100.0, 50.0, 300.0, 200.0), &screens),
+            frame(100.0, 50.0, MIN_WINDOW.0, MIN_WINDOW.1),
+            "a frame under the smallest window"
         );
+        assert_eq!(
+            initial_frame(&kept(1600.0, 0.0, 4000.0, 3000.0), &screens),
+            frame(1600.0, 0.0, 2560.0, 1440.0),
+            "a frame larger than its screen"
+        );
+        assert_eq!(initial_frame(&kept(5000.0, 50.0, 1280.0, 860.0), &screens), None);
+        assert_eq!(initial_frame(&serde_json::json!({ "text_scale": 1.5 }), &screens), None);
+        let cut = serde_json::json!({ "window": { "x": 1.0, "y": 2.0, "w": 900.0 } });
+        assert_eq!(initial_frame(&cut, &screens), None, "a frame cut short");
+
+        // The frame and the text size share one file: each is written beside the other, and the
+        // file is replaced whole, never written over, so a write cut short loses neither.
+        let dir = std::env::temp_dir().join(format!("sg-view-prefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("config").join("view.json");
+        let window = serde_json::json!({ "x": 100.0, "y": 50.0, "w": 1280.0, "h": 860.0 });
+        keep_view_pref_at(&path, "window", window).expect("written, its directory made");
+        let before = std::fs::File::open(&path).expect("the file as it was");
+        keep_view_pref_at(&path, "text_scale", serde_json::json!(1.25)).expect("written");
+        let read = || -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).expect("whole")
+        };
+        assert_eq!(text_scale_of(&read()), 1.25);
+        assert_eq!(initial_frame(&read(), &screens), frame(100.0, 50.0, 1280.0, 860.0));
+        let mut old = String::new();
+        std::io::Read::read_to_string(&mut &before, &mut old).unwrap();
+        let old: serde_json::Value = serde_json::from_str(&old).expect("the old file is whole");
+        assert!(old["text_scale"].is_null() && old["window"].is_object(), "written over: {old}");
+        assert!(!path.with_extension("json.tmp").exists(), "the temporary file is left");
+        std::fs::write(&path, "{\"window\": ").unwrap();
+        keep_view_pref_at(&path, "text_scale", serde_json::json!(9.0)).unwrap();
+        assert_eq!(text_scale_of(&read()), 2.0, "a broken file is replaced; the size held to 200%");
+        assert_eq!(text_scale_of(&serde_json::json!({})), 1.0);
+        let _ = std::fs::remove_dir_all(&dir);
+
         let js = include_str!("../assets/settings.js");
         assert!(!js.contains("text: \"General\""), "the sidebar still heads its one group");
         assert!(js.contains("text: appsWithEntry() + \" connected\""), "the count says no unit");
@@ -723,7 +762,11 @@ mod window_tests {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::{daemon_trouble, key_js, map_items_enabled, press_js, tray_act, Daemon};
+    use super::{
+        daemon_trouble, key_js, map_items_enabled, menu_item, press_js, quit_label, quit_stops,
+        shell_init_script, tray_act, tray_press, Daemon, MenuPress, TrayPress, MAP_CONTROLS,
+        MENU_ITEMS, TRAY_IDS,
+    };
 
     /// design-system.md Section 29.13 (D14, the author's list): the trouble shape shows while the
     /// memory cannot be used - could not start, stopped, two managers, the index - and not while it
@@ -805,47 +848,73 @@ mod tray_tests {
         assert!(key_js("[", true).contains("keysDlg") && !key_js("k", false).contains("keysDlg"));
     }
 
-    /// One id per item per menu: the tray's ids are its own, so a press does only its own act; and
-    /// the menu bar holds Setup..., Find, the map's commands and Help.
+    /// One id per item per menu: every press reaches both listeners, and each acts only on its own
+    /// ids, so the tray's and the menu bar's are apart and a press does only its own act; the menu
+    /// bar holds Setup..., Find, the map's commands and Help; Quit says it stops the memory while
+    /// the daemon is the app's own child; and the page reports the controls the map commands press.
     #[test]
     fn each_menu_item_has_its_own_id() {
-        let src = super::SRC;
-        let tray = &src[src.find("TrayIconBuilder::with_id(\"supragnosis\")").expect("the tray")..];
-        let tray = &tray[..tray.find(".build(app)?;").unwrap()];
-        for arm in [
-            "\"tray-open\"",
-            "\"tray-review\"",
-            "\"tray-finish-setup\"",
-            "\"tray-act\" | \"tray-settings\"",
-            "\"tray-quit\"",
-        ] {
-            assert!(tray.contains(arm), "the tray lacks {arm}");
+        let menu: Vec<&str> = MENU_ITEMS.iter().map(|m| m.0).collect();
+        let tray: Vec<&str> = TRAY_IDS.iter().map(|(id, _)| *id).collect();
+        for ids in [&menu, &tray] {
+            let mut once = ids.clone();
+            once.sort();
+            once.dedup();
+            assert_eq!(once.len(), ids.len(), "an id names two items: {ids:?}");
         }
-        assert!(
-            !tray.contains("\"review\" =>") && !tray.contains("\"settings\" =>"),
-            "the tray hears the menu bar's ids"
-        );
-        for id in [
-            "\"setup\"",
-            "\"edit-find\"",
-            "\"view-filters\"",
-            "\"view-back\"",
-            "\"help-docs\"",
-            "\"help-diagnostics\", \"Diagnostics...\"",
-            "\"help-issue\"",
-        ] {
-            assert!(src.contains(id), "the menu bar lacks {id}");
+        for id in &menu {
+            assert_eq!(tray_press(id), None, "the tray hears the menu bar's {id}");
         }
-        assert!(
-            src.contains("\"Quit and Stop Memory\".to_string()"),
-            "Quit does not say it stops the memory"
+        for id in &tray {
+            assert_eq!(menu_item(id), None, "the menu bar hears the tray's {id}");
+            assert!(tray_press(id).is_some(), "{id} does nothing");
+        }
+        assert_eq!(
+            tray_press("tray-act"),
+            Some(TrayPress::Settings),
+            "the act line opens Settings"
         );
+        assert_eq!(tray_press("tray-quit"), Some(TrayPress::Quit));
+        for (id, words) in [
+            ("setup", "Setup..."),
+            ("edit-find", "Find"),
+            ("view-filters", "Filters Panel"),
+            ("view-back", "Back"),
+            ("help-docs", "Supragnosis Documentation"),
+            ("help-diagnostics", "Diagnostics..."),
+            ("help-issue", "Report an Issue..."),
+        ] {
+            assert_eq!(menu_item(id).map(|m| m.1), Some(words), "the menu bar lacks {id}");
+        }
+        for (id, _) in map_items_enabled("viz://localhost/", &[]) {
+            assert_eq!(
+                menu_item(id).map(|m| m.3),
+                Some(MenuPress::Map),
+                "{id} is not a map command"
+            );
+        }
+
+        let mut spawned = Daemon::Spawned(std::process::Command::new("true").spawn().unwrap());
+        assert_eq!(quit_label(quit_stops(&spawned), "Supragnosis"), "Quit and Stop Memory");
+        if let Daemon::Spawned(c) = &mut spawned {
+            let _ = c.wait();
+        }
+        for other in [Daemon::Starting, Daemon::External, Daemon::Failed("x".into())] {
+            assert_eq!(quit_label(quit_stops(&other), "Supragnosis"), "Quit Supragnosis");
+        }
+
+        let list = serde_json::json!(MAP_CONTROLS).to_string();
         assert!(
-            src.contains("tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));"),
-            "Quit's words follow the wrong state"
+            shell_init_script().contains(&format!("controls: {list}")),
+            "the page is not given the list"
         );
-        let shell = include_str!("../assets/shell-init.js");
-        assert!(shell.contains("controls: [\"panelL\", \"panelR\", \"mapTab\", \"listBtn\", \"fit\", \"keysOpen\", \"keysDlg\"]"));
+        let all: Vec<String> = MAP_CONTROLS.iter().map(|c| c.to_string()).collect();
+        assert!(
+            map_items_enabled("viz://localhost/?workspace=w", &all)
+                .iter()
+                .all(|(_, on)| *on),
+            "a map command's control is not in the list"
+        );
     }
 }
 

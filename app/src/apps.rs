@@ -69,6 +69,25 @@ pub(crate) fn app_row(
     }
 }
 
+/// Claude Code's capture hook on its row: on or off while it is connected through the bridge and
+/// the listing says (client-connect.md 12.4); `None` otherwise, and the page then draws no switch.
+pub(crate) fn capture_of(report: Option<&serde_json::Value>) -> Option<bool> {
+    report
+        .filter(|r| r["entry"].as_str() == Some("bridge"))
+        .and_then(|r| r["capture"].as_str().filter(|c| *c == "on" || *c == "off"))
+        .map(|c| c == "on")
+}
+
+/// The CLI call the capture switch makes: `connect claude-code`, which adds the hook beside the
+/// bridge, and with `--no-capture` to remove the hook and keep the bridge (client-connect.md 12.4).
+pub(crate) fn capture_args(on: bool) -> Vec<&'static str> {
+    let mut args = vec!["connect", "claude-code"];
+    if !on {
+        args.push("--no-capture");
+    }
+    args
+}
+
 /// Re-reads which AI apps are connected, for the status line's hint while none is.
 pub(crate) async fn refresh_apps(app: &tauri::AppHandle) {
     let list = tokio::task::spawn_blocking(cli_connect_list).await.ok().flatten();
@@ -163,17 +182,8 @@ pub(crate) async fn capture_set(
     on: bool,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    let mut args = vec!["connect".to_string(), "claude-code".to_string()];
-    if !on {
-        args.push("--no-capture".into());
-    }
-    let out = tokio::task::spawn_blocking(move || {
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_cli(&args)
-    })
-    .await
-    .ok()
-    .flatten();
+    let args = capture_args(on);
+    let out = tokio::task::spawn_blocking(move || run_cli(&args)).await.ok().flatten();
     refresh_status(&app).await;
     match out {
         None => Err("supragnosis CLI not found".into()),

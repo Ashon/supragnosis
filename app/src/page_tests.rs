@@ -7,7 +7,7 @@ use super::*;
 mod settings_tests {
     use super::{
         cause_of, managed, manager_pid, own_page_ok, restart_outcome, settings_url, start_page,
-        starting_html, welcome_url, without_entry, Daemon, StartPage, APP_COMMANDS,
+        starting_html, welcome_url, without_entry, Daemon, RestartBy, StartPage, APP_COMMANDS,
     };
     use std::path::Path;
     use std::time::Duration;
@@ -192,10 +192,23 @@ mod settings_tests {
         let kill = rebuild.find("child.kill()").expect("the app's own daemon is stopped");
         let cli = rebuild.find("run_cli(&[\"embed\", \"rebuild\"])").expect("the CLI rebuilds");
         assert!(kill < cli, "the app's own daemon is stopped before the CLI resets its store");
-        assert!(
-            body(src, "async fn settings_state_of(").contains("\"embedder_conflict\": status"),
-            "the page is not told why the daemon cannot start"
-        );
+        // Settings is told why the daemon cannot start, in the CLI's own words, and nothing when
+        // it can.
+        let mut st: serde_json::Value = serde_json::from_str(include_str!(
+            "../../crates/supragnosis-cli/tests/fixtures/json/status.json"
+        ))
+        .unwrap();
+        st["situation"] = "one".into();
+        let fine = super::settings_state_json(&Daemon::External, Some(&st), None, None);
+        assert!(fine["daemon"]["embedder_conflict"].is_null(), "{}", fine["daemon"]);
+        let models = serde_json::json!({ "recorded": "hashing-256", "daemon": "<model>" });
+        st["embedder_conflict"] = models.clone();
+        let told = super::settings_state_json(&Daemon::External, Some(&st), None, None);
+        assert_eq!(told["daemon"]["embedder_conflict"], models, "the page is not told why");
+        assert_eq!(told["daemon"]["line"], "The search index needs rebuilding");
+        assert_ne!(fine["daemon"]["line"], told["daemon"]["line"]);
+        let unread = super::settings_state_json(&Daemon::Failed("x".into()), None, None, None);
+        assert!(unread["daemon"]["embedder_conflict"].is_null(), "a status not read says none");
 
         let js = include_str!("../assets/settings.js");
         let status = body(js, "function daemonStatus(");
@@ -431,21 +444,31 @@ mod settings_tests {
             assert!(!page.contains("starting the supragnosis daemon"), "the old heading is back");
         }
 
-        // The shell changes the page: it watches while the page is drawn and reloads when the daemon
-        // answers or the page should say something else, and forgets it once the graph is served.
-        let src = super::SRC;
-        let watch = &src[src.find("async fn watch_splash(").expect("watch_splash")..];
-        let watch = &watch[..watch.find("\n}\n").expect("it closes")];
-        assert!(watch.contains("Duration::from_secs(1)") && watch.contains("reload_viewer"));
-        assert!(
-            src.contains("if target == \"/\" {\n                                *SPLASH.lock().unwrap() = None;"),
-            "the graph's page does not end the watch"
-        );
+        // The shell changes the page: it looks every second while the page is drawn, and reloads
+        // when the daemon answers or the page should say something else.
+        assert_eq!(super::SPLASH_BEAT, Duration::from_secs(1));
+        let drawn = format!("{:?}|None", StartPage::Starting);
+        assert!(!super::splash_reloads(&drawn, false, &drawn), "a page that still holds");
+        assert!(super::splash_reloads(&drawn, true, &drawn), "the daemon answers");
+        let now = format!("{:?}|None", StartPage::StillStarting);
+        assert!(super::splash_reloads(&drawn, false, &now), "the page should say more");
 
-        // Restart of a failed daemon goes through `supragnosis restart` when a manager owns it.
-        assert!(src.contains(
-            "prev @ (Daemon::External | Daemon::Failed(_))\n            if matches!(prev, Daemon::External) || job =>"
-        ));
+        // A restart stops the app's own child; one a manager runs - attached, or failed while a
+        // manager owns it - goes through `supragnosis restart`; anything else is brought up again.
+        let mut child = std::process::Command::new("sleep").arg("5").spawn().unwrap();
+        let _ = child.kill();
+        let spawned = Daemon::Spawned(child);
+        for job in [false, true] {
+            assert_eq!(super::restart_by(&spawned, job), RestartBy::Kill);
+            assert_eq!(super::restart_by(&Daemon::External, job), RestartBy::Cli);
+            assert_eq!(super::restart_by(&Daemon::Starting, job), RestartBy::BringUp);
+        }
+        let failed = Daemon::Failed("x".into());
+        assert_eq!(super::restart_by(&failed, true), RestartBy::Cli, "a job owns it");
+        assert_eq!(super::restart_by(&failed, false), RestartBy::BringUp);
+        if let Daemon::Spawned(mut c) = spawned {
+            let _ = c.wait();
+        }
         assert!(managed(&serde_json::json!({"managers": [{"label": "launchd"}]})));
         assert!(!managed(&serde_json::json!({"managers": []})));
         assert!(!managed(&serde_json::json!({})));
@@ -465,18 +488,30 @@ mod settings_tests {
         ] {
             assert!(asked.contains(part), "Settings does not act on the page's ask: {part}");
         }
-        // Show in Finder shows one of two files, for the app's own pages only.
-        let reveal = &src[src.find("async fn reveal(").expect("reveal")..];
-        let reveal = &reveal[..reveal.find("\n}\n").expect("it closes")];
-        assert!(reveal.contains("own_page_caller(&webview)?;"));
-        assert!(reveal.contains("\"log\" => daemon_log(),") && reveal.contains("\"config\" =>"));
-        assert!(reveal.contains("other => return Err("));
+        // Show in Finder shows one of two files, and nothing a caller names; the caller check is
+        // every command's (every_command_checks_its_caller_first).
+        assert_eq!(super::reveal_target("log"), Ok(super::daemon_log()));
+        let config = super::reveal_target("config").unwrap();
+        assert!(config.ends_with(".supragnosis/supragnosis.toml"), "{}", config.display());
+        for other in ["", "Log", "token", "../supragnosis.toml", "/etc/hosts"] {
+            assert!(super::reveal_target(other).is_err(), "{other:?} is shown");
+        }
         assert!(APP_COMMANDS.contains(&"reveal"));
         assert!(include_str!("../capabilities/settings.json").contains("\"allow-reveal\""));
-        // Diagnostics carries the shell's status and the log's last lines; This Mac shows the log.
-        let diag = &src[src.find("async fn diagnostics(").expect("diagnostics")..];
-        let diag = &diag[..diag.find("\n}\n").expect("it closes")];
-        assert!(diag.contains("status_line()") && diag.contains("tail -n 40"));
+
+        // Diagnostics carries the shell's state, a failure's reason whole, and the log's last 40
+        // lines, or why the log was not read; This Mac shows the log.
+        let why = "store locked - full log: ~/.supragnosis/log/app-daemon.err.log";
+        let shell = super::shell_line(&Daemon::Failed(why.into()));
+        assert_eq!(shell, format!("Could not start: Store locked. ({why})"));
+        let lines: Vec<String> = (1..=50).map(|n| format!("L{n:02}")).collect();
+        let report = |text| super::diagnostics_report(&shell, "setup", "", "{}", log, text);
+        let read = report(Ok(lines.join("\n")));
+        assert!(read.contains(&shell) && read.contains("\n$ supragnosis status --json\n{}\n"));
+        let tail = &read[read.find("$ tail -n 40 ").expect("the log's heading")..];
+        assert!(tail.ends_with(&lines[10..].join("\n")) && !tail.contains("L10"), "{tail}");
+        let gone = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(report(Err(gone)).ends_with("(not read: entity not found)"));
         assert!(js.contains("id: \"copyDiagnostics\"") && js.contains("\"data-k\": \"log\""));
     }
 
@@ -539,11 +574,52 @@ mod settings_tests {
                 && out.contains("not json")
         );
         assert!(out.ends_with('\n'));
-        let src = super::SRC;
-        let diag = &src[src.find("async fn diagnostics(").expect("diagnostics")..];
-        assert!(
-            diag[..diag.find("\n}\n").unwrap()].contains("without_entry(&text(run_cli(&args)))")
-        );
+
+        // The report Copy Diagnostics copies holds none of the entry, from setup's output as the
+        // CLI's example has it and from one whose entry is named on more than one line.
+        let example =
+            include_str!("../../crates/supragnosis-cli/tests/fixtures/json/setup-events.jsonl");
+        let entry = example
+            .lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .find(|e| e["step"] == "first" && e["state"] == "done")
+            .expect("the example records an entry");
+        let (quote, entity) = (entry["quote"].as_str().unwrap(), entry["entity"].as_str().unwrap());
+        let ours = [
+            r#"{"schema":1}"#,
+            r#"{"step":"first","state":"working","say":"Waiting.","quote":"Nadir \"Q\" signs the lease","app":"Zebra Agent","entity":"ent-7f3a"}"#,
+            "{\"step\":\"first\",\"id\":\"wing-b\",\"state\":\"done\",\"say\":\"An entry is in \\\"wing-b\\\", from Zebra Agent.\",\"quote\":\"Nadir \\\"Q\\\" signs the lease\",\"app\":\"Zebra Agent\",\"entity\":\"ent-7f3a\"}\r",
+            "Error: not json, kept",
+        ]
+        .join("\n");
+        let log = Path::new(LOG);
+        for (setup, gone) in [
+            (example, vec![quote, entity, "billing", "row locks"]),
+            (ours.as_str(), vec!["Nadir", "signs the lease", "Zebra", "ent-7f3a", "wing-b"]),
+        ] {
+            let report = super::diagnostics_report(
+                "Running",
+                "setup --check",
+                setup,
+                "{}",
+                log,
+                Ok(String::new()),
+            );
+            for word in gone {
+                assert!(!report.contains(word), "the report carries {word:?}:\n{report}");
+            }
+            for line in report.lines() {
+                if let Ok(serde_json::Value::Object(e)) = serde_json::from_str(line) {
+                    for k in ["quote", "app", "entity"] {
+                        assert!(!e.contains_key(k), "a line keeps {k}: {line}");
+                    }
+                }
+            }
+            assert!(report.contains("An entry is in the store."), "{report}");
+        }
+        let report =
+            super::diagnostics_report("Running", "setup", &ours, "{}", log, Ok(String::new()));
+        assert!(report.contains("Error: not json, kept") && report.contains("\"Waiting.\""));
     }
 
     /// docs/design-system.md U19: a page that draws itself again keeps the control that had focus.
@@ -689,7 +765,6 @@ mod settings_tests {
     fn the_third_pass_defects_on_the_apps_pages() {
         let css = include_str!("../assets/settings.css");
         let welcome = include_str!("../assets/welcome.css");
-        let main = super::SRC;
         assert!(
             css.contains(":where(input[type=\"checkbox\"], input[type=\"radio\"]) { accent-color: var(--accent); }"),
             "a checkbox can take the system's blue beside a gold one"
@@ -702,16 +777,30 @@ mod settings_tests {
             welcome.contains("max-width: 34em"),
             "the privacy line runs past a reading width"
         );
-        let splash: Vec<&str> = main
-            .split("r#\"<!doctype html>")
-            .skip(1)
-            .map(|page| &page[..page.find("</body>").expect("a splash ends its body")])
-            .collect();
-        assert_eq!(splash.len(), 1, "the shell authors one splash page");
-        for page in splash {
+        // Every starting page is drawn in the reading face, and only the log's path, a field, in
+        // the mono one.
+        let conflict = ("a".to_string(), "b".to_string());
+        let pages = [
+            (StartPage::Starting, None),
+            (StartPage::StillStarting, None),
+            (StartPage::Failed("Port in use.".into()), None),
+            (StartPage::Stopped, None),
+            (StartPage::Stopped, Some(&conflict)),
+        ];
+        for (page, conflict) in pages {
+            let html = starting_html(&page, conflict, &settings_url(), Path::new(LOG));
+            let body = &html[html.find("<body").expect("a body")..];
+            let body = &body[..body.find('>').unwrap()];
+            assert!(body.contains("font:13px/1.5 'Pretendard Variable'"), "{page:?}: {body}");
+            let rest = match html.find("<input") {
+                Some(at) => {
+                    html[..at].to_string() + &html[at + html[at..].find('>').unwrap() + 1..]
+                }
+                None => html.clone(),
+            };
             assert!(
-                !page.contains("monospace") && !page.contains("#7b8494"),
-                "a splash keeps the old look"
+                !rest.contains("monospace") && !html.contains("#7b8494"),
+                "{page:?}: a splash keeps the old look"
             );
         }
     }
@@ -906,14 +995,40 @@ mod settings_tests {
             include_str!("../assets/kit.js").contains("for (const c of children.flat(Infinity)) {"),
             "a nested list of children is turned into text"
         );
-        let main = super::SRC;
-        let at = main.find("async fn capture_set(").expect("capture_set");
-        let body = &main[at..at + main[at..].find("\n}\n").expect("it closes")];
-        assert!(body.contains("\"--no-capture\"") && body.contains("\"claude-code\""));
-        assert!(
-            main.contains(".filter(|r| r[\"entry\"].as_str() == Some(\"bridge\"))"),
-            "capture is read from a row not bridged"
-        );
+        assert_eq!(super::capture_args(true), ["connect", "claude-code"]);
+        assert_eq!(super::capture_args(false), ["connect", "claude-code", "--no-capture"]);
+        // The switch's state is read from a bridged row only: the CLI's example has Claude Code
+        // over HTTP with its hook off, which draws no switch.
+        let row = |entry: &str, capture: serde_json::Value| serde_json::json!({ "id": "claude-code", "installed": true, "entry": entry, "capture": capture });
+        assert_eq!(super::capture_of(Some(&row("bridge", "on".into()))), Some(true));
+        assert_eq!(super::capture_of(Some(&row("bridge", "off".into()))), Some(false));
+        for (entry, capture) in [("http", "on"), ("stdio", "off"), ("none", "on"), ("bridge", "x")]
+        {
+            assert_eq!(
+                super::capture_of(Some(&row(entry, capture.into()))),
+                None,
+                "{entry} {capture}"
+            );
+        }
+        assert_eq!(super::capture_of(Some(&row("bridge", serde_json::Value::Null))), None);
+        assert_eq!(super::capture_of(None), None);
+        let connect: serde_json::Value = serde_json::from_str(include_str!(
+            "../../crates/supragnosis-cli/tests/fixtures/json/connect.json"
+        ))
+        .unwrap();
+        let state = super::settings_state_json(&Daemon::Starting, None, Some(&connect), None);
+        let apps = state["apps"].as_array().unwrap();
+        let code = apps.iter().find(|a| a["id"] == "claude-code").expect("Claude Code's row");
+        assert!(code["capture"].is_null(), "capture is read from a row not bridged: {code}");
+        let mut bridged = connect.clone();
+        for r in bridged["clients"].as_array_mut().unwrap() {
+            if r["id"] == "claude-code" {
+                r["entry"] = "bridge".into();
+            }
+        }
+        let state = super::settings_state_json(&Daemon::Starting, None, Some(&bridged), None);
+        let code = state["apps"].as_array().unwrap().iter().find(|a| a["id"] == "claude-code");
+        assert_eq!(code.unwrap()["capture"], false, "the bridged row's switch reads its hook");
     }
 
     /// Settings > About names where the source lives, and its hint points there for the dependency

@@ -153,16 +153,25 @@ pub(crate) fn splash_drawn(app: &tauri::AppHandle, sock: PathBuf, key: String) {
     }
 }
 
+/// How often the watch looks again while a starting page is drawn.
+pub(crate) const SPLASH_BEAT: Duration = Duration::from_secs(1);
+
+/// Whether the watch reloads the window on its beat: when the daemon answers - the graph then - or
+/// when the page would now say something else than the one `drawn`.
+pub(crate) fn splash_reloads(drawn: &str, answering: bool, now: &str) -> bool {
+    answering || now != drawn
+}
+
 async fn watch_splash(app: tauri::AppHandle, sock: PathBuf) {
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(SPLASH_BEAT).await;
         let Some(drawn) = SPLASH.lock().unwrap().clone() else {
             return;
         };
         let answering = UnixStream::connect(&sock).await.is_ok();
         heal_failed(&app).await;
         let now = splash_key(&app, splash_conflict().await.as_ref());
-        if answering || now != drawn {
+        if splash_reloads(&drawn, answering, &now) {
             *SPLASH.lock().unwrap() = None;
             reload_viewer(&app);
             return;

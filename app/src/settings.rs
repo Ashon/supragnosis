@@ -13,25 +13,6 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
     let connect = tokio::task::spawn_blocking(cli_connect_list);
     let (status, connect) = (status.await.ok().flatten(), connect.await.ok().flatten());
 
-    let reports = connect.as_ref().and_then(|l| l["clients"].as_array().cloned());
-    let apps: Vec<serde_json::Value> = AI_APPS
-        .iter()
-        .map(|(id, name)| {
-            let report = reports
-                .as_ref()
-                .and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)).cloned());
-            let (state, action, kind) = app_row(report.as_ref());
-            // Claude Code's capture hook, while it is connected through the bridge and the listing
-            // says (client-connect.md 12.4); null otherwise, and the page then draws no switch.
-            let capture = report
-                .as_ref()
-                .filter(|r| r["entry"].as_str() == Some("bridge"))
-                .and_then(|r| r["capture"].as_str().filter(|c| *c == "on" || *c == "off"))
-                .map(|c| c == "on");
-            serde_json::json!({ "id": id, "name": name, "state": state, "action": action, "kind": kind, "capture": capture })
-        })
-        .collect();
-
     // Sync is this Mac's daemon's (docs/settings-page.md Section 3.4): read from its viewer socket.
     let sock = app.state::<VizSock>().0.clone();
     let federation =
@@ -44,23 +25,39 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             _ => None,
         };
     let guard = app.state::<DaemonGuard>();
-    let (line, who, shell, cause) = {
-        let mut daemon = guard.0.lock().unwrap();
-        settle_exited(&mut daemon);
-        let who = status.as_ref().map(|st| who_runs(&daemon, st));
-        // The shell's own state as a field, so no page parses the tray's words (Section 29.6).
-        let (shell, cause) = match &*daemon {
-            Daemon::Starting => ("starting", None),
-            Daemon::Failed(e) => ("failed", Some(cause_of(e))),
-            Daemon::Spawned(_) => ("spawned", None),
-            Daemon::External => ("attached", None),
-        };
-        (status_text(&daemon, status.as_ref()), who, shell, cause)
+    let mut daemon = guard.0.lock().unwrap();
+    settle_exited(&mut daemon);
+    settings_state_json(&daemon, status.as_ref(), connect.as_ref(), federation)
+}
+
+/// The settings page's state from what was gathered: the shell's daemon, `status --json`,
+/// `connect --json` and the daemon's sync report, each `None` when it did not answer.
+pub(crate) fn settings_state_json(
+    daemon: &Daemon,
+    status: Option<&serde_json::Value>,
+    connect: Option<&serde_json::Value>,
+    federation: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let reports = connect.and_then(|l| l["clients"].as_array());
+    let apps: Vec<serde_json::Value> = AI_APPS
+        .iter()
+        .map(|(id, name)| {
+            let report = reports.and_then(|rs| rs.iter().find(|r| r["id"].as_str() == Some(id)));
+            let (state, action, kind) = app_row(report);
+            let capture = capture_of(report);
+            serde_json::json!({ "id": id, "name": name, "state": state, "action": action, "kind": kind, "capture": capture })
+        })
+        .collect();
+    let who = status.map(|st| who_runs(daemon, st));
+    // The shell's own state as a field, so no page parses the tray's words (Section 29.6).
+    let (shell, cause) = match daemon {
+        Daemon::Starting => ("starting", None),
+        Daemon::Failed(e) => ("failed", Some(cause_of(e))),
+        Daemon::Spawned(_) => ("spawned", None),
+        Daemon::External => ("attached", None),
     };
-    let login = status
-        .as_ref()
-        .and_then(|v| v["service"]["state"].as_str())
-        .map(|s| s != "absent");
+    let line = status_text(daemon, status);
+    let login = status.and_then(|v| v["service"]["state"].as_str()).map(|s| s != "absent");
     serde_json::json!({
         "cli": find_server_bin().is_some(),
         "cli_newer": CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed),
@@ -70,17 +67,17 @@ async fn settings_state_of(app: &tauri::AppHandle) -> serde_json::Value {
             "who": who,
             "shell": shell,
             "cause": cause,
-            "situation": status.as_ref().map(|v| v["situation"].clone()),
-            "answering": status.as_ref().map(|v| v["answering"].clone()),
-            "running": status.as_ref().map(|v| v["version"]["running"].clone()),
-            "installed": status.as_ref().map(|v| v["version"]["here"].clone()),
-            "store": status.as_ref().map(|v| v["store"].clone()),
+            "situation": status.map(|v| v["situation"].clone()),
+            "answering": status.map(|v| v["answering"].clone()),
+            "running": status.map(|v| v["version"]["running"].clone()),
+            "installed": status.map(|v| v["version"]["here"].clone()),
+            "store": status.map(|v| v["store"].clone()),
             // The daemon's own report on search by meaning (docs/onboarding.md Section 6): null when
             // it runs without a model or does not answer.
-            "semantic": status.as_ref().map(|v| v["semantic"].clone()),
+            "semantic": status.map(|v| v["semantic"].clone()),
             // A store the daemon cannot open for its model (docs/settings-page.md Section 3.3): the
             // two models, or null.
-            "embedder_conflict": status.as_ref().map(|v| v["embedder_conflict"].clone()),
+            "embedder_conflict": status.map(|v| v["embedder_conflict"].clone()),
             "login": login,
             // The daemon's log, as a person types it (design-system.md Section 29.5).
             "log": tilde(&daemon_log()),
@@ -218,30 +215,9 @@ pub(crate) async fn diagnostics(
     app: tauri::AppHandle,
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
-    // The shell's own state and the daemon log's last lines: what a failed start leaves, which the
-    // CLI's reads cannot say (design-system.md Section 29.5). The log names the token by its path only.
-    let guard = app.state::<DaemonGuard>();
-    let shell = {
-        let d = guard.0.lock().unwrap();
-        // The tray's words, and a failure's reason whole - the log path included.
-        match &*d {
-            Daemon::Failed(e) => format!("{} ({e})", d.status_line()),
-            other => other.status_line(),
-        }
-    };
+    let shell = shell_line(&app.state::<DaemonGuard>().0.lock().unwrap());
     let log = daemon_log();
-    let tail = std::fs::read_to_string(&log)
-        .map(|t| {
-            t.lines()
-                .rev()
-                .take(40)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_else(|e| format!("(not read: {e})"));
+    let log_text = std::fs::read_to_string(&log);
     let pid = spawned_pid(&app);
     tokio::task::spawn_blocking(move || {
         let args = setup_args(&["--check"], pid);
@@ -254,19 +230,49 @@ pub(crate) async fn diagnostics(
             })
             .unwrap_or_else(cli_missing)
         };
-        format!(
-            "supragnosis app {}\n{}\n\n$ supragnosis {}\n{}\n$ supragnosis status --json\n{}\n\n$ tail -n 40 {}\n{}",
-            env!("CARGO_PKG_VERSION"),
-            shell,
-            args.join(" "),
-            without_entry(&text(run_cli(&args))),
-            text(run_cli(&["status", "--json"])),
-            tilde(&log),
-            tail,
-        )
+        let setup = text(run_cli(&args));
+        let status = text(run_cli(&["status", "--json"]));
+        diagnostics_report(&shell, &args.join(" "), &setup, &status, &log, log_text)
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// The shell's own state for a report: the tray's words, and a failure's reason whole - the log
+/// path included.
+pub(crate) fn shell_line(d: &Daemon) -> String {
+    match d {
+        Daemon::Failed(e) => format!("{} ({e})", d.status_line()),
+        other => other.status_line(),
+    }
+}
+
+/// The report Copy Diagnostics copies: the app's version and the shell's own state; setup's
+/// checklist (`setup` is its output, run as `supragnosis {setup_cmd}`) without the first entry; the
+/// CLI's `status --json`; and the daemon log's last 40 lines, or why it was not read. The shell's
+/// state and the log say what a failed start leaves, which the CLI's reads cannot (design-system.md
+/// Section 29.5); the log names the token by its path only.
+pub(crate) fn diagnostics_report(
+    shell: &str,
+    setup_cmd: &str,
+    setup: &str,
+    status: &str,
+    log: &Path,
+    log_text: std::io::Result<String>,
+) -> String {
+    let tail = match log_text {
+        Ok(t) => {
+            let lines: Vec<&str> = t.lines().collect();
+            lines[lines.len().saturating_sub(40)..].join("\n")
+        }
+        Err(e) => format!("(not read: {e})"),
+    };
+    format!(
+        "supragnosis app {}\n{shell}\n\n$ supragnosis {setup_cmd}\n{}\n$ supragnosis status --json\n{status}\n\n$ tail -n 40 {}\n{tail}",
+        env!("CARGO_PKG_VERSION"),
+        without_entry(setup),
+        tilde(log),
+    )
 }
 
 /// The checklist's lines as a report copies them: each event without the first entry's words, the
@@ -302,11 +308,7 @@ pub(crate) fn without_entry(text: &str) -> String {
 #[tauri::command]
 pub(crate) async fn reveal(webview: tauri::Webview, what: String) -> Result<(), String> {
     own_page_caller(&webview)?;
-    let path = match what.as_str() {
-        "log" => daemon_log(),
-        "config" => home().join(".supragnosis/supragnosis.toml"),
-        other => return Err(format!("nothing to show called {other:?}")),
-    };
+    let path = reveal_target(&what)?;
     if !path.exists() {
         return Err(format!("{} does not exist yet", tilde(&path)));
     }
@@ -318,5 +320,15 @@ pub(crate) async fn reveal(webview: tauri::Webview, what: String) -> Result<(), 
         Ok(s) if s.success() => Ok(()),
         Ok(s) => Err(format!("the file manager did not open ({s})")),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+/// The file Show in Finder shows for `what`: the daemon's log or the node's configuration, and an
+/// error for any other name.
+pub(crate) fn reveal_target(what: &str) -> Result<PathBuf, String> {
+    match what {
+        "log" => Ok(daemon_log()),
+        "config" => Ok(home().join(".supragnosis/supragnosis.toml")),
+        other => Err(format!("nothing to show called {other:?}")),
     }
 }

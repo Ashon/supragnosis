@@ -10,6 +10,48 @@ pub(crate) struct TrayKept(pub(crate) Mutex<Option<TrayState>>);
 /// The app menu's Quit, whose words follow the tray's (D15).
 pub(crate) struct AppQuit(pub(crate) PredefinedMenuItem<tauri::Wry>);
 
+/// What a press of one of the tray's items does (design-system.md Section 29.13).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum TrayPress {
+    OpenGraph,
+    Review,
+    FinishSetup,
+    /// The act line and Settings... open the section that needs attention.
+    Settings,
+    Quit,
+}
+
+/// The tray's items that act, by id. Every menu event reaches the tray's listener, which acts only
+/// on these; none is the menu bar's, so a press does only its own act.
+pub(crate) const TRAY_IDS: &[(&str, TrayPress)] = &[
+    ("tray-act", TrayPress::Settings),
+    ("tray-finish-setup", TrayPress::FinishSetup),
+    ("tray-review", TrayPress::Review),
+    ("tray-open", TrayPress::OpenGraph),
+    ("tray-settings", TrayPress::Settings),
+    ("tray-quit", TrayPress::Quit),
+];
+
+/// The press the tray's item `id` makes; `None` for any other id, the menu bar's among them.
+pub(crate) fn tray_press(id: &str) -> Option<TrayPress> {
+    TRAY_IDS.iter().find(|(i, _)| *i == id).map(|(_, p)| *p)
+}
+
+/// Whether quitting the app stops the memory: only while the daemon is this app's own child, which
+/// lives as long as the app does (daemon-lifecycle.md L6).
+pub(crate) fn quit_stops(daemon: &Daemon) -> bool {
+    matches!(daemon, Daemon::Spawned(_))
+}
+
+/// Quit's words, the tray's and the app menu's (D15): they say it stops the memory when it does.
+pub(crate) fn quit_label(stops: bool, name: &str) -> String {
+    if stops {
+        "Quit and Stop Memory".to_string()
+    } else {
+        format!("Quit {name}")
+    }
+}
+
 /// Whether no AI app is connected yet, the state a new user is in (docs/client-connect.md Section 5):
 /// the tray's act line asks to connect one. And whether any app's row needs the person - an entry
 /// other than the bridge, or settings that could not be read - which marks AI apps (Section 29.14).
@@ -235,7 +277,7 @@ pub(crate) async fn refresh_status(app: &tauri::AppHandle) {
             .as_ref()
             .is_some_and(|v| v["store"]["owed_projections"].as_u64().unwrap_or(0) > 0);
         tray.trouble = daemon_trouble(&daemon, st.as_ref());
-        tray.quit_stops = matches!(*daemon, Daemon::Spawned(_));
+        tray.quit_stops = quit_stops(&daemon);
         tray.act = tray_act(tray.trouble, drift, no_app, finish);
     }
     tray.review = waiting(&app.state::<VizSock>().0).await.as_ref().and_then(review_item_text);
@@ -263,11 +305,7 @@ fn apply_tray(app: &tauri::AppHandle, t: &TrayState) {
         *last = Some(t.clone());
     }
     let name = app.package_info().name.clone();
-    let quit = if t.quit_stops {
-        "Quit and Stop Memory".to_string()
-    } else {
-        format!("Quit {name}")
-    };
+    let quit = quit_label(t.quit_stops, &name);
     let built = (|| -> tauri::Result<Menu<tauri::Wry>> {
         let menu = Menu::new(app)?;
         menu.append(&MenuItem::with_id(app, "tray-status", &t.line, false, None::<&str>)?)?;

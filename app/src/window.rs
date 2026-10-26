@@ -123,36 +123,41 @@ fn keep_view_pref(
     key: &str,
     value: serde_json::Value,
 ) -> std::io::Result<()> {
-    let Some(path) = view_prefs_path(app) else {
-        return Ok(());
-    };
-    let mut all = std::fs::read_to_string(&path)
+    match view_prefs_path(app) {
+        Some(path) => keep_view_pref_at(&path, key, value),
+        None => Ok(()),
+    }
+}
+
+/// The view preferences at `path`: an empty object when the file is missing or holds no object.
+fn view_prefs_at(path: &Path) -> serde_json::Value {
+    std::fs::read_to_string(path)
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .filter(serde_json::Value::is_object)
-        .unwrap_or_else(|| serde_json::json!({}));
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// `keep_view_pref` at a path. The file is replaced whole, through a temporary file, so a write cut
+/// short loses neither preference.
+pub(crate) fn keep_view_pref_at(
+    path: &Path,
+    key: &str,
+    value: serde_json::Value,
+) -> std::io::Result<()> {
+    let mut all = view_prefs_at(path);
     all[key] = value;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    // Replaced whole, through a temporary file, so a write cut short loses neither preference.
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, all.to_string())?;
-    std::fs::rename(&tmp, &path)
+    std::fs::rename(&tmp, path)
 }
 
-/// The window's kept frame - its place and size in logical points - when it is on a screen now.
+/// The window's kept frame, when it is on a screen now.
 fn kept_frame(app: &tauri::AppHandle) -> Option<WindowFrame> {
-    let v = view_prefs_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())?;
-    let f = &v["window"];
-    let mut frame = WindowFrame {
-        x: f["x"].as_f64()?,
-        y: f["y"].as_f64()?,
-        w: f["w"].as_f64()?.max(MIN_WINDOW.0),
-        h: f["h"].as_f64()?.max(MIN_WINDOW.1),
-    };
+    let view = view_prefs_at(&view_prefs_path(app)?);
     let screens: Vec<(f64, f64, f64, f64)> = app
         .available_monitors()
         .ok()?
@@ -168,7 +173,23 @@ fn kept_frame(app: &tauri::AppHandle) -> Option<WindowFrame> {
             )
         })
         .collect();
-    // Its size is cut to the screen it opens on (design-system.md Section 29.14).
+    initial_frame(&view, &screens)
+}
+
+/// Where the window opens (design-system.md Section 29.14): the kept frame - its place and size in
+/// logical points, no smaller than the smallest window and cut to the screen it opens on - or `None`,
+/// the default size centred, when no frame is kept or its title bar is on no screen now.
+pub(crate) fn initial_frame(
+    view: &serde_json::Value,
+    screens: &[(f64, f64, f64, f64)],
+) -> Option<WindowFrame> {
+    let f = &view["window"];
+    let mut frame = WindowFrame {
+        x: f["x"].as_f64()?,
+        y: f["y"].as_f64()?,
+        w: f["w"].as_f64()?.max(MIN_WINDOW.0),
+        h: f["h"].as_f64()?.max(MIN_WINDOW.1),
+    };
     let (_, _, sw, sh) = screens
         .iter()
         .copied()
@@ -190,6 +211,9 @@ pub(crate) struct WindowFrame {
 /// The smallest window: 760 pixels keeps the Graph in its wide layout, so the narrow one stays the
 /// browser's (design-system.md Section 29.14).
 pub(crate) const MIN_WINDOW: (f64, f64) = (760.0, 480.0);
+
+/// The window's size when no frame is kept, centred.
+pub(crate) const DEFAULT_WINDOW: (f64, f64) = (1280.0, 860.0);
 
 /// Whether a kept frame's title bar is on one of the screens now, so the window can be found and
 /// moved; a place on no screen is forgotten (design-system.md Section 29.14).
@@ -233,11 +257,12 @@ pub(crate) fn keep_frame(app: &tauri::AppHandle) {
 
 /// The kept text size; 100% when the file is missing or unreadable.
 pub(crate) fn read_text_scale(app: &tauri::AppHandle) -> f64 {
-    view_prefs_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v["text_scale"].as_f64())
-        .map_or(1.0, clamp_text_scale)
+    view_prefs_path(app).map_or(1.0, |p| text_scale_of(&view_prefs_at(&p)))
+}
+
+/// The text size the view preferences keep, held to its range; 100% when none is kept.
+pub(crate) fn text_scale_of(view: &serde_json::Value) -> f64 {
+    view["text_scale"].as_f64().map_or(1.0, clamp_text_scale)
 }
 
 /// Steps the text size, keeps it, and gives it to the page on screen.
@@ -339,6 +364,13 @@ pub(crate) fn show_graph(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The script every page of the window runs first (assets/shell-init.js), given the controls the
+/// map commands press, which the page reports it has when it loads.
+pub(crate) fn shell_init_script() -> String {
+    let controls = serde_json::json!(MAP_CONTROLS).to_string();
+    include_str!("../assets/shell-init.js").replace("/*MAP_CONTROLS*/[]", &controls)
+}
+
 /// Shows the viewer window (creating it on first use / after the app retreated to the tray) and
 /// returns the app to the dock. Closing the window hides it and drops back to Accessory (menu
 /// bar only) - see on_window_event.
@@ -357,7 +389,7 @@ pub(crate) fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
     )
     .title(&app.package_info().name)
     .min_inner_size(MIN_WINDOW.0, MIN_WINDOW.1)
-    .initialization_script(include_str!("../assets/shell-init.js"))
+    .initialization_script(shell_init_script())
     // Each page the window loads - the viewer, Settings, Setup - takes the kept text size (U21).
     .on_page_load(|w, payload| {
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
@@ -394,7 +426,7 @@ pub(crate) fn show_viewer(app: &tauri::AppHandle) -> tauri::Result<()> {
     // otherwise at the default size, centred (design-system.md Section 29.14).
     let builder = match kept_frame(app) {
         Some(f) => builder.inner_size(f.w, f.h).position(f.x, f.y),
-        None => builder.inner_size(1280.0, 860.0).center(),
+        None => builder.inner_size(DEFAULT_WINDOW.0, DEFAULT_WINDOW.1).center(),
     };
     builder.build()?;
     Ok(())

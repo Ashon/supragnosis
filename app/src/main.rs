@@ -244,7 +244,10 @@ fn main() {
             // app's pages, the map's commands and its help. Each item has its own id, apart from the
             // tray's, so an item does only its own act.
             let app_menu = Menu::default(app.handle())?;
-            let item = |id: &str, text: &str, key: Option<&str>| MenuItem::with_id(app, id, text, true, key);
+            let item = |id: &str| {
+                let (id, words, key, _) = menu_item(id).expect("an item of MENU_ITEMS");
+                MenuItem::with_id(app, id, words, true, key)
+            };
             let mut map_items: Vec<(&'static str, MenuItem<tauri::Wry>)> = Vec::new();
             for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
                 let text = sub.text()?;
@@ -252,25 +255,25 @@ fn main() {
                     // The map's commands (design-system.md Section 29.13), kept so each page's load
                     // report can say which of them act there.
                     let mapped = [
-                        ("view-filters", "Filters Panel", Some("Ctrl+CmdOrCtrl+S")),
-                        ("view-log", "Log Panel", Some("Ctrl+CmdOrCtrl+L")),
-                        ("view-map", "as Map", None),
-                        ("view-list", "as List", None),
-                        ("view-fit", "Fit to View", None),
-                        ("view-keys", "Keys...", None),
-                        ("view-back", "Back", Some("CmdOrCtrl+[")),
-                        ("view-forward", "Forward", Some("CmdOrCtrl+]")),
+                        "view-filters",
+                        "view-log",
+                        "view-map",
+                        "view-list",
+                        "view-fit",
+                        "view-keys",
+                        "view-back",
+                        "view-forward",
                     ];
                     let mut kept = Vec::new();
-                    for (id, words, key) in mapped {
-                        kept.push((id, item(id, words, key)?));
+                    for id in mapped {
+                        kept.push((id, item(id)?));
                     }
                     let at = |id: &str| kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap();
                     // Text that can grow (design-system.md Section 10, U21): the root's size, not the
                     // webview's zoom, so the title bar and its traffic lights stay put.
                     let items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
-                        Box::new(item("graph", "Graph", Some("CmdOrCtrl+1"))?),
-                        Box::new(item("review", "Review", Some("CmdOrCtrl+2"))?),
+                        Box::new(item("graph")?),
+                        Box::new(item("review")?),
                         Box::new(PredefinedMenuItem::separator(app)?),
                         Box::new(at("view-filters")),
                         Box::new(at("view-log")),
@@ -282,9 +285,9 @@ fn main() {
                         Box::new(at("view-back")),
                         Box::new(at("view-forward")),
                         Box::new(PredefinedMenuItem::separator(app)?),
-                        Box::new(item("text-bigger", "Make Text Bigger", Some("CmdOrCtrl+="))?),
-                        Box::new(item("text-smaller", "Make Text Smaller", Some("CmdOrCtrl+-"))?),
-                        Box::new(item("text-actual", "Actual Size", Some("CmdOrCtrl+0"))?),
+                        Box::new(item("text-bigger")?),
+                        Box::new(item("text-smaller")?),
+                        Box::new(item("text-actual")?),
                         Box::new(PredefinedMenuItem::separator(app)?),
                     ];
                     for (i, it) in items.iter().enumerate() {
@@ -292,23 +295,23 @@ fn main() {
                     }
                     map_items.extend(kept);
                 } else if text == "Edit" {
-                    let find = item("edit-find", "Find", Some("CmdOrCtrl+F"))?;
+                    let find = item("edit-find")?;
                     sub.append(&PredefinedMenuItem::separator(app)?)?;
                     sub.append(&find)?;
                     map_items.push(("edit-find", find));
                 } else if text == "Help" {
-                    sub.append(&item("help-docs", "Supragnosis Documentation", None)?)?;
+                    sub.append(&item("help-docs")?)?;
                     sub.append(&PredefinedMenuItem::separator(app)?)?;
-                    sub.append(&item("help-diagnostics", "Diagnostics...", None)?)?;
-                    sub.append(&item("help-log", "Show Log in Finder", None)?)?;
+                    sub.append(&item("help-diagnostics")?)?;
+                    sub.append(&item("help-log")?)?;
                     sub.append(&PredefinedMenuItem::separator(app)?)?;
-                    sub.append(&item("help-issue", "Report an Issue...", None)?)?;
+                    sub.append(&item("help-issue")?)?;
                 } else if text == name {
                     // About, a separator, Settings... and Setup..., a separator, then the
                     // platform's own items; its Quit takes the tray's words (D15).
                     sub.insert(&PredefinedMenuItem::separator(app)?, 1)?;
-                    sub.insert(&item("settings", "Settings...", Some("CmdOrCtrl+,"))?, 2)?;
-                    sub.insert(&item("setup", "Setup...", None)?, 3)?;
+                    sub.insert(&item("settings")?, 2)?;
+                    sub.insert(&item("setup")?, 3)?;
                     for it in sub.items()? {
                         if let Some(p) = it.as_predefined_menuitem() {
                             if p.text().is_ok_and(|t| t.starts_with("Quit")) {
@@ -322,20 +325,21 @@ fn main() {
             app.manage(MapItems(map_items));
             app.on_menu_event(|app, event| {
                 let id = event.id().as_ref();
-                let shown = match id {
-                    "settings" => show_settings(app, None),
-                    "setup" => show_welcome(app),
-                    "graph" => show_graph(app),
-                    "review" => show_review(app),
-                    "text-bigger" => set_text_scale(app, 1),
-                    "text-smaller" => set_text_scale(app, -1),
-                    "text-actual" => set_text_scale(app, 0),
-                    "help-docs" => open_url(&format!("{}#readme", env!("CARGO_PKG_REPOSITORY"))),
-                    "help-issue" => open_url(&format!("{}/issues", env!("CARGO_PKG_REPOSITORY"))),
+                let Some((_, _, _, press)) = menu_item(id) else {
+                    return; // not the menu bar's: the tray's, or a platform item
+                };
+                let shown = match press {
+                    MenuPress::Settings => show_settings(app, None),
+                    MenuPress::Setup => show_welcome(app),
+                    MenuPress::Graph => show_graph(app),
+                    MenuPress::Review => show_review(app),
+                    MenuPress::Text(step) => set_text_scale(app, step),
+                    MenuPress::Docs => open_url(&format!("{}#readme", env!("CARGO_PKG_REPOSITORY"))),
+                    MenuPress::Issue => open_url(&format!("{}/issues", env!("CARGO_PKG_REPOSITORY"))),
                     // Done where they report their outcome, on This Mac (design-system.md 29.13).
-                    "help-diagnostics" => show_settings_act(app, "diagnostics"),
-                    "help-log" => show_settings_act(app, "reveal-log"),
-                    other => map_command(app, other),
+                    MenuPress::Diagnostics => show_settings_act(app, "diagnostics"),
+                    MenuPress::ShowLog => show_settings_act(app, "reveal-log"),
+                    MenuPress::Map => map_command(app, id),
                 };
                 if let Err(e) = shown {
                     tracing::error!(error = %e, "failed to turn the main window");
@@ -350,32 +354,31 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 // Every menu event reaches this listener; it acts only on the tray's own ids.
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "tray-open" => {
+                .on_menu_event(move |app, event| match tray_press(event.id().as_ref()) {
+                    Some(TrayPress::OpenGraph) => {
                         if let Err(e) = show_graph(app) {
                             tracing::error!(error = %e, "failed to open the graph");
                         }
                     }
-                    "tray-review" => {
+                    Some(TrayPress::Review) => {
                         if let Err(e) = show_review_all(app) {
                             tracing::error!(error = %e, "failed to open the review page");
                         }
                     }
-                    "tray-finish-setup" => {
+                    Some(TrayPress::FinishSetup) => {
                         if let Err(e) = show_welcome(app) {
                             tracing::error!(error = %e, "failed to open the welcome page");
                         }
                     }
-                    // The act line and Settings... open the section that needs attention.
-                    "tray-act" | "tray-settings" => {
+                    Some(TrayPress::Settings) => {
                         let section =
                             app.try_state::<Attention>().and_then(|a| *a.0.lock().unwrap());
                         if let Err(e) = show_settings(app, section) {
                             tracing::error!(error = %e, "failed to open the settings");
                         }
                     }
-                    "tray-quit" => app.exit(0),
-                    _ => {}
+                    Some(TrayPress::Quit) => app.exit(0),
+                    None => {}
                 })
                 .build(app)?;
 

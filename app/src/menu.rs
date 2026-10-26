@@ -6,6 +6,61 @@ use super::*;
 /// The menu bar's map commands, by id, so each page's load report can enable the ones that act there.
 pub(crate) struct MapItems(pub(crate) Vec<(&'static str, MenuItem<tauri::Wry>)>);
 
+/// What a press of one of the menu bar's own items does (design-system.md Section 29.13).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum MenuPress {
+    Settings,
+    Setup,
+    Graph,
+    Review,
+    /// A step of the text size: up (1), down (-1), or Actual Size (0).
+    Text(i32),
+    Docs,
+    Issue,
+    /// Done where they report their outcome, on This Mac.
+    Diagnostics,
+    ShowLog,
+    /// One of the map's commands, which `map_command` does.
+    Map,
+}
+
+/// The menu bar's own items - id, words, key and press - which the menu is built from and its
+/// presses are read through. None of the ids is the tray's, so a press does only its own act.
+pub(crate) const MENU_ITEMS: &[(&str, &str, Option<&str>, MenuPress)] = &[
+    ("settings", "Settings...", Some("CmdOrCtrl+,"), MenuPress::Settings),
+    ("setup", "Setup...", None, MenuPress::Setup),
+    ("graph", "Graph", Some("CmdOrCtrl+1"), MenuPress::Graph),
+    ("review", "Review", Some("CmdOrCtrl+2"), MenuPress::Review),
+    ("view-filters", "Filters Panel", Some("Ctrl+CmdOrCtrl+S"), MenuPress::Map),
+    ("view-log", "Log Panel", Some("Ctrl+CmdOrCtrl+L"), MenuPress::Map),
+    ("view-map", "as Map", None, MenuPress::Map),
+    ("view-list", "as List", None, MenuPress::Map),
+    ("view-fit", "Fit to View", None, MenuPress::Map),
+    ("view-keys", "Keys...", None, MenuPress::Map),
+    ("view-back", "Back", Some("CmdOrCtrl+["), MenuPress::Map),
+    ("view-forward", "Forward", Some("CmdOrCtrl+]"), MenuPress::Map),
+    ("text-bigger", "Make Text Bigger", Some("CmdOrCtrl+="), MenuPress::Text(1)),
+    ("text-smaller", "Make Text Smaller", Some("CmdOrCtrl+-"), MenuPress::Text(-1)),
+    ("text-actual", "Actual Size", Some("CmdOrCtrl+0"), MenuPress::Text(0)),
+    ("edit-find", "Find", Some("CmdOrCtrl+F"), MenuPress::Map),
+    ("help-docs", "Supragnosis Documentation", None, MenuPress::Docs),
+    ("help-diagnostics", "Diagnostics...", None, MenuPress::Diagnostics),
+    ("help-log", "Show Log in Finder", None, MenuPress::ShowLog),
+    ("help-issue", "Report an Issue...", None, MenuPress::Issue),
+];
+
+/// The menu bar item `id` names; `None` for any other id, the tray's among them.
+pub(crate) fn menu_item(
+    id: &str,
+) -> Option<(&'static str, &'static str, Option<&'static str>, MenuPress)> {
+    MENU_ITEMS.iter().find(|m| m.0 == id).copied()
+}
+
+/// The controls the map commands press, which each page reports it has when it loads (shell-init.js
+/// is given this list), so the shell enables the items that act there.
+pub(crate) const MAP_CONTROLS: &[&str] =
+    &["panelL", "panelR", "mapTab", "listBtn", "fit", "keysOpen", "keysDlg"];
+
 /// Which map commands act on a page, from its address and the controls it reported (design-system.md
 /// Section 29.13): on the Graph the ones whose control it has; on Review, Settings and Setup the ones
 /// that open the Graph, Back, and Forward on the Graph only; nothing on the starting page or a viewer

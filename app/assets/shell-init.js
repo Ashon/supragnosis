@@ -68,8 +68,9 @@
         // (lights center on headerHeight/2; keep the two in agreement when styling shifts it).
         headerHeight: header ? header.offsetHeight : null,
         // The controls the menu bar's map commands press, so the shell enables the items that act
-        // here (design-system.md Section 29.13); the shell looks for each again on a press.
-        controls: ["panelL", "panelR", "mapTab", "listBtn", "fit", "keysOpen", "keysDlg"]
+        // here (design-system.md Section 29.13); the shell looks for each again on a press. The
+        // shell writes its list (MAP_CONTROLS) over the empty one when it installs this script.
+        controls: /*MAP_CONTROLS*/[]
           .filter(function (id) { return !!document.getElementById(id); }),
       });
     // The splash and the remote notice have no header and no chrome to add.

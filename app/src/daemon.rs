@@ -275,15 +275,15 @@ pub(crate) async fn restart_daemon(
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
     mark_start();
     refresh_status(app).await;
-    let outcome = match prev {
-        Daemon::Spawned(mut child) => {
-            let _ = child.kill();
-            let _ = child.wait();
+    let outcome = match restart_by(&prev, job) {
+        RestartBy::Kill => {
+            if let Daemon::Spawned(mut child) = prev {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
             Ok("restarted the daemon this app runs".to_string())
         }
-        prev @ (Daemon::External | Daemon::Failed(_))
-            if matches!(prev, Daemon::External) || job =>
-        {
+        RestartBy::Cli => {
             let before = tokio::task::spawn_blocking(cli_status).await.ok().flatten();
             let out = tokio::task::spawn_blocking(|| run_cli(&["restart"])).await.ok().flatten();
             // launchd may still be starting the new process when the CLI returns, or retrying one
@@ -314,12 +314,30 @@ pub(crate) async fn restart_daemon(
             }
             outcome
         }
-        Daemon::Starting | Daemon::Failed(_) | Daemon::External => {
-            Ok("starting the daemon".to_string())
-        }
+        RestartBy::BringUp => Ok("starting the daemon".to_string()),
     };
     bring_up(app.clone(), sock).await;
     outcome
+}
+
+/// How a restart reaches the daemon (docs/daemon-lifecycle.md Section 6, design-system.md Section
+/// 29.5): a child the app spawned is stopped by the app; one it attached to goes through `supragnosis
+/// restart`, and so does a failed one a manager owns (`job`), so the app spawns none beside it; a
+/// daemon still starting, or a failed one nothing manages, is brought up again.
+#[derive(Debug, PartialEq)]
+pub(crate) enum RestartBy {
+    Kill,
+    Cli,
+    BringUp,
+}
+
+pub(crate) fn restart_by(daemon: &Daemon, job: bool) -> RestartBy {
+    match daemon {
+        Daemon::Spawned(_) => RestartBy::Kill,
+        Daemon::External => RestartBy::Cli,
+        Daemon::Failed(_) if job => RestartBy::Cli,
+        Daemon::Starting | Daemon::Failed(_) => RestartBy::BringUp,
+    }
 }
 
 /// What a restart of a daemon the shell did not spawn came to (docs/daemon-lifecycle.md L4): the
