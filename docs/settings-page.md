@@ -85,7 +85,7 @@ The page follows the shape of the platform's own settings:
   0.11.0; a dot shows
   only while a section needs attention, as design-system.md Section 6a has it; no heading for the
   one group; AI apps' count reads "2 connected", and its dot shows whenever a row needs the person,
-  design-system.md Section 29.14.)*
+  design-system.md Section 29.14. Usage joined before About on 2026-10-27, Section 3.6.)*
 - **A content pane** with the selected section: a title, one sentence on what it is for, and
   grouped cards of rows. Each row has a name, a line of state, and its control on the right - a
   switch, a button, a status pill.
@@ -187,6 +187,21 @@ Peers tab showed, read from this Mac's daemon.
 The app's, the CLI's and the daemon's versions, where the CLI and the data live, the license and the
 source. It is the viewer dialog's About, with the app's own facts added. **Open Setup** opens the
 Setup page (onboarding.md Section 6), which shows only what is not done.
+
+### 3.6 Usage
+
+How the AI apps use this Mac's store, from the usage log (usage.md Section 4.1). It sits in the
+sidebar before About, with no dot: nothing in it needs the person.
+
+- **One window for the whole pane**, chosen in a row above it: 7, 30 or 90 days. Changing it reads
+  `supragnosis usage --json --since` again through the `usage_read` command, which takes only those
+  three values; the pane keeps its last numbers, dimmed, while the next arrive.
+- **The pane is read only.** It changes nothing, so it holds no button but the window and the
+  chart's split; the file is the daemon's and the command's.
+- **Read when shown.** The pane reads when it is opened or the window changes, not on every load of
+  the page, so the other sections never wait on the log.
+- **A file that is not there yet** reads as an empty window, with a sentence saying the daemon
+  writes it as apps call it.
 
 ## 4. Who may change a setting
 
@@ -325,6 +340,9 @@ profiles in 0.11.0.
   is read and never shows as the success it was not (daemon-lifecycle.md L4).
 - **The page's rows**: `an_app_item_says_what_a_click_will_do`, which once tested the tray's AI Apps
   items, now tests the page's app rows: the state, and the button's label or its absence.
+- **Usage (Section 3.6)**: `the_usage_pane_reads_only_its_three_windows` - `usage_read` runs
+  `usage --json --since` for 7, 30 or 90 days and refuses any other window without running the CLI;
+  it is placed among the reads in `every_setting_change_is_a_cli_call`.
 
 Checked in a development build attached to this Mac's running daemon:
 - **Navigation.**

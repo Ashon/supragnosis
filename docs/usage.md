@@ -5,7 +5,8 @@
 > [recall.md](recall.md) (what the hook gives a session; Section 1 measured it from transcripts) and
 > [onboarding.md](onboarding.md) Section 5 (the first-contact log, which this extends in time).
 >
-> Status: **built**. Decisions D1-D6 were chosen by the author on 2026-10-26.
+> Status: **built**. Decisions D1-D6 were chosen by the author on 2026-10-26, and D7 (the Usage pane,
+> Section 4.1) on 2026-10-27.
 
 ## 1. Why this exists
 
@@ -67,8 +68,31 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
   commit command within the minute asks about the same commit again), and how many of those
   commits an `observe` names.
 
-`--since` takes a number with `d` or `h`, and defaults to 7 days; `--json` gives the same tables as
-data. A page in the app or the viewer is owed until the command shows what such a page would need.
+`--since` takes a number with `d` or `h`, and defaults to 7 days. `--json` gives the same tables as
+data, with `"schema": 1`, since the app reads it (compatibility.md Section 6), and an empty summary
+when nothing is recorded yet.
+
+### 4.1 Trends, and where a person sees them (D7)
+
+Settings > Usage in the desktop app (settings-page.md Section 3.6) shows the tables and how they
+moved day by day. It reads `supragnosis usage --json --since <7d|30d|90d>`, so the command stays
+the one reader of the file and the page counts nothing itself.
+
+- **`by_hour`.** The JSON carries one entry per UTC hour that holds a line: the hour's start `t`;
+  its calls by function, by workspace and by app, as `[name, count]` pairs; how many were writes,
+  found nothing (`empty`), named nothing (`not_found`) or failed (`errors`); and the hook's session
+  and subagent indexes and commit questions. A question counts in the hour it was first asked, and
+  as answered when an `observe` in the window names its commit.
+- **Writes** are the calls that change what this node holds: `observe`, `define_type`, `propose`,
+  `review` and `sync_pull`. Every other call reads. Reads against writes is the question recall.md
+  Section 1 asked of transcripts, now asked of every app.
+- **Local days.** The page adds the hours into the person's local days. A time zone that is not a
+  whole number of hours from UTC puts half an hour at each day's edge into the neighbouring day.
+- **What the pane shows**, for the window chosen: four figures (calls with reads and writes, the
+  share that found nothing or failed, the indexes the hook gave, the commit questions answered);
+  calls per day split by function, workspace, app or read and write, the five largest and the rest
+  as Other; per day, what found nothing or failed, the indexes given and the commit questions
+  answered; and the two tables of Section 4. Every chart has its numbers in a table beside it.
 
 ## 5. Invariants
 
@@ -82,8 +106,8 @@ data. A page in the app or the viewer is owed until the command shows what such 
 ## 6. Revisit when
 
 - **Trimming:** when the file passes about 50 MB, or a month of lines slows `supragnosis usage`.
-- **A page:** when the author wants the numbers where they already look (the app's This Mac pane,
-  or the viewer's status bar), rather than in a terminal.
+- **Longer windows:** when 90 days is not enough to see a change, or reading 90 days of hours makes
+  the pane slow to open.
 - **Query text:** only if a usability question needs what was asked and the transcripts cannot
   answer it (another app's queries, for instance), and then with its own decision about where it
   is kept.

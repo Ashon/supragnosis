@@ -256,6 +256,9 @@ Cozo refusal keeps discharging it for the era before.
     supragnosis-server is newer than the app - update the app" on the tray line and the Settings
     page, and stops reading the payload.
 
+`usage --json` carries the same `"schema": 1` from its first release, since Settings > Usage reads
+it (usage.md Section 4.1).
+
 `server --json` goes with its command in 0.11.0, a breaking change named in CHANGELOG.md, and
 `status --json` keeps its `server` field as `{"name": "local", "remote": false}`, so its schema
 stays 1 (remote-server.md Section 13).
