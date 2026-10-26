@@ -166,11 +166,8 @@ fn main() {
                         // the live daemon state (a Failed reason must be readable, not an eternal
                         // "starting..."); API calls get an honest 502 (Principle 5).
                         _ if target == "/" => {
-                            let since = START_AT.lock().unwrap().map(|t| t.elapsed());
-                            let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
-                            let conflict = splash_conflict(&app).await;
-                            let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
-                            splash_drawn(&app, sock.clone(), splash_key(&app, conflict.as_ref()));
+                            let (html, key) = starting_page(&app).await;
+                            splash_drawn(&app, sock.clone(), key);
                             resp(200, "text/html; charset=utf-8", SHELL_CSP, html.into_bytes())
                         }
                         Ok(Err(e)) => resp(
@@ -334,28 +331,7 @@ fn main() {
             }
             app.set_menu(app_menu)?;
             app.manage(MapItems(map_items));
-            app.on_menu_event(|app, event| {
-                let id = event.id().as_ref();
-                let Some((_, _, _, press)) = menu_item(id) else {
-                    return; // not the menu bar's: the tray's, or a platform item
-                };
-                let shown = match press {
-                    MenuPress::Settings => show_settings(app, None),
-                    MenuPress::Setup => show_welcome(app),
-                    MenuPress::Graph => show_graph(app),
-                    MenuPress::Review => show_review(app),
-                    MenuPress::Text(step) => set_text_scale(app, step),
-                    MenuPress::Docs => open_url(&format!("{}#readme", env!("CARGO_PKG_REPOSITORY"))),
-                    MenuPress::Issue => open_url(&format!("{}/issues", env!("CARGO_PKG_REPOSITORY"))),
-                    // Done where they report their outcome, on This Mac (design-system.md 29.13).
-                    MenuPress::Diagnostics => show_settings_act(app, "diagnostics"),
-                    MenuPress::ShowLog => show_settings_act(app, "reveal-log"),
-                    MenuPress::Map => map_command(app, id),
-                };
-                if let Err(e) = shown {
-                    tracing::error!(error = %e, "failed to turn the main window");
-                }
-            });
+            app.on_menu_event(|app, event| menu_pressed(app, event.id().as_ref(), open_url));
 
             TrayIconBuilder::with_id("supragnosis")
                 // Template image (bare mark, alpha-only): macOS recolors it for light/dark menu bars.

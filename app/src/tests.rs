@@ -187,6 +187,20 @@ pub(crate) mod fake {
         pub(crate) fn run<T>(&self, f: impl std::future::Future<Output = T>) -> T {
             tauri::async_runtime::block_on(f)
         }
+
+        /// Runs an act that returns before its work is done - a press, the exit - and waits until
+        /// every task it spawned on the app's runtime has ended, so the recorder is read after all
+        /// of it. A task is counted from its spawn; the other tests spawn none on that runtime.
+        pub(crate) fn settled(&self, act: impl FnOnce()) {
+            let metrics = tauri::async_runtime::handle().inner().metrics();
+            let before = metrics.num_alive_tasks();
+            act();
+            let until = std::time::Instant::now() + Duration::from_secs(60);
+            while metrics.num_alive_tasks() > before {
+                assert!(std::time::Instant::now() < until, "the act's work did not end");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
     }
 
     pub(crate) fn serve_socket(sock: &Path) {
@@ -324,12 +338,14 @@ mod csp_tests {
 mod status_text_tests {
     use super::{
         app_row, app_toggle, capture_set, cli_change, cli_outcome, cli_path, daemon_restart,
-        diagnostics, login_env_from_output, login_outcome, login_set, peer_narrow, read_login_env,
-        refresh_status, search_rebuild, settings_state, setup_check, setup_run, setup_running,
-        setup_stop, splash_conflict, start_up, status_text, tray_pressed, welcome_set,
-        welcome_state, write_prefs, Daemon, TrayPress, WelcomePrefs, TRAY_IDS,
+        diagnostics, login_env_from_output, login_outcome, login_set, menu_pressed, peer_narrow,
+        read_login_env, refresh_status, search_rebuild, settings_state, setup_check, setup_run,
+        setup_running, setup_stop, splash_beat, start_up, starting_page, status_text, tray_pressed,
+        welcome_set, welcome_state, write_prefs, Daemon, TrayPress, WelcomePrefs, MENU_ITEMS,
+        TRAY_IDS,
     };
     use std::process::Command;
+    use std::sync::Mutex;
     use std::time::Duration;
 
     /// An AI app's row in the settings window says its state and labels its one button with what a
@@ -506,18 +522,20 @@ mod status_text_tests {
     }
 
     /// daemon-lifecycle.md L6: the app stops a daemon it did not spawn only on a person's act that
-    /// asks for it. Every way into the app runs here against a recorder in place of the CLI, with a
-    /// daemon a login job runs, one Homebrew's service runs, one whose update is ready and two
-    /// managers at once: the start, the status beat and the starting page's read in each state the
-    /// shell can hold, each tray item (Quit's end is the exit, `quitting_leaves_a_daemon_it_did_not_spawn`),
-    /// and every command of the app's pages but the three that act on the desktop and hold no CLI.
+    /// asks for it. The app runs here against a recorder in place of the CLI, with a daemon a login
+    /// job runs, one Homebrew's service runs, one whose update is ready and two managers at once:
+    /// the start, the status beat, the starting page and its watch's beat in each state the shell
+    /// can hold, every tray item (Quit's end is the exit, `quitting_leaves_a_daemon_it_did_not_spawn`),
+    /// every menu bar item, and every command of the app's pages but the three that act on the
+    /// desktop and hold no CLI. Not driven: the window's own events (close, move, resize) and the
+    /// viewer's transport (the proxy's other requests, the event bridge).
     /// A call that stops a daemon - `stop`, `restart`, `service uninstall`, a `--take-over`, `embed
     /// rebuild`, setup's server step - comes only from the Start at Login switch, Setup's Set up and
     /// Take over, and Restart and Rebuild index, which bring it back, each the one its click asks
     /// for. Everything else only reads (`status`, `connect`, setup's checklist) or starts the app's
     /// own daemon. A beat that restarts a daemon whose update is ready, a start that takes over
-    /// Homebrew's service, a tray item that restarts rather than opening This Mac, or a command that
-    /// does more than its click asks fails this.
+    /// Homebrew's service, a tray or menu item that restarts rather than opening This Mac, or a
+    /// command that does more than its click asks fails this, the work a press spawns included.
     #[test]
     fn only_the_persons_act_stops_a_daemon_it_did_not_spawn() {
         use super::fake::{self, Scene};
@@ -576,10 +594,26 @@ mod status_text_tests {
                 for daemon in [Daemon::External, failed(), Daemon::Starting] {
                     *held.daemon() = daemon;
                     held.run(refresh_status(&h));
-                    held.run(splash_conflict(&h));
-                    for (_, press) in TRAY_IDS.iter().filter(|(_, p)| *p != TrayPress::Quit) {
-                        tray_pressed(&h, *press);
-                    }
+                    let (_, drawn) = held.run(starting_page(&h));
+                    held.run(splash_beat(&h, &held.sock, &drawn));
+                    let opened = Mutex::new(Vec::new());
+                    held.settled(|| {
+                        for (_, press) in TRAY_IDS.iter().filter(|(_, p)| *p != TrayPress::Quit) {
+                            tray_pressed(&h, *press);
+                        }
+                        for (id, ..) in MENU_ITEMS {
+                            menu_pressed(&h, id, |url| {
+                                opened.lock().unwrap().push(url.to_string());
+                                Ok(())
+                            });
+                        }
+                    });
+                    let repo = env!("CARGO_PKG_REPOSITORY");
+                    assert_eq!(
+                        *opened.lock().unwrap(),
+                        [format!("{repo}#readme"), format!("{repo}/issues")],
+                        "the menu opens only the project's addresses"
+                    );
                     let calls = held.cli.take();
                     assert!(calls.iter().any(|c| c == "status --json"), "{calls:?}");
                     assert_eq!(
@@ -703,13 +737,13 @@ mod status_text_tests {
         // place of the CLI: it asks the CLI nothing; and the child it spawned is gone after it.
         for daemon in [Daemon::External, Daemon::Failed("x".into()), Daemon::Starting] {
             let held = super::fake::app(daemon, super::fake::login_job());
-            super::on_exit(&held.handle());
+            held.settled(|| super::on_exit(&held.handle()));
             assert_eq!(held.cli.take(), Vec::<String>::new(), "the exit runs the CLI");
         }
         let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         let pid = child.id().to_string();
         let held = super::fake::app(Daemon::Spawned(child), super::fake::login_job());
-        super::on_exit(&held.handle());
+        held.settled(|| super::on_exit(&held.handle()));
         assert_eq!(held.cli.take(), Vec::<String>::new(), "the exit runs the CLI");
         let alive = std::process::Command::new("kill")
             .args(["-0", &pid])

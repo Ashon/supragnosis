@@ -380,9 +380,10 @@ Guarded by:
   `PATH` can reach the machine's own launchd, and the address points at a port nothing listens on.
 - `only_the_persons_act_stops_a_daemon_it_did_not_spawn` - L6: the app runs on Tauri's mock runtime
   with a recorder in place of the CLI, against a login job, Homebrew's service, an update ready and
-  two managers. Its start, status beat, starting page and tray items ask the CLI only to read; a
-  call that stops a daemon comes only from the switch, Setup's Set up and Take over, Restart and
-  Rebuild index, each the one its click asks for.
+  two managers. Its start, status beat, starting page, tray items and menu bar items ask the CLI
+  only to read, the work a press spawns included; a call that stops a daemon comes only from the
+  switch, Setup's Set up and Take over, Restart and Rebuild index, each the one its click asks
+  for. The window's own events and the viewer's transport are not driven.
 - `quitting_leaves_a_daemon_it_did_not_spawn` - L6: on exit the app reaps only the child it
   spawned, and the exit, run with the recorder, asks the CLI nothing.
 
