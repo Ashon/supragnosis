@@ -168,15 +168,29 @@ async fn watch_splash(app: tauri::AppHandle<Rt>, sock: PathBuf) {
         let Some(drawn) = SPLASH.lock().unwrap().clone() else {
             return;
         };
-        let answering = UnixStream::connect(&sock).await.is_ok();
-        heal_failed(&app).await;
-        let now = splash_key(&app, splash_conflict(&app).await.as_ref());
-        if splash_reloads(&drawn, answering, &now) {
+        if splash_beat(&app, &sock, &drawn).await {
             *SPLASH.lock().unwrap() = None;
             reload_viewer(&app);
             return;
         }
     }
+}
+
+/// One beat of the watch over the page `drawn`: whether the window reloads now.
+pub(crate) async fn splash_beat(app: &tauri::AppHandle<Rt>, sock: &Path, drawn: &str) -> bool {
+    let answering = UnixStream::connect(sock).await.is_ok();
+    heal_failed(app).await;
+    let now = splash_key(app, splash_conflict(app).await.as_ref());
+    splash_reloads(drawn, answering, &now)
+}
+
+/// The starting page the window is served at `/` while the socket is silent, and its key.
+pub(crate) async fn starting_page(app: &tauri::AppHandle<Rt>) -> (String, String) {
+    let since = START_AT.lock().unwrap().map(|t| t.elapsed());
+    let page = start_page(&mut app.state::<DaemonGuard>().0.lock().unwrap(), since);
+    let conflict = splash_conflict(app).await;
+    let html = starting_html(&page, conflict.as_ref(), &settings_url(), &daemon_log());
+    (html, splash_key(app, conflict.as_ref()))
 }
 
 /// What the starting page would say now, as the key `SPLASH` keeps.

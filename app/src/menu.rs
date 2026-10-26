@@ -49,6 +49,34 @@ pub(crate) const MENU_ITEMS: &[(&str, &str, Option<&str>, MenuPress)] = &[
     ("help-issue", "Report an Issue...", None, MenuPress::Issue),
 ];
 
+/// What a press of the menu bar's item `id` does; any other id, the tray's or a platform item, does
+/// nothing here. `open` opens one of the project's addresses in the browser.
+pub(crate) fn menu_pressed(
+    app: &tauri::AppHandle<Rt>,
+    id: &str,
+    open: impl Fn(&str) -> tauri::Result<()>,
+) {
+    let Some((_, _, _, press)) = menu_item(id) else {
+        return;
+    };
+    let shown = match press {
+        MenuPress::Settings => show_settings(app, None),
+        MenuPress::Setup => show_welcome(app),
+        MenuPress::Graph => show_graph(app),
+        MenuPress::Review => show_review(app),
+        MenuPress::Text(step) => set_text_scale(app, step),
+        MenuPress::Docs => open(&format!("{}#readme", env!("CARGO_PKG_REPOSITORY"))),
+        MenuPress::Issue => open(&format!("{}/issues", env!("CARGO_PKG_REPOSITORY"))),
+        // Done where they report their outcome, on This Mac (design-system.md 29.13).
+        MenuPress::Diagnostics => show_settings_act(app, "diagnostics"),
+        MenuPress::ShowLog => show_settings_act(app, "reveal-log"),
+        MenuPress::Map => map_command(app, id),
+    };
+    if let Err(e) = shown {
+        tracing::error!(error = %e, "failed to turn the main window");
+    }
+}
+
 /// The menu bar item `id` names; `None` for any other id, the tray's among them.
 pub(crate) fn menu_item(
     id: &str,

@@ -6,9 +6,9 @@ use super::*;
 #[cfg(test)]
 mod settings_tests {
     use super::{
-        cause_of, heals, managed, manager_pid, own_page_ok, refresh_status, restart_outcome,
-        search_rebuild, settings_state, settings_url, start_page, starting_html, welcome_url,
-        without_entry, Daemon, RestartBy, StartPage, APP_COMMANDS, RESTART_WAIT,
+        cause_of, daemon_restart, heals, managed, manager_pid, own_page_ok, refresh_status,
+        restart_outcome, search_rebuild, settings_state, settings_url, start_page, starting_html,
+        welcome_url, without_entry, Daemon, RestartBy, StartPage, APP_COMMANDS, RESTART_WAIT,
     };
     use crate::tests::fake;
     use std::path::Path;
@@ -383,6 +383,25 @@ mod settings_tests {
         assert_eq!(st["daemon"]["shell"], "attached", "Settings keeps a stale failure");
         // A restart, and a rebuild, wait this long for the login job before deciding.
         assert_eq!(RESTART_WAIT, Duration::from_secs(30));
+        // A restart of a daemon a login job runs waits for the job's new daemon: its socket answers
+        // half a second after `restart`, and the restart is one, attached to, with no daemon of the
+        // app's own spawned into the job's lock.
+        let held = fake::app(Daemon::External, fake::login_job());
+        let sock = held.sock.clone();
+        *held.cli.at_call.lock().unwrap() = Some(Box::new(move |call: &str| {
+            if call == "restart" {
+                let sock = sock.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(500));
+                    fake::serve_socket(&sock);
+                });
+            }
+        }));
+        let restarted = held.run(daemon_restart(held.page(), held.handle()));
+        assert_eq!(restarted, Ok("restarted".to_string()), "the restart did not wait");
+        assert!(matches!(*held.daemon(), Daemon::External), "not attached to the job's daemon");
+        let calls = held.cli.take();
+        assert!(!calls.iter().any(|c| c == "serve"), "the app raced the job: {calls:?}");
         let js = include_str!("../assets/settings.js");
         assert!(body(js, "function restartDaemon(").contains(".then(watchDaemon)"));
         assert!(body(js, "async function load(").contains("if (daemonUnsettled()) watchDaemon();"));
