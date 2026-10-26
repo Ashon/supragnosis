@@ -78,7 +78,7 @@ mod settings_tests {
         declared.sort();
         registered.sort();
         listed.sort();
-        assert_eq!(declared.len(), 17, "the scan read the commands");
+        assert_eq!(declared.len(), 18, "the scan read the commands");
         assert_eq!(declared, registered, "every command is registered, and only these");
         assert_eq!(declared, listed, "the capability's list is the same set");
     }

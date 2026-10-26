@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "since": 0,
+  "calls": 1,
+  "unreadable": 0,
+  "by_call": [
+    { "kind": "tool", "name": "observe", "workspace": "supragnosis", "calls": 1, "empty": 0, "not_found": 0, "errors": 0 }
+  ],
+  "by_app": [["Claude Code", 1]],
+  "hook": {
+    "session_indexes": 0,
+    "session_lines": 0,
+    "subagent_indexes": 0,
+    "commit_questions": 1,
+    "answered_with_a_record": 1
+  },
+  "by_hour": [
+    {
+      "t": 3600000,
+      "calls": 1,
+      "writes": 1,
+      "empty": 0,
+      "not_found": 0,
+      "errors": 0,
+      "by_name": [["observe", 1]],
+      "by_workspace": [["supragnosis", 1]],
+      "by_app": [["Claude Code", 1]],
+      "session_indexes": 0,
+      "subagent_indexes": 0,
+      "commit_questions": 1,
+      "answered": 1
+    }
+  ]
+}

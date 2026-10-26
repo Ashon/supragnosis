@@ -21,6 +21,7 @@
     "allow-app-helper",
     "allow-clipboard-copy",
     "allow-diagnostics",
-    "allow-reveal"
+    "allow-reveal",
+    "allow-usage-read"
   ]
 }

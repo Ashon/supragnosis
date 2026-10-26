@@ -1,5 +1,5 @@
-//! Tests: each machine-read JSON answer (`status --json`, `connect --json`, `setup --events`)
-//! against its example in tests/fixtures/json.
+//! Tests: each machine-read JSON answer (`status --json`, `connect --json`, `usage --json`,
+//! `setup --events`) against its example in tests/fixtures/json.
 
 use super::*;
 use serde_json::Value;
@@ -9,6 +9,7 @@ fn example(name: &str) -> Value {
     let text = match name {
         "status" => include_str!("../tests/fixtures/json/status.json"),
         "connect" => include_str!("../tests/fixtures/json/connect.json"),
+        "usage" => include_str!("../tests/fixtures/json/usage.json"),
         other => panic!("no example named {other}"),
     };
     serde_json::from_str(text).expect("the example is JSON")
@@ -226,6 +227,19 @@ fn a_refused_store_names_both_ways_on() {
     assert_eq!(doc["embedder_conflict"]["recorded"], "hashing-256");
     assert_eq!(doc["embedder_conflict"]["daemon"], other);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// docs/usage.md Section 4.1: `usage --json`, which Settings > Usage reads, has the shape of the
+/// example the app is tested with, and says its schema.
+#[test]
+fn usage_json_matches_its_example() {
+    let lines = [
+        r#"{"t":3600000,"kind":"tool","name":"observe","workspace":"supragnosis","app":"Claude Code","outcome":"ok","n":2,"commit":"abc1234"}"#,
+        r#"{"t":3600500,"kind":"hook","name":"commit_question","workspace":"supragnosis","commit":"abc1234"}"#,
+    ];
+    let doc = serde_json::to_value(usage_cli::summarize(lines.iter().copied(), 0)).unwrap();
+    assert_eq!(doc["schema"], JSON_SCHEMA);
+    same_shape(&example("usage"), &doc, "usage").unwrap_or_else(|e| panic!("{e}"));
 }
 
 #[test]

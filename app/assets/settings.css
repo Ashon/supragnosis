@@ -321,7 +321,67 @@ header h1 { margin: 0 0 0 4px; color: var(--ink); font: 600 var(--text-body)/1.3
 .toast .t-detail { color: var(--muted); font-size: var(--text-small); overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .toast .btn { flex: none; height: 28px; width: 28px; }
 
+/* Usage (docs/settings-page.md Section 3.6). The series take the dataviz reference palette's first
+   five, checked against --panel in each appearance (adjacent CVD separation 8.4 dark, 9.1 light); in
+   the light appearance four sit under 3:1, so every chart has a legend and its numbers in a table.
+   Other is a gray. Text never takes a series color: the key beside it carries the identity. */
+:root { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-other: #5f6675; }
+@media (prefers-color-scheme: light) {
+  :root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-other: #b4afa5; }
+}
+.ubar { display: flex; align-items: center; margin-bottom: 14px; }
+.useg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-control); background: var(--panel); }
+.useg .btn { height: 26px; padding: 0 10px; background: transparent; color: var(--muted); font-weight: 400; }
+.useg .btn.on { background: var(--panel-3); color: var(--ink); font-weight: 500; }
+.ubody { transition: opacity 0.12s ease; }
+.ubody.reading { opacity: 0.55; }
+.utiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2px; border-radius: var(--r-surface); overflow: hidden; }
+.utile { background: var(--panel); padding: 12px 16px; min-width: 0; }
+.utile .ul { color: var(--muted); font-size: var(--text-small); }
+.utile .uv { color: var(--ink); font: 600 var(--text-page)/1.3 var(--sans); }
+.utile .us { color: var(--muted); font-size: var(--text-small); overflow-wrap: anywhere; }
+.uhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.uhead .btn { font-size: var(--text-small); }
+.ucard { background: var(--panel); border-radius: var(--r-surface); padding: 12px 16px; }
+.ulegend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink2); font-size: var(--text-small); margin-bottom: 6px; }
+.ulegend > span { display: inline-flex; align-items: center; gap: 6px; }
+.key { width: 10px; height: 10px; border-radius: var(--r-mark); flex: none; display: inline-block; }
+.key.s1, .uchart .s1 { background: var(--series-1); fill: var(--series-1); }
+.key.s2, .uchart .s2 { background: var(--series-2); fill: var(--series-2); }
+.key.s3, .uchart .s3 { background: var(--series-3); fill: var(--series-3); }
+.key.s4, .uchart .s4 { background: var(--series-4); fill: var(--series-4); }
+.key.s5, .uchart .s5 { background: var(--series-5); fill: var(--series-5); }
+.key.so, .uchart .so { background: var(--series-other); fill: var(--series-other); }
+.uplot { position: relative; }
+.uchart { display: block; width: 100%; height: auto; overflow: visible; }
+.uchart:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 4px; border-radius: var(--r-inset); }
+.uchart .grid { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.uchart .base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.uchart .tick { fill: var(--muted); font: 10px var(--sans); font-variant-numeric: tabular-nums; }
+.uchart .hit { fill: transparent; }
+.uchart .col.on path { filter: brightness(1.18); }
+.utip {
+  position: absolute; top: 0; transform: translateX(-50%); z-index: 2; pointer-events: none; min-width: 140px;
+  padding: 8px 10px; border-radius: var(--r-control); background: var(--panel-2); box-shadow: 0 8px 24px var(--shadow-soft);
+  color: var(--ink2); font-size: var(--text-small);
+}
+.utip.from-left { transform: none; }
+.utip.from-right { transform: translateX(-100%); }
+.utip-h { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); margin-bottom: 4px; }
+.utip-h strong, .utip-r strong { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.utip-r { display: flex; align-items: center; gap: 8px; }
+.utip-r .key { width: 10px; height: 2px; }
+.unumbers { margin-top: 8px; color: var(--muted); font-size: var(--text-small); }
+.unumbers summary { cursor: pointer; width: max-content; }
+.unumbers summary:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; border-radius: var(--r-inset); }
+.unumbers .utable { margin-top: 6px; }
+.utable { width: 100%; border-collapse: collapse; font-size: var(--text-small); color: var(--ink2); }
+.utable th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px 6px 0; }
+.utable td { padding: 4px 8px 4px 0; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+.utable .n { text-align: right; font-variant-numeric: tabular-nums; }
+
 /* Icons used on this page (icons/README.md); .i and the mask are in shell.css. */
+.i-chart { --i: url(icons/chart-column.svg); }
 .i-server { --i: url(icons/server.svg); }
 .i-bot { --i: url(icons/bot.svg); }
 .i-laptop { --i: url(icons/laptop.svg); }

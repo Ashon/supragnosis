@@ -91,6 +91,7 @@ const APP_COMMANDS: &[&str] = &[
     "clipboard_copy",
     "diagnostics",
     "reveal",
+    "usage_read",
 ];
 
 fn main() {
@@ -119,7 +120,8 @@ fn main() {
             welcome_set,
             app_helper,
             clipboard_copy,
-            diagnostics
+            diagnostics,
+            usage_read
         ])
         .register_asynchronous_uri_scheme_protocol("viz", move |ctx, request, responder| {
             let sock = proxy_sock.clone();

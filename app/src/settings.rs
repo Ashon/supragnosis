@@ -210,6 +210,31 @@ pub(crate) async fn clipboard_copy(
     Ok(())
 }
 
+/// The windows Settings > Usage reads (docs/settings-page.md Section 3.6).
+pub(crate) const USAGE_WINDOWS: &[&str] = &["7d", "30d", "90d"];
+
+/// Settings > Usage (docs/settings-page.md Section 3.6): `usage --json` for one of the pane's
+/// windows, as the CLI counted it. Any other window is refused before the CLI runs.
+#[tauri::command]
+pub(crate) async fn usage_read(
+    webview: tauri::Webview<Rt>,
+    app: tauri::AppHandle<Rt>,
+    since: String,
+) -> Result<serde_json::Value, String> {
+    own_page_caller(&webview)?;
+    if !USAGE_WINDOWS.contains(&since.as_str()) {
+        return Err(format!("{since:?} is not a window the Usage pane reads"));
+    }
+    on_cli(&app, move |cli| run_cli_json(cli, &["usage", "--json", "--since", &since]))
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "The supragnosis CLI gave no usage summary. It may be older than this app: update \
+             supragnosis-server."
+                .to_string()
+        })
+}
+
 /// "Copy diagnostics" (Section 6): `setup --check --events` and `status --json` together, for a
 /// report. Both are read only, and neither carries the token.
 #[tauri::command]

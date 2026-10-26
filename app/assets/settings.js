@@ -15,6 +15,7 @@ const SECTIONS = [
   { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches Supragnosis. Every app goes through the bridge, which keeps no copy of the token." },
   { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The Supragnosis daemon on this Mac: the store your AI apps use." },
   { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between machines that run Supragnosis: the hubs it syncs to and, when it is a hub, what each peer may read." },
+  { id: "usage", label: "Usage", icon: "chart", blurb: "How your AI apps use this Mac's store: which functions they call, on which workspaces, day by day. The record stays on this Mac." },
   { id: "about", label: "About", icon: "info", blurb: "Versions and where things live." },
 ];
 
@@ -558,6 +559,8 @@ function draw() {
   // The title bar names the pane on screen (design-system.md Section 6a, U26).
   document.getElementById("pageTitle").textContent = SECTIONS.find((s) => s.id === id).label;
   const pane = document.getElementById("pane");
+  // The Usage pane reads again each time it is opened (docs/settings-page.md Section 3.6).
+  if (id !== "usage") usage.shown = false;
   let body;
   if (loadError && !state) {
     body = [h("div", { class: "callout bad" }, icon("alert"),
@@ -578,6 +581,7 @@ function draw() {
     switch (id) {
       case "daemon": body = renderDaemon(); break;
       case "sync": body = renderSync(); break;
+      case "usage": body = renderUsage(); break;
       case "about": body = renderAbout(); break;
       default: body = renderApps();
     }
@@ -585,6 +589,215 @@ function draw() {
   pane.replaceChildren(h("section", { class: "section", "aria-labelledby": "h-" + id }, sectionHead(id), body));
   const h2 = pane.querySelector("h2");
   if (h2) h2.id = "h-" + id;
+}
+
+// ---- Usage (docs/settings-page.md Section 3.6) ------------------------------------------------
+
+// The pane's windows and the ways the calls chart splits (docs/usage.md Section 4.1). The counts are
+// the CLI's: the page adds its hours into local days and keeps the five largest series apart.
+const USAGE_WINDOWS = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
+const USAGE_SPLITS = [["name", "Function"], ["workspace", "Workspace"], ["app", "App"], ["rw", "Read or write"]];
+const usage = { since: "7d", split: "name", data: null, error: null, reading: false, shown: false };
+
+// Reads the window chosen. The last numbers stay on screen, dimmed, until the next arrive.
+async function readUsage() {
+  const since = usage.since;
+  usage.reading = true;
+  render();
+  try {
+    const data = await invoke("usage_read", { since });
+    if (since !== usage.since) return;
+    usage.data = data;
+    usage.error = null;
+  } catch (e) {
+    if (since !== usage.since) return;
+    usage.error = String(e);
+  }
+  usage.reading = false;
+  render();
+}
+
+const DAY = 86400000;
+const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const total = (hours, f) => hours.reduce((n, hr) => n + f(hr), 0);
+const counted = (n) => n >= 10000 ? Math.round(n / 1000) + "K" : n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(n);
+const dayName = (t) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+// One column per local day the window touches, oldest first, each with the hours in it. The first
+// day is the window's start, so it can be partial.
+function usageDays(data) {
+  const days = [];
+  for (let t = dayStart(data.since); t <= Date.now(); t = dayStart(t + DAY * 1.5)) days.push({ t, hours: [] });
+  for (const hr of data.by_hour) {
+    const day = days.find((d) => d.t === dayStart(hr.t));
+    if (day) day.hours.push(hr);
+  }
+  return days;
+}
+
+const shownName = (split, n) => n !== "-" ? n : split === "workspace" ? "No workspace" : "Unnamed app";
+
+// The calls chart's series for a split: the five largest in the window, the rest as Other.
+function callSeries(days, split) {
+  if (split === "rw") return [
+    { name: "Reads", get: (d) => total(d.hours, (hr) => hr.calls - hr.writes) },
+    { name: "Writes", get: (d) => total(d.hours, (hr) => hr.writes) }];
+  const key = { name: "by_name", workspace: "by_workspace", app: "by_app" }[split];
+  const sums = new Map();
+  for (const d of days) for (const hr of d.hours) for (const [n, c] of hr[key]) sums.set(n, (sums.get(n) || 0) + c);
+  const ranked = [...sums].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([n]) => n);
+  const top = ranked.slice(0, 5);
+  const count = (d, pick) => total(d.hours, (hr) => hr[key].reduce((n, [k, c]) => n + (pick(k) ? c : 0), 0));
+  const series = top.map((n) => ({ name: shownName(split, n), get: (d) => count(d, (k) => k === n) }));
+  if (ranked.length > top.length) series.push({ name: "Other", other: true, get: (d) => count(d, (k) => !top.includes(k)) });
+  return series;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs, ...kids) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, String(v));
+  el.append(...kids);
+  return el;
+}
+const niceMax = (v) => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 5, 10].map((m) => m * p).find((m) => m >= v); };
+
+// A stacked column per day: columns at most 24 pixels wide with a 2-pixel gap between segments and a
+// rounded top, hairline gridlines, a legend, the day's numbers on hover or with the arrow keys, and
+// every number again in the table under the chart (the dataviz rules this page follows).
+function columnChart(label, days, series) {
+  if (days.every((d) => series.every((se) => !se.get(d)))) {
+    return h("div", { class: "ucard" }, h("p", { class: "hint", text: "None in this window." }));
+  }
+  const W = 640, H = 170, L = 36, T = 8, B = 22, pw = W - L - 6, ph = H - T - B;
+  const slots = series.map((se, i) => se.other ? "so" : "s" + (i + 1));
+  const sums = days.map((d) => series.reduce((n, se) => n + se.get(d), 0));
+  const max = niceMax(Math.max(1, ...sums));
+  const slot = pw / days.length, cw = Math.max(2, Math.min(24, slot * 0.66));
+  const y = (v) => T + ph - (v / max) * ph;
+  const chart = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "uchart", role: "img", tabindex: 0,
+    "aria-label": label + " per day; the numbers are in the table below the chart" });
+  // Counts take whole-number ticks: the middle one only when it is whole.
+  for (const v of Number.isInteger(max / 2) ? [0, max / 2, max] : [0, max]) {
+    chart.append(svgEl("line", { x1: L, x2: W - 6, y1: y(v), y2: y(v), class: v ? "grid" : "base" }),
+      svgEl("text", { x: L - 6, y: y(v) + 4, class: "tick", "text-anchor": "end" }, counted(v)));
+  }
+  const every = days.length <= 8 ? 1 : days.length <= 32 ? 7 : 14;
+  const cols = days.map((d, i) => {
+    const x = L + slot * i + (slot - cw) / 2, col = svgEl("g", { class: "col" });
+    const parts = series.map((se, k) => ({ v: se.get(d), slot: slots[k] })).filter((p) => p.v > 0);
+    let acc = 0, base = y(0);
+    parts.forEach((p, j) => {
+      acc += p.v;
+      const top = y(acc), bottom = j ? base - 2 : base, h = bottom - top;
+      if (h > 0.5) {
+        const r = j === parts.length - 1 ? Math.min(4, cw / 2, h) : 0;
+        col.append(svgEl("path", { class: p.slot, d: `M${x},${bottom}V${top + r}Q${x},${top} ${x + r},${top}H${x + cw - r}Q${x + cw},${top} ${x + cw},${top + r}V${bottom}Z` }));
+      }
+      base = top;
+    });
+    if ((days.length - 1 - i) % every === 0) chart.append(svgEl("text", { x: L + slot * (i + 0.5), y: H - 6, class: "tick", "text-anchor": "middle" }, dayName(d.t)));
+    chart.append(col);
+    return col;
+  });
+  const tip = h("div", { class: "utip", hidden: true });
+  let at = -1;
+  const show = (i) => {
+    if (at >= 0) cols[at].classList.remove("on");
+    at = i;
+    cols[i].classList.add("on");
+    const d = days[i];
+    tip.replaceChildren(h("div", { class: "utip-h" }, h("span", { text: dayName(d.t) }), h("strong", { text: counted(sums[i]) })),
+      ...series.map((se, k) => h("div", { class: "utip-r" }, h("span", { class: "key " + slots[k] }), h("strong", { text: counted(se.get(d)) }), h("span", { text: se.name }))));
+    const centre = (L + slot * (i + 0.5)) / W;
+    tip.style.left = (centre * 100) + "%";
+    tip.className = "utip" + (centre < 0.2 ? " from-left" : centre > 0.8 ? " from-right" : "");
+    tip.hidden = false;
+  };
+  const hide = () => { if (at >= 0) cols[at].classList.remove("on"); at = -1; tip.hidden = true; };
+  days.forEach((_, i) => {
+    const hit = svgEl("rect", { x: L + slot * i, y: T, width: slot, height: ph, class: "hit" });
+    hit.addEventListener("pointerenter", () => show(i));
+    chart.append(hit);
+  });
+  chart.addEventListener("pointerleave", hide);
+  chart.addEventListener("blur", hide);
+  chart.addEventListener("focus", () => show(at >= 0 ? at : days.length - 1));
+  chart.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    show(Math.max(0, Math.min(days.length - 1, (at >= 0 ? at : days.length - 1) + step)));
+  });
+  const legend = h("div", { class: "ulegend" }, series.map((se, k) => h("span", null, h("span", { class: "key " + slots[k] }), se.name)));
+  const table = h("details", { class: "unumbers" }, h("summary", { text: "Numbers" }),
+    usageTable(["Day", ...series.map((se) => se.name), "Total"],
+      days.map((d, i) => [dayName(d.t), ...series.map((se) => se.get(d)), sums[i]]).reverse()));
+  return h("div", { class: "ucard" }, legend, h("div", { class: "uplot" }, chart, tip), table);
+}
+
+// A table whose first `names` columns name and the rest count.
+function usageTable(head, rows, names = 1) {
+  const cls = (i) => i >= names ? "n" : null;
+  return h("table", { class: "utable" },
+    h("thead", null, h("tr", null, head.map((c, i) => h("th", { class: cls(i), text: c })))),
+    h("tbody", null, rows.map((r) => h("tr", null, r.map((c, i) => h("td", { class: cls(i), text: typeof c === "number" ? counted(c) : c }))))));
+}
+
+function renderUsage() {
+  if (!usage.shown) { usage.shown = true; queueMicrotask(readUsage); }
+  const windows = h("div", { class: "useg", role: "group", "aria-label": "Window" },
+    USAGE_WINDOWS.map(([id, label]) => h("button", {
+      type: "button", class: "btn" + (usage.since === id ? " on" : ""), "aria-pressed": String(usage.since === id),
+      on: { click: () => { if (usage.since !== id) { usage.since = id; readUsage(); } } },
+    }, label)));
+  const out = [h("div", { class: "ubar" }, windows)];
+  const failed = (text) => h("div", { class: "callout bad" }, icon("alert"),
+    h("div", { class: "grow" }, "The usage log could not be read.", h("div", { class: "sub selectable", text })));
+  if (!usage.data) return out.concat(usage.error ? [failed(usage.error)] : renderSkeleton());
+  if (usage.error) out.push(failed(usage.error));
+  return out.concat(h("div", { class: "ubody" + (usage.reading ? " reading" : ""), "aria-busy": String(usage.reading) }, usageBody(usage.data)));
+}
+
+function usageBody(data) {
+  const days = usageDays(data), hours = days.flatMap((d) => d.hours), hk = data.hook;
+  const since = USAGE_WINDOWS.find(([id]) => id === usage.since)[1];
+  if (!data.calls && !hours.length) {
+    return h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow",
+      text: "Nothing was recorded in the last " + since + ". The daemon writes the usage log as AI apps call it, and the Claude Code hook as it gives a session its index or asks about a commit." }));
+  }
+  const writes = total(hours, (hr) => hr.writes), missed = total(hours, (hr) => hr.empty + hr.not_found + hr.errors);
+  const tile = (label, value, sub) => h("div", { class: "utile" },
+    h("div", { class: "ul", text: label }), h("div", { class: "uv", text: value }), h("div", { class: "us", text: sub }));
+  const split = h("div", { class: "useg", role: "group", "aria-label": "Split by" },
+    USAGE_SPLITS.map(([id, label]) => h("button", {
+      type: "button", class: "btn" + (usage.split === id ? " on" : ""), "aria-pressed": String(usage.split === id),
+      on: { click: () => { usage.split = id; render(); } },
+    }, label)));
+  const series = (pairs) => pairs.map(([name, get, other]) => ({ name, get: (d) => total(d.hours, get), other }));
+  return [
+    h("div", { class: "utiles" },
+      tile("Calls", counted(data.calls), counted(data.calls - writes) + " reads, " + counted(writes) + " writes"),
+      tile("Found nothing or failed", data.calls ? Math.round((missed / data.calls) * 100) + "%" : "-", counted(missed) + " of " + counted(data.calls) + " calls"),
+      tile("Indexes the hook gave", counted(hk.session_indexes + hk.subagent_indexes), hk.session_indexes + " to sessions, " + hk.subagent_indexes + " to subagents"),
+      tile("Commit questions answered", hk.commit_questions ? hk.answered_with_a_record + " of " + hk.commit_questions : "-", "an observe names the commit")),
+    h("div", { class: "group-title uhead" }, h("span", { text: "Calls" }), split),
+    columnChart("Calls", days, callSeries(days, usage.split)),
+    h("div", { class: "group-title", text: "Found nothing or failed" }),
+    columnChart("Calls that found nothing or failed", days, series([
+      ["Found nothing", (hr) => hr.empty], ["Named nothing", (hr) => hr.not_found], ["Failed", (hr) => hr.errors]])),
+    h("div", { class: "group-title", text: "Indexes the Claude Code hook gave" }),
+    columnChart("Indexes given", days, series([
+      ["To sessions", (hr) => hr.session_indexes], ["To subagents", (hr) => hr.subagent_indexes]])),
+    h("div", { class: "group-title", text: "Commit questions" }),
+    columnChart("Commit questions", days, series([
+      ["Answered with a record", (hr) => hr.answered], ["Not answered", (hr) => hr.commit_questions - hr.answered, true]])),
+    h("div", { class: "group-title", text: "By function and workspace" }),
+    h("div", { class: "ucard" }, usageTable(["Function", "Workspace", "Calls", "Found nothing", "Named nothing", "Failed"],
+      data.by_call.map((r) => [r.kind === "tool" ? r.name : r.kind + ":" + r.name, shownName("workspace", r.workspace), r.calls, r.empty, r.not_found, r.errors]), 2)),
+    h("div", { class: "group-title", text: "By app" }),
+    h("div", { class: "ucard" }, usageTable(["App", "Calls"], data.by_app.map(([app, n]) => [shownName("app", app), n]))),
+  ];
 }
 
 // ---- Dialogs --------------------------------------------------------------------------------

@@ -14,8 +14,12 @@ pub(crate) mod fake {
     use super::*;
     use std::sync::Arc;
 
+    /// `usage --json` as the CLI's example has it, the shape its contract test holds.
+    const USAGE: &str = include_str!("../../crates/supragnosis-cli/tests/fixtures/json/usage.json");
+
     /// What the recorder answers. `status --json` says the login job's state (`service`) and the
-    /// managers it names; `connect --json` lists no app; setup's checklist has no step. Any other
+    /// managers it names; `connect --json` lists no app; `usage --json` is the CLI's example;
+    /// setup's checklist has no step. Any other
     /// call succeeds, or is refused with `refuse`, on stderr as the CLI writes a refusal.
     #[derive(Clone)]
     pub(crate) struct Scene {
@@ -93,6 +97,7 @@ pub(crate) mod fake {
                     "",
                 ),
                 ["connect", "--json"] => output(0, r#"{"schema":1,"clients":[]}"#, ""),
+                ["usage", "--json", "--since", _] => output(0, USAGE, ""),
                 ["setup", "--check", ..] => output(0, "{\"schema\":1}\n", ""),
                 _ => match s.refuse {
                     Some(why) => output(1, "", &format!("\nError: {why}\n")),
@@ -341,8 +346,8 @@ mod status_text_tests {
         diagnostics, login_env_from_output, login_outcome, login_set, menu_pressed, peer_narrow,
         read_login_env, refresh_status, search_rebuild, settings_state, setup_check, setup_run,
         setup_running, setup_stop, splash_beat, start_up, starting_page, status_text, tray_pressed,
-        welcome_set, welcome_state, write_prefs, Daemon, TrayPress, WelcomePrefs, MENU_ITEMS,
-        TRAY_IDS,
+        usage_read, welcome_set, welcome_state, write_prefs, Daemon, TrayPress, WelcomePrefs,
+        MENU_ITEMS, TRAY_IDS,
     };
     use std::process::Command;
     use std::sync::Mutex;
@@ -560,6 +565,7 @@ mod status_text_tests {
                 .filter(|c| {
                     !matches!(c.as_str(), "status --json" | "connect --json" | "serve")
                         && !c.starts_with("setup --check --events")
+                        && !c.starts_with("usage --json")
                 })
                 .collect()
         };
@@ -638,6 +644,7 @@ mod status_text_tests {
                     "welcome_state" => welcome_state(page, h).await.map(drop),
                     "welcome_set" => welcome_set(page, h, Some(true), Some(true)).await.map(drop),
                     "diagnostics" => diagnostics(page, h).await.map(drop),
+                    "usage_read" => usage_read(page, h, "7d".into()).await.map(drop),
                     "peer_narrow" => peer_narrow(page, h, "peer".into(), vec![]).await.map(drop),
                     "setup_stop" => setup_stop(page, h, "model".into()).await.map(drop),
                     "app_toggle" => app_toggle(page, h, "claude-code".into()).await.map(drop),
@@ -663,6 +670,7 @@ mod status_text_tests {
             ("welcome_state", fake::login_job, &[]),
             ("welcome_set", fake::login_job, &[]),
             ("diagnostics", fake::login_job, &[]),
+            ("usage_read", fake::login_job, &[]),
             ("peer_narrow", fake::login_job, &[]),
             ("setup_stop", fake::login_job, &[]),
             ("app_toggle", fake::login_job, &["connect claude-code --replace"]),
@@ -770,7 +778,7 @@ mod status_text_tests {
             "search_rebuild",
             "setup_run",
         ];
-        let reads = ["settings_state", "setup_running", "diagnostics"];
+        let reads = ["settings_state", "setup_running", "diagnostics", "usage_read"];
         let system = ["clipboard_copy", "reveal", "app_helper", "setup_stop"];
 
         // A command is a quoted name of the app's own on a line that calls `invoke(` or `act(`.
@@ -824,6 +832,27 @@ mod status_text_tests {
         let narrowed = held.run(peer_narrow(held.page(), held.handle(), "peer".into(), vec![]));
         assert!(narrowed.is_err(), "no daemon answers here");
         assert_eq!(held.cli.take(), Vec::<String>::new(), "stopping a peer's sharing runs the CLI");
+    }
+
+    /// settings-page.md Section 3.6: the Usage pane reads `usage --json` for 7, 30 or 90 days and
+    /// gets the CLI's summary back as it was counted; any other window is refused before the CLI
+    /// runs, so the page cannot ask the CLI for anything else through it.
+    #[test]
+    fn the_usage_pane_reads_only_its_three_windows() {
+        use super::fake;
+        for since in ["7d", "30d", "90d"] {
+            let held = fake::app(Daemon::External, fake::login_job());
+            let got = held.run(usage_read(held.page(), held.handle(), since.into()));
+            let sum = got.unwrap_or_else(|e| panic!("{since}: {e}"));
+            assert_eq!(sum["by_hour"][0]["writes"], 1, "the CLI's counts, as they came");
+            assert_eq!(held.cli.take(), [format!("usage --json --since {since}")]);
+        }
+        for since in ["1y", "7d --json", "", "--since"] {
+            let held = fake::app(Daemon::External, fake::login_job());
+            let got = held.run(usage_read(held.page(), held.handle(), since.into()));
+            assert!(got.is_err(), "{since:?} was read");
+            assert_eq!(held.cli.take(), Vec::<String>::new(), "{since:?} ran the CLI");
+        }
     }
 
     /// docs/design-system.md Section 9 and U17: the daemon has one word per state, the same on the
