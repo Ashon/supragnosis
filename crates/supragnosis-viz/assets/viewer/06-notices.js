@@ -72,7 +72,7 @@ function alertMark(c, x, y, r, color, s) {
 
 // --- Notices: every write answers (Principle 24) -------------------------------------------------
 // The console's writes used to drop the server's answer and wait for the next poll to change the
-// panel, so a refusal - a merge the fold blocks, the hub's read tier answering 403 - looked exactly
+// panel, so a refusal - a merge the fold blocks - looked exactly
 // like a success that had not arrived yet. Each one now reports here, in the anatomy the app's pages
 // share (design-system.md Section 28.4, U42): its kind's icon, a title, at most a detail and one
 // action, and a dismiss. At most four at a time, the newest first.

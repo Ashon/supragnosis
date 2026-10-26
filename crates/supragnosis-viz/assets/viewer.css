@@ -7,7 +7,7 @@
      - --sans, Pretendard, for what a person reads and the names of things: running text, controls,
        headings. Its Hangul and its Latin are one design, so a Korean name beside an English one keeps
        its height and weight; the system face this replaced took the two from different families, and
-       was a different face on every system the read tier opens in. Its stylesheet, the author's
+       was a different face on every system the page opens in. Its stylesheet, the author's
        dynamic subset, is linked from viewer.html: a page fetches only the files its text needs.
      - --mono, IBM Plex Mono, for identifiers: relation kinds, ids, hashes, paths. Its x-height is
        within 3% of Pretendard's, so an identifier among names keeps the line's height. Until it was

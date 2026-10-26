@@ -568,7 +568,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
     (4, &[c(
         "on the Review page a decision control appears only with its item's diff and checks on screen and decides that item alone; every open proposal is listed, and a generated candidate is left out only when its diff is computable and empty",
-        // crates/supragnosis-viz/tests/http.rs: reviewDecide's guards and its call sites; review.rs:
+        // crates/supragnosis-viz/tests/http.rs: reviewDecide's guards; review.rs:
         // a Decided item's reverse is read with its diff before it acts (Section 29.3).
         Evidence::Scenario(&[
             "a_review_decision_takes_one_item_with_its_diff_on_screen",
@@ -841,7 +841,7 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (41, &[c(
         "every icon the viewer, the app's pages and the landing draw is a Lucide 1.52.0 file, vendored unmodified and drawn as a mask over the text's color, the contested badge's mark included; no page draws an icon from a character, a hand-written path or a pasted copy, and a file both surfaces ship is the same bytes on both",
         // crates/supragnosis-viz/tests/icons.rs reads the three copies of the files, every class and
-        // name the pages use, what the viewer serves, and the sources for a mark drawn from text.
+        // name the pages use, what the viewer serves, and the stylesheets' `content:` rules.
         Evidence::Scenario(&[
             "the_icons_are_lucides_files_unmodified",
             "every_icon_a_page_names_is_a_file_it_ships",

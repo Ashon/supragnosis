@@ -970,8 +970,7 @@ from the agent sitting beside them.
 ## 9. Notices and words
 
 **Every write answers where it was made** (U1, built in step 0): what was done, the server's own
-reason for a refusal, "This view is read-only" for a 403, or that nothing changed when the server
-cannot be reached. The notices are the settings page's in shape: a success leaves after 4.5 seconds,
+reason for a refusal, or that nothing changed when the server cannot be reached. The notices are the settings page's in shape: a success leaves after 4.5 seconds,
 an error stays until it is dismissed, four at most, in a polite live region. Section 28.4 gives both
 surfaces one anatomy for them, and a clock that stops while a notice is read (U42).
 
@@ -1691,8 +1690,8 @@ every loaded node, the legend says what a ring reads, the badge is drawn in its 
 that skips only an undrawn type, and the count is taken over every loaded node.
 
 U4 is guarded by `a_review_decision_takes_one_item_with_its_diff_on_screen`: the decision returns unless
-the view it holds is the item's, refuses a merge a blocking check fails, asks a recall twice, and is
-never called over a list of items; every open or blocked proposal is listed. The detail's evidence
+the view it holds is the item's, refuses a merge a blocking check fails, and asks a recall twice;
+every open or blocked proposal is listed. The detail's evidence
 is guarded by `the_review_page_shows_its_evidence` in `crates/supragnosis-viz/tests/review.rs` -
 identity first for a merge, every check in words, the evidence, who asked, a contested item's
 sources - and the engine's half, a relation at its source's effective tier, the act that moved an
@@ -1700,9 +1699,8 @@ observation and the trust profile, by
 `a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier` in the engine's policy
 cases.
 
-U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the contested pill hides
-only at zero, and the sync pill hides only off the local console or where sync is not configured, and
-draws "Sync unavailable" when the daemon does not answer.
+U8 is guarded by `a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up`: the sync pill hides only
+where sync is not configured, and draws "Sync unavailable" when the daemon does not answer.
 
 U7 is guarded by `the_surfaces_share_one_token_set`, `every_text_token_meets_4_5_on_every_surface`
 and `every_token_a_stylesheet_reads_is_declared` in `crates/supragnosis-viz/tests/design_tokens.rs`.
@@ -1754,8 +1752,8 @@ which read the page's script beside the viewer's and the landing's stylesheet: t
 the palette, the edge line and the rings are the viewer's; no tier is named in the script; a frame is
 requested only while a figure plays, reduced motion draws the resting frame, a hidden tab stops it,
 a scene plays once and can be stopped, a caption is announced only after a press; every canvas is
-hidden and every beat is text in the page; the script copies the page's words as nodes and writes no
-markup; and the page carries no style of its own. U9 and U11 hold
+hidden and every beat is text in the page; the script copies the page's words as nodes; and the
+page carries no style of its own. U9 and U11 hold
 it through `no_border_draws_an_area` and `every_face_ships_with_its_surface`, which reads the page's
 links. `the_landing_links_the_principles_page` holds the landing's four links to it.
 
@@ -1764,7 +1762,7 @@ U16 is guarded by `the_type_band_is_never_a_signal` and `every_category_color_co
 script and the signal and neutral tokens from its stylesheet, and measures every rule Section 5
 states: the hue gaps, the lightness, the contrast on `--surface`, and the distances within each tone
 and from the signals and neutrals. The second holds the band as the only source of a category color -
-types, boundaries and peers - with no generated color left, relation kinds drawn in the neutral line,
+types, boundaries and peers - with relation kinds drawn in the neutral line,
 and a region's hue checked over all 512 slots against the signals. The landing's and the principles
 page's copies are held to the viewer's by `the_stage_draws_the_viewers_marks` and
 `the_principles_page_draws_the_viewers_marks`.
@@ -1813,8 +1811,7 @@ the value's `base_tier` from the explain path, and undoes it into a tie again.
 
 U20 is guarded by `review_is_always_in_the_status_bar_with_one_count`,
 `follow_frames_what_is_in_scope_and_notes_the_rest` and `the_first_view_opens_where_the_knowledge_is`
-in `crates/supragnosis-viz/tests/places.rs`: Review's entry hides only on the read tier, reads Review at
-zero and counts the contested beliefs inside its one count; Needs you lists only ties; the event
+in `crates/supragnosis-viz/tests/places.rs`: Review's entry reads Review at zero and counts the contested beliefs inside its one count; Needs you lists only ties; the event
 handler changes no scope and notes a write elsewhere with Show; and a default holding at most half
 of the knowledge, or nothing, with knowledge elsewhere opens on All and says so (Section 29.21).
 

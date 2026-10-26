@@ -790,8 +790,8 @@ fn a_review_decision_takes_one_item_with_its_diff_on_screen() {
 }
 
 /// design-system.md U1 (Principle 24): every console write reports what happened. The writes used to
-/// be bare fetches that dropped the server's answer, so a refusal - the hub's read tier answering 403,
-/// a merge the fold would block answering 400 with its reason - looked exactly like a success that had
+/// be bare fetches that dropped the server's answer, so a refusal - a merge the fold would block
+/// answering 400 with its reason - looked exactly like a success that had
 /// not arrived yet. A tripwire on the shape, like the two guards above. The console's writes - its
 /// verdicts and the acts that write - each appear in the viewer's source only as the first argument
 /// of `consoleWrite`, which reads the status and shows a notice on its refusal, unreachable and
