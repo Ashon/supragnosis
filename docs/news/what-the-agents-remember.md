@@ -3,6 +3,7 @@ title: What the agents remember, four days in
 summary: Agents wrote to supragnosis far more often than they read from it. In 0.11.0 a session starts with its project's newest records. Four days of measurement on one machine suggest that reading rose; they do not yet show that the work improved.
 date: 2026-10-28
 version: 0.11.0
+update: brew upgrade; supragnosis connect claude-code; supragnosis restart
 ---
 
 supragnosis keeps what AI agents learn while they work, so that the next agent on the same project
@@ -22,7 +23,7 @@ next.
 The records themselves were not the problem. Most said why a decision was taken, what was ruled
 out and what was measured. They were simply not read. What did reach agents was what arrived
 without being asked for: Claude Code's own memory files, loaded at the start of every session, were
-read and written about as often as every supragnosis tool together. The difference did not appear
+read about as often as every supragnosis tool was called. The difference did not appear
 to be the agents' interest in memory. It was which memory was placed in front of them.
 
 ## What 0.11.0 changes
@@ -43,7 +44,8 @@ to be the agents' interest in memory. It was which memory was placed in front of
 ## What four days show
 
 We compared the seven days before the index with the four days after, counting each tool call once
-across the transcripts.
+across the transcripts. The windows and the counting are set out in
+[docs/recall.md](../recall.md#72-the-first-days-in-use) Section 7.2.
 
 | | Before (7 days) | After (4 days) |
 |---|---|---|
@@ -52,8 +54,10 @@ across the transcripts.
 | Writes per day | 31 | 87 |
 | Reads per write | 0.16 | 0.14 |
 
-Reading rose by every measure we have. Writing rose faster, mostly because more questions after a
-commit were answered, so the store is read no more often relative to how much is put into it. Of
+Reading rose by day and by tool call; it did not rise by write. Writing rose faster, mostly because
+more questions after a commit were answered, so the store is read no more often relative to how much
+is put into it. There were also fewer tool calls in the second period, which by itself raises the
+rate per call. Of
 the 16 records opened after the change, 14 were lines of the session's own index. None of the 23
 reads recorded since the usage log began came back empty.
 
@@ -87,8 +91,10 @@ tests.
 
 ## Looking at your own
 
-`supragnosis usage --since 7d` prints the same counts for your machine, and Settings > Usage draws
-them by day. Nothing in that log leaves the machine, and nothing in it is read by an agent.
+`supragnosis usage --since 7d` prints your machine's side of these counts - which tools were
+called, on which workspaces, how many records were opened from an index and how many writes cite
+one - and Settings > Usage draws them by day. Nothing in that log leaves the machine, and no tool
+serves it to an agent.
 
 The design behind this note is in [docs/recall.md](../recall.md), and the usage log is described
 in [docs/usage.md](../usage.md).

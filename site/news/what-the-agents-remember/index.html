@@ -46,12 +46,12 @@
         <ol>
           <li><a href="../what-the-agents-remember/" aria-current="page">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
           <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
-          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
           <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
-          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
           <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
           <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
-          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+          <li><a href="../v0.8.0/">supragnosis v0.8.0<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
         </ol>
         <p><a href="../feed.xml">Follow with RSS</a></p>
       </aside>
@@ -75,7 +75,7 @@ next.</p>
 <p>The records themselves were not the problem. Most said why a decision was taken, what was ruled
 out and what was measured. They were simply not read. What did reach agents was what arrived
 without being asked for: Claude Code's own memory files, loaded at the start of every session, were
-read and written about as often as every supragnosis tool together. The difference did not appear
+read about as often as every supragnosis tool was called. The difference did not appear
 to be the agents' interest in memory. It was which memory was placed in front of them.</p>
 <h2>What 0.11.0 changes</h2>
 <ul>
@@ -94,15 +94,18 @@ and the app's Settings &gt; Usage read it.</li>
 </ul>
 <h2>What four days show</h2>
 <p>We compared the seven days before the index with the four days after, counting each tool call once
-across the transcripts.</p>
+across the transcripts. The windows and the counting are set out in
+<a href="https://github.com/Ashon/supragnosis/blob/main/docs/recall.md#72-the-first-days-in-use">docs/recall.md</a> Section 7.2.</p>
 <table><thead><tr><th></th><th>Before (7 days)</th><th>After (4 days)</th></tr></thead><tbody>
 <tr><td>Reads of the store per day</td><td>4.9</td><td>12.5</td></tr>
 <tr><td>Reads per 100 tool calls</td><td>0.07</td><td>0.32</td></tr>
 <tr><td>Writes per day</td><td>31</td><td>87</td></tr>
 <tr><td>Reads per write</td><td>0.16</td><td>0.14</td></tr>
 </tbody></table>
-<p>Reading rose by every measure we have. Writing rose faster, mostly because more questions after a
-commit were answered, so the store is read no more often relative to how much is put into it. Of
+<p>Reading rose by day and by tool call; it did not rise by write. Writing rose faster, mostly because
+more questions after a commit were answered, so the store is read no more often relative to how much
+is put into it. There were also fewer tool calls in the second period, which by itself raises the
+rate per call. Of
 the 16 records opened after the change, 14 were lines of the session's own index. None of the 23
 reads recorded since the usage log began came back empty.</p>
 <p>One finding was not anticipated. In the busiest project the 25 newest records reach back only
@@ -130,14 +133,17 @@ remains deferred until an offline test shows it finds the right record about nin
 and stays silent when nothing relevant is recorded.</li>
 </ul>
 <h2>Looking at your own</h2>
-<p><code>supragnosis usage --since 7d</code> prints the same counts for your machine, and Settings &gt; Usage draws
-them by day. Nothing in that log leaves the machine, and nothing in it is read by an agent.</p>
+<p><code>supragnosis usage --since 7d</code> prints your machine's side of these counts - which tools were
+called, on which workspaces, how many records were opened from an index and how many writes cite
+one - and Settings &gt; Usage draws them by day. Nothing in that log leaves the machine, and no tool
+serves it to an agent.</p>
 <p>The design behind this note is in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/recall.md">docs/recall.md</a>, and the usage log is described
 in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/usage.md">docs/usage.md</a>.</p>
         </div>
         <div class="n-update">
           <p class="eyebrow">Update</p>
           <pre><code>brew upgrade
+supragnosis connect claude-code
 supragnosis restart</code></pre>
         </div>
         <nav class="n-steps" aria-label="Newer and older"><a href="../v0.11.0/"><span>Older</span>supragnosis v0.11.0</a></nav>

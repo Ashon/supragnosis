@@ -20,13 +20,6 @@
       <description>Upgrade, reconnect Claude Code, restart; a session starts with what its project recorded.</description>
     </item>
     <item>
-      <title>supragnosis v0.10.3</title>
-      <link>https://supragnosis.dev/news/v0.10.3/</link>
-      <guid>https://supragnosis.dev/news/v0.10.3/</guid>
-      <pubDate>Sat, 24 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the server and the app, then restart once; start says started only once it is.</description>
-    </item>
-    <item>
       <title>supragnosis v0.10.2</title>
       <link>https://supragnosis.dev/news/v0.10.2/</link>
       <guid>https://supragnosis.dev/news/v0.10.2/</guid>
@@ -34,11 +27,11 @@
       <description>Upgrade the server and the app, then restart once; an agent's reads follow a merge.</description>
     </item>
     <item>
-      <title>supragnosis v0.10.1</title>
-      <link>https://supragnosis.dev/news/v0.10.1/</link>
-      <guid>https://supragnosis.dev/news/v0.10.1/</guid>
-      <pubDate>Fri, 23 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the server and the app, then restart once; a pinch follows the fingers, and a join pins.</description>
+      <title>supragnosis v0.10.3</title>
+      <link>https://supragnosis.dev/news/v0.10.3/</link>
+      <guid>https://supragnosis.dev/news/v0.10.3/</guid>
+      <pubDate>Sat, 24 Oct 2026 00:00:00 +0000</pubDate>
+      <description>Upgrade the server and the app, then restart once; start says started only once it is.</description>
     </item>
     <item>
       <title>supragnosis v0.10.0</title>
@@ -48,25 +41,18 @@
       <description>Upgrade the server and the app, then restart once; a second machine joins with a code.</description>
     </item>
     <item>
+      <title>supragnosis v0.10.1</title>
+      <link>https://supragnosis.dev/news/v0.10.1/</link>
+      <guid>https://supragnosis.dev/news/v0.10.1/</guid>
+      <pubDate>Fri, 23 Oct 2026 00:00:00 +0000</pubDate>
+      <description>Upgrade the server and the app, then restart once; a pinch follows the fingers, and a join pins.</description>
+    </item>
+    <item>
       <title>supragnosis v0.9.0</title>
       <link>https://supragnosis.dev/news/v0.9.0/</link>
       <guid>https://supragnosis.dev/news/v0.9.0/</guid>
       <pubDate>Thu, 22 Oct 2026 00:00:00 +0000</pubDate>
       <description>Upgrade the server and the app, then restart once; Review closes the loop, and every act says where.</description>
-    </item>
-    <item>
-      <title>supragnosis v0.8.2</title>
-      <link>https://supragnosis.dev/news/v0.8.2/</link>
-      <guid>https://supragnosis.dev/news/v0.8.2/</guid>
-      <pubDate>Tue, 20 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the app and the server, then restart once; recover in one click, and drags follow.</description>
-    </item>
-    <item>
-      <title>supragnosis v0.8.1</title>
-      <link>https://supragnosis.dev/news/v0.8.1/</link>
-      <guid>https://supragnosis.dev/news/v0.8.1/</guid>
-      <pubDate>Tue, 20 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the server and the app, then restart once; the search index rebuilds in one click.</description>
     </item>
     <item>
       <title>supragnosis v0.8.0</title>
@@ -76,11 +62,25 @@
       <description>Upgrade the server and the app, then restart once; the map opens and moves at any size.</description>
     </item>
     <item>
-      <title>supragnosis v0.7.2</title>
-      <link>https://supragnosis.dev/news/v0.7.2/</link>
-      <guid>https://supragnosis.dev/news/v0.7.2/</guid>
+      <title>supragnosis v0.8.1</title>
+      <link>https://supragnosis.dev/news/v0.8.1/</link>
+      <guid>https://supragnosis.dev/news/v0.8.1/</guid>
+      <pubDate>Tue, 20 Oct 2026 00:00:00 +0000</pubDate>
+      <description>Upgrade the server and the app, then restart once; the search index rebuilds in one click.</description>
+    </item>
+    <item>
+      <title>supragnosis v0.8.2</title>
+      <link>https://supragnosis.dev/news/v0.8.2/</link>
+      <guid>https://supragnosis.dev/news/v0.8.2/</guid>
+      <pubDate>Tue, 20 Oct 2026 00:00:00 +0000</pubDate>
+      <description>Upgrade the app and the server, then restart once; recover in one click, and drags follow.</description>
+    </item>
+    <item>
+      <title>supragnosis v0.7.0</title>
+      <link>https://supragnosis.dev/news/v0.7.0/</link>
+      <guid>https://supragnosis.dev/news/v0.7.0/</guid>
       <pubDate>Mon, 19 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the app and the server, then restart once; in full screen the title bar meets the edge.</description>
+      <description>Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.</description>
     </item>
     <item>
       <title>supragnosis v0.7.1</title>
@@ -90,11 +90,11 @@
       <description>Upgrade the app and the server, then restart once; the title bar moves the window again.</description>
     </item>
     <item>
-      <title>supragnosis v0.7.0</title>
-      <link>https://supragnosis.dev/news/v0.7.0/</link>
-      <guid>https://supragnosis.dev/news/v0.7.0/</guid>
+      <title>supragnosis v0.7.2</title>
+      <link>https://supragnosis.dev/news/v0.7.2/</link>
+      <guid>https://supragnosis.dev/news/v0.7.2/</guid>
       <pubDate>Mon, 19 Oct 2026 00:00:00 +0000</pubDate>
-      <description>Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.</description>
+      <description>Upgrade the app and the server, then restart once; in full screen the title bar meets the edge.</description>
     </item>
   </channel>
 </rss>

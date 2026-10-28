@@ -4,7 +4,7 @@
 //! test fails when one differs from what the sources make; `SUPRAGNOSIS_WRITE_PAGE=1` rewrites them
 //! and removes a page whose item is gone.
 
-use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag};
+use pulldown_cmark::{html, CowStr, Event, LinkType, Options, Parser, Tag};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,6 @@ const RELEASES: usize = 12;
 const RECENT: usize = 8;
 /// Items in the feed.
 const FEED: usize = 20;
-const UPDATE: &str = "brew upgrade\nsupragnosis restart";
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -35,6 +34,24 @@ struct Item {
     /// The file the text comes from, from the repository's root.
     source: String,
     body: String,
+    /// The commands a note's `update` names, `;` apart; a release's note says its own.
+    update: Vec<String>,
+}
+
+/// A date as the sources write it, `YYYY-MM-DD`.
+fn is_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
+}
+
+/// A slug that is safe in a path, an attribute and a feed: lowercase letters, digits, `.` and `-`.
+fn is_slug(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
 }
 
 fn root() -> PathBuf {
@@ -72,27 +89,44 @@ fn items() -> Vec<Item> {
         let source = format!("docs/news/{slug}.md");
         let (data, body) = front_matter(&read(&source), &source);
         let field = |k: &str| data.get(k).cloned().unwrap_or_else(|| panic!("{source}: no {k}"));
+        let date = field("date");
+        assert!(
+            is_slug(&slug) && is_date(&date),
+            "{source}: a slug or a date this page cannot use"
+        );
+        let update = data
+            .get("update")
+            .map(|u| u.split(';').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect())
+            .unwrap_or_default();
         notes.push(Item {
             kind: Kind::Note,
             slug,
             title: field("title"),
             summary: field("summary"),
-            date: field("date"),
+            date,
             version: data.get("version").cloned(),
             source,
             body,
+            update,
         });
     }
     // CHANGELOG.md's table: `| [vX](docs/releases/vX.md) | YYYY-MM-DD | the line |`, newest first.
     let changelog = read("CHANGELOG.md");
     let releases = changelog
         .lines()
-        .filter_map(|l| {
+        .filter(|l| l.starts_with("| [v"))
+        .map(|l| {
             let cells: Vec<&str> = l.split(" | ").collect();
-            let tag = cells.first()?.strip_prefix("| [v")?.split(']').next()?.to_string();
-            let date = cells.get(1)?.trim().to_string();
-            let line = cells.get(2)?.trim().trim_end_matches('|').trim().to_string();
-            Some((tag, date, line))
+            let tag =
+                cells[0].trim_start_matches("| [v").split(']').next().unwrap_or("").to_string();
+            let date = cells.get(1).map_or("", |c| c.trim()).to_string();
+            let line =
+                cells.get(2).map_or("", |c| c.trim().trim_end_matches('|').trim()).to_string();
+            assert!(
+                is_slug(&tag) && is_date(&date) && !line.is_empty(),
+                "CHANGELOG.md: a release row without its date or its line: {l}"
+            );
+            (tag, date, line)
         })
         .take(RELEASES)
         .map(|(tag, date, line)| {
@@ -106,6 +140,7 @@ fn items() -> Vec<Item> {
                 version: Some(tag),
                 body: read(&source),
                 source,
+                update: Vec::new(),
             }
         });
     let mut all: Vec<Item> = notes.into_iter().chain(releases).collect();
@@ -113,6 +148,7 @@ fn items() -> Vec<Item> {
         b.date
             .cmp(&a.date)
             .then_with(|| (a.kind == Kind::Release).cmp(&(b.kind == Kind::Release)))
+            .then_with(|| a.slug.cmp(&b.slug))
     });
     all
 }
@@ -126,11 +162,17 @@ fn esc(s: &str) -> String {
 
 /// A one-line summary as HTML: escaped, with its `code` spans set as code.
 fn inline(s: &str) -> String {
-    esc(s)
-        .split('`')
-        .enumerate()
-        .map(|(i, part)| if i % 2 == 1 { format!("<code>{part}</code>") } else { part.to_string() })
-        .collect()
+    let parts: Vec<String> = esc(s).split('`').map(str::to_string).collect();
+    let paired = if parts.len().is_multiple_of(2) { parts.len() - 1 } else { parts.len() };
+    let mut out = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        match (i % 2 == 1, i < paired) {
+            (true, true) => out += &format!("<code>{part}</code>"),
+            (true, false) => out += &format!("`{part}"),
+            _ => out += part,
+        }
+    }
+    out
 }
 
 /// `Oct 28, 2026` from `2026-10-28`.
@@ -190,12 +232,17 @@ fn link_to(dest: &str, source: &str) -> String {
 fn markdown(md: &str, source: &str) -> String {
     let events = Parser::new_ext(md, Options::ENABLE_TABLES).map(|e| match e {
         Event::Html(h) | Event::InlineHtml(h) => Event::Text(h),
-        Event::Start(Tag::Link { link_type, dest_url, title, id }) => Event::Start(Tag::Link {
-            link_type,
-            dest_url: CowStr::from(link_to(&dest_url, source)),
-            title,
-            id,
-        }),
+        Event::Start(Tag::Link { link_type, dest_url, title, id })
+            if !matches!(link_type, LinkType::Email | LinkType::Autolink) =>
+        {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url: CowStr::from(link_to(&dest_url, source)),
+                title,
+                id,
+            })
+        }
+        Event::Start(Tag::Image { .. }) => panic!("{source}: a picture in a note is not drawn yet"),
         other => other,
     });
     let mut out = String::new();
@@ -348,12 +395,19 @@ fn item_page(items: &[Item], at: usize) -> String {
     let newer = step(at.checked_sub(1).map(|n| &items[n]), "Newer");
     let older = step(items.get(at + 1), "Older");
     let main = format!(
-        "    <div class=\"wrap n-page\">\n      <aside class=\"n-recent\" aria-label=\"Recent news\">\n        <p class=\"eyebrow\">Recent</p>\n        <ol>\n{recent}        </ol>\n        <p><a href=\"../feed.xml\">Follow with RSS</a></p>\n      </aside>\n      <article class=\"n-article\">\n        <p class=\"n-crumb\"><a href=\"../\">News</a></p>\n        {}\n        <h1>{}</h1>\n        <p class=\"n-lede\">{}</p>\n        <div class=\"n-body\">\n{}        </div>\n        <div class=\"n-update\">\n          <p class=\"eyebrow\">Update</p>\n          <pre><code>{}</code></pre>\n        </div>\n        <nav class=\"n-steps\" aria-label=\"Newer and older\">{newer}{older}</nav>\n      </article>\n    </div>",
+        "    <div class=\"wrap n-page\">\n      <aside class=\"n-recent\" aria-label=\"Recent news\">\n        <p class=\"eyebrow\">Recent</p>\n        <ol>\n{recent}        </ol>\n        <p><a href=\"../feed.xml\">Follow with RSS</a></p>\n      </aside>\n      <article class=\"n-article\">\n        <p class=\"n-crumb\"><a href=\"../\">News</a></p>\n        {}\n        <h1>{}</h1>\n        <p class=\"n-lede\">{}</p>\n        <div class=\"n-body\">\n{}        </div>\n{}        <nav class=\"n-steps\" aria-label=\"Newer and older\">{newer}{older}</nav>\n      </article>\n    </div>",
         meta(item),
         esc(&item.title),
         inline(&item.summary),
         markdown(&item.body, &item.source),
-        esc(UPDATE)
+        if item.update.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "        <div class=\"n-update\">\n          <p class=\"eyebrow\">Update</p>\n          <pre><code>{}</code></pre>\n        </div>\n",
+                esc(&item.update.join("\n"))
+            )
+        }
     );
     page(
         2,
@@ -402,18 +456,34 @@ fn the_news_pages_are_what_their_sources_make() {
     let dir = root().join("site/news");
     let made = pages();
     let write = std::env::var("SUPRAGNOSIS_WRITE_PAGE").as_deref() == Ok("1");
-    let on_disk: Vec<String> = std::fs::read_dir(&dir)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .filter(|e| e.path().is_dir())
-                .filter_map(|e| e.file_name().to_str().map(|n| format!("{n}/index.html")))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Every file under site/news, by its path from there.
+    let mut on_disk = Vec::new();
+    let mut folders = vec![dir.clone()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                folders.push(path);
+            } else if let Ok(rel) = path.strip_prefix(&dir) {
+                on_disk.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    let extra: Vec<String> = on_disk.into_iter().filter(|p| !made.contains_key(p)).collect();
     if write {
-        for gone in on_disk.iter().filter(|p| !made.contains_key(*p)) {
-            let folder = dir.join(gone.trim_end_matches("/index.html"));
-            std::fs::remove_dir_all(&folder).expect("remove a page whose item is gone");
+        // A page this test wrote carries its marker; anything else under site/news is someone
+        // else's, and is not removed.
+        for gone in &extra {
+            let file = dir.join(gone);
+            let ours = gone.ends_with("/index.html")
+                && std::fs::read_to_string(&file)
+                    .is_ok_and(|t| t.contains("Written by e2e/tests/news_page.rs"));
+            assert!(
+                ours,
+                "site/news/{gone} is not a page this test wrote; move it or remove it by hand"
+            );
+            std::fs::remove_dir_all(file.parent().expect("its folder"))
+                .expect("remove a page whose item is gone");
         }
         for (path, text) in &made {
             let file = dir.join(path);
@@ -427,7 +497,7 @@ fn the_news_pages_are_what_their_sources_make() {
         .filter(|(path, text)| std::fs::read_to_string(dir.join(path)).ok().as_ref() != Some(*text))
         .map(|(path, _)| path.clone())
         .collect();
-    stale.extend(on_disk.into_iter().filter(|p| !made.contains_key(p)));
+    stale.extend(extra);
     assert!(
         stale.is_empty(),
         "site/news differs from what docs/news, docs/releases and CHANGELOG.md make: {stale:?}. \
@@ -476,4 +546,11 @@ fn a_note_is_text_and_its_paths_point_at_github() {
     assert_eq!(link_to("https://x.example/", "docs/news/n.md"), "https://x.example/");
     assert_eq!(rfc822("2026-10-28"), "Wed, 28 Oct 2026 00:00:00 +0000");
     assert_eq!(shown("2026-10-28"), "Oct 28, 2026");
+    assert_eq!(
+        inline("a `b` <c> `d"),
+        "a <code>b</code> &lt;c&gt; `d",
+        "an odd backtick stays one"
+    );
+    assert!(is_date("2026-10-28") && !is_date("Oct 28") && !is_date("2026-1-28"));
+    assert!(is_slug("v0.11.0") && !is_slug("a\"b") && !is_slug("A"));
 }

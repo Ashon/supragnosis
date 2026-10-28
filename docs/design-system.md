@@ -1473,17 +1473,22 @@ everything newest first, with the latest note above the releases, a page for eac
 | Hero | The heading, a line saying what is here and that updating is `brew upgrade` then `supragnosis restart`, and the feed |
 | The latest note | Its kind, date and version, its title and its summary, linked to its page |
 | The list | Every note and the twelve newest releases, newest first: the date, the kind, the title and the one-line summary; older releases are a link to the changelog |
-| An item's page | The way back to the list, the kind, version and date, the title, the summary as a lede, the text, the update commands, and the item before and after it; beside it on a wide screen, the eight newest items |
+| An item's page | The way back to the list, the kind, version and date, the title, the summary as a lede, the text, the update commands when a note names them, and the item before and after it; beside it on a wide screen, the eight newest items |
 
 **Where the text comes from.** A note is `docs/news/<slug>.md`: a front matter of `title`, `summary`,
-`date` and `version`, then the text. A release is its note in `docs/releases/`, with its date and
-its one line from CHANGELOG.md's table, which carries a date for every release. Nothing is written
-for the page alone. A link in the text that is not a web address points at the file on GitHub.
+`date`, `version` and, when updating takes more than the usual two commands, `update` (the commands,
+`;` apart), then the text. A release is its note in `docs/releases/`, which names its own update
+steps, with its date and its one line from CHANGELOG.md's table, which carries a date for every
+release. No item's text is written for the page alone; the page adds only its headings and the way
+around. A link in the text that is not a web address, an anchor or an email points at the file on
+GitHub, and a picture is refused until the page draws one. A slug or a date the page cannot use
+fails the build.
 
 **How it is built.** The pages are generated and committed, as the principles page's ledger is: a
 test in the `e2e` crate renders them with the markdown library that crate already uses, and fails
-when a committed page differs; run with `SUPRAGNOSIS_WRITE_PAGE=1`, it rewrites them and removes a
-page whose item is gone. The site keeps no build step. The pages use the landing's faces, tokens
+when a committed page differs or a file under `site/news` is not one it makes; run with
+`SUPRAGNOSIS_WRITE_PAGE=1`, it rewrites them, removes a page it wrote whose item is gone, and leaves
+anything else there for a person to move. The site keeps no build step. The pages use the landing's faces, tokens
 and stylesheet, and the landing, the principles page and the footer link to `/news/`. Raw HTML in
 the markdown is shown as text.
 
