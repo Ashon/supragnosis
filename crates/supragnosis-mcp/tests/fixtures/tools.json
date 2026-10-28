@@ -238,7 +238,7 @@
           },
           "derived_from": {
             "default": [],
-            "description": "(Optional) Source observation ids this knowledge was derived from - lineage for contamination tracking.",
+            "description": "(Optional) Ids of the observations this knowledge was derived from: the records you read that shaped it. Lineage, for contamination tracking.",
             "items": {
               "type": "string"
             },

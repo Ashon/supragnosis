@@ -40,6 +40,18 @@ pub(crate) struct HookUse {
     pub answered_with_a_record: u64,
 }
 
+/// What the log says of recall (docs/recall.md Section 7.1): records opened, and how many of them
+/// from an index line; the `observe` calls, and how many name records they built on; and how far
+/// back each workspace's latest session index reached, in hours.
+#[derive(Debug, Default, PartialEq, serde::Serialize)]
+pub(crate) struct RecallUse {
+    pub opens: u64,
+    pub index_opens: u64,
+    pub observes: u64,
+    pub cited: u64,
+    pub reach: Vec<(String, u64)>,
+}
+
 /// The calls that change what this node holds (docs/usage.md Section 4.1); every other call reads.
 const WRITES: &[&str] = &["observe", "define_type", "propose", "review", "sync_pull"];
 
@@ -61,6 +73,9 @@ pub(crate) struct Hour {
     /// Commit questions first asked in this hour, and how many of those a record answers.
     pub commit_questions: u64,
     pub answered: u64,
+    /// Records opened from an index line, and `observe` calls that name records they built on.
+    pub index_opens: u64,
+    pub cited: u64,
 }
 
 /// An hour as it is counted, before its tallies are sorted into pairs.
@@ -99,6 +114,7 @@ pub(crate) struct Summary {
     pub by_call: Vec<CallRow>,
     pub by_app: Vec<(String, u64)>,
     pub hook: HookUse,
+    pub recall: RecallUse,
     /// The window by UTC hour, oldest first.
     pub by_hour: Vec<Hour>,
 }
@@ -128,6 +144,8 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
     // Each commit asked about, with when it was first asked.
     let mut asked: BTreeMap<String, u64> = BTreeMap::new();
     let mut recorded: BTreeSet<String> = BTreeSet::new();
+    // Each workspace's latest session index: when, and how far back it reached.
+    let mut reach: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     for line in lines.filter(|l| !l.trim().is_empty()) {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             sum.unreadable += 1;
@@ -151,6 +169,12 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
                     sum.hook.session_indexes += u64::from(n > 0);
                     sum.hook.session_lines += n;
                     tally.hour.session_indexes += u64::from(n > 0);
+                    if let Some(h) = v["reach_h"].as_u64() {
+                        let last = reach.entry(workspace).or_insert((t, h));
+                        if t >= last.0 {
+                            *last = (t, h);
+                        }
+                    }
                 }
                 "subagent_start" => {
                     sum.hook.subagent_indexes += u64::from(n > 0);
@@ -174,6 +198,18 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
         *tally.names.entry(label(kind, name)).or_default() += 1;
         *tally.workspaces.entry(workspace.clone()).or_default() += 1;
         *tally.apps.entry(app).or_default() += 1;
+        if kind == "resource" && name == "observation" {
+            sum.recall.opens += 1;
+            let from_index = v["via"].as_str() == Some("index");
+            sum.recall.index_opens += u64::from(from_index);
+            tally.hour.index_opens += u64::from(from_index);
+        }
+        if kind == "tool" && name == "observe" {
+            sum.recall.observes += 1;
+            let cited = v["cites"].as_u64().unwrap_or(0) > 0;
+            sum.recall.cited += u64::from(cited);
+            tally.hour.cited += u64::from(cited);
+        }
         // A failed observe recorded nothing, so it answers no question.
         if name == "observe" && v["outcome"].as_str() != Some("error") {
             if let Some(c) = v["commit"].as_str() {
@@ -231,6 +267,7 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
     by_call.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.name.cmp(&b.name)));
     sum.by_call = by_call;
     sum.by_app = pairs(apps);
+    sum.recall.reach = reach.into_iter().map(|(ws, (_, h))| (ws, h)).collect();
     sum
 }
 
@@ -286,6 +323,14 @@ pub(crate) fn render(sum: &Summary) -> String {
         h.commit_questions,
         h.answered_with_a_record
     );
+    let r = &sum.recall;
+    out += &format!(
+        "\nRECALL\n  records opened: {}, from an index line: {}\n  observes: {}, citing a record they built on: {}\n",
+        r.opens, r.index_opens, r.observes, r.cited
+    );
+    for (ws, h) in &r.reach {
+        out += &format!("  {ws}: its latest index reached back {h} h\n");
+    }
     if sum.unreadable > 0 {
         out += &format!("\n{} line(s) were not usage records and were left out\n", sum.unreadable);
     }
@@ -423,6 +468,38 @@ mod tests {
             (vec![pair("-", 2), pair("a", 1)], vec![pair("Y", 3)])
         );
         assert_eq!((three.commit_questions, three.answered), (1, 1), "the observe names it");
+        assert_eq!((two.cited, three.cited), (0, 0), "no observe here names a record");
+    }
+
+    /// docs/recall.md Section 7.1: records opened, and from an index line; observes that cite a
+    /// record they built on; and each workspace's latest index reach, the later index winning.
+    #[test]
+    fn recall_is_counted_from_opens_citations_and_index_reach() {
+        let lines = [
+            r#"{"t":1000,"kind":"resource","name":"observation","outcome":"ok","via":"index"}"#,
+            r#"{"t":1001,"kind":"resource","name":"observation","outcome":"ok"}"#,
+            r#"{"t":1002,"kind":"resource","name":"entity","outcome":"ok"}"#,
+            r#"{"t":1003,"kind":"tool","name":"observe","workspace":"a","outcome":"ok","cites":2}"#,
+            r#"{"t":1004,"kind":"tool","name":"observe","workspace":"a","outcome":"ok"}"#,
+            r#"{"t":1005,"kind":"hook","name":"session_start","workspace":"a","n":25,"of":90,"reach_h":40}"#,
+            r#"{"t":1006,"kind":"hook","name":"session_start","workspace":"a","n":25,"of":91,"reach_h":7}"#,
+            r#"{"t":1007,"kind":"hook","name":"session_start","workspace":"b","n":0,"of":0}"#,
+        ];
+        let sum = summarize(lines.iter().copied(), 0);
+        assert_eq!(
+            sum.recall,
+            RecallUse {
+                opens: 2,
+                index_opens: 1,
+                observes: 2,
+                cited: 1,
+                reach: vec![("a".to_string(), 7)],
+            }
+        );
+        assert_eq!((sum.by_hour[0].index_opens, sum.by_hour[0].cited), (1, 1));
+        let text = render(&sum);
+        assert!(text.contains("records opened: 2, from an index line: 1"), "{text}");
+        assert!(text.contains("a: its latest index reached back 7 h"), "{text}");
     }
 
     #[test]

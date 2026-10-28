@@ -25,8 +25,9 @@ fn scratch(name: &str) -> std::path::PathBuf {
 
 /// UL4, UL2, UL1: a tool call, a resource read and a prompt each leave one line with the function
 /// and the workspace the call named; an id that names nothing reads `not_found`, a refused call
-/// `error`, and an observe from a commit carries its id. No query, content or id reaches the file,
-/// and the file is the owner's alone.
+/// `error`, an observe from a commit carries its id and one that builds on records their count, and
+/// a record opened from an index line says so (recall.md Section 7.1). No query, content or id
+/// reaches the file, and the file is the owner's alone.
 #[tokio::test]
 async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     let dir = scratch("calls");
@@ -75,7 +76,7 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     call(
         "observe",
         json!({ "workspace": "alpha", "content": "plain", "on_behalf_of": "quokka",
-                "source_ref": "git:not a commit but a sentence" }),
+                "source_ref": "git:not a commit but a sentence", "derived_from": [obs_id] }),
     )
     .await
     .expect("observe answers");
@@ -88,6 +89,12 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
         )))
         .await
         .expect("the observation reads");
+    client
+        .read_resource(ReadResourceRequestParams::new(format!(
+            "supragnosis://observation/{obs_id}?via=index"
+        )))
+        .await
+        .expect("an index line's link reads the same record");
     client
         .read_resource(ReadResourceRequestParams::new("supragnosis://workspace/alpha/graph"))
         .await
@@ -134,6 +141,7 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
             line("tool", "observe", Some("alpha"), "ok"),
             line("tool", "review", None, "error"),
             line("resource", "observation", None, "ok"),
+            line("resource", "observation", None, "ok"),
             line("resource", "graph", Some("alpha"), "ok"),
             line("resource", "entity", None, "not_found"),
             line("prompt", "brief", Some("alpha"), "ok"),
@@ -142,6 +150,10 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     );
     assert_eq!(lines[0]["commit"], "abc1234", "an observe from a commit names it");
     assert!(lines[6].get("commit").is_none(), "a source that is not a commit id is not kept");
+    assert_eq!(lines[6]["cites"], 1, "an observe says how many records it built on");
+    assert!(lines[0].get("cites").is_none(), "an observe that names none says nothing");
+    assert!(lines[8].get("via").is_none(), "a read from a search has no mark");
+    assert_eq!(lines[9]["via"], "index", "a read from an index line says so");
     assert!(lines[1]["n"].as_u64() > Some(0) && lines[1]["mode"] == "hybrid", "{}", lines[1]);
     assert!(lines.iter().all(|l| l["t"].is_u64() && l["ms"].is_u64()), "{file}");
     for asked in [

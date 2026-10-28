@@ -101,11 +101,12 @@ the one reader of the file and the page counts nothing itself.
   the neighbouring day.
 - **What the pane shows**, for the window chosen: six figures (calls with reads and writes, the
   share that found nothing or failed, the indexes the hook gave, the commit questions answered,
-  the records opened from an index, the writes that cite a record), how far each workspace's index
-  reaches back;
-  calls per day split by function, workspace, app or read and write, the five largest and the rest
-  as Other; per day, what found nothing or failed, the indexes given and the commit questions
-  answered; and the two tables of Section 4. Every chart has its numbers in a table beside it.
+  the records opened from an index, the writes that cite a record); calls per day split by
+  function, workspace, app or read and write, the five largest and the rest as Other; per day,
+  what found nothing or failed, the indexes given, the commit questions answered, the records
+  opened from an index line or elsewhere, and the writes that cite a record or none; how far back
+  each workspace's latest index reached; and the two tables of Section 4. Every chart has its
+  numbers in a table beside it.
 
 ## 5. Invariants
 

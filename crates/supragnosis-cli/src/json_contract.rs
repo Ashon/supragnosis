@@ -234,7 +234,9 @@ fn a_refused_store_names_both_ways_on() {
 #[test]
 fn usage_json_matches_its_example() {
     let lines = [
-        r#"{"t":3600000,"kind":"tool","name":"observe","workspace":"supragnosis","app":"Claude Code","outcome":"ok","n":2,"commit":"abc1234"}"#,
+        r#"{"t":3600000,"kind":"tool","name":"observe","workspace":"supragnosis","app":"Claude Code","outcome":"ok","n":2,"commit":"abc1234","cites":1}"#,
+        r#"{"t":3600100,"kind":"resource","name":"observation","app":"Claude Code","outcome":"ok","via":"index"}"#,
+        r#"{"t":3600200,"kind":"hook","name":"session_start","workspace":"supragnosis","n":25,"of":90,"reach_h":30}"#,
         r#"{"t":3600500,"kind":"hook","name":"commit_question","workspace":"supragnosis","commit":"abc1234"}"#,
     ];
     let doc = serde_json::to_value(usage_cli::summarize(lines.iter().copied(), 0)).unwrap();

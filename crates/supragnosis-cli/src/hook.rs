@@ -77,7 +77,7 @@ fn noted(w: &World, name: &str, workspace: &str, fields: Value) {
         "t": w.now * 1000, "kind": "hook", "name": name, "workspace": workspace, "app": "Claude Code",
     });
     if let Value::Object(more) = fields {
-        for (k, v) in more {
+        for (k, v) in more.into_iter().filter(|(_, v)| !v.is_null()) {
             line[k] = v;
         }
     }
@@ -112,7 +112,8 @@ fn after_commit(input: &Value, cwd: &Path, w: &World) -> Option<String> {
          option ruled out and why, a number that was measured, a constraint or a dependency. Use \
          supragnosis observe: workspace {workspace:?}, on_behalf_of {author:?}, source_ref \
          \"git:{id}\". Write it in English, one subject per record, naming the entities it is \
-         about. If the commit settled nothing beyond its diff, record nothing."
+         about. If a record you read shaped it, put its id in derived_from. If the commit settled \
+         nothing beyond its diff, record nothing."
     ))
 }
 
@@ -182,22 +183,18 @@ fn session_start(cwd: &Path, compacted: bool, w: &World) -> Option<String> {
          search its records: search_knowledge with two or three English topic words (the records \
          are in English) and workspace {workspace:?}. If that finds nothing, search without a \
          workspace before you conclude it is not recorded. A hit that is an observation opens as the \
-         resource supragnosis://observation/{{id}} (ReadMcpResourceTool, server supragnosis)."
+         resource supragnosis://observation/{{id}} (ReadMcpResourceTool, server supragnosis). When \
+         a record you read shapes what you record, name its id in observe's derived_from."
     );
     if compacted {
         tail.push_str(&format!(
             "\nThis session was just compacted. If its summary holds a decision, a constraint or a \
              measured fact that the records above do not, record it now with observe, workspace \
-             {workspace:?}."
+             {workspace:?}, with the ids of the records that shaped it in derived_from."
         ));
     }
     let (text, shown) = index(&workspace, &records, SESSION_LINES, &tail);
-    noted(
-        w,
-        "session_start",
-        &workspace,
-        serde_json::json!({ "n": shown, "of": records.len() }),
-    );
+    noted(w, "session_start", &workspace, shown_fields(&records, shown, w));
     Some(text)
 }
 
@@ -217,18 +214,23 @@ fn subagent_start(cwd: &Path, w: &World) -> Option<String> {
          server supragnosis)."
     );
     let (text, shown) = index(&workspace, &records, SUBAGENT_LINES, &tail);
-    noted(
-        w,
-        "subagent_start",
-        &workspace,
-        serde_json::json!({ "n": shown, "of": records.len() }),
-    );
+    noted(w, "subagent_start", &workspace, shown_fields(&records, shown, w));
     Some(text)
+}
+
+/// What an index's usage line says of it: how many lines it showed of how many records, and how
+/// many hours before now its oldest line was recorded (docs/recall.md Section 7.1).
+fn shown_fields(records: &[Record], shown: usize, w: &World) -> Value {
+    let oldest = shown.checked_sub(1).map(|i| records[i].wall);
+    let reach_h = oldest.map(|ms| (w.now * 1000).saturating_sub(ms) / 3_600_000);
+    serde_json::json!({ "n": shown, "of": records.len(), "reach_h": reach_h })
 }
 
 /// One line of the index: the day its record was made, its tier when it is not the common one,
 /// its first sentence, its id.
 struct Record {
+    /// When it was recorded, in milliseconds (its HLC's wall clock).
+    wall: u64,
     day: String,
     tier: Option<String>,
     first: String,
@@ -252,7 +254,13 @@ fn records_of(workspace: &str, w: &World) -> Option<Vec<Record>> {
                     .and_then(Value::as_str)
                     .filter(|t| *t != "agent_extracted")
                     .map(str::to_string);
-                Some(Record { day: utc_day(wall / 1000), tier, first: first_sentence(content), id })
+                Some(Record {
+                    wall,
+                    day: utc_day(wall / 1000),
+                    tier,
+                    first: first_sentence(content),
+                    id,
+                })
             })
             .collect(),
     )
@@ -287,7 +295,7 @@ fn render(workspace: &str, records: &[Record], shown: usize, tail: &str) -> Stri
     for r in &records[..shown] {
         let tier = r.tier.as_deref().map(|t| format!("[{t}] ")).unwrap_or_default();
         out.push_str(&format!(
-            "- {} {tier}{} supragnosis://observation/{}\n",
+            "- {} {tier}{} supragnosis://observation/{}?via=index\n",
             r.day, r.first, r.id
         ));
     }
@@ -627,7 +635,7 @@ mod tests {
         assert_eq!(
             lines[0],
             format!(
-                "- 2026-10-24 Record 0 settled the thing. supragnosis://observation/{:064x}",
+                "- 2026-10-24 Record 0 settled the thing. supragnosis://observation/{:064x}?via=index",
                 0
             )
         );
@@ -718,7 +726,7 @@ mod tests {
             text.ends_with(&format!(
             "\nThis session was just compacted. If its summary holds a decision, a constraint or a \
              measured fact that the records above do not, record it now with observe, workspace \
-             {name:?}."
+             {name:?}, with the ids of the records that shaped it in derived_from."
         )),
             "{text}"
         );
@@ -854,11 +862,11 @@ mod tests {
             let left = 40 - lines.len();
             assert!(text.contains(&format!("{left} older records are not shown.")), "{left}");
             assert!(
-                lines[0].ends_with(&format!("{:064x}", 0)),
+                lines[0].ends_with(&format!("{:064x}?via=index", 0)),
                 "the newest record stays: {}",
                 lines[0]
             );
-            let last = format!("{:064x}", lines.len() - 1);
+            let last = format!("{:064x}?via=index", lines.len() - 1);
             assert!(lines[lines.len() - 1].ends_with(&last), "the oldest shown go first");
         }
         let _ = std::fs::remove_dir_all(&repo);
@@ -903,7 +911,8 @@ mod tests {
     }
 
     /// usage.md Section 2 (UL2): the hook notes each index it gives and each commit question it
-    /// asks - the workspace, the lines shown of how many, the commit - and none of the index's text.
+    /// asks - the workspace, the lines shown of how many, how far back the oldest line was recorded
+    /// (recall.md Section 7.1), the commit - and none of the index's text.
     #[test]
     fn a_hook_event_is_noted_without_its_text() {
         let repo = repo_with_a_commit("seed the usage notes");
@@ -912,9 +921,10 @@ mod tests {
         let noted = std::cell::RefCell::new(Vec::<Value>::new());
         let note = |v: Value| noted.borrow_mut().push(v);
         let daemon = daemon_with(&name, log_of(30, 0, |i| format!("Secret record {i}.")), None);
+        let at = now();
         let w = World {
             note: &note,
-            now: now(),
+            now: at,
             git: &real_git,
             daemon: &daemon,
             workspace_override: None,
@@ -946,6 +956,11 @@ mod tests {
             ]
         );
         assert_eq!(noted[2]["commit"], id.as_str());
+        // The log's records are a day apart, the newest at NEWEST_MS.
+        let reach = |shown: u64| (at * 1000 - (NEWEST_MS - (shown - 1) * 86_400_000)) / 3_600_000;
+        assert_eq!(noted[0]["reach_h"], reach(25), "how far back the session's index reaches");
+        assert_eq!(noted[1]["reach_h"], reach(10), "and the subagent's");
+        assert!(noted[3].get("reach_h").is_none(), "an index of nothing reaches nowhere");
         for v in &noted {
             assert_eq!(
                 (v["kind"].as_str(), v["workspace"].as_str()),

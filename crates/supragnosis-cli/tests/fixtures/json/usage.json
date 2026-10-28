@@ -1,34 +1,44 @@
 {
   "schema": 1,
   "since": 0,
-  "calls": 1,
+  "calls": 2,
   "unreadable": 0,
   "by_call": [
+    { "kind": "resource", "name": "observation", "workspace": "-", "calls": 1, "empty": 0, "not_found": 0, "errors": 0 },
     { "kind": "tool", "name": "observe", "workspace": "supragnosis", "calls": 1, "empty": 0, "not_found": 0, "errors": 0 }
   ],
-  "by_app": [["Claude Code", 1]],
+  "by_app": [["Claude Code", 2]],
   "hook": {
-    "session_indexes": 0,
-    "session_lines": 0,
+    "session_indexes": 1,
+    "session_lines": 25,
     "subagent_indexes": 0,
     "commit_questions": 1,
     "answered_with_a_record": 1
   },
+  "recall": {
+    "opens": 1,
+    "index_opens": 1,
+    "observes": 1,
+    "cited": 1,
+    "reach": [["supragnosis", 30]]
+  },
   "by_hour": [
     {
       "t": 3600000,
-      "calls": 1,
+      "calls": 2,
       "writes": 1,
       "empty": 0,
       "not_found": 0,
       "errors": 0,
-      "by_name": [["observe", 1]],
-      "by_workspace": [["supragnosis", 1]],
-      "by_app": [["Claude Code", 1]],
-      "session_indexes": 0,
+      "by_name": [["observe", 1], ["resource:observation", 1]],
+      "by_workspace": [["-", 1], ["supragnosis", 1]],
+      "by_app": [["Claude Code", 2]],
+      "session_indexes": 1,
       "subagent_indexes": 0,
       "commit_questions": 1,
-      "answered": 1
+      "answered": 1,
+      "index_opens": 1,
+      "cited": 1
     }
   ]
 }

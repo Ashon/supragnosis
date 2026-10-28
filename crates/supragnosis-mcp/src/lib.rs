@@ -47,7 +47,7 @@ pub struct ObserveRequest {
     /// (Optional) Delegation subject - the person/principal this agent acts on behalf of (e.g. "ashon").
     #[serde(default)]
     pub on_behalf_of: Option<String>,
-    /// (Optional) Source observation ids this knowledge was derived from - lineage for contamination tracking.
+    /// (Optional) Ids of the observations this knowledge was derived from: the records you read that shaped it. Lineage, for contamination tracking.
     #[serde(default)]
     pub derived_from: Vec<String>,
     /// (Optional) Entities extracted by the client.
@@ -508,7 +508,8 @@ impl SupragnosisServer {
     }
 
     /// One usage line: the call's kind and name, the workspace it named, its app, what it came to,
-    /// and how long it took (docs/usage.md Section 2).
+    /// the fields only some calls have (`commit`, `cites`, `via`), and how long it took
+    /// (docs/usage.md Section 2).
     #[allow(clippy::too_many_arguments)]
     fn note_use(
         &self,
@@ -517,7 +518,7 @@ impl SupragnosisServer {
         workspace: Option<&str>,
         app: Option<&str>,
         (outcome, n, mode): (&str, Option<usize>, Option<String>),
-        commit: Option<&str>,
+        more: serde_json::Value,
         started: std::time::Instant,
     ) {
         let Some(log) = &self.usage else {
@@ -535,11 +536,15 @@ impl SupragnosisServer {
             ("app", app.map(serde_json::Value::from)),
             ("n", n.map(serde_json::Value::from)),
             ("mode", mode.map(serde_json::Value::from)),
-            ("commit", commit.map(serde_json::Value::from)),
         ];
         for (k, v) in fields {
             if let Some(v) = v {
                 line[k] = v;
+            }
+        }
+        if let serde_json::Value::Object(more) = more {
+            for (k, v) in more.into_iter().filter(|(_, v)| !v.is_null()) {
+                line[k.as_str()] = v;
             }
         }
         log.record(line);
@@ -1772,6 +1777,13 @@ impl ServerHandler for SupragnosisServer {
                 .map(str::to_string)
         };
         let (workspace, source) = (arg("workspace"), arg("source_ref"));
+        // How many records an observe names as what it built on (docs/recall.md Section 7.1).
+        let cites = request
+            .arguments
+            .as_ref()
+            .and_then(|a| a.get("derived_from"))
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         let resp = flag_error(WRITING_APP.scope(app.clone(), self.tool_router.call(tcc)).await);
         if self.usage.is_some() {
@@ -1784,7 +1796,9 @@ impl ServerHandler for SupragnosisServer {
                 Ok(_) => ("ok", None, None),
                 Err(_) => ("error", None, None),
             };
-            let commit = (name == "observe").then(|| commit_of(source.as_deref())).flatten();
+            let observe = name == "observe";
+            let commit = observe.then(|| commit_of(source.as_deref())).flatten();
+            let cites = (observe && cites > 0).then_some(cites);
             // A name the surface does not have is the caller's text, not a function (UL2).
             let known = self.tool_router.list_all().iter().any(|t| t.name == name);
             let name = if known { name.as_str() } else { "unknown" };
@@ -1794,7 +1808,7 @@ impl ServerHandler for SupragnosisServer {
                 workspace.as_deref(),
                 app.as_deref(),
                 said,
-                commit,
+                serde_json::json!({ "commit": commit, "cites": cites }),
                 started,
             );
         }
@@ -1874,7 +1888,15 @@ impl ServerHandler for SupragnosisServer {
         let failed = !matches!(built, Ok(Ok(_)));
         let app = client_name(&context);
         let said = if failed { ("error", None, None) } else { ("ok", None, None) };
-        self.note_use("prompt", &used, workspace.as_deref(), app.as_deref(), said, None, started);
+        self.note_use(
+            "prompt",
+            &used,
+            workspace.as_deref(),
+            app.as_deref(),
+            said,
+            serde_json::Value::Null,
+            started,
+        );
         match built {
             Ok(Ok(result)) => Ok(result.into()),
             Ok(Err(prompts::PromptError::Invalid(why))) => {
@@ -2044,7 +2066,7 @@ impl ServerHandler for SupragnosisServer {
         let engine = self.engine.clone();
         let started = std::time::Instant::now();
         let app = client_name(&context);
-        let (kind, workspace) = resource_use(&uri);
+        let (kind, workspace, via) = resource_use(&uri);
         async move {
             let read = self.read_resource_inner(engine, uri).await;
             let said = match &read {
@@ -2060,7 +2082,7 @@ impl ServerHandler for SupragnosisServer {
                 workspace.as_deref(),
                 app.as_deref(),
                 said,
-                None,
+                serde_json::json!({ "via": via }),
                 started,
             );
             read
@@ -2201,10 +2223,14 @@ enum ResourceUri<'a> {
     Proposal(&'a str),
 }
 
-/// A resource read's kind, and the workspace its URI names, for the usage log (docs/usage.md): the
-/// kind's word only, never an id (UL2).
-fn resource_use(uri: &str) -> (&'static str, Option<String>) {
-    match parse_resource_uri(uri) {
+/// The mark an index line puts after an observation's id (docs/recall.md Section 7.1, D12). The
+/// record read is the same with or without it; the usage log notes that it was found in an index.
+const VIA_INDEX: &str = "?via=index";
+
+/// A resource read's kind, the workspace its URI names, and `index` when an index line gave the
+/// URI, for the usage log (docs/usage.md): the kind's word only, never an id (UL2).
+fn resource_use(uri: &str) -> (&'static str, Option<String>, Option<&'static str>) {
+    let (kind, workspace) = match parse_resource_uri(uri) {
         Some(ResourceUri::Workspaces) => ("workspaces", None),
         Some(ResourceUri::Graph(ws)) => ("graph", Some(ws.to_string())),
         Some(ResourceUri::Hypergraph(ws)) => ("hypergraph", Some(ws.to_string())),
@@ -2213,7 +2239,9 @@ fn resource_use(uri: &str) -> (&'static str, Option<String>) {
         Some(ResourceUri::Entity(_)) => ("entity", None),
         Some(ResourceUri::Proposal(_)) => ("proposal", None),
         None => ("unknown", None),
-    }
+    };
+    let via = (kind == "observation" && uri.ends_with(VIA_INDEX)).then_some("index");
+    (kind, workspace, via)
 }
 
 /// Resource URI parser. Returns None on malformed input. A segment must not contain `/`.
@@ -2246,6 +2274,7 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
         return None;
     }
     if let Some(id) = uri.strip_prefix("supragnosis://observation/") {
+        let id = id.strip_suffix(VIA_INDEX).unwrap_or(id);
         if id.is_empty() || id.contains('/') {
             return None;
         }
