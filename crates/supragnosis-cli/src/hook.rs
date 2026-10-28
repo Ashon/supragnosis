@@ -193,7 +193,7 @@ fn session_start(cwd: &Path, compacted: bool, w: &World) -> Option<String> {
              {workspace:?}, with the ids of the records that shaped it in derived_from."
         ));
     }
-    let (text, shown) = index(&workspace, &records, SESSION_LINES, &tail);
+    let (text, shown) = index(&workspace, &records, SESSION_LINES, &tail, mark_for(w));
     noted(w, "session_start", &workspace, shown_fields(&records, shown, w));
     Some(text)
 }
@@ -213,9 +213,24 @@ fn subagent_start(cwd: &Path, w: &World) -> Option<String> {
          observation opens as the resource supragnosis://observation/{{id}} (ReadMcpResourceTool, \
          server supragnosis)."
     );
-    let (text, shown) = index(&workspace, &records, SUBAGENT_LINES, &tail);
+    let (text, shown) = index(&workspace, &records, SUBAGENT_LINES, &tail, mark_for(w));
     noted(w, "subagent_start", &workspace, shown_fields(&records, shown, w));
     Some(text)
+}
+
+/// The mark an index line puts after its record's id, so the daemon can note that the record was
+/// opened from an index (docs/recall.md Section 7.1). Only a daemon of this hook's own release is
+/// known to read it: an older one takes the mark for part of the id and answers not found, as it
+/// would between an upgrade and the daemon's restart, so its index lines go unmarked.
+fn mark_for(w: &World) -> &'static str {
+    let same = (w.daemon)("/api/about")
+        .and_then(|b| serde_json::from_str::<Value>(&b).ok())
+        .is_some_and(|v| v["version"].as_str() == Some(env!("CARGO_PKG_VERSION")));
+    if same {
+        "?via=index"
+    } else {
+        ""
+    }
 }
 
 /// What an index's usage line says of it: how many lines it showed of how many records, and how
@@ -269,10 +284,16 @@ fn records_of(workspace: &str, w: &World) -> Option<Vec<Record>> {
 /// The index: a header with the shown and total counts, the newest `lines` records inside the
 /// evidence fence, how many are left out, then `tail`. Lines go from the oldest shown until the
 /// whole fits under [`CONTEXT_CAP`] (RC3).
-fn index(workspace: &str, records: &[Record], lines: usize, tail: &str) -> (String, usize) {
+fn index(
+    workspace: &str,
+    records: &[Record],
+    lines: usize,
+    tail: &str,
+    mark: &str,
+) -> (String, usize) {
     let mut shown = records.len().min(lines);
     loop {
-        let text = render(workspace, records, shown, tail);
+        let text = render(workspace, records, shown, tail, mark);
         if shown == 0 || text.chars().count() <= CONTEXT_CAP {
             return (text, shown);
         }
@@ -280,7 +301,7 @@ fn index(workspace: &str, records: &[Record], lines: usize, tail: &str) -> (Stri
     }
 }
 
-fn render(workspace: &str, records: &[Record], shown: usize, tail: &str) -> String {
+fn render(workspace: &str, records: &[Record], shown: usize, tail: &str, mark: &str) -> String {
     let total = records.len();
     let which = if shown == total {
         format!("its {total} record{}", if total == 1 { "" } else { "s" })
@@ -295,7 +316,7 @@ fn render(workspace: &str, records: &[Record], shown: usize, tail: &str) -> Stri
     for r in &records[..shown] {
         let tier = r.tier.as_deref().map(|t| format!("[{t}] ")).unwrap_or_default();
         out.push_str(&format!(
-            "- {} {tier}{} supragnosis://observation/{}?via=index\n",
+            "- {} {tier}{} supragnosis://observation/{}{mark}\n",
             r.day, r.first, r.id
         ));
     }
@@ -584,6 +605,8 @@ mod tests {
         move |p: &str| {
             if p == path {
                 Some(log.clone())
+            } else if p == "/api/about" {
+                Some(serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }).to_string())
             } else if p == "/api/workspaces" {
                 known.as_ref().map(Value::to_string)
             } else {
@@ -604,6 +627,47 @@ mod tests {
         let open = text.find("<supragnosis-evidence untrusted=\"true\">\n").expect("fence opens");
         let close = text.find("</supragnosis-evidence>").expect("fence closes");
         text[open..close].lines().skip(1).collect()
+    }
+
+    /// recall.md Section 7.1 (D12): an index line's link carries the mark only for a daemon of the
+    /// hook's own release; an older one, or one that does not say its version, would read the mark
+    /// as part of the id and answer not found, so its lines go unmarked.
+    #[test]
+    fn only_a_daemon_of_this_release_gets_marked_links() {
+        let repo = repo_with_a_commit("seed the marked links");
+        let name = repo.file_name().unwrap().to_str().unwrap().to_string();
+        let log = log_of(3, 0, |i| format!("Record {i}."));
+        let path = format!("/api/observations?workspace={}", encode(&name));
+        for (about, marked) in
+            [(Some(env!("CARGO_PKG_VERSION")), true), (Some("0.0.1"), false), (None, false)]
+        {
+            let daemon = |p: &str| {
+                if p == path {
+                    Some(log.clone())
+                } else if p == "/api/about" {
+                    about.map(|v| serde_json::json!({ "version": v }).to_string())
+                } else {
+                    None
+                }
+            };
+            let w = World {
+                note: &|_| {},
+                now: now(),
+                git: &real_git,
+                daemon: &daemon,
+                workspace_override: None,
+            };
+            for event in ["SessionStart", "SubagentStart"] {
+                let out = answer(&start(event, "startup", &repo), &w).unwrap().expect("answered");
+                let lines = fenced(context_of(&out));
+                assert_eq!(lines.len(), 3, "{about:?}");
+                assert!(
+                    lines.iter().all(|l| l.ends_with("?via=index") == marked),
+                    "{event}, daemon {about:?}: {lines:?}"
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     /// recall.md Section 3 (D1, RC2): a session starts with the newest 25 records, newest first,
@@ -797,6 +861,9 @@ mod tests {
 
         let one = log_of(1, 0, |_| "One.".into());
         let spaced = move |p: &str| -> Option<String> {
+            if p == "/api/about" {
+                return None;
+            }
             assert_eq!(
                 p, "/api/observations?workspace=my%20project",
                 "the name reaches it encoded"

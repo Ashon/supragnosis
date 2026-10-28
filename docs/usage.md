@@ -71,8 +71,9 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
   commit command within the minute asks about the same commit again), and how many of those
   commits an `observe` names;
 - recall (recall.md Section 7.1): how many records were opened and how many of those from an index
-  line, how many `observe` calls name records they built on, and how far each workspace's latest
-  index reached back.
+  line, how many `observe` calls name records they built on (a read that found nothing and an
+  `observe` that failed are not counted), and how far each workspace's latest session index reached
+  back.
 
 `--since` takes a number with `d` or `h`, and defaults to 7 days. `--json` gives the same tables as
 data, with `"schema": 1`, since the app reads it (compatibility.md Section 6), and an empty summary
@@ -90,7 +91,7 @@ the one reader of the file and the page counts nothing itself.
   and subagent indexes and commit questions. A question counts in the hour it was first asked, and
   as answered when an `observe` in the window that did not fail names its commit. Each hour also
   counts the records opened from an index (`index_opens`) and the `observe` calls that cite a record
-  (`cited`).
+  (`cited`), with the records opened (`opens`) and the `observe` calls (`observes`) they are of.
 - **Writes** are the calls to the functions that change what this node holds: `observe`,
   `define_type`, `propose`, `review` and `sync_pull`, whether or not the call succeeded; failures
   are counted apart. Every other call reads. Reads against writes is the question recall.md
@@ -105,7 +106,7 @@ the one reader of the file and the page counts nothing itself.
   function, workspace, app or read and write, the five largest and the rest as Other; per day,
   what found nothing or failed, the indexes given, the commit questions answered, the records
   opened from an index line or elsewhere, and the writes that cite a record or none; how far back
-  each workspace's latest index reached; and the two tables of Section 4. Every chart has its
+  each workspace's latest session index reached; and the two tables of Section 4. Every chart has its
   numbers in a table beside it.
 
 ## 5. Invariants

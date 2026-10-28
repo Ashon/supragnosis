@@ -41,8 +41,9 @@ pub(crate) struct HookUse {
 }
 
 /// What the log says of recall (docs/recall.md Section 7.1): records opened, and how many of them
-/// from an index line; the `observe` calls, and how many name records they built on; and how far
-/// back each workspace's latest session index reached, in hours.
+/// from an index line; the `observe` calls, and how many name records they built on, none of them
+/// counted when it failed; and how far back each workspace's latest session index reached, in
+/// hours.
 #[derive(Debug, Default, PartialEq, serde::Serialize)]
 pub(crate) struct RecallUse {
     pub opens: u64,
@@ -73,8 +74,11 @@ pub(crate) struct Hour {
     /// Commit questions first asked in this hour, and how many of those a record answers.
     pub commit_questions: u64,
     pub answered: u64,
-    /// Records opened from an index line, and `observe` calls that name records they built on.
+    /// Records opened, and of those from an index line; `observe` calls, and of those the ones that
+    /// name records they built on. A read or an observe that failed is not counted.
+    pub opens: u64,
     pub index_opens: u64,
+    pub observes: u64,
     pub cited: u64,
 }
 
@@ -198,17 +202,22 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
         *tally.names.entry(label(kind, name)).or_default() += 1;
         *tally.workspaces.entry(workspace.clone()).or_default() += 1;
         *tally.apps.entry(app).or_default() += 1;
-        if kind == "resource" && name == "observation" {
+        // Recall counts what happened: a read that found nothing opened nothing, and a failed
+        // observe recorded nothing.
+        let done = v["outcome"].as_str() == Some("ok");
+        if done && kind == "resource" && name == "observation" {
+            let from_index = u64::from(v["via"].as_str() == Some("index"));
             sum.recall.opens += 1;
-            let from_index = v["via"].as_str() == Some("index");
-            sum.recall.index_opens += u64::from(from_index);
-            tally.hour.index_opens += u64::from(from_index);
+            sum.recall.index_opens += from_index;
+            tally.hour.opens += 1;
+            tally.hour.index_opens += from_index;
         }
-        if kind == "tool" && name == "observe" {
+        if done && kind == "tool" && name == "observe" {
+            let cited = u64::from(v["cites"].as_u64().unwrap_or(0) > 0);
             sum.recall.observes += 1;
-            let cited = v["cites"].as_u64().unwrap_or(0) > 0;
-            sum.recall.cited += u64::from(cited);
-            tally.hour.cited += u64::from(cited);
+            sum.recall.cited += cited;
+            tally.hour.observes += 1;
+            tally.hour.cited += cited;
         }
         // A failed observe recorded nothing, so it answers no question.
         if name == "observe" && v["outcome"].as_str() != Some("error") {
@@ -472,12 +481,15 @@ mod tests {
     }
 
     /// docs/recall.md Section 7.1: records opened, and from an index line; observes that cite a
-    /// record they built on; and each workspace's latest index reach, the later index winning.
+    /// record they built on, a failed read or observe not counted; and each workspace's latest
+    /// index reach, the later index winning.
     #[test]
     fn recall_is_counted_from_opens_citations_and_index_reach() {
         let lines = [
             r#"{"t":1000,"kind":"resource","name":"observation","outcome":"ok","via":"index"}"#,
             r#"{"t":1001,"kind":"resource","name":"observation","outcome":"ok"}"#,
+            r#"{"t":1001,"kind":"resource","name":"observation","outcome":"not_found","via":"index"}"#,
+            r#"{"t":1003,"kind":"tool","name":"observe","workspace":"a","outcome":"error","cites":1}"#,
             r#"{"t":1002,"kind":"resource","name":"entity","outcome":"ok"}"#,
             r#"{"t":1003,"kind":"tool","name":"observe","workspace":"a","outcome":"ok","cites":2}"#,
             r#"{"t":1004,"kind":"tool","name":"observe","workspace":"a","outcome":"ok"}"#,
@@ -496,7 +508,8 @@ mod tests {
                 reach: vec![("a".to_string(), 7)],
             }
         );
-        assert_eq!((sum.by_hour[0].index_opens, sum.by_hour[0].cited), (1, 1));
+        let hour = &sum.by_hour[0];
+        assert_eq!((hour.opens, hour.index_opens, hour.observes, hour.cited), (2, 1, 2, 1));
         let text = render(&sum);
         assert!(text.contains("records opened: 2, from an index line: 1"), "{text}");
         assert!(text.contains("a: its latest index reached back 7 h"), "{text}");

@@ -305,6 +305,12 @@ absence once made a strict client reject the whole list (v0.3.1).
 The prompt list is pinned the same way (`tests/fixtures/prompts.json`, [prompts.md](prompts.md)
 Section 6): renaming a prompt or an argument, or making an argument required, is breaking.
 
+**An observation's URI may carry the index mark** (recall.md Section 7.1):
+`supragnosis://observation/{id}?via=index` reads the same record, and no other query does. Additive:
+a daemon before it answers not found for the marked form, which is why the hook marks its links
+only for a daemon of its own release. `observe` keeps a `derived_from` entry given as a record's
+link as the record's id.
+
 **`*` is a view on every surface** (design-system.md step 51a). No tool's input changed, and these
 answers did:
 - On the local surface, as on the remote one, `observe`, `propose` and `define_type` refuse `*`,

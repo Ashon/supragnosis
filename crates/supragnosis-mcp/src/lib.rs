@@ -683,7 +683,7 @@ impl SupragnosisServer {
             source_ref: req.source_ref,
             confidence: req.confidence,
             on_behalf_of: req.on_behalf_of,
-            derived_from: req.derived_from,
+            derived_from: req.derived_from.iter().map(|d| lineage_id(d)).collect(),
             entities: req
                 .entities
                 .into_iter()
@@ -2227,6 +2227,15 @@ enum ResourceUri<'a> {
 /// record read is the same with or without it; the usage log notes that it was found in an index.
 const VIA_INDEX: &str = "?via=index";
 
+/// An id as `derived_from` keeps it: an agent that copies a record's link from an index line or a
+/// search hit names the record, so the link's scheme and the index mark are taken off (docs/recall.md
+/// Section 7.1). Anything else is kept as written.
+fn lineage_id(given: &str) -> String {
+    let id = given.trim();
+    let id = id.strip_prefix("supragnosis://observation/").unwrap_or(id);
+    id.strip_suffix(VIA_INDEX).unwrap_or(id).to_string()
+}
+
 /// A resource read's kind, the workspace its URI names, and `index` when an index line gave the
 /// URI, for the usage log (docs/usage.md): the kind's word only, never an id (UL2).
 fn resource_use(uri: &str) -> (&'static str, Option<String>, Option<&'static str>) {
@@ -2275,7 +2284,7 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
     }
     if let Some(id) = uri.strip_prefix("supragnosis://observation/") {
         let id = id.strip_suffix(VIA_INDEX).unwrap_or(id);
-        if id.is_empty() || id.contains('/') {
+        if id.is_empty() || id.contains(['/', '?', '#']) {
             return None;
         }
         return Some(ResourceUri::Observation(id));
@@ -2777,7 +2786,7 @@ mod agent_answers {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::{answered, commit_of};
+    use super::{answered, commit_of, lineage_id, parse_resource_uri, resource_use, ResourceUri};
     use serde_json::json;
 
     /// docs/usage.md Section 2: what an answer comes to. `found: false` is "not found" only on the
@@ -2809,5 +2818,29 @@ mod usage_tests {
             assert_eq!(commit_of(Some(not)), None, "{not}");
         }
         assert_eq!(commit_of(None), None);
+    }
+
+    /// recall.md Section 7.1: a record's link copied into `derived_from` names the record, and an
+    /// observation URI takes the index mark and no other query.
+    #[test]
+    fn a_copied_link_names_its_record() {
+        let id = "ab".repeat(32);
+        for given in [
+            id.clone(),
+            format!("supragnosis://observation/{id}"),
+            format!("supragnosis://observation/{id}?via=index"),
+            format!("{id}?via=index"),
+        ] {
+            assert_eq!(lineage_id(&given), id, "{given}");
+        }
+        assert_eq!(lineage_id("something else"), "something else");
+        let marked = format!("supragnosis://observation/{id}?via=index");
+        assert!(
+            matches!(parse_resource_uri(&marked), Some(ResourceUri::Observation(i)) if i == id)
+        );
+        assert_eq!(resource_use(&marked).2, Some("index"));
+        for not in [format!("{marked}?via=index"), format!("supragnosis://observation/{id}?x=1")] {
+            assert!(parse_resource_uri(&not).is_none(), "{not}");
+        }
     }
 }

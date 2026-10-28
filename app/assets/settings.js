@@ -780,9 +780,9 @@ function usageBody(data) {
       on: { click: () => { usage.split = id; render(); } },
     }, label)));
   const series = (pairs) => pairs.map(([name, get, other]) => ({ name, get: (d) => total(d.hours, get), other }));
-  // Recall as the log sees it (docs/recall.md Section 7.1); a CLI from before it says nothing.
+  // Recall as the log sees it (docs/recall.md Section 7.1); a CLI from before it says nothing, so
+  // its figures read "-" and its charts are not drawn.
   const rc = data.recall || { opens: 0, index_opens: 0, observes: 0, cited: 0, reach: [] };
-  const named = (hr, n) => (hr.by_name.find(([k]) => k === n) || [n, 0])[1];
   return [
     h("div", { class: "utiles" },
       tile("Calls", counted(data.calls), counted(data.calls - writes) + " reads, " + counted(writes) + " writes"),
@@ -802,14 +802,16 @@ function usageBody(data) {
     h("div", { class: "group-title", text: "Commit questions" }),
     columnChart("Commit questions", days, series([
       ["Answered with a record", (hr) => hr.answered], ["Not answered", (hr) => hr.commit_questions - hr.answered, true]])),
-    h("div", { class: "group-title", text: "Records opened" }),
-    columnChart("Records opened", days, series([
-      ["From an index line", (hr) => hr.index_opens || 0], ["Elsewhere", (hr) => named(hr, "resource:observation") - (hr.index_opens || 0), true]])),
-    h("div", { class: "group-title", text: "Writes that cite a record" }),
-    columnChart("Observes", days, series([
-      ["Cite a record", (hr) => hr.cited || 0], ["Cite none", (hr) => named(hr, "observe") - (hr.cited || 0), true]])),
-    rc.reach.length ? h("div", { class: "group-title", text: "How far back each index reaches" }) : null,
-    rc.reach.length ? h("div", { class: "ucard" }, usageTable(["Workspace", "Hours back, latest index"], rc.reach)) : null,
+    data.recall ? [
+      h("div", { class: "group-title", text: "Records opened" }),
+      columnChart("Records opened", days, series([
+        ["From an index line", (hr) => hr.index_opens], ["Elsewhere", (hr) => hr.opens - hr.index_opens, true]])),
+      h("div", { class: "group-title", text: "Writes that cite a record" }),
+      columnChart("Observes", days, series([
+        ["Cite a record", (hr) => hr.cited], ["Cite none", (hr) => hr.observes - hr.cited, true]])),
+    ] : null,
+    rc.reach.length ? h("div", { class: "group-title", text: "How far back each session index reaches" }) : null,
+    rc.reach.length ? h("div", { class: "ucard" }, usageTable(["Workspace", "Hours back, latest session index"], rc.reach)) : null,
     h("div", { class: "group-title", text: "By function and workspace" }),
     h("div", { class: "ucard" }, usageTable(["Function", "Workspace", "Calls", "Found nothing", "Named nothing", "Failed"],
       data.by_call.map((r) => [r.kind === "tool" ? r.name : r.kind + ":" + r.name, shownName("workspace", r.workspace), r.calls, r.empty, r.not_found, r.errors]), 2)),

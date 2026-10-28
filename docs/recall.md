@@ -104,7 +104,7 @@ header needs the total; on the author's store it answered in about 10 ms.
   in a record's text are written as `&lt;` and `&gt;`.
 - **It says what it leaves out** (prompts.md PR3, Principle 5 *Truncated*): the header gives the
   shown and total counts, and the line after the fence says how many older records are not shown.
-- **Size.** 25 lines of at most 140 characters and a 64-character id come to about 6,800
+- **Size.** 25 lines of at most 140 characters and a 64-character id come to about 7,100
   characters with the header and guidance. Claude Code caps a hook's context at 10,000 characters
   and moves anything longer to a file the agent is not asked to read, so the caps on lines and
   length are what keep the index whole. The workspace name has no length limit (an override can
@@ -261,6 +261,9 @@ and fourth steps can be followed day by day, without a new tool:
 
 - **D12, an opened record says where it was found.** An index line's URI ends in `?via=index`, and
   the daemon notes `via: "index"` on that read. A read without it came from a search or elsewhere.
+  The hook marks the lines only when the daemon's `/api/about` names the hook's own release: an
+  older daemon, as between an upgrade and its restart, reads the mark as part of the id and answers
+  not found, so its sessions get the plain links.
 - **Each index says how far back it reaches**: the hours from its oldest line to the moment it was
   given.
 - **D13, use is recorded as provenance.** A record that shaped a new one is named in that one's
@@ -269,7 +272,16 @@ and fourth steps can be followed day by day, without a new tool:
   A rating tool was ruled out: it would see only records that were read, never the ones missed, an
   agent rating its own result has no ground truth, and a score that ranked records would be the
   node-local usage signal consolidation.md Section 4.1 keeps out of the converged ordering.
-  `derived_from` is knowledge in the log, the same on every node.
+  `derived_from` is knowledge in the log, the same on every node. An agent that copies a record's
+  link into it names the record: `observe` takes off the `supragnosis://observation/` scheme and
+  the index mark before it keeps the id.
+- **Open: a citation and the recall weight.** consolidation.md Section 4.3 lowers the weight of an
+  observation that has a `derived_from` and one attestation ("derived-and-alone", 0.6), the P18
+  shape of a claim built on another with nothing to corroborate it. A record that cites the
+  decision it builds on has that shape too, so the guidance above would put the records that cite
+  into the curation report's demotion candidates. Nothing consumes the weight yet (no re-rank layer,
+  architecture.md Section 12, M6). Whether a citation counts as derivation for that factor is
+  decided before M6 applies the weight to retrieval.
 
 ## 8. Invariants
 

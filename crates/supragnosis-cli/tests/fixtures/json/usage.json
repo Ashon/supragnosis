@@ -37,7 +37,9 @@
       "subagent_indexes": 0,
       "commit_questions": 1,
       "answered": 1,
+      "opens": 1,
       "index_opens": 1,
+      "observes": 1,
       "cited": 1
     }
   ]
