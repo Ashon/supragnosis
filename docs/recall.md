@@ -283,6 +283,39 @@ and fourth steps can be followed day by day, without a new tool:
   architecture.md Section 12, M6). Whether a citation counts as derivation for that factor is
   decided before M6 applies the weight to retrieval.
 
+### 7.2 The first days in use
+
+Measured on 2026-10-28 from the same transcripts, the hook having given the index since about 01:00
+KST on 2026-10-25. Each tool call is counted once by its id across every transcript file, because a
+resumed session copies the earlier messages into a file of its own; a read is a call to
+`search_knowledge`, `get_entity`, `traverse`, `workspace_map`, `list_proposals` or `get_proposal`,
+or a read of a `supragnosis://` resource, and a write is `observe`, `define_type`, `propose` or
+`review`.
+
+| | Before: 2026-10-18 to the index (7 days) | After: to 2026-10-28 (about 3.8 days) |
+|---|---|---|
+| Tool calls | 47,701 | 15,768 |
+| Reads (a day) | 34 (4.9) | 50 (12.5) |
+| Writes (a day) | 217 (31) | 346 (87) |
+| Reads per 100 tool calls | 0.07 | 0.32 |
+| Reads per write | 0.16 | 0.14 |
+
+- **Reads rose by day and by tool call; they did not rise by write.** Writes grew faster, most of
+  them answers to the question after a commit (121 of the 131 questions the usage log saw were
+  answered). Overall activity was lower in the second period, which raises the rate per tool call
+  on its own.
+- **Opens come from the index.** 14 of the 16 records opened after the change were lines of the
+  session's own index. Searches named their workspace in 30 of 31 and were written as English topic
+  words in all 31, including those made from requests written in Korean.
+- **The index's reach depends on the project.** The newest 25 records reach back about six and a
+  half hours in the busiest workspace (about 65 records a day), and three to six days in the others
+  active that week.
+- **Reading is concentrated.** About half of the main sessions' reads after the change came from two
+  long sessions in one project; the share of main sessions with 30 or more tool calls that read at
+  least once was about the same before and after (57% and 60%).
+- **What this cannot say.** Four days on one machine, with a different mix of projects in each
+  period. Whether a read changed a decision was not measured.
+
 ## 8. Invariants
 
 | | Invariant |
@@ -312,6 +345,11 @@ After the hook has been in use for a week, the measurement of Section 1 is taken
 transcripts and the two are compared here.
 
 ## 10. Revisit when
+
+- **The next measurement** (Section 7.2 is the first): a hand-labelled sample of requests - whether
+  past knowledge was needed, whether the store held it, whether the agent saw or searched for it,
+  and whether it used it - and an index whose lines keep the decisions still in force beside the
+  newest, given to half the sessions, against the newest 25 alone.
 
 - **D3, recall at every prompt:** when Korean requests find their record as English ones do now
   (recall@5 about 0.9, against 0.62 in Section 7), and a request whose subject has no record can be
