@@ -263,8 +263,8 @@ fn page(depth: usize, title: &str, description: &str, path: &str, main: &str) ->
     <nav aria-label="Sections">
       <a href="{up}#how">How it works</a>
       <a href="{up}principles/">Principles</a>
-      <a href="{up}news/" aria-current="page">News</a>
       <a href="{up}#status">Status</a>
+      <a href="{up}news/" aria-current="page">News</a>
       <a href="{REPO}#readme">Docs</a>
       <a href="{REPO}">GitHub</a>
     </nav>
