@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis v0.10.0 - supragnosis</title>
+  <meta name="description" content="Upgrade the server and the app, then restart once; a second machine joins with a code.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.10.0/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis v0.10.0 - supragnosis">
+  <meta property="og:description" content="Upgrade the server and the app, then restart once; a second machine joins with a code.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.10.0/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/" aria-current="page">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-10-23">Oct 23, 2026</time></p>
+        <h1>supragnosis v0.10.0</h1>
+        <p class="n-lede">Upgrade the server and the app, then restart once; a second machine joins with a code.</p>
+        <div class="n-body">
+<p>Changes since v0.9.0.</p>
+<p><strong>Upgrade the server and the app, then restart once; a second machine joins with a code, and the daemon syncs on its own.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>. The store moves to format 4, which v0.9.0 still opens:
+<code>min_reader</code> stays 2. The first open re-projects every workspace once, before the daemon serves -
+about two seconds a workspace at today's sizes. The sync protocol and <code>status --json</code> are unchanged;
+MCP answers gain fields and lose none.</p>
+<h2>Read before upgrading</h2>
+<ul>
+<li><strong>A node with a hub syncs by itself.</strong> It pushes and then pulls every five minutes, and once soon
+after it starts; a failed round waits longer, up to an hour, and <code>sync_status</code> says when the last
+round ran, what it moved and why the last one failed. Before, a round ran only when a tool or
+<code>supragnosis sync</code> asked. The rounds cover the same workspaces the tools did.</li>
+<li><strong>A write waits out a re-materialization.</strong> <code>reproject</code> now holds the engine's write lock, so an
+<code>observe</code> that lands while one runs waits for it instead of being overwritten by it. That race
+was real: the observe was lost from the graph with nothing owed until the next re-projection. The
+vectors a reproject needs are computed before it takes the lock, so the wait is the projection's,
+not the model's.</li>
+<li><strong>A person's no holds through a tie.</strong> A merge you rejected from the console stays out of
+Suggestions until something is said about one of its entities in a later millisecond. An
+observation made in the same millisecond as the reject could lift it once that node stamped its
+log, so a pair could come back at sync time with nothing new said.</li>
+</ul>
+<h2>A second machine joins with a code</h2>
+<p>On the hub, <code>supragnosis invite</code> makes the TLS certificate and the listener if there are none, and
+prints a one-time code that expires in ten minutes. On the other machine, <code>supragnosis join</code> reads
+the code, checks the hub's certificate against it, and shows three words; the hub's terminal shows
+the same three, and Allow there answers with a signed, sealed reply the joining machine verifies
+before writing anything. The joined machine receives the workspaces you ticked and sends only what
+you chose. <code>supragnosis peer list</code> and <code>peer remove</code> keep the hub's list, and <code>supragnosis hub leave</code> undoes a join. A Linux server can be the hub, invited over SSH.</p>
+<p>On a Mac, macOS's Local Network privacy keeps the daemon a login job runs from reaching a hub on the
+local network. Such a node keeps working offline: it records as before, its rounds back off, and
+<code>sync_status</code> and the round say why, naming Local Network access. The Settings sheets for inviting
+and joining wait for a route around it.</p>
+<p>The daemon gains an admin socket that only its owner can reach: <code>supragnosis sync</code> runs a round
+through the running daemon, and the invitation commands talk to it. A sync listener that cannot
+open - an unreadable certificate, an address it may not bind - no longer stops the daemon; it says
+why and the rest of the node serves.</p>
+<h2>Review and the map</h2>
+<ul>
+<li><strong>Demote this claim</strong> on an observation's card lowers it to Unverified, says first what the change
+moves - the value, the ring, the relations, the ceiling and the checks - and has an Undo.</li>
+<li>Suggestions say what they held back. "By meaning" counts the near pairs the band left out, and
+"By name" the alike names the ladder left out, because they wait, were rejected by you, or were
+pulled apart. An empty list now says which.</li>
+<li>The window's pages get exactly the app permissions they use and nothing beyond them.</li>
+</ul>
+<h2>Settings says what happened</h2>
+<ul>
+<li>A Start at Login change, a Use or a Remove that the CLI refuses now shows as a failure with the
+CLI's reason, and stays until it is read. Before, it showed as a success with the refusal beneath
+it, and dismissed itself.</li>
+<li>A refusal that quotes the credential you pasted reaches the page with the credential replaced. A
+server add the CLI refuses before reading the credential answers with that refusal, not a broken
+pipe.</li>
+</ul>
+<h2>For agents</h2>
+<ul>
+<li><code>supragnosis://entity/{id}</code> and <code>supragnosis://proposal/{id}</code> read an entity and a proposal by id,
+as <code>get_entity</code> and <code>get_proposal</code> answer them; an id outside your grants reads as unknown.</li>
+<li>Graph edges carry <code>sources</code>, the number of attestations asserting them, summed over the rows a
+merge collapses. A second assertion of an edge now adds to its support instead of replacing it;
+how far the edge is trusted is computed as before.</li>
+<li><code>curate</code> reports <code>merge_band.held_back</code> and <code>name_ladder.held_back</code>.</li>
+</ul>
+<h2>Under the hood</h2>
+<p>The coverage registry's owed clauses went from 134 at v0.9.0 to 104, each now held by a test or by
+construction, and writing those tests found the defects above. Among the new guards: a store that fails is reported as failing on
+every sync call, a projection write that fails leaves its debt for the next open, and the first test
+that runs the CLI binary, with <code>PATH</code> holding only a scripted <code>launchctl</code>, so the machine's own
+daemon is never touched.</p>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.10.1/"><span>Newer</span>supragnosis v0.10.1</a><a href="../v0.9.0/"><span>Older</span>supragnosis v0.9.0</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

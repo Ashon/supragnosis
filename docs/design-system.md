@@ -1458,6 +1458,41 @@ clause's state rewrites the ledger in the same change, so its merge also publish
 stage; a demo or scene is set up when it first comes near the window. The page shares the landing's
 social image.
 
+## 11b. The news page
+
+The news page puts the release notes and an occasional longer note in one place, so a visitor who
+wants to know what changed, or what was learned while changing it, does not read a changelog on
+GitHub. Its shape follows pacenote.dev/news, which the author pointed to on 2026-10-28: a list of
+everything newest first, with the latest note above the releases, a page for each item, and a feed.
+
+**Pages.** `/news/` (`site/news/index.html`), one page for each note and each recent release
+(`site/news/<slug>/index.html`, a release's slug its tag), and an RSS feed (`site/news/feed.xml`).
+
+| Part | What it does |
+|---|---|
+| Hero | The heading, a line saying what is here and that updating is `brew upgrade` then `supragnosis restart`, and the feed |
+| The latest note | Its kind, date and version, its title and its summary, linked to its page |
+| The list | Every note and the twelve newest releases, newest first: the date, the kind, the title and the one-line summary; older releases are a link to the changelog |
+| An item's page | The way back to the list, the kind, version and date, the title, the summary as a lede, the text, the update commands, and the item before and after it; beside it on a wide screen, the eight newest items |
+
+**Where the text comes from.** A note is `docs/news/<slug>.md`: a front matter of `title`, `summary`,
+`date` and `version`, then the text. A release is its note in `docs/releases/`, with its date and
+its one line from CHANGELOG.md's table, which carries a date for every release. Nothing is written
+for the page alone. A link in the text that is not a web address points at the file on GitHub.
+
+**How it is built.** The pages are generated and committed, as the principles page's ledger is: a
+test in the `e2e` crate renders them with the markdown library that crate already uses, and fails
+when a committed page differs; run with `SUPRAGNOSIS_WRITE_PAGE=1`, it rewrites them and removes a
+page whose item is gone. The site keeps no build step. The pages use the landing's faces, tokens
+and stylesheet, and the landing, the principles page and the footer link to `/news/`. Raw HTML in
+the markdown is shown as text.
+
+**The voice of a note.** A note is written as the project's records are: what was measured, on what
+and over how long, what the numbers do not show, and what will be measured next, with the limits
+stated before the claims. It names no private project, uses no superlative, and reports a planned
+measurement whether or not it supports the change it tests. A release's page is its note as
+written.
+
 ## 12. Decisions
 
 - **Review is a page, not a wider dock.** A decision deserves the window, and the dock cut its own

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What the agents remember, four days in - supragnosis</title>
+  <meta name="description" content="Agents wrote to supragnosis far more often than they read from it. In 0.11.0 a session starts with its project's newest records. Four days of measurement on one machine suggest that reading rose; they do not yet show that the work improved.">
+  <link rel="canonical" href="https://supragnosis.dev/news/what-the-agents-remember/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="What the agents remember, four days in - supragnosis">
+  <meta property="og:description" content="Agents wrote to supragnosis far more often than they read from it. In 0.11.0 a session starts with its project's newest records. Four days of measurement on one machine suggest that reading rose; they do not yet show that the work improved.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/what-the-agents-remember/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/" aria-current="page">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Note</span><span>v0.11.0</span><time datetime="2026-10-28">Oct 28, 2026</time></p>
+        <h1>What the agents remember, four days in</h1>
+        <p class="n-lede">Agents wrote to supragnosis far more often than they read from it. In 0.11.0 a session starts with its project's newest records. Four days of measurement on one machine suggest that reading rose; they do not yet show that the work improved.</p>
+        <div class="n-body">
+<p>supragnosis keeps what AI agents learn while they work, so that the next agent on the same project
+can find it. Whether the next agent does find it is an empirical question, and for most of this
+project's life it went unasked. This note reports what we measured, what we changed in 0.11.0 in
+response, and what four days of use can and cannot say about that change. The numbers come from one
+person's machine and one person's projects. They are offered as an account of method more than as a
+result.</p>
+<h2>What we measured first</h2>
+<p>On 2026-10-24 we read every Claude Code transcript kept on the author's machine for the two weeks
+before: about 55 sessions and 900 subagents, some 92,000 tool calls. Agents had made 252 records
+and read the store 44 times. We could find about two reads whose answer changed what the agent did
+next.</p>
+<p>The records themselves were not the problem. Most said why a decision was taken, what was ruled
+out and what was measured. They were simply not read. What did reach agents was what arrived
+without being asked for: Claude Code's own memory files, loaded at the start of every session, were
+read and written about as often as every supragnosis tool together. The difference did not appear
+to be the agents' interest in memory. It was which memory was placed in front of them.</p>
+<h2>What 0.11.0 changes</h2>
+<ul>
+<li><strong>A session starts with an index.</strong> At its start, and again after its context is compacted, the
+agent receives its project's 25 newest records: the date, the first sentence and a link that
+opens each one. They are marked as evidence written by agents and people, not as instructions.
+A subagent receives the newest ten.</li>
+<li><strong>A narrower question after a commit.</strong> The agent is asked to record what the diff does not
+show: a choice the person made, an option ruled out, a number measured, a constraint.</li>
+<li><strong>Use recorded as provenance.</strong> When a record shapes a new one, the agent is asked to name it in
+<code>derived_from</code>, a field <code>observe</code> has always had. Citation is the closest thing to "this was
+useful" that we could find which is also knowledge in its own right.</li>
+<li><strong>A usage log that stays on the machine.</strong> The daemon counts which tools are called, on which
+workspaces, and with what outcome, without keeping any query or record text. <code>supragnosis usage</code>
+and the app's Settings &gt; Usage read it.</li>
+</ul>
+<h2>What four days show</h2>
+<p>We compared the seven days before the index with the four days after, counting each tool call once
+across the transcripts.</p>
+<table><thead><tr><th></th><th>Before (7 days)</th><th>After (4 days)</th></tr></thead><tbody>
+<tr><td>Reads of the store per day</td><td>4.9</td><td>12.5</td></tr>
+<tr><td>Reads per 100 tool calls</td><td>0.07</td><td>0.32</td></tr>
+<tr><td>Writes per day</td><td>31</td><td>87</td></tr>
+<tr><td>Reads per write</td><td>0.16</td><td>0.14</td></tr>
+</tbody></table>
+<p>Reading rose by every measure we have. Writing rose faster, mostly because more questions after a
+commit were answered, so the store is read no more often relative to how much is put into it. Of
+the 16 records opened after the change, 14 were lines of the session's own index. None of the 23
+reads recorded since the usage log began came back empty.</p>
+<p>One finding was not anticipated. In the busiest project the 25 newest records reach back only
+about six and a half hours, so a decision made a few days earlier is no longer in the index, and
+the agent finds it only by searching. In quieter projects the same 25 lines cover three to six
+days. An index chosen by recency alone serves a project less well the more that project records.</p>
+<h2>What they do not show</h2>
+<p>Four days on one machine is a small sample. The mix of projects differed between the two periods,
+overall activity was lower in the second, and about half of the reads came from two long sessions
+in a single project. We have not measured whether a read changed a decision, still less whether it
+improved one. A rise in reading is a precondition for recall being useful; it is not evidence that
+it is.</p>
+<h2>What we intend to measure next</h2>
+<p>These are plans, not results, and each will be reported whether or not it supports the change it
+tests.</p>
+<ul>
+<li><strong>A labelled baseline.</strong> A sample of requests marked by hand: whether past knowledge was needed,
+whether the store held it, whether the agent saw or searched for it, and whether it used it.</li>
+<li><strong>The index's selection.</strong> Sessions split between the present index and one that also keeps the
+decisions still in force, to see whether recency is the right order.</li>
+<li><strong>Citations.</strong> How often <code>derived_from</code> names the records an agent read, against a baseline of 17
+in 346 records before the guidance.</li>
+<li><strong>Requests in Korean.</strong> Whether search can be run on the person's own words at each prompt. It
+remains deferred until an offline test shows it finds the right record about nine times in ten,
+and stays silent when nothing relevant is recorded.</li>
+</ul>
+<h2>Looking at your own</h2>
+<p><code>supragnosis usage --since 7d</code> prints the same counts for your machine, and Settings &gt; Usage draws
+them by day. Nothing in that log leaves the machine, and nothing in it is read by an agent.</p>
+<p>The design behind this note is in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/recall.md">docs/recall.md</a>, and the usage log is described
+in <a href="https://github.com/Ashon/supragnosis/blob/main/docs/usage.md">docs/usage.md</a>.</p>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.11.0/"><span>Older</span>supragnosis v0.11.0</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

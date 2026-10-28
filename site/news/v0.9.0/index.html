@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis v0.9.0 - supragnosis</title>
+  <meta name="description" content="Upgrade the server and the app, then restart once; Review closes the loop, and every act says where.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.9.0/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis v0.9.0 - supragnosis">
+  <meta property="og:description" content="Upgrade the server and the app, then restart once; Review closes the loop, and every act says where.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.9.0/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/" aria-current="page">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-10-22">Oct 22, 2026</time></p>
+        <h1>supragnosis v0.9.0</h1>
+        <p class="n-lede">Upgrade the server and the app, then restart once; Review closes the loop, and every act says where.</p>
+        <div class="n-body">
+<p>Changes since v0.8.2.</p>
+<p><strong>Upgrade the server and the app, then restart once; Review closes the loop, and every act says where.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>. The app, the viewer, the daemon and some MCP answers
+changed. The store gains one table, format 3, which v0.8.2 still opens: <code>min_reader</code> stays 2. The
+sync protocol and <code>status --json</code> are unchanged.</p>
+<h2>Read before upgrading</h2>
+<p>Four changes can surprise an agent, or a store an earlier build wrote:</p>
+<ul>
+<li><strong>A tool error is flagged.</strong> An MCP answer that is a top-level <code>{"error": ...}</code> object now carries
+<code>isError</code>, MCP's own convention for a failed call. The text is the same; a client that read it
+from an unflagged result now sees the call as failed. A not-found answer is still a result.</li>
+<li><strong>A type change or a recall cannot be merged yet.</strong> Neither kind has a commit effect, so a merge of
+one was taken and reported as done while it changed nothing. <code>review</code> now refuses it on every
+surface and says why, and the fold reads such a merge already in a log as a comment, so that
+proposal reads open again. Comment, reject and withdraw work as before.</li>
+<li><strong><code>*</code> is a view, never a place to write.</strong> <code>observe</code>, <code>propose</code> and <code>define_type</code> refuse <code>*</code>, <code>all</code>
+and an empty workspace name, which earlier builds took as a workspace of that name. Every read
+still takes <code>*</code> for all workspaces.</li>
+<li><strong>A proposal stays in its workspace.</strong> A merge across two workspaces, a gate act on another
+workspace's observation, and a split filed away from its merge are refused, and one an earlier
+build took reads Blocked, or Rejected if someone rejected it. A verdict counts only in its
+proposal's own workspace; one filed elsewhere is listed under Health.</li>
+</ul>
+<h2>Review closes the loop</h2>
+<ul>
+<li>A decision leaves Needs you at once. Every reverse is on its Decided item and in the notice right
+after it: Un-merge, Accept after all, Undo confirmation. Decided says what was decided, in names.</li>
+<li>A confirmation says what it confirms: each value's sources, the source you choose, how far its
+trust reaches, and the diff before you act. Confirm, then Undo, then Confirm again now confirms;
+before, the third act landed on the first and changed nothing.</li>
+<li>Evidence sits where you decide: each entity's supporting observations, who asked and which app
+wrote it, and every check in words.</li>
+<li><strong>Same as...</strong> names two entities of one workspace as one, and a merge offers <strong>Keep ... instead</strong>.
+<strong>Un-merge</strong> opens the split it proposes, ready to accept.</li>
+<li>What waits elsewhere is counted. When the default workspace holds little, the page opens on all
+workspaces; a scoped Review says how many items wait in the others, and the pill says "3 wait
+elsewhere". Blocked items can be rejected together, each listed with the check that holds it.</li>
+<li>An act that lands on a proposal already there says what it found. Suggestions stop offering a
+pair you rejected, until something new is said about one of them.</li>
+</ul>
+<h2>The map keeps your place, and explains itself</h2>
+<ul>
+<li>Follow waits while you use the map. The selection lives in the address, with a history and a way
+back, and Esc gives the camera back.</li>
+<li>The map has a key: counted chips with Only and Show all, one color per type across the store,
+trust toggles that dim, a hover card, and one word for a region.</li>
+<li>Search clears on a choice, offers your recent searches, names each hit's workspace, and "Show
+these 13 on the map" holds the answer as a working set. Map | List switches the window to a table.</li>
+<li>Single keys zoom, fit and open List and the Keys dialog; View holds what changes the picture.</li>
+<li>Each entity says when it was last said, and a Said filter dims what was not said today, in the
+last 7 days, or since your last visit.</li>
+<li>The same name in another workspace is said on the sheet and lit under All.</li>
+</ul>
+<h2>On a phone and a tablet</h2>
+<p>One finger moves the map and two zoom it, the page opens on the map, the inspector is a sheet with
+two heights, and the camera buttons sit above it. From 760 to 1200 pixels a floating panel now ends
+above the camera toolbar under a finger, and at 200% text, as it did with a mouse.</p>
+<h2>The app</h2>
+<ul>
+<li>The app menu gains Setup..., Find, View's map commands and Help. The tray says the memory's state
+and offers its act, and its icon changes shape only when the memory cannot be used. Quit says it
+stops the memory.</li>
+<li>Settings keeps its last pane, a dot marks AI apps when one needs you, and the window keeps its
+size and place.</li>
+<li>The app's pages keep focus across a redraw, and a failure says so, with Restart, Diagnostics and
+the log.</li>
+<li>The app that wrote an entry is recorded beside it on this Mac and said in the who-line ("Agent -
+Claude Code on this Mac"); it is never sent to a peer or the read tier.</li>
+<li>Try it quotes the first entry and opens the graph on it. <code>supragnosis connect</code> knows OpenCode.</li>
+</ul>
+<h2>For agents</h2>
+<ul>
+<li>Every write answers with the workspace it wrote to. An <code>observe</code> that makes a new workspace adds a
+note naming the workspaces that hold knowledge, nearest name first.</li>
+<li>Entity search hits carry <code>name</code>, <code>type</code> and <code>workspace</code>; <code>get_entity</code> says when an id looks like a
+name.</li>
+<li><code>list_proposals</code> and <code>get_proposal</code> name each proposal's workspace, a merged promotion's
+<code>granted_tier</code>, and <code>no_effect_yet</code> on a type change or a recall.</li>
+<li><code>propose</code> answers <code>state</code> and <code>found</code>, with a note when an identical proposal was already there:
+a proposal is its content.</li>
+<li>A merged demotion lowers to the tier it asked for; it was capped by its surface.</li>
+<li>The rules every prompt keeps say what to tell the person about a kind with no effect yet.</li>
+</ul>
+<h2>Fixes</h2>
+<ul>
+<li>A remote reader's map did not draw: the read tier answered the layout worker and the renderer as
+not served.</li>
+<li>The minimap keeps its width round the frame's corner; an icon sits on its text's middle; no scroll
+container cuts a focus ring.</li>
+</ul>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.10.0/"><span>Newer</span>supragnosis v0.10.0</a><a href="../v0.8.2/"><span>Older</span>supragnosis v0.8.2</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

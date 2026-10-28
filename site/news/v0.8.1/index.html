@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis v0.8.1 - supragnosis</title>
+  <meta name="description" content="Upgrade the server and the app, then restart once; the search index rebuilds in one click.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.8.1/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis v0.8.1 - supragnosis">
+  <meta property="og:description" content="Upgrade the server and the app, then restart once; the search index rebuilds in one click.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.8.1/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-10-20">Oct 20, 2026</time></p>
+        <h1>supragnosis v0.8.1</h1>
+        <p class="n-lede">Upgrade the server and the app, then restart once; the search index rebuilds in one click.</p>
+        <div class="n-body">
+<p>Changes since v0.8.0.</p>
+<p><strong>Upgrade the server and the app, then restart once; the search index rebuilds in one click.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>. The server and the app changed. The store's format, the
+sync protocol and the MCP tools are unchanged. <code>status --json</code> gains <code>embedder_conflict</code> and keeps
+its schema number.</p>
+<h2>The search index rebuilds in one click</h2>
+<p>A store records the search model of the first process that opens it with one, and refuses every
+other, since vectors from two models share no space. A person reported a daemon that would not
+start, its log saying:</p>
+<blockquote>
+<p>store was written with embedder 'hashing-256' but was opened with
+'paraphrase-multilingual-minilm-l12-v2-q-384'</p>
+</blockquote>
+<p>Their store had been opened once with <code>SUPRAGNOSIS_EMBED=hashing</code>, a development stand-in. Once is
+enough, and from then on every start under the default model was refused, launchd started the
+daemon again and again, and only the log said why. The refusal asked for a re-embed that no
+command did, and the app showed the daemon as not running, with a Restart that failed the same way.</p>
+<ul>
+<li><strong>In the app</strong>, Settings &gt; This Mac says why such a daemon cannot start - "The search index
+needs rebuilding", with both models - and holds <strong>Rebuild index</strong> where Restart was. One click
+stops the daemon, removes the index and starts the daemon again, which embeds every observation
+and entity with the model it runs; the Search row shows it, "Indexing - 152 of 437" with a bar.
+Rebuild index is also on the Search row whenever the daemon runs with a model, for anyone who
+wants the index made again. Setup's server step names it too.</li>
+<li><strong><code>supragnosis embed rebuild</code></strong> does the same from a terminal, for a daemon this CLI manages: a
+login job this home installed, or one <code>supragnosis start</code> runs. It refuses anything else - a
+Homebrew service, an AI app's stdio server, a <code>serve</code> in a terminal - with nothing changed.
+<code>supragnosis embed reset</code> is its first half, for a daemon run by hand and stopped first.</li>
+<li><strong>The refusal and <code>status</code> say how to go on.</strong> Both name the model that wrote the store, the
+one the daemon runs, the rebuild, and <code>SUPRAGNOSIS_EMBED=none</code>, which runs without semantic
+search and leaves the store as it is.</li>
+</ul>
+<p>Rebuilding changes nothing but the index: the log and the graph are as they were, and the index is
+made again from the log. It is not on a timer, since rebuilt with the same model an index comes
+out as it was.</p>
+<p>If your daemon is down with that error, open Settings &gt; This Mac and click Rebuild index, or run
+<code>supragnosis embed rebuild</code>. If you started it with <code>supragnosis service install --env SUPRAGNOSIS_EMBED=none</code> to get it running, give the job its model back first with <code>supragnosis service install --env SUPRAGNOSIS_EMBED=fastembed</code>. Then remove <code>SUPRAGNOSIS_EMBED=hashing</code> from
+wherever it was set - a shell profile, a <code>.env</code>, a hand-written plist - or the next process that
+reads it pins the store again.</p>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.8.2/"><span>Newer</span>supragnosis v0.8.2</a><a href="../v0.8.0/"><span>Older</span>supragnosis v0.8.0</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis v0.7.0 - supragnosis</title>
+  <meta name="description" content="Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.7.0/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis v0.7.0 - supragnosis">
+  <meta property="og:description" content="Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.7.0/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-10-19">Oct 19, 2026</time></p>
+        <h1>supragnosis v0.7.0</h1>
+        <p class="n-lede">Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.</p>
+        <div class="n-body">
+<p>Changes since v0.6.5.</p>
+<p><strong>Upgrade the server and the app, then restart once; Setup in the app, and a login service on Linux.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>, and open the app. The store and the sync protocol are
+unchanged. One MCP tool description changed (<code>propose</code> may name a merge's entities by name).
+<code>status --json</code> gains fields and keeps its schema number.</p>
+<h2>Setup, in the app</h2>
+<p>v0.6.5 gave the first run a command, <code>supragnosis setup</code>. Its page in the app was left for this
+release, so a person who installed the app still met a graph with nothing in it and no next step.
+The app now opens on <strong>Setup</strong> at the first launch, and again while the daemon or the apps step
+waits: the four steps of <code>setup --events</code>, drawn and nothing else. The plan is shown first. Each
+item is a checkbox: Start at Login, each AI app to connect, the model. One "Set up" applies the
+plan, and Return presses it. An item that replaces what the person set up starts unchecked: an
+app's "Switch to the bridge", or the daemon's "Take over". While the plan runs, each act's lines
+stream into its step, and the foot counts the steps. The last step suggests a question about the
+person's real work and waits for the first entry it makes. Restart Claude Desktop is one click. The
+tray offers "Finish Setup..." while something waits, and Settings &gt; About always has "Open Setup".</p>
+<p>Settings says each fact once:</p>
+<ul>
+<li>Version drift is one card with the only Restart.</li>
+<li>A section's dot appears only when the section needs attention.</li>
+<li>The server list is a list.</li>
+<li>Claude Code's row has a switch, "Save the why behind each commit". It turns the capture hook on
+and off; <code>connect claude-code --no-capture</code> now removes the hook and keeps the bridge.</li>
+</ul>
+<h2>Linux keeps the daemon running</h2>
+<p>On Linux, <code>supragnosis service install</code> now does what it does on macOS: it generates the always-on
+manager, starts it, and keeps it at every login. Before, it declined, and setup named a unit to copy
+by hand. The manager is the systemd user unit <code>supragnosis.service</code>, built from the directives of
+the unit deploy/systemd shipped:</p>
+<ul>
+<li>It asks <code>loginctl enable-linger</code>, so the daemon outlives a logout. Where polkit refuses, it prints
+the line an administrator has to run.</li>
+<li><code>status</code>, <code>restart</code>, <code>stop</code> and <code>setup</code> recognize the unit and Homebrew's.</li>
+<li>A unit someone copied by hand is theirs: it is never overwritten, and <code>--take-over</code> moves it aside
+and carries its <code>Environment=</code> lines.</li>
+<li>Where <code>systemctl --user</code> does not work, as in a container, install says why and names
+<code>supragnosis serve</code>.</li>
+</ul>
+<p>On a fresh Ubuntu 24.04 user, <code>setup --yes</code> went from an empty home to "Every step is done", and the
+daemon came back after a restart with nobody logged in.</p>
+<p><code>connect</code> also stopped counting a Mac's app bundles on Linux. A VM can see a Mac's <code>/Applications</code>,
+and setup there connected Claude Desktop and ran the Mac's VS Code CLI.</p>
+<h2>Every screen, read again</h2>
+<p>Two passes went over every screen of the viewer, the app's pages and the site, against the
+principles and then against Apple's guidelines and the measured contrast of each text
+(docs/design-system.md Sections 14 and 24).</p>
+<p><strong>What changed in how things read:</strong></p>
+<ul>
+<li>Text comes in three tiers, each at least APCA Lc 60 on every surface (body text Lc 75). Signals
+drawn as text have their own inks.</li>
+<li>Sizes are a Mac's 13, 12 and 11 points, in rem, so text grows: View &gt; Make Text Bigger (Cmd+=)
+in the app, and the browser's zoom on the site.</li>
+<li>Before, 374 texts in the viewer read under Lc 60; now 14 do.</li>
+<li>Increase Contrast and forced colors are followed.</li>
+</ul>
+<p><strong>What changed in how things look:</strong></p>
+<ul>
+<li>The tools follow the system's light and dark appearance. The site stays dark.</li>
+<li>Lines are thin and solid, with no dashes. Trust's rings are told by weight.</li>
+<li>Corners come from six tokens. Large acts are capsules.</li>
+<li>Every target is at least 28 pixels, and 44 under a finger.</li>
+<li>The brand gold is one gold in both appearances; on light, gold text is drawn in ink.</li>
+</ul>
+<p><strong>What changed in how things work:</strong></p>
+<ul>
+<li>The title bar is a Mac toolbar. The leading end holds the filters toggle (or "&lt; Graph" on every
+other page) and the title of the place on screen; the trailing end holds the search and the
+right panel's toggle. Review, Settings and Setup share one bar.</li>
+<li>The map has a List: the entities as a table that keeps the map's selection.</li>
+<li>Search groups its hits by how they were reached (words, meaning, a neighbor) and offers the wider
+scope.</li>
+<li>A contested value is settled with one act per value, asked once, and can be undone.</li>
+<li>Review is always in the status bar, and Needs you lists only the beliefs that tie.</li>
+<li>Every Log row says who wrote it and when, marked with the map's ring for its tier.</li>
+<li>Follow frames what changed without moving the reader. The first view opens where the knowledge
+is.</li>
+<li>A tooltip names a control and its key; what a control does is said on the screen.</li>
+<li>View holds two choices, Regions and Boundaries, with real switches, and a switch that turns off
+the single-key shortcuts.</li>
+</ul>
+<p>The site's landing says the next step after install and reads on a phone. Its labels are in the
+reading face, and its pictures were retaken. The principles page says what its words mean.</p>
+<h2>The daemon says which port it got, and stops as a normal exit</h2>
+<p>A daemon asked for <code>--http 127.0.0.1:0</code> writes the address it bound to <code>~/.supragnosis/listening</code>.
+SIGTERM, which <code>stop</code>, launchd, systemd and the app all send, is now a normal exit: the daemon
+gives requests in flight up to three seconds and exits 0. It used to die by the signal. Both serve
+the end-to-end scenarios (docs/e2e.md): A1-A4 and A8 run in CI, and the README counts them.</p>
+<h2>Also</h2>
+<ul>
+<li><code>propose</code> turns an <code>entity_merge</code> target given by name into the id <code>observe</code> gave it, so naming
+PostgreSQL and Postgres opens a merge the integrity check does not block. A confirmation made
+from All lands in the observations' workspace.</li>
+<li><code>status --json</code> names a systemd manager as type <code>systemd</code>. Its <code>service</code> object gains <code>path</code> and
+<code>linger</code>; <code>plist</code> keeps its name and holds the unit's path on Linux.</li>
+</ul>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.7.1/"><span>Newer</span>supragnosis v0.7.1</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

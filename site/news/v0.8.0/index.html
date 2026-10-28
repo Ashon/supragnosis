@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>supragnosis v0.8.0 - supragnosis</title>
+  <meta name="description" content="Upgrade the server and the app, then restart once; the map opens and moves at any size.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.8.0/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis v0.8.0 - supragnosis">
+  <meta property="og:description" content="Upgrade the server and the app, then restart once; the map opens and moves at any size.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.8.0/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="../../#status">Status</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+          <li><a href="../v0.8.2/">supragnosis v0.8.2<time datetime="2026-10-20">Oct 20, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-10-20">Oct 20, 2026</time></p>
+        <h1>supragnosis v0.8.0</h1>
+        <p class="n-lede">Upgrade the server and the app, then restart once; the map opens and moves at any size.</p>
+        <div class="n-body">
+<p>Changes since v0.7.2.</p>
+<p><strong>Upgrade the server and the app, then restart once; the map opens and moves at any size.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>. The viewer changed, and so did the daemon's graph routes
+and the app's proxy, which now carries a poll's tag; an older app still works, but asks for the
+whole graph on every poll. The store, the sync protocol, the MCP tools and <code>status --json</code> are
+unchanged.</p>
+<h2>A store of 10,000 opens in two seconds</h2>
+<p>A store of 10,000 entities, entered through observe and opened in the desktop app, did not show in
+six minutes. The drawing was not why. Such a store holds a context for every observation - 11,862 on
+that one - and the layout pulled and pushed every context of two or more, building each one's
+members again every step. Every 2.5 seconds the page fetched and parsed the whole graph, the
+hypergraph and the Log's every observation, about 21 MB, whether anything had changed or not. And
+the layout stepped on the page's own thread, inside each frame.</p>
+<ul>
+<li><strong>The poll asks first.</strong> The graph, the hypergraph and the Log answer with an <code>ETag</code>, and a poll
+that names it gets a <code>304</code> with no body; the page keeps what it has. The app's proxy passes the
+tag both ways.</li>
+<li><strong>The Log lists the newest 200 observations</strong>, says "200+" while there are more, and shows 200
+more on request.</li>
+<li><strong>The regions' forces grow with their members.</strong> Membership is kept as index arrays between steps,
+and only the regions the map draws, three or more members, push apart; every context still pulls.</li>
+<li><strong>The layout runs on a thread of its own</strong>, in a worker started from <code>viewer-sim.js</code>, and on the
+page's thread only where no worker starts. Its positions are the old step's, to the last bit.</li>
+<li><strong>A fresh layout starts from its communities</strong>, found by label propagation and laid out first, so
+it reveals in about 60 steps rather than 120.</li>
+</ul>
+<p>Through its own daemon that store now sends its data in 0.3 seconds and shows in about two.</p>
+<h2>Every frame does less</h2>
+<ul>
+<li><strong>A frame that only redraws does not step the layout</strong>, and a layout at rest visits no pair of
+nodes.</li>
+<li><strong>The layout's forces come from grids</strong>: near forces pair by pair in a node's own and adjacent
+cells, the far field per cell, and regions push only near each other.</li>
+<li><strong>A frame touches what the window holds</strong>: a grid of positions and of relations' midpoints answers
+what is drawn, named, badged, pulsing or under the pointer.</li>
+<li><strong>Layers that only move with the camera are not worked out again</strong>: the region field is kept and
+moved as an image until the camera rests, and the minimap keeps its miniature as a bitmap.</li>
+<li><strong>A node's detail follows its size on the screen without a step</strong>: its halo, its trust ring, the
+arrowheads into it and the bend of its lanes grow in as it grows, eased in 32 steps.</li>
+<li><strong>The GPU draws the map's bulk</strong> where WebGL2 can render to half-float targets: the region field,
+the workspace outlines, the relations and the nodes. Names, badges and peers stay on the 2D canvas
+above it, and the 2D canvas draws everything as before without WebGL2, under forced colors, when
+the context is lost, and with <code>?renderer=2d</code>.</li>
+</ul>
+<h2>Zoomed out, the map keeps its best-connected nodes</h2>
+<p>A large map zoomed out was one dark disc. It now keeps whole about one node for each 12 by 12 pixels
+of the screen it covers, ranked by their relations, and the next as many fade out, so the
+least-connected fade first and zooming in brings them back where they were. A node that has faded is
+not drawn, named or under the pointer, and a far frame visits only the nodes it keeps. Every node
+stays where the layout put it: nothing is drawn for nodes that faded, and no line for relations two
+nodes do not have. A hovered, selected, active, pulsing or contested node never fades. The minimap
+keeps its nodes the same way at its own scale, with only its widest regions, and paints a map of
+50,000 in under 3 ms where it took 81.</p>
+<h2>Measured</h2>
+<p>On an M3 Max, on a graph shaped like a store, on the GPU (design-system.md Section 27.2):</p>
+<table><thead><tr><th></th><th style="text-align: right">10,000 Chrome</th><th style="text-align: right">10,000 WebKit</th><th style="text-align: right">50,000 Chrome</th><th style="text-align: right">50,000 WebKit</th></tr></thead><tbody>
+<tr><td>First picture</td><td style="text-align: right">2.2 s</td><td style="text-align: right">2.1 s</td><td style="text-align: right">8.8 s</td><td style="text-align: right">7.2 s</td></tr>
+<tr><td>A frame at rest, 95th percentile</td><td style="text-align: right">9.7 ms</td><td style="text-align: right">10 ms</td><td style="text-align: right">8.1 ms</td><td style="text-align: right">11 ms</td></tr>
+<tr><td>A frame while the layout moves, 95th percentile</td><td style="text-align: right">8.7 ms</td><td style="text-align: right">10 ms</td><td style="text-align: right">19.4 ms</td><td style="text-align: right">28 ms</td></tr>
+</tbody></table>
+<p>Before this release the viewer took 100 seconds to show 10,000 entities and 651 ms a frame to pan
+them, on the bench's first graph (design-system.md Section 26.2). At 50,000 a frame while the layout
+settles is still over 16.7 ms; at rest it is within it.</p>
+<h2>For people who build on it</h2>
+<ul>
+<li><code>GET /api/graph</code>, <code>/api/hypergraph</code> and <code>/api/observations</code> answer with a strong <code>ETag</code> and answer
+a matching <code>If-None-Match</code> with <code>304 Not Modified</code>.</li>
+<li>The page loads two more scripts from the daemon, <code>/viewer-sim.js</code> and <code>/viewer-gl.js</code>; the content
+policy is unchanged, since a worker from a served file is <code>'self'</code>.</li>
+<li><code>scenarios/web/bench/canvas.mjs</code> measures the map: <code>SIZES</code>, <code>BROWSER</code> and <code>RENDERER=2d</code> choose the
+run (design-system.md Section 26.1).</li>
+</ul>
+        </div>
+        <div class="n-update">
+          <p class="eyebrow">Update</p>
+          <pre><code>brew upgrade
+supragnosis restart</code></pre>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../v0.8.1/"><span>Newer</span>supragnosis v0.8.1</a><a href="../v0.7.2/"><span>Older</span>supragnosis v0.7.2</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>
