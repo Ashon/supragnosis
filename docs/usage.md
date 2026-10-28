@@ -34,6 +34,9 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
 | `of` | On a hook index, how many records the workspace holds |
 | `mode` | A search's mode, `hybrid` or `keyword` |
 | `commit` | On `observe` whose source is `git:` and 7 to 64 hex digits, and on a commit question, the commit id; any other source text is not kept |
+| `cites` | On `observe`, how many records its `derived_from` names, when it names any (recall.md Section 7.1) |
+| `via` | On an observation read, `index` when the URI came from an index line (recall.md Section 3) |
+| `reach_h` | On a hook index, how many hours before it was given its oldest line was recorded |
 | `ms` | How long the daemon took to answer |
 
 - **The daemon writes** a line for every tool call, resource read and prompt it answers on its MCP
@@ -66,7 +69,10 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
 - calls by app;
 - the hook: indexes given to sessions and subagents, commit questions counted by commit (a second
   commit command within the minute asks about the same commit again), and how many of those
-  commits an `observe` names.
+  commits an `observe` names;
+- recall (recall.md Section 7.1): how many records were opened and how many of those from an index
+  line, how many `observe` calls name records they built on, and how far each workspace's latest
+  index reached back.
 
 `--since` takes a number with `d` or `h`, and defaults to 7 days. `--json` gives the same tables as
 data, with `"schema": 1`, since the app reads it (compatibility.md Section 6), and an empty summary
@@ -82,7 +88,9 @@ the one reader of the file and the page counts nothing itself.
   its calls by function, by workspace and by app, as `[name, count]` pairs; how many were writes,
   found nothing (`empty`), named nothing (`not_found`) or failed (`errors`); and the hook's session
   and subagent indexes and commit questions. A question counts in the hour it was first asked, and
-  as answered when an `observe` in the window that did not fail names its commit.
+  as answered when an `observe` in the window that did not fail names its commit. Each hour also
+  counts the records opened from an index (`index_opens`) and the `observe` calls that cite a record
+  (`cited`).
 - **Writes** are the calls to the functions that change what this node holds: `observe`,
   `define_type`, `propose`, `review` and `sync_pull`, whether or not the call succeeded; failures
   are counted apart. Every other call reads. Reads against writes is the question recall.md
@@ -91,8 +99,10 @@ the one reader of the file and the page counts nothing itself.
   starts to the day it was read, so a 7-day window draws eight columns and the first is partial. A
   time zone that is not a whole number of hours from UTC puts half an hour at each day's edge into
   the neighbouring day.
-- **What the pane shows**, for the window chosen: four figures (calls with reads and writes, the
-  share that found nothing or failed, the indexes the hook gave, the commit questions answered);
+- **What the pane shows**, for the window chosen: six figures (calls with reads and writes, the
+  share that found nothing or failed, the indexes the hook gave, the commit questions answered,
+  the records opened from an index, the writes that cite a record), how far each workspace's index
+  reaches back;
   calls per day split by function, workspace, app or read and write, the five largest and the rest
   as Other; per day, what found nothing or failed, the indexes given and the commit questions
   answered; and the two tables of Section 4. Every chart has its numbers in a table beside it.

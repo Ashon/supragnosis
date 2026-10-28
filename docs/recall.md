@@ -6,7 +6,8 @@
 > and [semantic-retrieval.md](semantic-retrieval.md) (the model behind search).
 >
 > Status: **built** (Section 9 steps 1-3). Decisions D1-D11 were chosen by the author on
-> 2026-10-25 from the measurement in Section 1; the eval's first numbers are in Section 7.
+> 2026-10-25 from the measurement in Section 1; the eval's first numbers are in Section 7. D12 and
+> D13 (Section 7.1, what the live log can see of recall) were chosen on 2026-10-28.
 
 ## 1. Why this exists
 
@@ -88,7 +89,8 @@ header needs the total; on the author's store it answered in about 10 ms.
 
 - **A line** is the date the record was made (the wall clock of its HLC, which is its earliest
   attestation's, in milliseconds, shown as a UTC day), its tier when it is not `agent_extracted`,
-  its first sentence, and the URI that opens it. The first sentence is the record's first line
+  its first sentence, and the URI that opens it, with `?via=index` after the id (D12, Section 7.1).
+  The record is the same with or without it. The first sentence is the record's first line
   with leading `#` marks and whitespace removed, whitespace collapsed, up to the first `. `, `! `
   or `? `; one longer than 140 characters is cut at 140 and ends in `...`. The id is the whole id,
   because an index line has to carry what it takes to open the record (Principle 2).
@@ -157,7 +159,8 @@ The guidance that follows the index, with the workspace filled in:
 > its records: `search_knowledge` with two or three English topic words (the records are in
 > English) and workspace "supragnosis". If that finds nothing, search without a workspace before
 > you conclude it is not recorded. A hit that is an observation opens as the resource
-> `supragnosis://observation/{id}` (ReadMcpResourceTool, server supragnosis).
+> `supragnosis://observation/{id}` (ReadMcpResourceTool, server supragnosis). When a record you
+> read shapes what you record, name its id in observe's `derived_from`.
 
 The server instructions are one text for every project and every client, so they gain the same
 advice without a name in it: search before deciding, with two or three English topic words and
@@ -193,13 +196,14 @@ the project's workspace, and a hit that is an observation opens with
 > diff does not show: a choice the person made in this conversation, an option ruled out and why,
 > a number that was measured, a constraint or a dependency. Use supragnosis observe: workspace
 > "supragnosis", on_behalf_of "ashon", source_ref "git:...". Write it in English, one subject per
-> record, naming the entities it is about. If the commit settled nothing beyond its diff, record
-> nothing.
+> record, naming the entities it is about. If a record you read shaped it, put its id in
+> derived_from. If the commit settled nothing beyond its diff, record nothing.
 
 **After a compaction** (`SessionStart` with source `compact`), one line follows the index:
 
 > This session was just compacted. If its summary holds a decision, a constraint or a measured fact
-> that the records above do not, record it now with observe, workspace "supragnosis".
+> that the records above do not, record it now with observe, workspace "supragnosis", with the ids
+> of the records that shaped it in derived_from.
 
 The index above it is what lets the agent tell a new decision from one already recorded.
 
@@ -244,6 +248,28 @@ The queries and their labels were written by the same session that found the rec
 English numbers flatter a stranger's queries; the agents' own nine are inside them and all but one
 of those found their record within two hits. One subject (which program does Pacenote's own work)
 was missed in every form, which says the label or the record is unclear rather than the form.
+
+### 7.1 What the live log sees (D12, D13)
+
+A recall hit is a moment where the store held what the work needed, the agent saw or searched it,
+the right record came back, and the agent used it. The eval measures the third step. On
+2026-10-28 the transcripts since the hook showed the second step as the narrow one: 14 of 16 records
+opened were lines of the session's own index, and in the busiest workspace the newest 25 records
+reached back about six and a half hours, so a decision a few days old was out of the index. The
+fourth step, use, was not visible at all. The usage log (usage.md) gains three counts so the second
+and fourth steps can be followed day by day, without a new tool:
+
+- **D12, an opened record says where it was found.** An index line's URI ends in `?via=index`, and
+  the daemon notes `via: "index"` on that read. A read without it came from a search or elsewhere.
+- **Each index says how far back it reaches**: the hours from its oldest line to the moment it was
+  given.
+- **D13, use is recorded as provenance.** A record that shaped a new one is named in that one's
+  `derived_from`, the lineage `observe` already carries (Principle 2). The guidance of Section 5 and
+  the texts of Section 6 ask for it, and the usage log counts how many records each `observe` names.
+  A rating tool was ruled out: it would see only records that were read, never the ones missed, an
+  agent rating its own result has no ground truth, and a score that ranked records would be the
+  node-local usage signal consolidation.md Section 4.1 keeps out of the converged ordering.
+  `derived_from` is knowledge in the log, the same on every node.
 
 ## 8. Invariants
 

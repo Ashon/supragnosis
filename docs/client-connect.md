@@ -334,14 +334,8 @@ with `decision`.
 `tool_name` is `Bash`; the command names `git commit`; and the repository at `cwd` has a HEAD whose
 committer time is not more than a minute before the hook started. A commit that failed (nothing
 staged, a rejected message), `git commit --help`, and a HEAD another session made minutes ago all
-leave that false, and the hook says nothing. The answer names the commit and asks the question once:
-
-> Commit 9f41c2e "the bridge opens a new connection for every request" landed in supragnosis
-> (author ashon). Record what this work settled that the diff does not show: a choice the person
-> made in this conversation, an option ruled out and why, a number that was measured, a constraint
-> or a dependency. Use supragnosis observe: workspace "supragnosis", on_behalf_of "ashon",
-> source_ref "git:9f41c2e...". Write it in English, one subject per record, naming the entities it
-> is about. If the commit settled nothing beyond its diff, record nothing.
+leave that false, and the hook says nothing. The answer names the commit and asks the question once,
+in the words recall.md Section 6 gives.
 
 **At the start of a session** (`SessionStart`, every source: startup, resume, clear, compact). The
 hook asks the local daemon over the viewer socket, with the 800 ms budget `status` already uses,
