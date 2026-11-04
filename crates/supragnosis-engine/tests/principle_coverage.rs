@@ -3598,6 +3598,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-cli/src/connect.rs"),
     include_str!("../../supragnosis-cli/src/connect/json_edit.rs"),
     include_str!("../../supragnosis-cli/src/connect/clients.rs"),
+    include_str!("../../supragnosis-cli/src/connect/capture.rs"),
     include_str!("../../supragnosis-cli/src/hook.rs"),
     include_str!("../../supragnosis-cli/src/setup.rs"),
     include_str!("../../supragnosis-embed/src/lib.rs"),
