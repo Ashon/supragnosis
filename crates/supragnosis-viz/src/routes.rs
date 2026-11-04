@@ -12,9 +12,10 @@ use crate::read_api::{
     hypergraph_response, observations_response, proposal_response, proposals_response,
     search_response, surface_response, types_response, workspaces_response,
 };
+use crate::resolve_api::{resolve_preview_response, resolve_response, resolve_undo_response};
 use crate::{
-    resolve_preview_response, resolve_response, resolve_undo_response, ClientsView, FedStatus,
-    NarrowShare, VIEWER_CSS, VIEWER_GL_JS, VIEWER_HTML, VIEWER_JS, VIEWER_SIM_JS,
+    ClientsView, FedStatus, NarrowShare, VIEWER_CSS, VIEWER_GL_JS, VIEWER_HTML, VIEWER_JS,
+    VIEWER_SIM_JS,
 };
 
 /// The response to one non-streaming request: the two endpoints the wiring layer hooks in, then
