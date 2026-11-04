@@ -193,15 +193,15 @@ mod tests {
     }
 
     /// A finding names the shape and the place, never the value - so that refusing a write cannot
-    /// itself publish the secret into a log, a transcript or an error channel.
+    /// itself publish the secret into a log, a transcript or an error channel. The failure message
+    /// leaves the finding out for the same reason: a finding that failed here holds the secret.
     #[test]
     fn a_finding_never_carries_the_secret() {
         let text = "key AKIAIOSFODNN7EXAMPLE";
         let hit = detect_secret(text).expect("hit");
-        let rendered = format!("{hit:?}");
         assert!(
-            !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
-            "the finding quoted the secret: {rendered}"
+            !format!("{hit:?}").contains("AKIAIOSFODNN7EXAMPLE"),
+            "the finding quoted the secret"
         );
         assert_eq!(
             &text[hit.at..hit.at + 4],
