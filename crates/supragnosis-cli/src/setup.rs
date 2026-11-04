@@ -260,7 +260,7 @@ pub struct App {
     pub installed: bool,
     /// The `entry` field of `connect --json`: none, bridge, http, stdio, other, unknown.
     pub entry: String,
-    /// What the person does for the app to load the entry (connect.rs `next_step`).
+    /// What the person does for the app to load the entry (connect/clients.rs `next_step`).
     pub next: String,
     /// How long ago this app first reached the daemon, when it has since the daemon started.
     pub reached: Option<String>,

@@ -1368,7 +1368,8 @@ const CLIENT_CONNECT_REGISTRY: &[(u8, &[Clause])] = &[
     (2, &[
         c(
             "connect writes no secret into a client's configuration: a registration names the bridge and carries no token",
-            // connect.rs: no argv element contains Bearer/token; a replaced http entry's token copy is gone.
+            // connect/clients.rs and connect/json_edit.rs: no argv element contains Bearer/token; a
+            // replaced http entry's token copy is gone.
             Evidence::Scenario(&[
                 "registrations_run_the_bridge_and_carry_no_secret",
                 "a_missing_section_or_file_is_created_and_an_existing_entry_replaced",
