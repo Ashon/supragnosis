@@ -46,3 +46,7 @@ visible tags rather than as markup. CI runs this on every change under this dire
 
 All untrusted content (entity/type names, etc. - they arrive via `observe`, including federation sync)
 reaches HTML through `html`, never through string concatenation into a sink.
+
+`package.json` lifts `minimatch` to 11 through `overrides`: eslint 10 still asks for 10, which has a
+denial-of-service advisory (GHSA-g3hv-75wg-m249). eslint only builds `new Minimatch(pattern, { dot: true })`
+and calls `.match()`, which 11 keeps. Drop the override once eslint asks for 11 itself.
