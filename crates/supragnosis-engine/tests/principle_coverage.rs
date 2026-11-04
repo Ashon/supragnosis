@@ -3610,6 +3610,7 @@ const SOURCES: &[&str] = &[
     // The agent surface's own unit tests (design-system.md Section 29.15).
     include_str!("../../supragnosis-mcp/src/lib.rs"),
     include_str!("../../supragnosis-mcp/src/dto.rs"),
+    include_str!("../../supragnosis-mcp/src/usage.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.
     include_str!("../../../app/src/apps.rs"),
