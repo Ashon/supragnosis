@@ -204,7 +204,7 @@ async fn tls_listener_serves_https_and_refuses_plaintext() {
 }
 
 /// Spawns the sync API on an ephemeral loopback port (plain HTTP - the local trust surface;
-/// TLS material is exercised in production paths, the F10 guard below pins the policy).
+/// TLS material is exercised in production paths, the F10 guard in server.rs pins the policy).
 pub(super) async fn spawn_server(state: Arc<ServerState>) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
