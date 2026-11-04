@@ -196,8 +196,8 @@ fn no_retired_word_reaches_a_page() {
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
     // The sources are read from their directories, so a file added or moved is read without a list
     // to keep: the viewer's markup and the parts its script is joined from, the app's pages, scripts
-    // and stylesheets, and the shell's code but for its test modules (`#[cfg(test)] mod x;` in
-    // main.rs) - and Setup, and the viewer's server, whose refusals reach a notice.
+    // and stylesheets, the shell's code but for its test modules (`#[cfg(test)] mod x;` in
+    // main.rs), and every file of the viewer's server, whose refusals reach a notice - and Setup.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let read = |p: &Path| fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
     let main = read(&root.join("app/src/main.rs"));
@@ -214,6 +214,7 @@ fn no_retired_word_reaches_a_page() {
         ("crates/supragnosis-viz/assets/viewer", &["js"][..], false),
         ("app/assets", &["html", "js", "css"][..], false),
         ("app/src", &["rs"][..], true),
+        ("crates/supragnosis-viz/src", &["rs"][..], true),
     ] {
         let files = files_in(&root.join(dir), exts);
         assert!(!files.is_empty(), "{dir} holds no {exts:?}");
@@ -226,9 +227,8 @@ fn no_retired_word_reaches_a_page() {
             sources.push((format!("{dir}/{name}"), text));
         }
     }
-    for file in ["crates/supragnosis-cli/src/setup.rs", "crates/supragnosis-viz/src/lib.rs"] {
-        sources.push((file.to_string(), without_tests(&read(&root.join(file)))));
-    }
+    let setup = "crates/supragnosis-cli/src/setup.rs";
+    sources.push((setup.to_string(), without_tests(&read(&root.join(setup)))));
     let mut found = Vec::new();
     for (name, src) in sources {
         let text = prose(&src);
