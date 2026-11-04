@@ -10,7 +10,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::broadcast;
 
-use crate::{asset, err_body, respond, ClientsView, FedStatus, NarrowShare, Response};
+use crate::routes::{err_body, respond, Response};
+use crate::{asset, ClientsView, FedStatus, NarrowShare};
 
 /// Upper bound (bytes) for reading the request line + headers. GET-only, so there is no body; a
 /// request exceeding this bound is treated as malicious/malformed and dropped.
