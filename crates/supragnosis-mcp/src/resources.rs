@@ -192,7 +192,7 @@ fn parse_resource_uri(uri: &str) -> Option<ResourceUri<'_>> {
 }
 
 #[cfg(test)]
-mod usage_tests {
+mod tests {
     use super::{lineage_id, parse_resource_uri, resource_use, ResourceUri};
 
     /// recall.md Section 7.1: a record's link copied into `derived_from` names the record, and an
