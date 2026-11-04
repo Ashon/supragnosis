@@ -5,7 +5,7 @@
 use crate::{Hlc, Provenance, SyncMeta, TrustTier};
 
 #[cfg(doc)]
-use crate::hash_field;
+use crate::observation::hash_field;
 
 /// Node identity for federation (docs/federation.md Section 2): an ed25519 keypair whose public-key
 /// fingerprint IS the node_id (self-certifying, immutable - it keys the version vector and is the final
