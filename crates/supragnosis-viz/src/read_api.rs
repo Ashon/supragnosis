@@ -190,11 +190,6 @@ pub(crate) fn observations_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
-/// `/api/explain?entity=<id>` - "why is this node projected this way" (resolution.md Section 4): the
-/// per-field belief resolution (evidence + decision) and the supporting observation log for one
-/// entity. The workspace is derived from the entity itself, so only the id is needed.
-/// Consistent-by-construction with `/api/graph` (built on `get_entity`). A missing `entity` is 400;
-/// an id that resolves to no entity is 404 (absence, Principle 5); a storage failure is 500.
 /// `/api/search?q=...&workspace=...&limit=...` (design-system.md Section 8, U6). An omitted, `*` or
 /// `all` workspace searches the node, as the local trust surface may; an empty answer says what the
 /// agent surface says - absence in what was searched is unknown, not a negation (P5).
@@ -236,6 +231,11 @@ pub(crate) fn search_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
+/// `/api/explain?entity=<id>` - "why is this node projected this way" (resolution.md Section 4): the
+/// per-field belief resolution (evidence + decision) and the supporting observation log for one
+/// entity. The workspace is derived from the entity itself, so only the id is needed.
+/// Consistent-by-construction with `/api/graph` (built on `get_entity`). A missing `entity` is 400;
+/// an id that resolves to no entity is 404 (absence, Principle 5); a storage failure is 500.
 pub(crate) fn explain_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query
@@ -278,7 +278,6 @@ pub(crate) fn explain_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
-/// `/api/proposals` - the workspace's proposals with folded state (Principle 23). Read-only projection.
 /// `/api/proposal?id=<id>` - ONE proposal with its computed belief diff (proposal-workflow.md
 /// Section 5). Separate from `/api/proposals` on purpose: a diff is two full belief folds, which is
 /// the right cost for the proposal being reviewed and the wrong cost per row of a list. This is what
@@ -323,6 +322,7 @@ pub(crate) fn proposal_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
+/// `/api/proposals` - the workspace's proposals with folded state (Principle 23). Read-only projection.
 pub(crate) fn proposals_response(engine: &Engine, query: &str) -> Response {
     let ws_param = query
         .split('&')
@@ -419,6 +419,8 @@ pub(crate) fn surface_response(engine: &Engine, query: &str) -> Response {
     Response { status: "200 OK", content_type: "application/json", body: body.to_string() }
 }
 
+/// `/api/workspaces` - the list of workspaces that hold knowledge (sorted, Principle 16). The viewer's
+/// workspace picker consumes it - letting you click to pick rather than type a name. A failure is 500 (Principle 5).
 pub(crate) fn workspaces_response(engine: &Engine) -> Response {
     match engine.workspaces() {
         Ok(list) => match serde_json::to_string(&list) {

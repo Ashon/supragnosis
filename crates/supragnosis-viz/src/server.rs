@@ -54,6 +54,11 @@ pub async fn bind_uds(path: &Path) -> anyhow::Result<UnixListener> {
     Ok(listener)
 }
 
+/// Accepts connections on the injected listener and serves the viewer/graph API (infinite accept loop).
+///
+/// Binding is done by **the caller** (so a test can bind port 0 and look up the actual port).
+/// Each connection is split off into a task, but an individual connection failure is swallowed
+/// so it does not kill the server.
 pub async fn serve(
     engine: Arc<Engine>,
     listener: UnixListener,

@@ -377,8 +377,6 @@ pub(crate) fn opened_response(opened: &supragnosis_engine::Proposed) -> Response
     }
 }
 
-/// `/api/workspaces` - the list of workspaces that hold knowledge (sorted, Principle 16). The viewer's
-/// workspace picker consumes it - letting you click to pick rather than type a name. A failure is 500 (Principle 5).
 /// `POST /api/peer/share?node_id=<id>&workspaces=a,b` - narrows what one federation peer may read.
 ///
 /// Narrow-only, enforced by the injected handler: a request naming a workspace the peer does not

@@ -71,11 +71,6 @@ impl EventSink for BroadcastSink {
     }
 }
 
-/// Accepts connections on the injected listener and serves the viewer/graph API (infinite accept loop).
-///
-/// Binding is done by **the caller** (so a test can bind port 0 and look up the actual port).
-/// Each connection is split off into a task, but an individual connection failure is swallowed
-/// so it does not kill the server.
 /// Live federation status blob, maintained by the wiring layer (the CLI's status task) and served
 /// verbatim at /api/federation - the viz stays decoupled from the sync crate (it renders JSON).
 pub type FedStatus = Arc<std::sync::RwLock<serde_json::Value>>;

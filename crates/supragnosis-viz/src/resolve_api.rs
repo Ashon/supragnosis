@@ -7,22 +7,6 @@ use crate::act_api::{opened_response, write_workspace};
 use crate::routes::{err_body, Response};
 use crate::server::percent_decode;
 
-/// `/api/resolve?observation=<id>[&observation=<id>...]&tier=<tier>[&kind=claim_demotion][&workspace=<ws>][&rationale=<text>]` -
-/// mediate a contested belief from the curation console (resolution.md Section 4.2): opens a
-/// claim_promotion for the chosen observation(s) at the requested tier - or, with
-/// `kind=claim_demotion`, the demotion that undoes one (design-system.md Section 7) - and immediately
-/// casts the Console merge verdict. Both steps are gated appended events (I1/I18) - the projection
-/// changes only because the fold consumes the verdict, never by a direct write. Solo self-approval is
-/// the P23 exception, and the verdict stays self-attested.
-///
-/// The act is filed in the workspace of the observations it changes, whatever scope the console
-/// shows: from All the query says `*`, which would file it in the node default, where the fold that
-/// reads the observations' own workspace never sees it.
-/// The settle preview (design-system.md Section 29.2): the query `/api/resolve` takes - the
-/// observations, the tier and the kind - and once more with the suffix `2` for a second act, which a
-/// "Confirm instead" and its Undo need. Answers the acts' belief diff and checks, applied in order at
-/// the console's grant, and writes nothing. Observations from two workspaces are refused, as
-/// `/api/resolve` refuses them, since the fold that would read the act reads one workspace.
 /// The undo read (design-system.md Section 29.3): `?proposal=<id>` names a merged claim promotion or
 /// demotion, and the answer is the acts that reverse it - each target back to the tier it has with
 /// that proposal's merge verdicts left out - with their diff and checks. Read in the proposal's own
@@ -68,6 +52,11 @@ pub(crate) fn resolve_undo_response(engine: &Engine, query: &str) -> Response {
     }
 }
 
+/// The settle preview (design-system.md Section 29.2): the query `/api/resolve` takes - the
+/// observations, the tier and the kind - and once more with the suffix `2` for a second act, which a
+/// "Confirm instead" and its Undo need. Answers the acts' belief diff and checks, applied in order at
+/// the console's grant, and writes nothing. Observations from two workspaces are refused, as
+/// `/api/resolve` refuses them, since the fold that would read the act reads one workspace.
 pub(crate) fn resolve_preview_response(engine: &Engine, query: &str) -> Response {
     let bad = |m: String| Response {
         status: "400 Bad Request",
@@ -152,6 +141,17 @@ fn parse_tier_param(t: &str) -> Option<supragnosis_engine::TrustTier> {
     serde_json::from_value(serde_json::Value::String(t.to_string())).ok()
 }
 
+/// `/api/resolve?observation=<id>[&observation=<id>...]&tier=<tier>[&kind=claim_demotion][&workspace=<ws>][&rationale=<text>]` -
+/// mediate a contested belief from the curation console (resolution.md Section 4.2): opens a
+/// claim_promotion for the chosen observation(s) at the requested tier - or, with
+/// `kind=claim_demotion`, the demotion that undoes one (design-system.md Section 7) - and immediately
+/// casts the Console merge verdict. Both steps are gated appended events (I1/I18) - the projection
+/// changes only because the fold consumes the verdict, never by a direct write. Solo self-approval is
+/// the P23 exception, and the verdict stays self-attested.
+///
+/// The act is filed in the workspace of the observations it changes, whatever scope the console
+/// shows: from All the query says `*`, which would file it in the node default, where the fold that
+/// reads the observations' own workspace never sees it.
 pub(crate) fn resolve_response(engine: &Engine, query: &str) -> Response {
     let param = |k: &str| {
         query
