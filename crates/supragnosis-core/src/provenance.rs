@@ -55,7 +55,7 @@ pub struct Provenance {
     /// local-unsigned attestations (they stay local-only until backfill-stamped at first export).
     /// **Not part of the content address** (F2): it lives on the attestation, and `Provenance` is not
     /// hashed - identical content on two nodes keeps one id. It IS an attestation-distinguishing axis
-    /// (see [`provenance_order`], the P14 compile-forced enumeration).
+    /// (see `provenance_order` in observation.rs, the P14 compile-forced enumeration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncMeta>,
 }

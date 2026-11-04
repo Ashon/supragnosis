@@ -16,7 +16,7 @@ pub(crate) fn prov() -> Provenance {
     }
 }
 
-// --- M4 Phase 1: federation core foundations (docs/federation.md Section 10) -----------------
+// --- Shared fixtures for the federation tests (docs/federation.md Section 10) ----------------
 
 /// Builds a sync-stamped attestation from `identity` (signed - the test-side stamping pipeline).
 pub(crate) fn stamped(identity: &NodeIdentity, content_id: &str, seq: u64, hlc: Hlc) -> Provenance {
