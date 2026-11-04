@@ -3539,6 +3539,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-sync/src/http/server.rs"),
     include_str!("../../supragnosis-sync/src/http/handlers.rs"),
     include_str!("../../supragnosis-sync/src/http/client.rs"),
+    include_str!("../../supragnosis-sync/src/http/tests.rs"),
     include_str!("../../supragnosis-mcp/tests/mcp_surface.rs"),
     include_str!("../../supragnosis-mcp/tests/usage.rs"),
     include_str!("../../supragnosis-mcp/tests/sync_round.rs"),
