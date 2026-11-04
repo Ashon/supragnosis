@@ -1408,7 +1408,8 @@ async fn viz_resolve_files_in_the_observations_workspace_and_can_be_undone() {
 /// design-system.md Section 29.2, U18: a settle's preview names the source a Confirm promotes, in
 /// its own words, every entity whose ring moves with it and what else the source states, with the
 /// checks - and writes nothing. Each value lists every source that asserts it, each with its tier
-/// before any verdict. After the Confirm, the reverse act's preview says what Undo moves back.
+/// before any verdict. After the Confirm, the reverse act's preview says what Undo moves back. A
+/// preview that names no source is refused in one sentence.
 #[tokio::test]
 async fn a_settle_preview_names_the_source_and_its_reach() {
     let store = Arc::new(InMemoryStore::new());
@@ -1611,6 +1612,15 @@ async fn a_settle_preview_names_the_source_and_its_reach() {
     )
     .await;
     assert!(bad.contains("400"), "an unknown kind is refused: {bad}");
+
+    let none = uds_get(&sock, "/api/resolve/preview?tier=human_confirmed").await;
+    let refusal: serde_json::Value =
+        serde_json::from_str(body_of(&none, "400")).expect("valid JSON body");
+    assert_eq!(
+        refusal["error"],
+        "preview needs at least one ?observation=<id>, with the tier and kind /api/resolve would take",
+        "a preview with no source is refused in one sentence: {none}"
+    );
     let _ = std::fs::remove_file(&sock);
 }
 
