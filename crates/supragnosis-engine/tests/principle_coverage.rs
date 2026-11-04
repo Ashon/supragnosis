@@ -3615,6 +3615,7 @@ const SOURCES: &[&str] = &[
     include_str!("../../supragnosis-mcp/src/tools.rs"),
     include_str!("../../supragnosis-mcp/src/handler.rs"),
     include_str!("../../supragnosis-mcp/src/resources.rs"),
+    include_str!("../../supragnosis-mcp/src/reply.rs"),
     // The desktop shell is its own workspace, but its tests are named by client-connect.md and
     // daemon-lifecycle.md like any other guard, so its source is scanned too.
     include_str!("../../../app/src/apps.rs"),
