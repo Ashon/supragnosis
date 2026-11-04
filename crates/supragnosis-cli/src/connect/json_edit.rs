@@ -1,4 +1,4 @@
-//! connect's file edits: a minimal JSON editor that keeps every other byte, and JSONC for OpenCode.
+//! connect's text edits: a minimal JSON editor that keeps every other byte, and JSONC for OpenCode.
 
 use super::*;
 
