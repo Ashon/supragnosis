@@ -79,8 +79,11 @@ pub(crate) fn resolve_preview_response(engine: &Engine, query: &str) -> Response
             .collect();
         if observations.is_empty() {
             if suffix.is_empty() {
-                return bad("preview needs at least one ?observation=<id>, with the tier and kind                             /api/resolve would take"
-                    .into());
+                return bad(
+                    "preview needs at least one ?observation=<id>, with the tier and kind \
+                     /api/resolve would take"
+                        .into(),
+                );
             }
             continue;
         }
