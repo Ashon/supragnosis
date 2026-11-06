@@ -129,7 +129,9 @@ fn the_principles_page_draws_the_viewers_marks() {
     let table = SCRIPT.find("const WORDS = {").expect("the words table");
     let close = table + SCRIPT[table..].find("\n};").expect("the words table closes");
     let picks = format!("{}{}", &SCRIPT[..table], &SCRIPT[close..]);
-    let map = picks.find("\nconst VALUE = ").expect("the map from a case's value to its words");
+    let map = picks
+        .find("\nconst VALUE = ")
+        .expect("the map from a case's value to its words");
     let map_end = map + 1 + picks[map + 1..].find('\n').expect("the map is one line");
     let picks = format!("{}{}", &picks[..map], &picks[map_end..]).to_lowercase();
     for key in ["tierhuman", "tierhost", "tieragent"] {
