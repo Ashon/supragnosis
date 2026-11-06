@@ -6,6 +6,7 @@
 
 const STAGE: &str = include_str!("../../../site/stage.js");
 const LANDING_JS: &str = include_str!("../../../site/landing.js");
+const PRINCIPLES_JS: &str = include_str!("../../../site/principles.js");
 const PAGE: &str = include_str!("../../../site/index.html");
 const KO_PAGE: &str = include_str!("../../../site/ko/index.html");
 const PRIVACY: &str = include_str!("../../../site/privacy/index.html");
@@ -344,24 +345,45 @@ fn each_site_page_has_its_korean_twin() {
 }
 
 /// The entries of a script's words table (`WORDS = {` to its closing `};`), one per line as
-/// `key: { en: "...", ko: "..." },`.
-fn words(file: &str, src: &str) -> Vec<(String, String, String)> {
+/// `key: { en: "...", ko: "..." },` with comment lines between them, and the script after the table.
+fn words<'a>(file: &str, src: &'a str) -> (Vec<(String, String, String)>, &'a str) {
     let at = src.find("WORDS = {").unwrap_or_else(|| panic!("{file} has no words table"));
+    let mut pos = at + src[at..].find('\n').expect("the table goes on") + 1;
     let mut out = Vec::new();
-    for line in src[at..].lines().skip(1) {
+    for line in src[pos..].split_inclusive('\n') {
+        pos += line.len();
         let line = line.trim();
         if line == "};" {
-            return out;
+            return (out, &src[pos..]);
+        }
+        if line.starts_with("//") {
+            continue;
         }
         let parsed = (|| {
-            let (key, rest) = line.split_once(": { en: \"")?;
-            let (en, rest) = rest.split_once("\", ko: \"")?;
-            let (ko, rest) = rest.split_once('"')?;
-            (rest == " }," || rest == " }").then(|| (key.into(), en.into(), ko.into()))
+            let (key, rest) = line.split_once(": { en: ")?;
+            let (en, rest) = js_string(rest)?;
+            let (ko, rest) = js_string(rest.strip_prefix(", ko: ")?)?;
+            (rest == " }," || rest == " }").then(|| (key.into(), en, ko))
         })();
         out.push(parsed.unwrap_or_else(|| panic!("{file}: an entry that does not read: {line}")));
     }
     panic!("{file}: the words table does not close")
+}
+
+/// The double-quoted JavaScript string `s` starts with, its escaped characters unescaped, and what
+/// follows it.
+fn js_string(s: &str) -> Option<(String, &str)> {
+    let s = s.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = s.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => out.push(chars.next()?.1),
+            '"' => return Some((out, &s[i + 1..])),
+            c => out.push(c),
+        }
+    }
+    None
 }
 
 /// The named placeholders of a string, sorted.
@@ -383,10 +405,12 @@ fn placeholders(s: &str) -> Vec<String> {
 fn the_sites_words_hold_both_languages() {
     // the particles whose form follows the last sound of the word before them
     const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
-    for (file, src, call) in
-        [("site/stage.js", STAGE, "word(\""), ("site/landing.js", LANDING_JS, "t(\"")]
-    {
-        let table = words(file, src);
+    for (file, src, call) in [
+        ("site/stage.js", STAGE, "word(\""),
+        ("site/landing.js", LANDING_JS, "t(\""),
+        ("site/principles.js", PRINCIPLES_JS, "word(\""),
+    ] {
+        let (table, after) = words(file, src);
         assert!(table.len() >= 10, "{file}: the table was not read ({} entries)", table.len());
         for (key, en, ko) in &table {
             assert!(!en.is_empty() && !ko.is_empty(), "{file} {key}: a language is empty");
@@ -399,8 +423,6 @@ fn the_sites_words_hold_both_languages() {
                 );
             }
         }
-        let body = &src[src.find("WORDS = {").unwrap()..];
-        let after = &body[body.find("\n  };").expect("the table closes")..];
         for (i, _) in after.match_indices(call) {
             // the lookup itself, not the end of a longer name like createElement("
             let before = after[..i].chars().next_back();

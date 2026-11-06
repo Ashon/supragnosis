@@ -123,7 +123,11 @@ fn the_principles_page_draws_the_viewers_marks() {
     };
     assert_eq!(alpha(SCRIPT), alpha(VIEWER), "the page's edge alpha is not the viewer's");
 
-    // The page names no trust tier itself: every tier it draws comes from the cases (U12).
+    // The page picks no trust tier itself: every tier it draws comes from the cases (U12), and its
+    // words table only says a tier the cases hold in the page's language (docs/i18n.md Section 4).
+    let table = SCRIPT.find("const WORDS = {").expect("the words table");
+    let close = table + SCRIPT[table..].find("\n};").expect("the words table closes");
+    let picks = format!("{}{}", &SCRIPT[..table], &SCRIPT[close..]).to_lowercase();
     for tier in [
         "human confirmed",
         "host signed",
@@ -134,7 +138,7 @@ fn the_principles_page_draws_the_viewers_marks() {
         "agent_extracted",
     ] {
         assert!(
-            !SCRIPT.to_lowercase().contains(tier),
+            !picks.contains(tier),
             "principles.js names the tier `{tier}` instead of reading it from the cases"
         );
     }
@@ -163,7 +167,7 @@ fn the_principles_page_plays_once_can_stop_and_rests() {
     let mount = body(SCRIPT, "function mountScene(");
     assert!(
         mount.contains("onceVisible(fig, () => run(0, END));")
-            && mount.contains("play.textContent = \"Stop\""),
+            && mount.contains("play.textContent = word(\"stop\")"),
         "a scene does not play once or cannot be stopped"
     );
     // A caption is announced only after the reader presses a control.
@@ -295,7 +299,7 @@ fn on_a_phone_a_scene_waits_to_be_played() {
     let at = SCRIPT.find("function mountScene(").expect("mountScene");
     let mount = &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")];
     assert!(
-        mount.contains("PHONE.matches ? \"Play scene\" : \"Replay\""),
+        mount.contains("word(PHONE.matches ? \"playScene\" : \"replay\")"),
         "the button does not say Play scene"
     );
     assert!(

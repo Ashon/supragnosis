@@ -16,6 +16,167 @@ const PHONE = matchMedia("(max-width: 559px)");
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const ease = x => { x = clamp(x, 0, 1); return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
 
+// ---- the page's words, in English and Korean (docs/i18n.md Section 4): what a figure draws and the
+// controls the script makes, keyed by the page's language. A name, a type, an id, a command and what
+// an agent reads stay as written (Section 2), and a value from the cases is said through `val`. ----
+const LANG = document.documentElement.lang === "ko" ? "ko" : "en";
+const WORDS = {
+  // the controls
+  steps: { en: "Steps", ko: "단계" },
+  playScene: { en: "Play scene", ko: "장면 재생" },
+  replay: { en: "Replay", ko: "다시 재생" },
+  stop: { en: "Stop", ko: "정지" },
+  readPrinciple: { en: "Read the principle", ko: "원칙 읽기" },
+  principles: { en: "Principles", ko: "원칙" },
+  allPrinciples: { en: "All principles", ko: "모든 원칙" },
+  whereOf: { en: "P{p} of {n}", ko: "P{p} / {n}" },
+  previous: { en: "Previous", ko: "이전" },
+  next: { en: "Next", ko: "다음" },
+  // words more than one figure draws
+  owed: { en: "owed", ko: "남은 과제" },
+  you: { en: "you", ko: "나" },
+  hub: { en: "hub", ko: "허브" },
+  graph: { en: "graph", ko: "그래프" },
+  graphFp: { en: "graph {fp}", ko: "그래프 {fp}" },
+  sameThing: { en: "same thing?", ko: "같은 것?" },
+  merged: { en: "merged", ko: "병합됨" },
+  contested: { en: "contested", ko: "이견 있음" },
+  log: { en: "log", ko: "로그" },
+  // the values the cases hold, by their English
+  tierHuman: { en: "human confirmed", ko: "사람이 확인" },
+  tierHost: { en: "host signed", ko: "호스트 서명" },
+  tierAgent: { en: "agent extracted", ko: "에이전트" },
+  unstated: { en: "unstated", ko: "명시 안 됨" },
+  // P16
+  nOf6: { en: "{n} of 6", ko: "{n} / 6" },
+  dupArrived: { en: "a duplicate arrived, nothing changed", ko: "중복 도착, 바뀐 것 없음" },
+  linkCut: { en: "link cut", ko: "연결 끊김" },
+  identical: { en: "identical", ko: "동일" },
+  // P6
+  laptopForYou: { en: "laptop, for you", ko: "laptop, 나를 위해" },
+  redisDatabase: { en: "Redis is a Database", ko: "Redis는 Database" },
+  redisCache: { en: "Redis is a Cache", ko: "Redis는 Cache" },
+  believed: { en: "believed", ko: "믿음" },
+  believedTrust: { en: "believed, by trust", ko: "신뢰로 믿음" },
+  defeatedKept: { en: "defeated, kept", ko: "밀려남, 보존" },
+  youConsole: { en: "you, in the console", ko: "나, 콘솔에서" },
+  confirmType: { en: "confirm \"{type}\"", ko: "\"{type}\" 확인" },
+  typeContested: { en: "{type}, contested", ko: "{type}, 이견 있음" },
+  // P18
+  desk2Sent: { en: "what desk-2 sent", ko: "desk-2가 보낸 것" },
+  nodeKeeps: { en: "what your node keeps", ko: "내 노드가 보관하는 것" },
+  entryVerdict: { en: "entry + a console verdict", ko: "항목 + 콘솔 판정" },
+  claimed: { en: "claimed", ko: "주장" },
+  evaluated: { en: "evaluated", ko: "평가" },
+  verdict: { en: "verdict", ko: "판정" },
+  storedAsSent: { en: "stored as sent", ko: "보낸 그대로 저장" },
+  signedNoVerdict: { en: "signed by desk-2, no verdict behind it", ko: "desk-2의 서명, 뒤에 판정 없음" },
+  personMerged: { en: "a person merged a promotion in desk-2's console", ko: "desk-2의 콘솔에서 사람이 승격을 병합함" },
+  console: { en: "console", ko: "콘솔" },
+  consoleReplayed: { en: "the console verdict, replayed from the log", ko: "로그에서 다시 재생한 콘솔 판정" },
+  // P23 and P5
+  pgForwards: { en: "pg forwards here", ko: "pg의 전달 대상" },
+  thisNode: { en: "this node", ko: "이 노드" },
+  // P1 and P2
+  noGraph: { en: "no graph", ko: "그래프 없음" },
+  sameAsBefore: { en: "same as before", ko: "이전과 같음" },
+  fHost: { en: "host", ko: "호스트" },
+  fFor: { en: "on behalf of", ko: "누구를 위해" },
+  fWorkspace: { en: "workspace", ko: "워크스페이스" },
+  fObserved: { en: "observed", ko: "관찰 시각" },
+  fSource: { en: "source", ko: "출처" },
+  fConfidence: { en: "confidence", ko: "확신도" },
+  hit: { en: "hit: billing-api uses Postgres", ko: "결과: billing-api uses Postgres" },
+  // P3 and P4
+  entryInLog: { en: "{n} entry in the log", ko: "로그에 항목 {n}개" },
+  entriesInLog: { en: "{n} entries in the log", ko: "로그에 항목 {n}개" },
+  superseded: { en: "superseded", ko: "대체됨" },
+  keptOnce: { en: "kept once", ko: "한 번만 보관" },
+  destroy: { en: "destroy", ko: "파기" },
+  trueWorld: { en: "true in the world", ko: "세상에서 참인 때" },
+  knownSystem: { en: "known to the system", ko: "시스템이 안 때" },
+  usesPgSince: { en: "uses Postgres, since {date}", ko: "Postgres 사용, {date}부터" },
+  learnedOn: { en: "learned {date}", ko: "{date}에 알게 됨" },
+  trueNotKnown: { en: "true, not yet known", ko: "참, 아직 모름" },
+  validOn: { en: "valid {date}", ko: "유효 {date}" },
+  recordedOn: { en: "recorded {date}", ko: "기록 {date}" },
+  asOf: { en: "as of {date}?", ko: "{date} 기준?" },
+  // P7 and P8
+  idleReads: { en: "idle: consolidation reads the log", ko: "유휴: 통합이 로그를 읽음" },
+  mergePg: { en: "merge pg into Postgres?", ko: "pg를 Postgres에 병합?" },
+  promoteContext: { en: "promote this context?", ko: "이 맥락을 승격?" },
+  canonZero: { en: "canon: 0 changes", ko: "정본: 변경 0건" },
+  retrieval: { en: "retrieval", ko: "검색" },
+  vocabulary: { en: "vocabulary", ko: "어휘" },
+  defineCache: { en: "define Cache", ko: "Cache 정의" },
+  needsDefinition: { en: "needs a definition", ko: "정의가 필요함" },
+  descBlank: { en: "description: blank", ko: "설명: 비어 있음" },
+  kept: { en: "kept", ko: "보존" },
+  // P9 and P10
+  relationType: { en: "relation type: member_of", ko: "관계 타입: member_of" },
+  addType: { en: "add type member_of", ko: "타입 member_of 추가" },
+  blocked: { en: "blocked", ko: "차단됨" },
+  subtypeCycles: { en: "subtype cycles, domain and range", ko: "하위 타입 순환, 정의역과 치역" },
+  yourVocabulary: { en: "your vocabulary", ko: "내 어휘" },
+  coreModel: { en: "core model", ko: "핵심 모델" },
+  migration: { en: "migration: v1 entries read as v2", ko: "마이그레이션: v1 항목을 v2로 읽음" },
+  fromLog: { en: "from the log", ko: "로그에서" },
+  // P11 and P12
+  saidTogether: { en: "said together {n}x", ko: "함께 언급 {n}회" },
+  derivedLowest: { en: "derived, lowest trust", ko: "파생, 가장 낮은 신뢰" },
+  typeCandidate: { en: "type candidate?", ko: "타입 후보?" },
+  storeIs: { en: "store: {s}", ko: "저장소: {s}" },
+  port: { en: "port", ko: "포트" },
+  btreePage: { en: "B-tree page", ko: "B-tree 페이지" },
+  // P13, P14 and P15
+  notSubtype: { en: "not a subtype", ko: "하위 타입 아님" },
+  sameId: { en: "same id", ko: "같은 id" },
+  oneEntry: { en: "1 entry, counted once", ko: "항목 1개, 한 번만 셈" },
+  getPgForwarded: { en: "get pg: forwarded", ko: "pg 조회: 전달됨" },
+  split: { en: "split?", ko: "분리?" },
+  proposal: { en: "proposal", ko: "제안" },
+  splitProposal: { en: "split proposal", ko: "분리 제안" },
+  // P17 and P19
+  yourLaptop: { en: "your laptop", ko: "내 노트북" },
+  teamHub: { en: "team hub", ko: "팀 허브" },
+  shared: { en: "shared", ko: "공유됨" },
+  refusedCredential: { en: "refused: shaped like a credential", ko: "거부됨: 자격 증명처럼 생김" },
+  searchModel: { en: "search model", ko: "검색 모델" },
+  searchModelOff: { en: "search model: off", ko: "검색 모델: 꺼짐" },
+  keywordOnly: { en: "keyword only", ko: "키워드만" },
+  waitsVerdict: { en: "waits for a verdict", ko: "판정을 기다림" },
+  written: { en: "written", ko: "기록됨" },
+  // P20, P21 and P22
+  inMemory: { en: "in-memory", ko: "인메모리" },
+  aModel: { en: "a model", ko: "모델" },
+  tools13: { en: "13 tools", ko: "도구 13개" },
+  observation9b1e: { en: "observation 9b1e", ko: "관찰 9b1e" },
+  noPassthrough: { en: "no passthrough", ko: "그대로 전달하지 않음" },
+  newSession: { en: "-- a new session --", ko: "-- 새 세션 --" },
+  // P24
+  serving: { en: "serving", ko: "서비스 중" },
+  refusedStart: { en: "refused to start", ko: "시작 거부" },
+  rStore: { en: "store", ko: "저장소" },
+  rKeyword: { en: "keyword search", ko: "키워드 검색" },
+  rSemantic: { en: "semantic search", ko: "의미 검색" },
+  rSync: { en: "sync", ko: "동기화" },
+  rViewer: { en: "viewer", ko: "뷰어" },
+  offModel: { en: "off: model not fetched; keyword only", ko: "꺼짐: 모델을 받지 않음, 키워드만" },
+  offHub: { en: "off: hub unreachable; see sync_status", ko: "꺼짐: 허브에 닿지 않음, sync_status 참고" },
+  configKey: { en: "config: a key this build does not know", ko: "설정: 이 빌드가 모르는 키" },
+};
+const word = (key, v) => WORDS[key][LANG].replace(/\{(\w+)\}/g, (m, k) => v && k in v ? v[k] : m);
+// A value the cases hold is drawn as they hold it, and said in the page's language.
+const VALUE = Object.fromEntries(["tierHuman", "tierHost", "tierAgent", "unstated"].map(k => [WORDS[k].en, k]));
+const val = v => VALUE[v] ? word(VALUE[v]) : v;
+// Plurals, months, dates and days through Intl, in the page's language (docs/i18n.md Section 4); the made-up
+// project runs in 2026, and its Monday is January 5.
+const INTL = LANG === "ko" ? "ko" : "en-US";
+const PLURAL = new Intl.PluralRules(INTL);
+const month = i => new Intl.DateTimeFormat(INTL, {month: "short", timeZone: "UTC"}).format(Date.UTC(2026, i, 1));
+const date = (i, d) => new Intl.DateTimeFormat(INTL, {month: "short", day: "numeric", timeZone: "UTC"}).format(Date.UTC(2026, i, d));
+const day = (i, hm) => new Intl.DateTimeFormat(INTL, {weekday: "short", timeZone: "UTC"}).format(Date.UTC(2026, 0, 5 + i)) + " " + hm;
+
 // ---- the viewer's marks: its color functions copied character for character (a test compares) ----
 // The landing's tokens (site/style.css), one value each; a test holds them equal.
 const C = {
@@ -33,7 +194,8 @@ const C = {
 };
 const EDGE_NEUTRAL = "#6b7383", EDGE_ALPHA = 0.42;
 const SANS = '"Pretendard Variable", Pretendard, -apple-system, "Segoe UI", sans-serif';
-const MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
+// Plex Mono has no Hangul: on a Korean page a mono label's Hangul is Pretendard's, not a system face's
+const MONO = LANG === "ko" ? '"IBM Plex Mono", "Pretendard Variable", ui-monospace, Menlo, monospace' : '"IBM Plex Mono", ui-monospace, Menlo, monospace';
 const TYPE_BAND = [
   "#889d37", "#82d48c", "#3cd1f5", "#67acf7", "#8986de", "#c38fe3", "#c670ab", "#ff9abd",
   "#adc35e", "#53a45e", "#009cba", "#4c8fd8", "#aeadff", "#aa76c8", "#ffb7e6", "#e17da1",
@@ -195,7 +357,7 @@ MOUNT[16] = function (fig) {
   ];
   const POS = {api: [.22, .34], pg: [.78, .18], wh: [.66, .64], idem: [.26, .86]};
   const NAME = {api: "billing-api", pg: "Postgres", wh: "webhooks", idem: "idempotency"};
-  const MACH = ["laptop", "desktop", "hub"];
+  const MACH = ["laptop", "desktop", word("hub")];
   let seed = 3, mode = "plain", plan = [], t = Infinity, stop = () => {};
   function rnd(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let x = Math.imul(a ^ a >>> 15, 1 | a); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
   function build() {
@@ -237,7 +399,7 @@ MOUNT[16] = function (fig) {
     const [x, y, w, h] = rc, flat = w > h * 1.6, lw = flat ? w * .44 : w;
     ctx.fillStyle = C.bg; rrect(ctx, x, y, w, h, 10); ctx.fill();
     label(ctx, p.name, x + 12, y + 18, {color: C.ink, weight: 600, size: 12.5, halo: false});
-    label(ctx, `${st.got.size} of 6`, x + lw - 12, y + 18, {align: "right", mono: true, size: 11, color: C.muted, halo: false});
+    label(ctx, word("nOf6", {n: st.got.size}), x + lw - 12, y + 18, {align: "right", mono: true, size: 11, color: C.muted, halo: false});
     const wx = x + 12, wy = y + 32, ww = lw - 24, wh = 18, sw = ww / 6;
     ctx.fillStyle = C.well; rrect(ctx, wx, wy, ww, wh, 5); ctx.fill();
     let j = 0;
@@ -252,8 +414,8 @@ MOUNT[16] = function (fig) {
       j++;
     }
     const ny = wy + wh + 13;
-    if (st.dupAt >= 0 && t - st.dupAt < 1.6) label(ctx, "a duplicate arrived, nothing changed", wx, ny, {size: 11, color: C.muted, halo: false});
-    if (mode === "cut" && i === 2 && t > 1.3 && t < 3.9) label(ctx, "link cut", wx, ny, {size: 11, color: C.bad, halo: false, mono: true});
+    if (st.dupAt >= 0 && t - st.dupAt < 1.6) label(ctx, word("dupArrived"), wx, ny, {size: 11, color: C.muted, halo: false});
+    if (mode === "cut" && i === 2 && t > 1.3 && t < 3.9) label(ctx, word("linkCut"), wx, ny, {size: 11, color: C.bad, halo: false, mono: true});
     const gx = flat ? x + lw : x + 14, gy = flat ? y + 14 : wy + wh + 28;
     const gw = flat ? w - lw - 18 : w - 28, gh = flat ? h - 28 : (y + h - 34) - gy;
     const P = id => [gx + POS[id][0] * gw, gy + POS[id][1] * gh];
@@ -267,8 +429,8 @@ MOUNT[16] = function (fig) {
       if (kk > 0) dot(ctx, px, py, r * sc, TYPE[n.kind], {alpha: kk});
       if (showLabels && sc > .3) { const left = POS[id][0] > .6; label(ctx, NAME[id], left ? px - r - 6 : px + r + 6, py, {align: left ? "right" : "left", size: 11.5, alpha: sc}); }
     }
-    label(ctx, st.got.size === 6 ? "graph " + FP : "graph", x + 12, y + h - 15, {mono: true, size: 11, color: same ? C.ink : C.muted, halo: false});
-    if (same) label(ctx, "identical", x + lw - 12, y + h - 15, {align: "right", size: 11, color: C.ink, halo: false});
+    label(ctx, st.got.size === 6 ? word("graphFp", {fp: FP}) : word("graph"), x + 12, y + h - 15, {mono: true, size: 11, color: same ? C.ink : C.muted, halo: false});
+    if (same) label(ctx, word("identical"), x + lw - 12, y + h - 15, {align: "right", size: 11, color: C.ink, halo: false});
   }
   function capRunning() { cap.replaceChildren(capOf(fig, mode)); }
   function capDone() {
@@ -303,20 +465,20 @@ MOUNT[6] = function (fig) {
     if (kB > 0) {
       dot(ctx, B[0], B[1], rc * kB, TYPE.Cache, {alpha: 1 - .55 * kV});
       label(ctx, "ci-runner: Cache", B[0], B[1] + 21, {align: "center", size: 11.5, alpha: kB * (1 - .3 * kV)});
-      if (kV > 0) label(ctx, "defeated, kept", B[0], B[1] + 37, {align: "center", size: 11, mono: true, color: C.muted, alpha: kV});
+      if (kV > 0) label(ctx, word("defeatedKept"), B[0], B[1] + 37, {align: "center", size: 11, mono: true, color: C.muted, alpha: kV});
     }
     const prevB = BELIEF[from], nowB = BELIEF[step];
     dot(ctx, R[0], R[1], r, TYPE[prevB]);
     if (prevB !== nowB) dot(ctx, R[0], R[1], r, TYPE[nowB], {alpha: kk});
     if (kV > 0 || contested > 0) dot(ctx, R[0], R[1], r, TYPE[kk > .5 ? nowB : prevB], {ring: kV > 0 ? "gold" : null, ringP: kV, bad: contested, alpha: 1});
     label(ctx, "Redis", R[0] + r + 10, R[1] - 1, {size: 13, weight: 600, color: C.ink});
-    label(ctx, (kk > .5 ? nowB : prevB) + (contested > .5 ? ", contested" : ""), R[0] + r + 10, R[1] + 16, {size: 11, mono: true, color: contested > .5 ? C.bad : C.muted});
+    label(ctx, contested > .5 ? word("typeContested", {type: kk > .5 ? nowB : prevB}) : kk > .5 ? nowB : prevB, R[0] + r + 10, R[1] + 16, {size: 11, mono: true, color: contested > .5 ? C.bad : C.muted});
   }
   function render() {
     const r = [];
-    r.push(rowEl(["laptop, for you", "Mon 10:02"], "Redis is a Database", ...(step === 0 ? ["believed", "ink"] : step === 1 ? ["contested", "bad"] : ["believed, by trust", "gold"])));
-    if (step >= 1) r.push(rowEl(["ci-runner", "Tue 16:40"], "Redis is a Cache", ...(step === 1 ? ["contested", "bad"] : ["defeated, kept", ""]), step === 2));
-    if (step === 2) r.push(rowEl(["you, in the console", "Wed 09:15"], `confirm "${V(6).after}"`, V(6).tier, "gold"));
+    r.push(rowEl([word("laptopForYou"), day(0, "10:02")], word("redisDatabase"), ...(step === 0 ? [word("believed"), "ink"] : step === 1 ? [word("contested"), "bad"] : [word("believedTrust"), "gold"])));
+    if (step >= 1) r.push(rowEl(["ci-runner", day(1, "16:40")], word("redisCache"), ...(step === 1 ? [word("contested"), "bad"] : [word("defeatedKept"), ""]), step === 2));
+    if (step === 2) r.push(rowEl([word("youConsole"), day(2, "09:15")], word("confirmType", {type: V(6).after}), val(V(6).tier), "gold"));
     rows.replaceChildren(...r);
     cap.replaceChildren(capOf(fig, step));
     bConfirm.disabled = step !== 1;
@@ -336,23 +498,23 @@ MOUNT[18] = function (fig) {
   const S = surface(cv, w => clamp(w * .4, 190, 250), draw);
   function draw(s) {
     const {ctx, W, H} = s, r = clamp(W * .028, 10, 14), L = [W * .17, H * .5], R = [W * .83, H * .5];
-    label(ctx, "what desk-2 sent", L[0], H * .13, {align: "center", size: 11.5, color: C.muted, halo: false});
-    label(ctx, "what your node keeps", R[0], H * .13, {align: "center", size: 11.5, color: C.muted, halo: false});
+    label(ctx, word("desk2Sent"), L[0], H * .13, {align: "center", size: 11.5, color: C.muted, halo: false});
+    label(ctx, word("nodeKeeps"), R[0], H * .13, {align: "center", size: 11.5, color: C.muted, halo: false});
     const a = [L[0] + r + 12, L[1]], b = [R[0] - r - 12, R[1]];
     line(ctx, a, b, {alpha: .5});
     if (k < 1) dot(ctx, a[0] + (b[0] - a[0]) * ease(k / .7), a[1], 4, C.ink);
-    label(ctx, mode === "claim" ? `trust: "${V(18).claimed}"` : "entry + a console verdict", W / 2, L[1] - 15, {align: "center", mono: true, size: 11});
+    label(ctx, mode === "claim" ? `trust: "${V(18).claimed}"` : word("entryVerdict"), W / 2, L[1] - 15, {align: "center", mono: true, size: 11});
     dot(ctx, L[0], L[1], r, TYPE.App, {ring: "gold"});
     const rk = ease((k - .65) / .35);
     dot(ctx, R[0], R[1], r, TYPE.App, {ring: mode === "claim" ? "ink" : "gold", ringP: rk});
     label(ctx, "billing-api", L[0], L[1] + r + 15, {align: "center", size: 11.5});
     label(ctx, "billing-api", R[0], R[1] + r + 15, {align: "center", size: 11.5});
-    label(ctx, mode === "claim" ? V(18).evaluated : V(18).verdict_evaluated, R[0], R[1] + r + 32, {align: "center", mono: true, size: 11, color: mode === "claim" ? C.ink : C.goldHi, alpha: rk});
+    label(ctx, val(mode === "claim" ? V(18).evaluated : V(18).verdict_evaluated), R[0], R[1] + r + 32, {align: "center", mono: true, size: 11, color: mode === "claim" ? C.ink : C.goldHi, alpha: rk});
   }
   function render() {
     rows.replaceChildren(...(mode === "claim"
-      ? [rowEl(["claimed"], `trust: "${V(18).claimed}"`, "stored as sent", ""), rowEl(["evaluated"], "signed by desk-2, no verdict behind it", V(18).evaluated, "ink")]
-      : [rowEl(["claimed"], `trust: ${V(18).verdict_claimed}`, "stored as sent", ""), rowEl(["verdict"], "a person merged a promotion in desk-2's console", "console", ""), rowEl(["evaluated"], "the console verdict, replayed from the log", V(18).verdict_evaluated, "gold")]));
+      ? [rowEl([word("claimed")], `trust: "${V(18).claimed}"`, word("storedAsSent"), ""), rowEl([word("evaluated")], word("signedNoVerdict"), val(V(18).evaluated), "ink")]
+      : [rowEl([word("claimed")], `trust: ${V(18).verdict_claimed}`, word("storedAsSent"), ""), rowEl([word("verdict")], word("personMerged"), word("console"), ""), rowEl([word("evaluated")], word("consoleReplayed"), val(V(18).verdict_evaluated), "gold")]));
     cap.replaceChildren(capOf(fig, mode));
     [[bA, "claim"], [bB, "verdict"]].forEach(([b, m]) => { b.classList.toggle("on", mode === m); b.setAttribute("aria-pressed", String(mode === m)); });
   }
@@ -384,9 +546,9 @@ MOUNT[23] = function (fig) {
     const nk = st.note && !prev.note ? 1 - kk : 0;
     if (nk > 0) { ctx.globalAlpha = nk; ctx.beginPath(); ctx.arc(o[0], o[1], r + 6 + 10 * (1 - nk), 0, 7); ctx.lineWidth = 2; ctx.strokeStyle = C.teal; ctx.stroke(); ctx.globalAlpha = 1; }
     dot(ctx, q[0], q[1], r, TYPE.Database); label(ctx, "Postgres", q[0] + r + 8, q[1], {size: 12, weight: 600, color: C.ink});
-    if (m > .5) label(ctx, "pg forwards here", q[0], q[1] + r + 14, {align: "center", size: 11, mono: true, color: C.muted, alpha: (m - .5) * 2});
+    if (m > .5) label(ctx, word("pgForwards"), q[0], q[1] + r + 14, {align: "center", size: 11, mono: true, color: C.muted, alpha: (m - .5) * 2});
     if (m < 1) { dot(ctx, gm[0], gm[1], r * (1 - .3 * m), TYPE.Database, {alpha: 1 - m}); label(ctx, "pg", gm[0] + r + 8, gm[1], {size: 12, weight: 600, color: C.ink, alpha: 1 - m}); }
-    if (pr > .5) label(ctx, "same thing?", (g[0] + q[0]) / 2 + 14, (g[1] + q[1]) / 2, {size: 11.5, alpha: pr});
+    if (pr > .5) label(ctx, word("sameThing"), (g[0] + q[0]) / 2 + 14, (g[1] + q[1]) / 2, {size: 11.5, alpha: pr});
   }
   function sync() {
     B("propose").disabled = st.proposed;
@@ -422,8 +584,8 @@ MOUNT[5] = function (fig) {
       if (off) { line(ctx, node, [mix(node[0], far[0], .45), y], {alpha: .5}); line(ctx, [mix(node[0], far[0], .58), y], far, {alpha: .22}); }
       else line(ctx, node, far, {alpha: .5});
     }
-    dot(ctx, you[0], you[1], 6, C.ink2); label(ctx, "you", you[0], y + 19, {align: "center", size: 11, halo: false});
-    dot(ctx, node[0], node[1], 9, TYPE.App); label(ctx, "this node", node[0], y + 21, {align: "center", size: 11, halo: false});
+    dot(ctx, you[0], you[1], 6, C.ink2); label(ctx, word("you"), you[0], y + 19, {align: "center", size: 11, halo: false});
+    dot(ctx, node[0], node[1], 9, TYPE.App); label(ctx, word("thisNode"), node[0], y + 21, {align: "center", size: 11, halo: false});
     if (remote) {
       if (off) { ctx.globalAlpha = .6; ctx.beginPath(); ctx.arc(far[0], far[1], 9, 0, 7); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.4; ctx.stroke(); ctx.globalAlpha = 1; }
       else dot(ctx, far[0], far[1], 9, C.ink2);
@@ -486,7 +648,7 @@ function owedBox(ctx, x, y, w, h, a) {
   for (let i = -h; i < w; i += 9) { ctx.beginPath(); ctx.moveTo(x + i, y + h); ctx.lineTo(x + i + h, y); ctx.stroke(); }
   ctx.restore();
 }
-function owedChip(ctx, x, y, a, align) { return chip(ctx, "owed", x, y, {bg: C.well, color: C.ink2, alpha: a, align: align || "right"}); }
+function owedChip(ctx, x, y, a, align) { return chip(ctx, word("owed"), x, y, {bg: C.well, color: C.ink2, alpha: a, align: align || "right"}); }
 function field(ctx, k, v, x, y, o) {
   o = o || {};
   const a = o.alpha == null ? 1 : o.alpha, kw = chipW(ctx, k, {size: 10}) - 14, vw = chipW(ctx, v, {sans: true, size: 11.5}) - 14, w = kw + vw + 24, h = 22;
@@ -576,9 +738,9 @@ const SCENE = {};
 function mountScene(p, fig) {
   const sc = SCENE[p], cv = $("canvas", fig), items = $$(".beats li", fig);
   const B = items.map(li => ({t: +li.dataset.t, k: $(".bk", li).textContent, cap: $(".bc", li)})), END = B[B.length - 1].t;
-  const bar = el("div", {class: "beatbar", role: "group", "aria-label": "Steps"}), cap = el("p", {class: "cap", "aria-live": "off"});
+  const bar = el("div", {class: "beatbar", role: "group", "aria-label": word("steps")}), cap = el("p", {class: "cap", "aria-live": "off"});
   const btns = B.map((b, i) => { const btn = el("button", {type: "button", class: "beat"}); btn.append(el("b", null, String(i + 1)), b.k); bar.append(btn); return btn; });
-  const play = el("button", {type: "button", class: "beat play"}, PHONE.matches ? "Play scene" : "Replay");
+  const play = el("button", {type: "button", class: "beat play"}, word(PHONE.matches ? "playScene" : "replay"));
   bar.append(play); $(".beats", fig).after(bar, cap);
   let t = END, shown = -1, stop = () => {}, playing = false;
   const S = surface(cv, sc.h || (w => clamp(w * .6, 210, 260)), s => sc.draw(s.ctx, s.W, s.H, t));
@@ -588,9 +750,9 @@ function mountScene(p, fig) {
     cap.replaceChildren(cloneKids(B[i].cap));
     btns.forEach((b, j) => b.setAttribute("aria-current", j === i ? "step" : "false"));
   }
-  const rest = () => { playing = false; play.textContent = "Replay"; };
+  const rest = () => { playing = false; play.textContent = word("replay"); };
   function run(a, b) {
-    stop(); playing = true; play.textContent = "Stop";
+    stop(); playing = true; play.textContent = word("stop");
     stop = animate(b - a, tt => { t = tt === Infinity ? b : a + tt; show(beatAt(t)); S.redraw(); }, rest);
   }
   btns.forEach((btn, i) => btn.addEventListener("click", () => run(i ? B[i - 1].t : 0, B[i].t)));
@@ -617,8 +779,8 @@ SCENE[1] = {
     const ga = replay ? 1 : 1 - lin(t, 3.2, 3.9), gy = wy + wh + 18;
     drawGraph(ctx, G_BILL, k => replay ? rr(k) : at(k), t, [22, gy, W - 44, H - gy - 30], ga);
     const gone = !replay && ga < .05;
-    label(ctx, gone ? "no graph" : "graph " + G_FP, 14, H - 14, {mono: true, size: 11, color: gone ? C.muted : C.ink2, halo: false});
-    if (replay && t > rr(5) + .3) label(ctx, "same as before", W - 14, H - 14, {align: "right", size: 11.5, color: C.ink, halo: false, alpha: lin(t, rr(5) + .3, rr(5) + .8)});
+    label(ctx, gone ? word("noGraph") : word("graphFp", {fp: G_FP}), 14, H - 14, {mono: true, size: 11, color: gone ? C.muted : C.ink2, halo: false});
+    if (replay && t > rr(5) + .3) label(ctx, word("sameAsBefore"), W - 14, H - 14, {align: "right", size: 11.5, color: C.ink, halo: false, alpha: lin(t, rr(5) + .3, rr(5) + .8)});
   },
 };
 
@@ -631,7 +793,7 @@ SCENE[2] = {
     const ty = i => ly + 14 + i * (lh - 28) / (n - 1), E = [lx + lw / 2, ty(sel)], hit = win(t, 4.8, 5.6);
     for (let i = 0; i < n; i++) tick(ctx, E[0], ty(i), lw - 10, 6, i === sel ? C.ink : C.ink2, i === sel ? 1 : .4);
     glow(ctx, E[0], E[1], 28, C.ink, Math.max(1 - lin(t, .2, 1.2), hit * (1 - lin(t, 5.8, 6.6))));
-    const F = [["host", "laptop"], ["on behalf of", "you"], ["workspace", "billing"], ["observed", "Mon 10:02"], ["source", "git:3fa91c2"], ["confidence", V(2).confidence]];
+    const F = [[word("fHost"), "laptop"], [word("fFor"), word("you")], [word("fWorkspace"), "billing"], [word("fObserved"), day(0, "10:02")], [word("fSource"), "git:3fa91c2"], [word("fConfidence"), val(V(2).confidence)]];
     const x1 = lx + lw + 34, pos = i => narrow ? [x1, H * .3 + i * (H * .62 / 5)] : [i < 3 ? x1 : W * .56, H * [.42, .64, .86][i % 3]];
     let cw = 0;
     F.forEach(([k, v], i) => {
@@ -648,7 +810,7 @@ SCENE[2] = {
     }
     if (hit > 0) {
       const hy = narrow ? H * .1 : H * .16;
-      chip(ctx, "hit: billing-api uses Postgres", x1, hy, {sans: true, size: 11, color: C.ink, alpha: hit});
+      chip(ctx, word("hit"), x1, hy, {sans: true, size: 11, color: C.ink, alpha: hit});
       ctx.globalAlpha = hit; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(x1 - 3, hy); ctx.quadraticCurveTo(E[0] + 26, hy, E[0] + lw / 2 + 2, E[1]); ctx.stroke(); ctx.globalAlpha = 1;
     }
   },
@@ -666,21 +828,21 @@ SCENE[3] = {
     const lx = W * .4, lw = W - lx - 12, rowY = i => H - 42 - i * 46;
     well(ctx, lx, 12, lw, H - 24);
     const count = t < .3 ? 0 : t < 1.9 ? 1 : V(3).entries;
-    label(ctx, `${count} ${count === 1 ? "entry" : "entries"} in the log`, lx + 10, 28, {mono: true, size: 10.5, color: C.muted, halo: false});
+    label(ctx, word(PLURAL.select(count) === "one" ? "entryInLog" : "entriesInLog", {n: count}), lx + 10, 28, {mono: true, size: 10.5, color: C.muted, halo: false});
     const row = (i, a, text, tag, fl) => {
       if (a <= 0) return; const y = rowY(i), x = lx + 16;
       tick(ctx, x, y, 7, 14, fl > .05 ? C.ink : C.ink2, a);
       label(ctx, text, x + 12, y, {size: 11.5, color: C.ink, alpha: a, halo: false});
       if (tag) label(ctx, tag, x + 12, y + 15, {mono: true, size: 10, color: C.muted, alpha: a, halo: false});
     };
-    row(0, first * (1 - .45 * v2), "Postgres 14", v2 > .5 ? "superseded" : "", 1 - lin(t, .3, .9));
-    row(1, win(t, 1.9, 2.4), V(3).shown, t > 4.6 ? "kept once" : "", Math.max(t >= 1.9 ? 1 - lin(t, 1.9, 2.5) : 0, t > 4.5 ? 1 - lin(t, 4.5, 5.1) : 0));
+    row(0, first * (1 - .45 * v2), "Postgres 14", v2 > .5 ? word("superseded") : "", 1 - lin(t, .3, .9));
+    row(1, win(t, 1.9, 2.4), V(3).shown, t > 4.6 ? word("keptOnce") : "", Math.max(t >= 1.9 ? 1 - lin(t, 1.9, 2.5) : 0, t > 4.5 ? 1 - lin(t, 4.5, 5.1) : 0));
     const g = lin(t, 3.8, 4.6);
     if (g > 0 && t < 4.65) { const y = rowY(1), x = mix(lx + lw + 20, lx + 16, ease(g)); tick(ctx, x, y, 7, 14, C.ink, 1); label(ctx, V(3).shown, x + 12, y, {size: 11.5, color: C.ink2, halo: false, alpha: 1 - g * .5}); }
     const d = win(t, 5.5, 6.1);
     if (d > 0) {
       const y = 60; owedBox(ctx, lx + 8, y - 13, lw - 16, 26, d);
-      label(ctx, "destroy", lx + 18, y, {size: 11.5, color: C.muted, alpha: d, halo: false}); owedChip(ctx, lx + lw - 14, y, d);
+      label(ctx, word("destroy"), lx + 18, y, {size: 11.5, color: C.muted, alpha: d, halo: false}); owedChip(ctx, lx + lw - 14, y, d);
     }
   },
 };
@@ -693,24 +855,24 @@ SCENE[4] = {
     // asking as of a date is owed: its band lies under everything else
     const g4 = win(t, 5.1, 6.4), a4 = Math.min(1, lin(t, 5.1, 5.5)), xs = mix(m(.6), m(1.15), g4);
     owedBox(ctx, xs - 12, 26, 24, yS - 20, a4 * .9);
-    [[yW, "true in the world"], [yS, "known to the system"]].forEach(([y, s]) => {
+    [[yW, word("trueWorld")], [yS, word("knownSystem")]].forEach(([y, s]) => {
       line(ctx, [x0, y], [x1, y], {alpha: .5});
       for (let i = 0; i <= 6; i++) line(ctx, [m(i), y - 3], [m(i), y + 3], {alpha: .5});
       label(ctx, s, x0, y - 30, {size: 11, color: C.muted, halo: false});
     });
-    ["Jan", "Feb", "Mar", "Apr", "May", "Jun"].forEach((s, i) => label(ctx, s, m(i + .5), yS + 15, {align: "center", mono: true, size: 9.5, color: C.muted, halo: false}));
+    [0, 1, 2, 3, 4, 5].forEach(i => label(ctx, month(i), m(i + .5), yS + 15, {align: "center", mono: true, size: 9.5, color: C.muted, halo: false}));
     const xa = m(.3), g1 = win(t, .3, 1.8);
-    if (g1 > 0) { ctx.fillStyle = TYPE.Database; rrect(ctx, xa, yW - 3.5, (x1 - xa) * g1, 7, 3.5); ctx.fill(); label(ctx, "uses Postgres, since Jan 10", xa, yW - 14, {size: 11.5, color: C.ink, alpha: g1, halo: false}); }
+    if (g1 > 0) { ctx.fillStyle = TYPE.Database; rrect(ctx, xa, yW - 3.5, (x1 - xa) * g1, 7, 3.5); ctx.fill(); label(ctx, word("usesPgSince", {date: date(0, 10)}), xa, yW - 14, {size: 11.5, color: C.ink, alpha: g1, halo: false}); }
     const xl = m(2.07), g2 = win(t, 2.1, 2.8), g2b = win(t, 2.8, 3.4);
     if (g2 > 0) {
       line(ctx, [xl, yS], [xl, yW + 5], {alpha: .45 * g2, color: C.ink2, w: 1});
       dot(ctx, xl, yS, 5, C.ink, {alpha: g2});
-      label(ctx, "learned Mar 3", xl + 9, yS - 12, {size: 11.5, color: C.ink, alpha: g2, halo: false});
+      label(ctx, word("learnedOn", {date: date(2, 3)}), xl + 9, yS - 12, {size: 11.5, color: C.ink, alpha: g2, halo: false});
     }
-    if (g2b > 0) { ctx.globalAlpha = .6 * g2b; ctx.fillStyle = C.muted; rrect(ctx, xa, yW + 7, xl - xa, 3, 1.5); ctx.fill(); ctx.globalAlpha = 1; label(ctx, "true, not yet known", xa, yW + 18, {mono: true, size: 10, color: C.muted, alpha: g2b, halo: false}); }
+    if (g2b > 0) { ctx.globalAlpha = .6 * g2b; ctx.fillStyle = C.muted; rrect(ctx, xa, yW + 7, xl - xa, 3, 1.5); ctx.fill(); ctx.globalAlpha = 1; label(ctx, word("trueNotKnown"), xa, yW + 18, {mono: true, size: 10, color: C.muted, alpha: g2b, halo: false}); }
     const g3 = win(t, 3.9, 4.5);
-    if (g3 > 0) { const y = H - 15, w1 = chip(ctx, "valid Jan 10", x0, y, {alpha: g3, color: C.ink}); chip(ctx, "recorded Mar 3", x0 + w1 + 8, y, {alpha: win(t, 4.1, 4.7), color: C.ink}); }
-    if (a4 > 0) { const x = xs; line(ctx, [x, 26], [x, yS + 6], {color: C.muted, alpha: .7 * a4, w: 1}); label(ctx, "as of Feb 1?", x + 6, 15, {size: 11, color: C.ink2, alpha: a4, halo: false}); owedChip(ctx, W - 14, 15, a4); }
+    if (g3 > 0) { const y = H - 15, w1 = chip(ctx, word("validOn", {date: date(0, 10)}), x0, y, {alpha: g3, color: C.ink}); chip(ctx, word("recordedOn", {date: date(2, 3)}), x0 + w1 + 8, y, {alpha: win(t, 4.1, 4.7), color: C.ink}); }
+    if (a4 > 0) { const x = xs; line(ctx, [x, 26], [x, yS + 6], {color: C.muted, alpha: .7 * a4, w: 1}); label(ctx, word("asOf", {date: date(1, 1)}), x + 6, 15, {size: 11, color: C.ink2, alpha: a4, halo: false}); owedChip(ctx, W - 14, 15, a4); }
   },
 };
 // ---- P7 ----
@@ -720,16 +882,16 @@ SCENE[7] = {
     const wx = 14, wy = 14, ww = W - 28, wh = 18, n = 10, sw = ww / n, s = lin(t, .4, 2.3) * (n + 1);
     well(ctx, wx, wy, ww, wh);
     for (let k = 0; k < n; k++) { const hl = clamp(1 - Math.abs(s - k - .5) / 1.6, 0, 1); tick(ctx, wx + sw * (k + .5), wy + wh / 2, sw * .5, wh - 7, hl > .3 ? C.ink : C.ink2, .45 + .55 * hl); }
-    label(ctx, "idle: consolidation reads the log", wx, wy + wh + 14, {mono: true, size: 10, color: C.muted, halo: false, alpha: t < 4.4 ? 1 : .55});
-    chip(ctx, "merge pg into Postgres?", wx, 78, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 2.7, 3.2)});
-    chip(ctx, "promote this context?", wx, 108, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 3.1, 3.6)});
+    label(ctx, word("idleReads"), wx, wy + wh + 14, {mono: true, size: 10, color: C.muted, halo: false, alpha: t < 4.4 ? 1 : .55});
+    chip(ctx, word("mergePg"), wx, 78, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 2.7, 3.2)});
+    chip(ctx, word("promoteContext"), wx, 108, {sans: true, size: 11.5, color: C.ink2, bg: C.bg, edge: C.gold, alpha: win(t, 3.1, 3.6)});
     const pulse = t > 3.5 && t < 4.5 ? Math.sin(lin(t, 3.5, 4.5) * Math.PI) : 0;
-    if (t > 2.7) label(ctx, "canon: 0 changes", wx, 136, {mono: true, size: 10.5, color: pulse > .15 ? C.ink : C.muted, halo: false, alpha: win(t, 2.7, 3.1)});
+    if (t > 2.7) label(ctx, word("canonZero"), wx, 136, {mono: true, size: 10.5, color: pulse > .15 ? C.ink : C.muted, halo: false, alpha: win(t, 2.7, 3.1)});
     const a = win(t, 4.5, 4.9);
     if (a > 0) {
-      const y0 = 168, dy = 23, r = win(t, 4.8, 6.1), rows = [["Postgres 16", "Oct"], ["Postgres 14", "Mar"], ["MySQL trial", "Jan"]], from = [2, 1, 0];
+      const y0 = 168, dy = 23, r = win(t, 4.8, 6.1), rows = [["Postgres 16", month(9)], ["Postgres 14", month(2)], ["MySQL trial", month(0)]], from = [2, 1, 0];
       owedBox(ctx, wx - 6, y0 - 32, W - wx - 2, H - y0 + 24, a);
-      label(ctx, "retrieval", wx, y0 - 20, {mono: true, size: 10, color: C.muted, halo: false, alpha: a});
+      label(ctx, word("retrieval"), wx, y0 - 20, {mono: true, size: 10, color: C.muted, halo: false, alpha: a});
       owedChip(ctx, W - 14, y0 - 20, a);
       [[from, 1 - r, 0], [[0, 1, 2], r, 1]].forEach(([order, k, after]) => {
         if (k <= .01) return;
@@ -750,22 +912,22 @@ SCENE[8] = {
   draw(ctx, W, H, t) {
     const vx = W * .6, vw = W - vx - 12, vy = 12, vh = H * .56, door = vx - 6, y = H * .25;
     well(ctx, vx, vy, vw, vh);
-    label(ctx, "vocabulary", vx + 10, vy + 14, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("vocabulary"), vx + 10, vy + 14, {mono: true, size: 10, color: C.muted, halo: false});
     ["App", "Database", "Feature"].forEach((s, i) => { const yy = vy + 36 + i * 22; dot(ctx, vx + 18, yy, 5, TYPE[s]); label(ctx, s, vx + 30, yy, {size: 11.5, halo: false}); });
     const inC = win(t, 3.6, 4.1);
     if (inC > 0) { const yy = vy + 36 + 66; dot(ctx, vx + 18, yy, 5 * inC, TYPE.Cache); label(ctx, "Cache", vx + 30, yy, {size: 11.5, color: C.ink, alpha: inC, halo: false}); glow(ctx, vx + 18, yy, 22, C.ink, 1 - lin(t, 4.0, 4.6)); }
     line(ctx, [door, vy + 6], [door, vy + vh - 6], {color: C.ink2, alpha: .45, w: 2});
-    const cw = chipW(ctx, "define Cache", {sans: true, size: 11.5});
+    const cw = chipW(ctx, word("defineCache"), {sans: true, size: 11.5});
     const b1 = lin(t, .3, 2.2);
     if (b1 > 0 && b1 < 1) {
       const go = b1 < .5 ? ease(b1 * 2) : 1 - ease((b1 - .5) * 2) * .7, x = mix(14, door - cw - 4, go);
-      chip(ctx, "define Cache", x, y, {sans: true, size: 11.5, color: C.ink, alpha: 1 - lin(b1, .8, 1)});
-      if (b1 > .45) label(ctx, "needs a definition", 14, y + 25, {size: 11, color: C.bad, halo: false, alpha: Math.sin(lin(b1, .45, 1) * Math.PI)});
+      chip(ctx, word("defineCache"), x, y, {sans: true, size: 11.5, color: C.ink, alpha: 1 - lin(b1, .8, 1)});
+      if (b1 > .45) label(ctx, word("needsDefinition"), 14, y + 25, {size: 11, color: C.bad, halo: false, alpha: Math.sin(lin(b1, .45, 1) * Math.PI)});
     }
     const b2 = lin(t, 2.6, 3.8);
     if (b2 > 0 && b2 < 1) {
       const x = mix(14, door - cw * .5, ease(b2)), al = 1 - lin(b2, .8, 1);
-      chip(ctx, "define Cache", x, y, {sans: true, size: 11.5, color: C.ink, alpha: al});
+      chip(ctx, word("defineCache"), x, y, {sans: true, size: 11.5, color: C.ink, alpha: al});
       label(ctx, '"a store of copies"', x + 4, y + 22, {size: 10.5, color: C.ink2, halo: false, alpha: al});
     }
     const by = H * .82, nx = 22, b3 = win(t, 4.5, 4.9);
@@ -774,9 +936,9 @@ SCENE[8] = {
       label(ctx, "Redis", nx + 15, by - 9, {size: 12, weight: 600, color: C.ink, halo: false, alpha: b3});
       const flash = t > 5.6 ? 1 - lin(t, 5.6, 6.3) : 0;
       label(ctx, '"a cache for sessions"', nx + 15, by + 8, {size: 11, color: flash > .1 ? C.ink : C.ink2, halo: false, alpha: b3});
-      const g = lin(t, 4.8, 5.7), bw = chipW(ctx, "description: blank", {size: 10});
-      if (g > 0 && g < 1) chip(ctx, "description: blank", mix(W - 14 - bw, Math.min(nx + 150, W - 14 - bw), ease(g)), by, {size: 10, color: C.muted, alpha: 1 - lin(g, .75, 1)});
-      if (t > 5.7) label(ctx, "kept", W - 14, by + 8, {align: "right", mono: true, size: 10.5, color: C.muted, halo: false, alpha: win(t, 5.7, 6.1)});
+      const g = lin(t, 4.8, 5.7), bw = chipW(ctx, word("descBlank"), {size: 10});
+      if (g > 0 && g < 1) chip(ctx, word("descBlank"), mix(W - 14 - bw, Math.min(nx + 150, W - 14 - bw), ease(g)), by, {size: 10, color: C.muted, alpha: 1 - lin(g, .75, 1)});
+      if (t > 5.7) label(ctx, word("kept"), W - 14, by + 8, {align: "right", mono: true, size: 10.5, color: C.muted, halo: false, alpha: win(t, 5.7, 6.1)});
     }
   },
 };
@@ -792,18 +954,18 @@ SCENE[9] = {
     chip(ctx, "desk-2: a support plan", cx, H * .38, {sans: true, size: 11, alpha: d2});
     dot(ctx, S0[0], S0[1], 10, C.ink2, {bad});
     label(ctx, "Service", S0[0], S0[1] + 23, {align: "center", size: 11.5, weight: 600, color: C.ink, halo: false});
-    if (bad > .5) label(ctx, "contested", S0[0], S0[1] + 38, {align: "center", mono: true, size: 10, color: C.bad, halo: false, alpha: bad});
+    if (bad > .5) label(ctx, word("contested"), S0[0], S0[1] + 38, {align: "center", mono: true, size: 10, color: C.bad, halo: false, alpha: bad});
     const rA = win(t, 2.7, 3.1), ry = H * .6;
-    chip(ctx, "relation type: member_of", 14, ry, {size: 10.5, color: C.ink2, alpha: rA});
-    const gate = W * .78, py = H * .78, pw = chipW(ctx, "add type member_of", {size: 10.5}), mv = win(t, 3.1, 4.1), blocked = win(t, 4.1, 4.5);
+    chip(ctx, word("relationType"), 14, ry, {size: 10.5, color: C.ink2, alpha: rA});
+    const gate = W * .78, py = H * .78, pw = chipW(ctx, word("addType"), {size: 10.5}), mv = win(t, 3.1, 4.1), blocked = win(t, 4.1, 4.5);
     if (rA > 0) {
-      chip(ctx, "add type member_of", mix(14, Math.max(14, gate - pw - 8), mv), py, {size: 10.5, color: C.ink, bg: C.bg, edge: C.gold, alpha: rA});
+      chip(ctx, word("addType"), mix(14, Math.max(14, gate - pw - 8), mv), py, {size: 10.5, color: C.ink, bg: C.bg, edge: C.gold, alpha: rA});
       line(ctx, [gate, py - 14], [gate, py + 14], {color: blocked > .5 ? C.bad : C.ink2, alpha: .5 + .5 * blocked, w: 2.5});
-      if (blocked > 0) label(ctx, "blocked", gate + 8, py, {size: 11, color: C.bad, halo: false, alpha: blocked});
-      if (blocked > 0) line(ctx, [14 + chipW(ctx, "relation type: member_of", {size: 10.5}) * .5, ry + 10], [mix(14, Math.max(14, gate - pw - 8), 1) + pw * .5, py - 10], {color: C.bad, alpha: .5 * blocked, w: 1});
+      if (blocked > 0) label(ctx, word("blocked"), gate + 8, py, {size: 11, color: C.bad, halo: false, alpha: blocked});
+      if (blocked > 0) line(ctx, [14 + chipW(ctx, word("relationType"), {size: 10.5}) * .5, ry + 10], [mix(14, Math.max(14, gate - pw - 8), 1) + pw * .5, py - 10], {color: C.bad, alpha: .5 * blocked, w: 1});
     }
     const a3 = win(t, 5.1, 5.6);
-    if (a3 > 0) { owedBox(ctx, 8, H - 25, W - 16, 26, a3); label(ctx, "subtype cycles, domain and range", 14, H - 12, {size: 11, color: C.muted, halo: false, alpha: a3}); owedChip(ctx, W - 14, H - 12, a3); }
+    if (a3 > 0) { owedBox(ctx, 8, H - 25, W - 16, 26, a3); label(ctx, word("subtypeCycles"), 14, H - 12, {size: 11, color: C.muted, halo: false, alpha: a3}); owedChip(ctx, W - 14, H - 12, a3); }
   },
 };
 
@@ -813,8 +975,8 @@ SCENE[10] = {
   draw(ctx, W, H, t) {
     const top = [12, 12, W - 24, H * .44], bot = [12, H * .44 + 22, W - 24, H * .56 - 34];
     well(ctx, ...top); well(ctx, ...bot);
-    label(ctx, "your vocabulary", top[0] + 10, top[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
-    label(ctx, "core model", bot[0] + 10, bot[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("yourVocabulary"), top[0] + 10, top[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("coreModel"), bot[0] + 10, bot[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
     const flow = (items, box, at, o) => {
       let x = box[0] + 10, y = box[1] + 38;
       items.forEach((s, i) => {
@@ -830,9 +992,9 @@ SCENE[10] = {
     chip(ctx, v2 > .5 ? "v2" : "v1", bot[0] + bot[2] - 10, bot[1] + 14, {align: "right", size: 10, color: v2 > .5 ? C.ink : C.muted});
     if (t > 3.4 && t < 4.6) glow(ctx, W / 2, bot[1] + bot[3] / 2, W * .45, C.ink, Math.sin(lin(t, 3.4, 4.6) * Math.PI) * .6);
     const m = win(t, 4.3, 4.9);
-    if (m > 0) { const y = bot[1] + bot[3] - 14; chip(ctx, "migration: v1 entries read as v2", bot[0] + 10, y, {size: 10, color: C.ink, bg: C.bg, alpha: m}); }
+    if (m > 0) { const y = bot[1] + bot[3] - 14; chip(ctx, word("migration"), bot[0] + 10, y, {size: 10, color: C.ink, bg: C.bg, alpha: m}); }
     const fl = Math.max(...dom.map((_, i) => t > .4 + i * .5 && t < 1 + i * .5 ? 1 : 0));
-    label(ctx, fl ? "from the log" : "", top[0] + top[2] - 10, top[1] + 14, {align: "right", mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, fl ? word("fromLog") : "", top[0] + top[2] - 10, top[1] + 14, {align: "right", mono: true, size: 10, color: C.muted, halo: false});
   },
 };
 
@@ -863,14 +1025,14 @@ SCENE[11] = {
       dot(ctx, x, y, 7 * sc, CONCEPT);
       label(ctx, NAME[id], x + 11, y, {size: 11.5, alpha: sc});
     }
-    if (t > at[2] + .3 && t < 4.6) label(ctx, `said together ${co}x`, N.idem[0] + 11, N.idem[1] + 16, {mono: true, size: 10, color: C.muted, halo: false});
+    if (t > at[2] + .3 && t < 4.6) label(ctx, word("saidTogether", {n: co}), N.idem[0] + 11, N.idem[1] + 16, {mono: true, size: 10, color: C.muted, halo: false});
     if (pr > 0) {
       dot(ctx, D[0], D[1], 8 * pr, C.ink2); ring(ctx, D[0], D[1], 8, "lowest", pr);
       label(ctx, "webhook delivery", D[0] + 15, D[1], {size: 11.5, color: C.ink, alpha: pr});
-      label(ctx, "derived, lowest trust", D[0] + 15, D[1] + 15, {mono: true, size: 10, color: C.muted, halo: false, alpha: pr});
+      label(ctx, word("derivedLowest"), D[0] + 15, D[1] + 15, {mono: true, size: 10, color: C.muted, halo: false, alpha: pr});
     }
     const a4 = win(t, 5.7, 6.2);
-    if (a4 > 0) { const tw = chipW(ctx, "type candidate?", {size: 10}) + 54; owedBox(ctx, W - 14 - tw - 6, H - 27, tw + 6, 26, a4); label(ctx, "type candidate?", W - 20, H - 14, {align: "right", mono: true, size: 10, color: C.muted, halo: false, alpha: a4}); owedChip(ctx, W - 20 - chipW(ctx, "type candidate?", {size: 10}) - 6, H - 14, a4); }
+    if (a4 > 0) { const tw = chipW(ctx, word("typeCandidate"), {size: 10}) + 54; owedBox(ctx, W - 14 - tw - 6, H - 27, tw + 6, 26, a4); label(ctx, word("typeCandidate"), W - 20, H - 14, {align: "right", mono: true, size: 10, color: C.muted, halo: false, alpha: a4}); owedChip(ctx, W - 20 - chipW(ctx, word("typeCandidate"), {size: 10}) - 6, H - 14, a4); }
   },
 };
 
@@ -880,22 +1042,22 @@ SCENE[12] = {
   draw(ctx, W, H, t) {
     const g = win(t, .2, .9);
     drawGraph(ctx, G_BILL, () => 0, 9, [22, 14, W - 44, H * .44], g);
-    label(ctx, "graph " + G_FP, W - 14, H * .52, {align: "right", mono: true, size: 10.5, color: t > 3.4 && t < 4.4 ? C.ink : C.muted, halo: false});
+    label(ctx, word("graphFp", {fp: G_FP}), W - 14, H * .52, {align: "right", mono: true, size: 10.5, color: t > 3.4 && t < 4.4 ? C.ink : C.muted, halo: false});
     const by = H * .6;
     line(ctx, [14, by], [W - 14, by], {alpha: .4, color: C.ink2, w: 1});
-    label(ctx, "port", 14, by - 10, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("port"), 14, by - 10, {mono: true, size: 10, color: C.muted, halo: false});
     const sw = Math.min(170, W * .5), sx = (W - sw) / 2, sy = H * .7, sh = H * .2, out = win(t, 2.0, 2.9), inn = win(t, 2.7, 3.6);
     ctx.save(); ctx.beginPath(); ctx.rect(0, by + 4, W, H - by); ctx.clip();
     [[out, "cozo", 1], [inn, "redb", 0]].forEach(([k, s, leaving]) => {
       const off = leaving ? k * (sh + 30) : (1 - k) * (sh + 30), a = leaving ? 1 - k : k;
       if (a <= 0) return; ctx.globalAlpha = a; well(ctx, sx, sy + off, sw, sh); ctx.globalAlpha = 1;
-      label(ctx, "store: " + s, sx + sw / 2, sy + off + sh / 2, {align: "center", mono: true, size: 11.5, color: C.ink, halo: false, alpha: a});
+      label(ctx, word("storeIs", {s}), sx + sw / 2, sy + off + sh / 2, {align: "center", mono: true, size: 11.5, color: C.ink, halo: false, alpha: a});
     });
     ctx.restore();
-    const c = lin(t, 4.4, 5.4), cw = chipW(ctx, "B-tree page", {size: 10});
+    const c = lin(t, 4.4, 5.4), cw = chipW(ctx, word("btreePage"), {size: 10});
     if (c > 0) {
       const y = mix(sy - 4, by + 16, ease(Math.min(1, c * 1.4)));
-      chip(ctx, "B-tree page", sx + sw + 10 > W - cw - 10 ? sx : sx + sw + 10, y, {size: 10, color: C.ink2, alpha: 1 - lin(t, 5.6, 6.0) * .4});
+      chip(ctx, word("btreePage"), sx + sw + 10 > W - cw - 10 ? sx : sx + sw + 10, y, {size: 10, color: C.ink2, alpha: 1 - lin(t, 5.6, 6.0) * .4});
       if (c > .7) { const x = (sx + sw + 10 > W - cw - 10 ? sx : sx + sw + 10) + cw / 2, a = win(t, 5.0, 5.3); line(ctx, [x - 5, by - 5], [x + 5, by + 5], {color: C.bad, alpha: a, w: 2}); line(ctx, [x + 5, by - 5], [x - 5, by + 5], {color: C.bad, alpha: a, w: 2}); }
     }
   },
@@ -912,17 +1074,17 @@ SCENE[13] = {
     line(ctx, [tx, H * .3 + 7], [tx, H * .52 - 7], {alpha: .3});
     dot(ctx, tx, H * .52, 6, C.muted, {alpha: a0}); label(ctx, "Reviewer", tx + 10, H * .52, {size: 11, color: C.muted, halo: false, alpha: a0});
     line(ctx, [tx - 12, H * .22], [tx + 64, H * .6], {color: C.bad, alpha: .7, w: 1.6});
-    label(ctx, "not a subtype", tx - 10, H * .7, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("notSubtype"), tx - 10, H * .7, {mono: true, size: 10, color: C.muted, halo: false});
     const Y = [W * .46, H * .4], A = [W * .86, H * .4], rel = win(t, .4, 1.3), end = win(t, 2.8, 3.6), fade = win(t, 3.6, 4.4);
     line(ctx, Y, A, {p: rel, alpha: rel > 0 ? mix(.85, .35, fade) : 0, color: fade > .5 ? C.muted : C.ink2, w: 1.4});
     if (rel > .5) label(ctx, "reviews", (Y[0] + A[0]) / 2, Y[1] - 12, {align: "center", size: 11, color: fade > .5 ? C.muted : C.ink2, halo: false});
-    dot(ctx, Y[0], Y[1], 10, PERSON); label(ctx, "you", Y[0], Y[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink, halo: false}); label(ctx, "Person", Y[0], Y[1] + 37, {align: "center", mono: true, size: 10, color: C.muted, halo: false});
+    dot(ctx, Y[0], Y[1], 10, PERSON); label(ctx, word("you"), Y[0], Y[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink, halo: false}); label(ctx, "Person", Y[0], Y[1] + 37, {align: "center", mono: true, size: 10, color: C.muted, halo: false});
     dot(ctx, A[0], A[1], 9, TYPE.App); label(ctx, "billing-api", A[0], A[1] + 22, {align: "center", size: 11.5, halo: false});
     const bx0 = W * .5, bx1 = W * .82, by = H * .8, grow = win(t, 1.3, 2.4);
     if (grow > 0) {
       ctx.globalAlpha = .8; ctx.fillStyle = C.ink2; rrect(ctx, bx0, by - 3, (end > 0 ? mix(bx1 + 14, bx1, end) : bx0 + (bx1 + 14 - bx0) * grow) - bx0, 6, 3); ctx.fill(); ctx.globalAlpha = 1;
-      label(ctx, "Mar", bx0, by + 14, {mono: true, size: 9.5, color: C.muted, halo: false});
-      if (end > 0) label(ctx, "Aug", bx1, by + 14, {align: "right", mono: true, size: 9.5, color: C.ink, halo: false, alpha: end});
+      label(ctx, month(2), bx0, by + 14, {mono: true, size: 9.5, color: C.muted, halo: false});
+      if (end > 0) label(ctx, month(7), bx1, by + 14, {align: "right", mono: true, size: 9.5, color: C.ink, halo: false, alpha: end});
       if (end > .5) line(ctx, [bx1, by - 7], [bx1, by + 7], {color: C.ink, alpha: end, w: 2});
     }
   },
@@ -942,8 +1104,8 @@ SCENE[14] = {
     const xa = mix(L, W / 2 - iw / 2, mg), xb = mix(R - iw, W / 2 - iw / 2, mg);
     chip(ctx, id, xa, y, {size: 10.5, color: C.ink, alpha: i1});
     chip(ctx, id, xb, y, {size: 10.5, color: C.ink, alpha: i2 * (1 - (mg > .95 ? 1 : 0))});
-    if (t > 1.9 && mg < .3) label(ctx, "same id", W / 2, y, {align: "center", mono: true, size: 10, color: C.ink2, halo: false, alpha: win(t, 1.9, 2.2) * (1 - mg * 3)});
-    if (mg > .9) label(ctx, "1 entry, counted once", W / 2, y + 20, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 3.3, 3.7)});
+    if (t > 1.9 && mg < .3) label(ctx, word("sameId"), W / 2, y, {align: "center", mono: true, size: 10, color: C.ink2, halo: false, alpha: win(t, 1.9, 2.2) * (1 - mg * 3)});
+    if (mg > .9) label(ctx, word("oneEntry"), W / 2, y + 20, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 3.3, 3.7)});
     const sy = H * .62;
     line(ctx, [14, sy - 26], [W - 14, sy - 26], {alpha: .2, w: 1});
     const G = [W * .26, sy + 18], Pg = [W * .7, sy + 18], m = win(t, 4.2, 5.0), q = win(t, 5.1, 5.7);
@@ -953,9 +1115,9 @@ SCENE[14] = {
     if (m > .95) {
       ctx.globalAlpha = .45; ctx.beginPath(); ctx.arc(G[0], G[1], 9, 0, 7); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.2; ctx.stroke(); ctx.globalAlpha = 1;
       label(ctx, "pg", G[0] - 13, G[1], {align: "right", size: 12, color: C.muted, halo: false});
-      if (q > 0) { arrowN(ctx, G, Pg, 12, 14, q, C.ink, 1.4); label(ctx, "get pg: forwarded", (G[0] + Pg[0]) / 2, G[1] + 18, {align: "center", mono: true, size: 10, color: C.ink2, halo: false, alpha: q}); }
+      if (q > 0) { arrowN(ctx, G, Pg, 12, 14, q, C.ink, 1.4); label(ctx, word("getPgForwarded"), (G[0] + Pg[0]) / 2, G[1] + 18, {align: "center", mono: true, size: 10, color: C.ink2, halo: false, alpha: q}); }
     }
-    if (t > 4.1 && m < 1) label(ctx, "merged", (G[0] + Pg[0]) / 2, G[1] - 16, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 4.1, 4.4)});
+    if (t > 4.1 && m < 1) label(ctx, word("merged"), (G[0] + Pg[0]) / 2, G[1] - 16, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 4.1, 4.4)});
   },
 };
 
@@ -967,13 +1129,13 @@ SCENE[15] = {
     const p1 = win(t, .5, 1.1) * (1 - win(t, 2.5, 2.9)), m = win(t, 2.6, 3.6), p2 = win(t, 4.6, 5.1) * (1 - win(t, 5.6, 5.9)), s = win(t, 5.6, 6.5);
     const k = m * (1 - s), gp = [mix(G[0], Pg[0], k), mix(G[1], Pg[1], k)];
     line(ctx, A, gp);
-    if (p1 > 0) { arrow(ctx, G, Pg, r, r, p1); label(ctx, "same thing?", (G[0] + Pg[0]) / 2, G[1] - 15, {align: "center", size: 11.5, alpha: p1}); }
-    if (p2 > 0) { ctx.globalAlpha = p2; ctx.strokeStyle = C.gold; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(Pg[0], Pg[1], r + 9, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; label(ctx, "split?", Pg[0], Pg[1] - r - 20, {align: "center", size: 11.5, alpha: p2}); }
+    if (p1 > 0) { arrow(ctx, G, Pg, r, r, p1); label(ctx, word("sameThing"), (G[0] + Pg[0]) / 2, G[1] - 15, {align: "center", size: 11.5, alpha: p1}); }
+    if (p2 > 0) { ctx.globalAlpha = p2; ctx.strokeStyle = C.gold; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(Pg[0], Pg[1], r + 9, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; label(ctx, word("split"), Pg[0], Pg[1] - r - 20, {align: "center", size: 11.5, alpha: p2}); }
     dot(ctx, A[0], A[1], 9, TYPE.App); label(ctx, "billing-api", A[0] + 14, A[1], {size: 11.5});
     dot(ctx, Pg[0], Pg[1], r, TYPE.Database); label(ctx, "Postgres", Pg[0], Pg[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink});
     if (k < 1) { dot(ctx, gp[0], gp[1], r, TYPE.Database, {alpha: 1 - k * .9}); label(ctx, "pg", gp[0], gp[1] + 22, {align: "center", size: 12, weight: 600, color: C.ink, alpha: 1 - k}); }
     const wy = H - 26, wx = 14, ww = W - 28; well(ctx, wx, wy - 10, ww, 20);
-    [[.5, "proposal", C.muted], [2.6, "merged", C.ink], [4.6, "split proposal", C.muted], [5.6, "merged", C.ink]].forEach(([at, s2, col], i) => {
+    [[.5, word("proposal"), C.muted], [2.6, word("merged"), C.ink], [4.6, word("splitProposal"), C.muted], [5.6, word("merged"), C.ink]].forEach(([at, s2, col], i) => {
       if (t < at) return; const x = wx + 10 + i * (ww - 20) / 3.2, fl = 1 - lin(t, at, at + .6);
       tick(ctx, x, wy, 6, 12, fl > .05 ? C.ink : col, .7 + .3 * fl);
       if (W > 330) label(ctx, s2, x + 8, wy, {mono: true, size: 9.5, color: C.muted, halo: false});
@@ -986,8 +1148,8 @@ SCENE[17] = {
   draw(ctx, W, H, t) {
     const lp = [12, 12, W * .58 - 12, H * .7], hb = [W * .66, 12, W * .34 - 12, H * .7];
     well(ctx, ...lp); well(ctx, ...hb);
-    label(ctx, "your laptop", lp[0] + 10, lp[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
-    label(ctx, "team hub", hb[0] + 10, hb[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("yourLaptop"), lp[0] + 10, lp[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("teamHub"), hb[0] + 10, hb[1] + 14, {mono: true, size: 10, color: C.muted, halo: false});
     const rows = [["billing", 0], ["personal", 1], ["oss", 2]], ry = i => lp[1] + 44 + i * (lp[3] - 52) / 3;
     const shared = [0, null, 2.9], go = [[.6, 2.2], null, [3.2, 4.4]];
     rows.forEach(([nm, i]) => {
@@ -996,7 +1158,7 @@ SCENE[17] = {
       pts.forEach(p => dot(ctx, p[0], p[1], 4.5, CONCEPT));
       label(ctx, nm, lp[0] + 76, y, {size: 11.5, color: C.ink, halo: false});
       const sh = shared[i] != null ? win(t, shared[i], shared[i] + .4) : 0;
-      if (sh > 0) { if (lp[2] < 200) label(ctx, "shared", lp[0] + 76, y + 14, {mono: true, size: 9.5, color: C.gold, halo: false, alpha: sh}); else chip(ctx, "shared", lp[0] + lp[2] - 8, y, {align: "right", size: 9.5, color: C.ink, bg: C.select, alpha: sh}); }
+      if (sh > 0) { if (lp[2] < 200) label(ctx, word("shared"), lp[0] + 76, y + 14, {mono: true, size: 9.5, color: C.gold, halo: false, alpha: sh}); else chip(ctx, word("shared"), lp[0] + lp[2] - 8, y, {align: "right", size: 9.5, color: C.ink, bg: C.select, alpha: sh}); }
       if (!go[i]) return;
       const [a, b] = go[i];
       pts.forEach((p, j) => {
@@ -1010,12 +1172,12 @@ SCENE[17] = {
     });
     const sy = H * .86, door = W * .5, s = lin(t, 4.8, 6.2), kw = chipW(ctx, "token=AKIA...EXAMPLE", {size: 10});
     line(ctx, [door, sy - 13], [door, sy + 13], {color: C.ink2, alpha: .5, w: 2.5});
-    label(ctx, "log", door + 10, sy, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("log"), door + 10, sy, {mono: true, size: 10, color: C.muted, halo: false});
     if (s > 0 && s < 1) {
       const gox = s < .45 ? ease(s / .45) : 1 - ease((s - .45) / .55) * .8;
       chip(ctx, "token=AKIA...EXAMPLE", mix(12, door - kw - 6, gox), sy, {size: 10, color: C.ink, alpha: 1 - lin(s, .85, 1)});
     }
-    if (t > 5.4) label(ctx, "refused: shaped like a credential", 12, sy + 22, {size: 11, color: C.bad, halo: false, alpha: win(t, 5.4, 5.8)});
+    if (t > 5.4) label(ctx, word("refusedCredential"), 12, sy + 22, {size: 11, color: C.bad, halo: false, alpha: win(t, 5.4, 5.8)});
   },
 };
 
@@ -1025,23 +1187,23 @@ SCENE[19] = {
   draw(ctx, W, H, t) {
     const q = [14, 20], mx = 14, my = H * .44, off = win(t, 2.8, 3.3);
     chip(ctx, '"where do payments live?"', q[0], q[1], {sans: true, size: 11.5, color: C.ink});
-    const mw = chipW(ctx, "search model", {size: 10.5});
-    chip(ctx, off > .5 ? "search model: off" : "search model", mx, my, {size: 10.5, color: off > .5 ? C.muted : C.ink, bg: off > .5 ? C.well : C.panel3});
+    const mw = chipW(ctx, word("searchModel"), {size: 10.5});
+    chip(ctx, word(off > .5 ? "searchModelOff" : "searchModel"), mx, my, {size: 10.5, color: off > .5 ? C.muted : C.ink, bg: off > .5 ? C.well : C.panel3});
     const N = {pg: [W * .74, H * .26], led: [W * .9, H * .5], api: [W * .6, H * .58], st: [W * .82, H * .76]};
     const NM = {pg: "Postgres", led: "ledger", api: "billing-api", st: "Stripe"}, KD = {pg: "Database", led: null, api: "App", st: null};
     line(ctx, N.api, N.pg); line(ctx, N.led, N.st);
     const wide = win(t, .5, 1.4) * (1 - off), kw = win(t, 3.3, 3.9);
     const src = [mx + mw, my];
     ["pg", "led", "st"].forEach((id, i) => { const a = wide * (i === 0 ? 1 : .85); if (a > 0) line(ctx, src, N[id], {color: C.ink2, alpha: .45 * a, p: win(t, .5 + i * .2, 1.2 + i * .2)}); glow(ctx, N[id][0], N[id][1], 20, C.ink, a * .9); });
-    if (kw > 0) { line(ctx, [q[0] + 60, q[1] + 10], N.pg, {color: C.ink2, alpha: .55 * kw}); glow(ctx, N.pg[0], N.pg[1], 20, C.ink, kw); chip(ctx, "keyword only", mx, my + 28, {size: 10, color: C.ink2, alpha: kw}); }
+    if (kw > 0) { line(ctx, [q[0] + 60, q[1] + 10], N.pg, {color: C.ink2, alpha: .55 * kw}); glow(ctx, N.pg[0], N.pg[1], 20, C.ink, kw); chip(ctx, word("keywordOnly"), mx, my + 28, {size: 10, color: C.ink2, alpha: kw}); }
     const pg2 = win(t, 4.8, 5.3), pr = win(t, 5.3, 5.9), PG2 = [W * .52, H * .3];
     for (const id in N) { const rt = N[id][0] > W * .8; dot(ctx, N[id][0], N[id][1], 7.5, KD[id] ? TYPE[KD[id]] : CONCEPT); label(ctx, NM[id], rt ? N[id][0] - 12 : N[id][0] + 12, N[id][1], {size: 11, align: rt ? "right" : "left"}); }
     if (pg2 > 0) { dot(ctx, PG2[0], PG2[1], 7.5 * pg2, TYPE.Database); label(ctx, "pg", PG2[0] - 12, PG2[1], {align: "right", size: 11.5, alpha: pg2}); }
-    if (pr > 0) { arrow(ctx, PG2, N.pg, 8, 8, pr); label(ctx, "same thing?", PG2[0], PG2[1] - 18, {size: 11, alpha: pr}); label(ctx, "waits for a verdict", mx, H - 44, {mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 5.8, 6.2)}); }
+    if (pr > 0) { arrow(ctx, PG2, N.pg, 8, 8, pr); label(ctx, word("sameThing"), PG2[0], PG2[1] - 18, {size: 11, alpha: pr}); label(ctx, word("waitsVerdict"), mx, H - 44, {mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 5.8, 6.2)}); }
     const wy = H - 18, ww = W * .42; well(ctx, 14, wy - 9, ww, 18);
     for (let i = 0; i < 5; i++) tick(ctx, 24 + i * 12, wy, 5, 9, C.ink2, .55);
     const wr = win(t, 3.8, 4.2), fl = 1 - lin(t, 4.2, 4.8);
-    if (wr > 0) { tick(ctx, 24 + 5 * 12, wy, 5, 9, fl > .05 ? C.ink : C.ink2, wr); label(ctx, "written", 24 + 6 * 12 + 4, wy, {mono: true, size: 9.5, color: C.muted, halo: false, alpha: wr}); }
+    if (wr > 0) { tick(ctx, 24 + 5 * 12, wy, 5, 9, fl > .05 ? C.ink : C.ink2, wr); label(ctx, word("written"), 24 + 6 * 12 + 4, wy, {mono: true, size: 9.5, color: C.muted, halo: false, alpha: wr}); }
   },
 };
 
@@ -1070,7 +1232,7 @@ SCENE[20] = {
       const [x, y] = XY(id), isCore = id === "core";
       if (id === "store" && memK > 0) {
         chip(ctx, "store", x, y, {align: "center", size: 10.5, alpha: 1 - memK});
-        chip(ctx, "in-memory", x, y, {align: "center", size: 10.5, color: C.ink, bg: C.select, alpha: memK});
+        chip(ctx, word("inMemory"), x, y, {align: "center", size: 10.5, color: C.ink, bg: C.select, alpha: memK});
       } else chip(ctx, id, x, y, {align: "center", size: 10.5, color: isCore ? C.bg : C.ink2, bg: isCore ? C.ink : C.panel3, weight: isCore ? 600 : 500});
     }
   },
@@ -1084,17 +1246,17 @@ SCENE[21] = {
     const two = W >= 420, x0 = W * (two ? .38 : .5), colW = two ? (W - x0 - 12) / 2 : W - x0 - 12, rows = two ? 7 : 13, top = 16, rh = two ? (H - 36) / 7 : (H - 30) / 13;
     const pos = i => { const c = two ? (i < 7 ? 0 : 1) : 0, r = two ? i % 7 : i; return [x0 + c * colW, top + r * rh + rh / 2]; };
     const M = [W * .1, H * .46];
-    dot(ctx, M[0], M[1], 9, C.teal); label(ctx, "a model", M[0], M[1] + 21, {align: "center", size: 11.5, halo: false});
+    dot(ctx, M[0], M[1], 9, C.teal); label(ctx, word("aModel"), M[0], M[1] + 21, {align: "center", size: 11.5, halo: false});
     const call = (i, a, b) => { const k = lin(t, a, b); if (k <= 0 || k >= 1) return -1; const [x, y] = pos(i), p = travel([M, [x - 6, y], M], k); dot(ctx, p[0], p[1], 3.5, C.ink); return k; };
     const hlS = t > 3.0 && t < 4.5 ? 1 : 0, hlO = 0;
     T.forEach((s, i) => {
       const a = win(t, .2 + i * .17, .5 + i * .17), on = (i === 7 && hlS) || (i === 4 && hlO);
       chip(ctx, s, pos(i)[0], pos(i)[1], {size: two ? 10 : 9.5, color: on ? C.ink : C.ink2, bg: on ? C.select : C.panel3, alpha: a});
     });
-    if (t > 2.4) label(ctx, "13 tools", M[0], M[1] - 22, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 2.4, 2.8)});
+    if (t > 2.4) label(ctx, word("tools13"), M[0], M[1] - 22, {align: "center", mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 2.4, 2.8)});
     call(7, 3.0, 4.1);
     const ob = win(t, 4.4, 4.7) * (1 - win(t, 5.9, 6.2)), O = [12, H * .66];
-    if (ob > 0) chip(ctx, "observation 9b1e", O[0], O[1], {size: 9.5, color: C.ink2, alpha: ob});
+    if (ob > 0) chip(ctx, word("observation9b1e"), O[0], O[1], {size: 9.5, color: C.ink2, alpha: ob});
     const fk = lin(t, 4.6, 5.3);
     if (fk > 0 && fk < 1) { const p = travel([M, [O[0] + 40, O[1] - 8], M], fk); dot(ctx, p[0], p[1], 3.5, C.ink); }
     const er = win(t, 5.2, 5.6) * (1 - win(t, 5.9, 6.2));
@@ -1103,7 +1265,7 @@ SCENE[21] = {
     if (qk > 0) {
       const qw = chipW(ctx, "MATCH (n) RETURN n", {size: 9.5}), x = mix(12, Math.max(12, x0 - qw - 6), ease(Math.min(1, qk * 1.5)));
       chip(ctx, "MATCH (n) RETURN n", x, H * .8, {size: 9.5, color: C.ink2, bg: C.well, alpha: 1 - lin(qk, .85, 1) * .5});
-      if (qk > .6) label(ctx, "no passthrough", 12, H * .8 + 20, {mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 6.6, 6.9)});
+      if (qk > .6) label(ctx, word("noPassthrough"), 12, H * .8 + 20, {mono: true, size: 10, color: C.muted, halo: false, alpha: win(t, 6.6, 6.9)});
     }
   },
 };
@@ -1120,7 +1282,7 @@ SCENE[22] = {
       {at: 2.8, dur: 1.0, s: 'agent: observe "A retry reuses the idempotency key, so a replay never charges twice" source git:3fa91c2', c: C.ink2},
     ];
     const L2 = [
-      {at: 5.0, dur: 0, s: "-- a new session --", c: C.muted},
+      {at: 5.0, dur: 0, s: word("newSession"), c: C.muted},
       {at: 5.3, dur: 0, s: 'supragnosis: workspace "billing" holds 13 entities and 7 relations on this node. Search it before assuming what this project has decided.', c: C.ink2},
     ];
     const clear = win(t, 4.7, 5.0), set = t < 5.0 ? L1 : L2, fade = t < 5.0 ? 1 - clear : 1;
@@ -1134,7 +1296,7 @@ SCENE[22] = {
       y += 5;
     });
     const wy = H - 22, ww = W - 24; well(ctx, 12, wy - 10, ww, 20);
-    label(ctx, "log", 20, wy, {mono: true, size: 10, color: C.muted, halo: false});
+    label(ctx, word("log"), 20, wy, {mono: true, size: 10, color: C.muted, halo: false});
     for (let i = 0; i < 6; i++) tick(ctx, 50 + i * 12, wy, 5, 10, C.ink2, .5);
     const nw = win(t, 3.9, 4.3), fl = 1 - lin(t, 4.3, 5.0);
     if (nw > 0) { tick(ctx, 50 + 6 * 12, wy, 5, 10, fl > .05 ? C.ink : C.ink2, nw); glow(ctx, 50 + 72, wy, 18, C.teal, fl); label(ctx, "git:3fa91c2", 50 + 7 * 12 + 2, wy, {mono: true, size: 9.5, color: C.muted, halo: false, alpha: nw}); }
@@ -1146,9 +1308,9 @@ SCENE[24] = {
   h: w => clamp(w * .74, 250, 296),
   draw(ctx, W, H, t) {
     const refuse = win(t, 5.0, 5.5), offM = win(t, .5, 1.0), offS = win(t, 2.6, 3.1);
-    const st = refuse > .5 ? "refused to start" : "serving";
+    const st = word(refuse > .5 ? "refusedStart" : "serving");
     chip(ctx, st, 14, 18, {size: 11, color: refuse > .5 ? C.bad : C.ink, bg: refuse > .5 ? C.well : C.panel3});
-    const R = [["store", null], ["keyword search", null], ["semantic search", [offM, "off: model not fetched; keyword only"]], ["sync", [offS, "off: hub unreachable; see sync_status"]], ["viewer", null]];
+    const R = [[word("rStore"), null], [word("rKeyword"), null], [word("rSemantic"), [offM, word("offModel")]], [word("rSync"), [offS, word("offHub")]], [word("rViewer"), null]];
     const y0 = 50, rh = (H - 50 - 44) / 5;
     R.forEach(([nm, off], i) => {
       const y = y0 + i * rh, k = off ? off[0] : 0, dim = 1 - .55 * refuse;
@@ -1161,7 +1323,7 @@ SCENE[24] = {
       if (off && t > (i === 2 ? .5 : 2.6) && t < (i === 2 ? 1.6 : 3.7)) glow(ctx, 20, y, 18, C.ink, Math.sin(lin(t, i === 2 ? .5 : 2.6, i === 2 ? 1.6 : 3.7) * Math.PI));
     });
     const c = win(t, 4.6, 5.0);
-    if (c > 0) { const y = H - 20; chip(ctx, "config: a key this build does not know", 14, y, {size: 10, color: C.bad, bg: C.well, alpha: c}); }
+    if (c > 0) { const y = H - 20; chip(ctx, word("configKey"), 14, y, {size: 10, color: C.bad, bg: C.well, alpha: c}); }
   },
 };
 // ---- the ledger: pressing a column shows that principle's clauses beside it ----
@@ -1173,7 +1335,7 @@ function ledger() {
     const p = a.dataset.p, art = $("#p" + p);
     if (!art) return;
     const tally = $(".clauses .tally", art), list = $(".clauses ul", art);
-    const dl = el("p", {class: "dl"}, tally ? tally.textContent + ". " : ""), link = el("a", {href: "#p" + p}, "Read the principle");
+    const dl = el("p", {class: "dl"}, tally ? tally.textContent + ". " : ""), link = el("a", {href: "#p" + p}, word("readPrinciple"));
     dl.append(link);
     detail.replaceChildren(el("span", {class: "dn"}, "P" + p), el("p", {class: "dt"}, $("h3", art).textContent), dl, ...(list ? [list.cloneNode(true)] : []));
   }
@@ -1272,16 +1434,16 @@ function reader() {
     const pt = $(".pt", a), fig = $(":scope > figure", a);
     if (pt && fig) pt.insertBefore(fig, $(".clauses, .refs", pt));
   });
-  const bar = el("nav", {class: "reader", "aria-label": "Principles"});
-  const back = el("a", {class: "back"}, "All principles"), where = el("span", {class: "where"});
+  const bar = el("nav", {class: "reader", "aria-label": word("principles")});
+  const back = el("a", {class: "back"}, word("allPrinciples")), where = el("span", {class: "where"});
   const prev = el("a", {class: "turn", rel: "prev"}), next = el("a", {class: "turn", rel: "next"});
   bar.append(back, where, prev, next);
   let last = null;
-  function to(link, a, word) {
+  function to(link, a, w) {
     link.hidden = !a;
     if (!a) return;
     link.href = "#" + a.id;
-    link.replaceChildren(el("b", null, word), el("span", null, "P" + a.id.slice(1) + " " + title(a)));
+    link.replaceChildren(el("b", null, w), el("span", null, "P" + a.id.slice(1) + " " + title(a)));
   }
   function route() {
     const id = location.hash.slice(1), i = arts.findIndex(a => a.id === id), a = arts[i];
@@ -1303,10 +1465,10 @@ function reader() {
       return;
     }
     main.dataset.view = "one";
-    where.textContent = "P" + a.id.slice(1) + " of " + arts.length;
+    where.textContent = word("whereOf", {p: a.id.slice(1), n: arts.length});
     back.href = "#" + a.closest("section.chap").id;
-    to(prev, arts[i - 1], "Previous");
-    to(next, arts[i + 1], "Next");
+    to(prev, arts[i - 1], word("previous"));
+    to(next, arts[i + 1], word("next"));
     $(".chap-head", a.closest("section.chap")).before(bar);
     // the focus goes to the principle, named by its title, which is where the browser's own jump to
     // the anchor puts it too; that jump lands at the top of the page (style.css), and a step from
@@ -1343,9 +1505,16 @@ function boot() {
   if (!window.ResizeObserver || !window.IntersectionObserver || !document.createElement("canvas").getContext) { document.documentElement.classList.remove("js"); return; }
   try { reader(); } catch (e) { /* the whole page reads as it does without a script */ }
   try { ledger(); } catch (e) { /* the columns stay links to their principles */ }
-  $$("figure.scene").forEach(fig => { const p = +fig.dataset.scene; if (SCENE[p]) nearView(fig, guarded(fig, () => { mountScene(p, fig); listenAfterPress(fig); })); else fig.classList.add("still"); });
-  $$("figure.demo").forEach(fig => { const p = +fig.dataset.demo; if (MOUNT[p]) nearView(fig, guarded(fig, () => { listenAfterPress(fig); MOUNT[p](fig); })); else fig.classList.add("still"); });
-  try { tensions(); } catch (e) { const s = $(".tensions"); if (s) s.classList.add("still"); }
+  // a canvas does not make the browser fetch the Hangul a unicode-range holds back, so on a Korean
+  // page the figures wait for the faces of the words they draw (docs/i18n.md Section 7)
+  const faces = LANG === "ko" && document.fonts && document.fonts.load
+    ? document.fonts.load(`11px ${SANS}`, Object.values(WORDS).map(e => e.ko).join("") + $("main").textContent).catch(() => {})
+    : Promise.resolve();
+  faces.then(() => {
+    $$("figure.scene").forEach(fig => { const p = +fig.dataset.scene; if (SCENE[p]) nearView(fig, guarded(fig, () => { mountScene(p, fig); listenAfterPress(fig); })); else fig.classList.add("still"); });
+    $$("figure.demo").forEach(fig => { const p = +fig.dataset.demo; if (MOUNT[p]) nearView(fig, guarded(fig, () => { listenAfterPress(fig); MOUNT[p](fig); })); else fig.classList.add("still"); });
+    try { tensions(); } catch (e) { const s = $(".tensions"); if (s) s.classList.add("still"); }
+  });
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
 })();
