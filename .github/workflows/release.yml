@@ -165,7 +165,7 @@ jobs:
 
       # Uploaded on non-tag runs too (workflow_dispatch), so a build can be verified without a tag.
       - name: upload build artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: supragnosis-${{ matrix.target }}
           path: dist/*.tar.gz*
@@ -244,7 +244,7 @@ jobs:
         run: gh release upload "${GITHUB_REF_NAME}" bottle/*.bottle.tar.gz --clobber
 
       - name: upload the bottle's description for rendering the tap
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bottle-${{ matrix.os }}
           path: bottle/*.bottle.json
@@ -317,7 +317,7 @@ jobs:
 
       - name: hand the digest to the manifest job
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
