@@ -124,10 +124,20 @@ fn the_principles_page_draws_the_viewers_marks() {
     assert_eq!(alpha(SCRIPT), alpha(VIEWER), "the page's edge alpha is not the viewer's");
 
     // The page picks no trust tier itself: every tier it draws comes from the cases (U12), and its
-    // words table only says a tier the cases hold in the page's language (docs/i18n.md Section 4).
+    // words table only says a tier the cases hold in the page's language (docs/i18n.md Section 4),
+    // so a tier's entry is named once, by the map from a case's value to its words.
     let table = SCRIPT.find("const WORDS = {").expect("the words table");
     let close = table + SCRIPT[table..].find("\n};").expect("the words table closes");
-    let picks = format!("{}{}", &SCRIPT[..table], &SCRIPT[close..]).to_lowercase();
+    let picks = format!("{}{}", &SCRIPT[..table], &SCRIPT[close..]);
+    let map = picks.find("\nconst VALUE = ").expect("the map from a case's value to its words");
+    let map_end = map + 1 + picks[map + 1..].find('\n').expect("the map is one line");
+    let picks = format!("{}{}", &picks[..map], &picks[map_end..]).to_lowercase();
+    for key in ["tierhuman", "tierhost", "tieragent"] {
+        assert!(
+            !picks.contains(key),
+            "principles.js says the tier entry `{key}` itself instead of through the cases' value"
+        );
+    }
     for tier in [
         "human confirmed",
         "host signed",
