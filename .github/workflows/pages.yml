@@ -64,10 +64,13 @@ jobs:
           set -euo pipefail
           version=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)
           test -n "$version" || { echo "could not read the latest release tag" >&2; exit 1; }
-          before=$(grep -c 'id="version-badge"' site/index.html)
-          test "$before" -eq 1 || { echo "expected exactly one version-badge, found $before" >&2; exit 1; }
-          sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">${version}</li>|" site/index.html
-          grep -o '<li id="version-badge">[^<]*</li>' site/index.html
+          # both landings, the English one and its Korean twin (docs/i18n.md Section 8, step 1)
+          for page in site/index.html site/ko/index.html; do
+            before=$(grep -c 'id="version-badge"' "$page")
+            test "$before" -eq 1 || { echo "$page: expected exactly one version-badge, found $before" >&2; exit 1; }
+            sed -i "s|<li id=\"version-badge\">[^<]*</li>|<li id=\"version-badge\">${version}</li>|" "$page"
+            grep -o '<li id="version-badge">[^<]*</li>' "$page"
+          done
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

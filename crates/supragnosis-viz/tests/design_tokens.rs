@@ -795,6 +795,7 @@ fn no_border_draws_an_area() {
 const VIEWER_HTML: &str = include_str!("../assets/viewer.html");
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const LANDING_HTML: &str = include_str!("../../../site/index.html");
+const KO_LANDING_HTML: &str = include_str!("../../../site/ko/index.html");
 const PRINCIPLES_HTML: &str = include_str!("../../../site/principles/index.html");
 
 /// Whether a surface ships the file at a path it names.
@@ -849,18 +850,25 @@ fn every_face_ships_with_its_surface() {
     let viewer_ships = |url: &str| supragnosis_viz::asset(url).is_some();
     let settings_ships = |url: &str| root.join("app/assets").join(url).is_file();
     let landing_ships = |url: &str| root.join("site").join(url).is_file();
-    let surfaces_: [(&str, &str, &str, Ships); 3] = [
-        ("viewer", VIEWER_HTML, VIEWER, &viewer_ships),
-        ("settings page", SETTINGS_HTML, SETTINGS, &settings_ships),
-        ("landing", LANDING_HTML, LANDING, &landing_ships),
+    let ko_landing_ships = |url: &str| root.join("site/ko").join(url).is_file();
+    // A page's links resolve from the page and its stylesheet's urls from the stylesheet, which is
+    // the same directory except for the Korean landing, one level below site/style.css.
+    let surfaces_: [(&str, &str, &str, Ships, Ships); 4] = [
+        ("viewer", VIEWER_HTML, VIEWER, &viewer_ships, &viewer_ships),
+        ("settings page", SETTINGS_HTML, SETTINGS, &settings_ships, &settings_ships),
+        ("landing", LANDING_HTML, LANDING, &landing_ships, &landing_ships),
+        ("Korean landing", KO_LANDING_HTML, LANDING, &ko_landing_ships, &landing_ships),
     ];
-    for (name, html, css, ships) in surfaces_ {
+    for (name, html, css, ships, css_ships) in surfaces_ {
         let plex: Vec<String> =
             urls(css).into_iter().filter(|u| u.contains("ibm-plex-mono")).collect();
         assert!(
             plex.len() >= 3,
             "{name}: IBM Plex Mono is not declared at 400, 500 and 600 ({plex:?})"
         );
+        for url in &plex {
+            assert!(css_ships(url), "{name}: {url} is named but not shipped");
+        }
         let links = stylesheet_links(html);
         let pretendard = links
             .iter()
@@ -870,7 +878,11 @@ fn every_face_ships_with_its_surface() {
         let sheet = if name == "viewer" {
             String::from_utf8(supragnosis_viz::asset(pretendard).unwrap().1.to_vec()).unwrap()
         } else {
-            let base = if name == "landing" { "site" } else { "app/assets" };
+            let base = match name {
+                "landing" => "site",
+                "Korean landing" => "site/ko",
+                _ => "app/assets",
+            };
             std::fs::read_to_string(root.join(base).join(pretendard)).unwrap()
         };
         let dir = &pretendard[..pretendard.rfind('/').unwrap() + 1];
@@ -879,7 +891,11 @@ fn every_face_ships_with_its_surface() {
             .map(|u| format!("{dir}{}", u.trim_start_matches("./")))
             .collect();
         assert!(files.len() >= 9, "{name}: the Pretendard sheet declares {} files", files.len());
-        for url in plex.iter().chain(files.iter()) {
+        // A page that shows Korean carries the whole dynamic subset (docs/i18n.md Section 7).
+        if html.contains("<html lang=\"ko\">") {
+            assert_eq!(files.len(), 92, "{name}: Korean needs all of Pretendard's files");
+        }
+        for url in &files {
             assert!(ships(url), "{name}: {url} is named but not shipped");
         }
         for text in [html, css] {

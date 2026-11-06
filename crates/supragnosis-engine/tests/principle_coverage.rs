@@ -1491,16 +1491,16 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
          page's language, from its surface's words, except a sentence written for one case; every entry \
          holds both languages with the same placeholders and no Korean particle right after one",
         Evidence::Deferred(
-            "no page has a words file yet. Revisit when i18n.md Section 8 steps 1-4 give each surface its \
-             words and the test that reads them",
+            "the site's scripts have their words and a test that reads them (landing.rs), the app and the \
+             viewer not yet. Revisit when i18n.md Section 8 steps 3 and 4 give those surfaces their words",
         ),
     )]),
     (2, &[c(
         "a page declares the language it shows, a passage in the other language declares its own, and a \
          site page links its twin as its alternate",
         Evidence::Deferred(
-            "every page is English and says so. Revisit when i18n.md Section 8 step 1 writes the first \
-             Korean page and its twin's alternate link",
+            "the landing and the Privacy page link their Korean twins as alternates (landing.rs), the \
+             principles page not yet. Revisit when i18n.md Section 8 step 2 writes its twin",
         ),
     )]),
     (3, &[c(
@@ -1515,8 +1515,8 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
         "a Korean site page has its English twin's elements that carry an id or a class, in order, and the \
          same cases, and the principles page's generated regions are written into both",
         Evidence::Deferred(
-            "no Korean site page exists. Revisit when i18n.md Section 8 steps 1 and 2 add the pages and the \
-             skeleton test",
+            "the Korean landing and Privacy page keep their twins' skeleton (landing.rs), the principles \
+             page has no twin yet. Revisit when i18n.md Section 8 step 2 writes it and its regions",
         ),
     )]),
     (5, &[c(

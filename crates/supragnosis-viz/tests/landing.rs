@@ -5,7 +5,11 @@
 //! landing's stylesheet and the page, the way the http.rs tripwires read the viewer's.
 
 const STAGE: &str = include_str!("../../../site/stage.js");
+const LANDING_JS: &str = include_str!("../../../site/landing.js");
 const PAGE: &str = include_str!("../../../site/index.html");
+const KO_PAGE: &str = include_str!("../../../site/ko/index.html");
+const PRIVACY: &str = include_str!("../../../site/privacy/index.html");
+const KO_PRIVACY: &str = include_str!("../../../site/ko/privacy/index.html");
 const LANDING_CSS: &str = include_str!("../../../site/style.css");
 const VIEWER: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
@@ -184,11 +188,13 @@ fn the_stage_draws_the_viewers_marks() {
     }
 }
 
-/// The deploy stamps the release into the hero's facts with one sed over this exact element
-/// (.github/workflows/pages.yml), and fails unless it finds exactly one.
+/// The deploy stamps the release into the hero's facts of both landings with one sed over this exact
+/// element (.github/workflows/pages.yml), and fails unless it finds exactly one in each.
 #[test]
 fn the_landing_has_one_version_badge() {
-    assert_eq!(PAGE.matches("<li id=\"version-badge\">").count(), 1);
+    for page in [PAGE, KO_PAGE] {
+        assert_eq!(page.matches("<li id=\"version-badge\">").count(), 1);
+    }
 }
 
 /// docs/design-system.md Section 11: after the install command the next step is said, Install is in
@@ -227,8 +233,13 @@ fn the_landing_says_the_next_step_and_reads_on_a_phone() {
         "Copied is not announced"
     );
     assert!(
-        PAGE.contains("document.getElementById('copied').textContent"),
+        LANDING_JS.contains("document.getElementById(\"copied\").textContent"),
         "the copy script does not announce"
+    );
+    assert!(
+        PAGE.contains("<script src=\"landing.js\" defer></script>")
+            && KO_PAGE.contains("<script src=\"../landing.js\" defer></script>"),
+        "a landing does not load its controls"
     );
     let phone =
         &LANDING_CSS[LANDING_CSS.find("@media (max-width: 560px)").expect("the phone rules")..];
@@ -253,4 +264,167 @@ fn the_landing_says_the_next_step_and_reads_on_a_phone() {
         !act.contains("background: var(--accent)"),
         "a Review row's Accept takes the install command's gold"
     );
+}
+
+/// The elements of a page that carry an id, a class or a `data-` attribute, in order, each as its
+/// tag and those attributes: what the landing's script and stylesheet hold on to, and so what a
+/// page's twin in the other language keeps (docs/i18n.md LG4). Comments are skipped.
+fn skeleton(html: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find('<') {
+        rest = &rest[i..];
+        if rest.starts_with("<!--") {
+            rest = &rest[rest.find("-->").expect("a comment closes") + 3..];
+            continue;
+        }
+        let end = rest.find('>').expect("a tag closes");
+        let tag = &rest[1..end];
+        rest = &rest[end + 1..];
+        if tag.starts_with(['/', '!']) {
+            continue;
+        }
+        let name_end = tag.find(char::is_whitespace).unwrap_or(tag.len());
+        let mut kept = vec![tag[..name_end].to_string()];
+        // each `name="value"` pair, a value read whole up to its closing quote
+        let mut attrs = &tag[name_end..];
+        while let Some(eq) = attrs.find("=\"") {
+            let name = attrs[..eq].split_whitespace().last().unwrap_or_default();
+            let value_end = attrs[eq + 2..].find('"').expect("a value closes");
+            let value = &attrs[eq + 2..eq + 2 + value_end];
+            if name == "id" || name == "class" || name.starts_with("data-") {
+                kept.push(format!("{name}={value}"));
+            }
+            attrs = &attrs[eq + 2 + value_end + 1..];
+        }
+        if kept.len() > 1 {
+            out.push(kept.join(" "));
+        }
+    }
+    out
+}
+
+/// docs/i18n.md LG2 and LG4: the landing and the Privacy page each have a Korean twin under
+/// site/ko/. Each page declares its language, links its twin by the twin's own name, names both as
+/// alternates with its own canonical address, and the twin keeps the English page's skeleton.
+#[test]
+fn each_site_page_has_its_korean_twin() {
+    let site = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site");
+    let host = "https://supragnosis.dev/";
+    for (dir, en, ko) in [("", PAGE, KO_PAGE), ("privacy/", PRIVACY, KO_PRIVACY)] {
+        assert!(en.contains("<html lang=\"en\">"), "/{dir} does not say it is English");
+        assert!(ko.contains("<html lang=\"ko\">"), "/ko/{dir} does not say it is Korean");
+        // the twin links, each resolving to the other page's file
+        let up = "../".repeat(dir.matches('/').count());
+        let to_ko = format!("<a href=\"{up}ko/{dir}\" hreflang=\"ko\" lang=\"ko\">한국어</a>");
+        let to_en = format!("<a href=\"../{up}{dir}\" hreflang=\"en\" lang=\"en\">English</a>");
+        assert!(en.contains(&to_ko), "/{dir} does not link its twin: {to_ko}");
+        assert!(ko.contains(&to_en), "/ko/{dir} does not link its twin: {to_en}");
+        assert!(site.join("ko").join(dir).join("index.html").is_file());
+        for (page, own) in [(en, format!("{host}{dir}")), (ko, format!("{host}ko/{dir}"))] {
+            assert!(page.contains(&format!("<link rel=\"canonical\" href=\"{own}\">")));
+            for (lang, url) in [("en", format!("{host}{dir}")), ("ko", format!("{host}ko/{dir}"))]
+                .into_iter()
+                .chain([("x-default", format!("{host}{dir}"))])
+            {
+                let alt = format!("<link rel=\"alternate\" hreflang=\"{lang}\" href=\"{url}\">");
+                assert!(page.contains(&alt), "{own} does not name its alternate: {alt}");
+            }
+        }
+        let (a, b) = (skeleton(en), skeleton(ko));
+        assert!(a.len() >= 10, "/{dir}: the skeleton was not read ({} elements)", a.len());
+        if let Some(i) = (0..a.len().max(b.len())).find(|&i| a.get(i) != b.get(i)) {
+            panic!(
+                "/ko/{dir} leaves the English skeleton at element {i}: {:?} in English, {:?} in Korean",
+                a.get(i),
+                b.get(i)
+            );
+        }
+    }
+}
+
+/// The entries of a script's words table (`WORDS = {` to its closing `};`), one per line as
+/// `key: { en: "...", ko: "..." },`.
+fn words(file: &str, src: &str) -> Vec<(String, String, String)> {
+    let at = src.find("WORDS = {").unwrap_or_else(|| panic!("{file} has no words table"));
+    let mut out = Vec::new();
+    for line in src[at..].lines().skip(1) {
+        let line = line.trim();
+        if line == "};" {
+            return out;
+        }
+        let parsed = (|| {
+            let (key, rest) = line.split_once(": { en: \"")?;
+            let (en, rest) = rest.split_once("\", ko: \"")?;
+            let (ko, rest) = rest.split_once('"')?;
+            (rest == " }," || rest == " }").then(|| (key.into(), en.into(), ko.into()))
+        })();
+        out.push(parsed.unwrap_or_else(|| panic!("{file}: an entry that does not read: {line}")));
+    }
+    panic!("{file}: the words table does not close")
+}
+
+/// The named placeholders of a string, sorted.
+fn placeholders(s: &str) -> Vec<String> {
+    let mut out: Vec<String> = s
+        .split('{')
+        .skip(1)
+        .filter_map(|p| p.split_once('}').map(|(name, _)| name.to_string()))
+        .collect();
+    out.sort();
+    out
+}
+
+/// docs/i18n.md Section 4, its D8, for the site's scripts: every entry of a words table holds both
+/// languages with the same named placeholders, no Korean placeholder is followed directly by a
+/// particle that would change with the name's last sound, every key a script looks up is in its
+/// table, and every entry is looked up.
+#[test]
+fn the_sites_words_hold_both_languages() {
+    // the particles whose form follows the last sound of the word before them
+    const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
+    for (file, src, call) in
+        [("site/stage.js", STAGE, "word(\""), ("site/landing.js", LANDING_JS, "t(\"")]
+    {
+        let table = words(file, src);
+        assert!(table.len() >= 10, "{file}: the table was not read ({} entries)", table.len());
+        for (key, en, ko) in &table {
+            assert!(!en.is_empty() && !ko.is_empty(), "{file} {key}: a language is empty");
+            assert_eq!(placeholders(en), placeholders(ko), "{file} {key}: the placeholders differ");
+            for (i, _) in ko.match_indices('}') {
+                let next = ko[i + 1..].chars().next();
+                assert!(
+                    !next.is_some_and(|c| PARTICLES.contains(&c)),
+                    "{file} {key}: a particle follows a placeholder in {ko:?}"
+                );
+            }
+        }
+        let body = &src[src.find("WORDS = {").unwrap()..];
+        let after = &body[body.find("\n  };").expect("the table closes")..];
+        for (i, _) in after.match_indices(call) {
+            // the lookup itself, not the end of a longer name like createElement("
+            let before = after[..i].chars().next_back();
+            if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                continue;
+            }
+            let (key, tail) = after[i + call.len()..].split_once('"').unwrap();
+            // a key built at the call, like "caption" + i, is checked below
+            if !tail.starts_with([')', ',']) {
+                continue;
+            }
+            assert!(
+                table.iter().any(|(k, ..)| k == key),
+                "{file} looks up {key:?}, which it lacks"
+            );
+        }
+        for (key, ..) in &table {
+            // the stage's captions are looked up by their number, "caption" + i
+            let numbered = key.strip_prefix("caption").is_some_and(|n| n.parse::<u8>().is_ok());
+            assert!(
+                after.contains(&format!("\"{key}\""))
+                    || (numbered && after.contains("\"caption\" + i")),
+                "{file}: {key} is never looked up"
+            );
+        }
+    }
 }
