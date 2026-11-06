@@ -69,7 +69,7 @@ ENV SUPRAGNOSIS_MODEL_DIR=/usr/share/supragnosis/models
 # refused (403, "You have permission to publish: io.github.Ashon/*") while both read `ashon`.
 LABEL io.modelcontextprotocol.server.name="io.github.Ashon/supragnosis"
 LABEL org.opencontainers.image.source="https://github.com/Ashon/supragnosis"
-LABEL org.opencontainers.image.description="Memory for AI agents that remembers who said it."
+LABEL org.opencontainers.image.description="Agent memory you can cross-examine."
 LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"
 
 # The state directory has to exist in the image, owned by the runtime user and 0700. A fresh named

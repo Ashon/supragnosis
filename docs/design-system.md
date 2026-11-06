@@ -1181,11 +1181,16 @@ from a note to an answer instead of describing the model again.
 The portability section goes with its three topology drawings, two of which drew meshes that have
 not shipped; moving between machines is the stage's fifth step.
 
-**The hero.** The heading stays: memory for AI agents that remembers who said it. The subhead names
+**The hero.** The heading: memory you can cross-examine. The subhead names
 the clients and the split of the work - agents write as they work, a person decides what becomes
 canon. *(Revised by step 66: in the same 25 words it also says what only this product does, that each
 machine checks what it receives; "remembers who said it" is a claim other products now make, and the
-receiver's own evaluation of trust is not.)* The act is the install command in two tabs, the macOS app (`brew install --cask
+receiver's own evaluation of trust is not.)* *(Revised 2026-11-07, the author's choice: the heading
+was "memory for AI agents that remembers who said it"; it now says what a person does with the memory.
+A claim keeps its witness, its time and the claims against it, and is questioned as testimony is. In
+Korean it is "따져 물을 수 있는 에이전트 메모리". Where the line stands alone, as a page title, the
+README or the Registry, it reads "Agent memory you can cross-examine.")*
+The act is the install command in two tabs, the macOS app (`brew install --cask
 ashon/tap/supragnosis`, the one spelling the page uses; *revised by step 48*: followed by `&& open -a
 Supragnosis`, Section 29.10) and the script, with a copy button; beside it
 are the install script's source, GitHub and the docs. One line of facts follows: the version, Rust,

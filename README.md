@@ -1,6 +1,6 @@
 # supragnosis
 
-**Memory for AI agents that remembers who said it.**
+**Agent memory you can cross-examine.**
 
 [![CI](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml/badge.svg)](https://github.com/Ashon/supragnosis/actions/workflows/rust.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAshon%2Fsupragnosis%2Fbadges%2Fcoverage.json)](https://github.com/Ashon/supragnosis/actions/workflows/coverage.yml)
