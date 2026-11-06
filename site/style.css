@@ -177,6 +177,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   max-width: 15ch;
 }
 .hero h1 em { font-style: italic; font-weight: 340; color: var(--gold-bright); }
+/* A Korean page (docs/i18n.md Section 7): Fraunces has no Hangul, so the headings take the reading
+   face; Korean is never tracked tighter or slanted, and breaks between words, not inside one. */
+:lang(ko) { word-break: keep-all; }
+:lang(ko) :is(h1, h2, h3) { font-family: var(--sans); font-weight: 700; letter-spacing: 0; }
+:lang(ko) .hero h1 { line-height: 1.2; max-width: 13em; }
+:lang(ko) .p-hero h1 { line-height: 1.2; letter-spacing: 0; }
+:lang(ko) .hero h1 em { font-style: normal; font-weight: 700; }
 .sub { font-size: var(--fs-3); line-height: 1.5; max-width: 40ch; margin: 24px 0 32px; }
 .next { margin: 12px 0 0; color: var(--ink2); font-size: var(--fs-small); }
 

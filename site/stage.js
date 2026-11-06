@@ -27,6 +27,26 @@
   // Labels are names and short captions, so they are set in the reading face (design-system.md
   // Section 4), the same stack site/style.css names.
   const SANS = '"Pretendard Variable", Pretendard, system-ui, -apple-system, "Segoe UI", sans-serif';
+  // The words the stage draws, both languages in each entry; the page's lang picks (docs/i18n.md
+  // Section 4). The made-up project's things, machines and agents are names and stay as written.
+  const LANG = global.document && document.documentElement.lang === "ko" ? "ko" : "en";
+  const WORDS = {
+    agents: { en: "agents on this laptop", ko: "이 노트북의 에이전트" },
+    you: { en: "you", ko: "나" },
+    asks: { en: "asks: webhook idempotency", ko: "질문: webhook idempotency" },
+    answered: { en: "got 3 hits, with receipts", ko: "결과 3건, 근거와 함께" },
+    log: { en: "the log", ko: "로그" },
+    appendOnly: { en: "append-only", ko: "추가만 됨" },
+    logAppendOnly: { en: "the log: append-only", ko: "로그: 추가만 됨" },
+    sameThing: { en: "same thing?", ko: "같은 것?" },
+    hub: { en: "hub", ko: "허브" },
+    provenance: { en: "laptop, for you, 0.9 sure", ko: "laptop, 나를 위해, 확신 0.9" },
+    superseded: { en: "never edited, only superseded", ko: "고치지 않고 새 항목으로 대체" },
+    bare: { en: "an agent's words, not a verdict", ko: "에이전트의 말일 뿐, 판정이 아님" },
+    signed: { en: "confirmed in Review, on laptop", ko: "laptop의 검토에서 확인됨" },
+    receipts: { en: "receipts", ko: "근거" },
+  };
+  const word = key => WORDS[key][LANG];
 
   // ---- a type's color: the viewer's functions, copied character for character (a test compares) ----
   const TYPE_BAND = [
@@ -404,7 +424,7 @@
       ctx.beginPath(); ctx.moveTo(a[0] + ux * (ra + 4), a[1] + uy * (ra + 4)); ctx.lineTo(tx, ty); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - ux * hl - uy * hw, ty - uy * hl + ux * hw);
       ctx.lineTo(tx - ux * hl + uy * hw, ty - uy * hl - ux * hw); ctx.closePath(); ctx.fill();
-      if (o.labels) label(ctx, "same thing?", (a[0] + b[0]) / 2 + 10, (a[1] + b[1]) / 2 + 2, C.ink2, alpha * w.proposal);
+      if (o.labels) label(ctx, word("sameThing"), (a[0] + b[0]) / 2 + 10, (a[1] + b[1]) / 2 + 2, C.ink2, alpha * w.proposal);
     }
     // entities
     for (const d of NODES) {
@@ -448,7 +468,7 @@
     if (col > .01) {
       const right = !L.tall, at = (p, dx = 0, dy = 0) => P(L, ID, p[0] + dx, p[1] + dy);
       const head = right ? at(L.agents[0], 0, -58) : at([L.agents[0][0] - 70, L.agents[0][1] - 44]);
-      label(ctx, "agents on this laptop", head[0] + (right ? 8 : 0), head[1], C.muted, col, { align: right ? "right" : "left", halo: false });
+      label(ctx, word("agents"), head[0] + (right ? 8 : 0), head[1], C.muted, col, { align: right ? "right" : "left", halo: false });
       const who = (x, y, name, rgb, color, g, a, weight) => {
         glow(ctx, rgb, x, y, 40, g * .9 * a, dpr);
         ctx.globalAlpha = a; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
@@ -456,15 +476,15 @@
         else label(ctx, name, x, y + 18, color === C.teal ? C.ink2 : color, a, { align: "center", weight, halo: false });
       };
       AGENTS.forEach((name, i) => { const [x, y] = agentXY(L, i); who(x, y, name, RGB.teal, C.teal, st.agents[i], col); });
-      if (st.you > 0) { const [x, y] = P(L, ID, ...L.you); who(x, y, "you", RGB.ink, C.ink, st.youGlow, col * st.you, 500); }
+      if (st.you > 0) { const [x, y] = P(L, ID, ...L.you); who(x, y, word("you"), RGB.ink, C.ink, st.youGlow, col * st.you, 500); }
       if (st.ask > 0) {
-        const [x, y] = agentXY(L, 1), msg = st.answered > .5 ? "got 3 hits, with receipts" : "asks: webhook idempotency";
+        const [x, y] = agentXY(L, 1), msg = st.answered > .5 ? word("answered") : word("asks");
         if (right) label(ctx, msg, x + 14, y + .5, st.answered > .5 ? C.ink : C.ink2, col * st.ask);
         else label(ctx, msg, L.w / 2, P(L, ID, 0, 162)[1], st.answered > .5 ? C.ink : C.ink2, col * st.ask, { align: "center" });
       }
       const lp = right ? at([L.agents[0][0], L.log[2]]) : at([L.log[0], L.log[2] + 44]);
-      if (right) { label(ctx, "the log", lp[0] + 8, lp[1] - 7, C.ink2, col, { size: 12, align: "right", halo: false }); label(ctx, "append-only", lp[0] + 8, lp[1] + 9, C.muted, col, { align: "right", halo: false }); }
-      else label(ctx, "the log: append-only", lp[0], lp[1], C.muted, col, { halo: false });
+      if (right) { label(ctx, word("log"), lp[0] + 8, lp[1] - 7, C.ink2, col, { size: 12, align: "right", halo: false }); label(ctx, word("appendOnly"), lp[0] + 8, lp[1] + 9, C.muted, col, { align: "right", halo: false }); }
+      else label(ctx, word("logAppendOnly"), lp[0], lp[1], C.muted, col, { halo: false });
     }
     drawWorld(ctx, L, camA, st, { dpr, alpha: 1, labels: cam < .5 });
     if (st.b && st.b.a > 0) drawWorld(ctx, L, camB, st.b, { dpr, alpha: st.b.a, labels: false });
@@ -480,20 +500,20 @@
       if (st.hub > 0) {
         const [x, y] = P(L, ID, ...L.hubAt);
         ctx.globalAlpha = st.hub; ctx.fillStyle = C.ink2; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill();
-        label(ctx, "hub", x, y - 13, C.muted, st.hub, { align: "center", halo: false });
+        label(ctx, word("hub"), x, y - 13, C.muted, st.hub, { align: "center", halo: false });
       }
     }
 
     // the first entry's provenance, said once in the second scene
     if (st.prov > .01) {
       const [x, y] = tickXY(L, camA, 0);
-      label(ctx, "laptop, for you, 0.9 sure", x - 3, y - 34, C.ink, st.prov);
-      label(ctx, "never edited, only superseded", x - 3, y - 19, C.muted, st.prov);
+      label(ctx, word("provenance"), x - 3, y - 34, C.ink, st.prov);
+      label(ctx, word("superseded"), x - 3, y - 19, C.muted, st.prov);
     }
     // on the receiver the ring came with the verdict, which says where it was cast
     if (st.signed > .01 && st.b) {
       const [x, y] = nodeXY(L, camB, "idem", st.b);
-      label(ctx, st.bare ? "an agent's words, not a verdict" : "confirmed in Review, on laptop", x + 14, y + 15, C.ink2, st.signed * st.b.a);
+      label(ctx, st.bare ? word("bare") : word("signed"), x + 14, y + 15, C.ink2, st.signed * st.b.a);
     }
     // in flight: entries into the log, the log into the graph, answers back, the log across machines
     const hub = P(L, ID, ...L.hubAt);
@@ -540,7 +560,7 @@
       }
       ctx.globalAlpha = 1;
       const b = tickXY(L, camA, st.rcpt[st.rcpt.length - 1]);
-      label(ctx, "receipts", b[0] + 12, b[1] - 20, C.ink, st.receipts);
+      label(ctx, word("receipts"), b[0] + 12, b[1] - 20, C.ink, st.receipts);
     }
   }
 
@@ -620,7 +640,9 @@
     })();
     document.addEventListener("visibilitychange", () => { if (document.hidden && playing) { playing = false; kick(); } });
     if (reduce.addEventListener) reduce.addEventListener("change", () => { playing = false; snap = null; kick(); });
-    if (document.fonts && document.fonts.load) document.fonts.load(`11px ${SANS}`).then(kick, kick);
+    // a Korean page asks for the files that hold its labels' Hangul, which a canvas alone does not make
+  // the browser fetch
+    if (document.fonts && document.fonts.load) document.fonts.load(`11px ${SANS}`, LANG === "ko" ? Object.values(WORDS).map(e => e.ko).join("") : undefined).then(kick, kick);
     return { go, choose, set, replay: () => go(scene, true), get scene() { return scene; }, get playing() { return playing; } };
   }
 
