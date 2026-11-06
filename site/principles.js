@@ -94,7 +94,7 @@ const WORDS = {
   keptOnce: { en: "kept once", ko: "한 번만 보관" },
   destroy: { en: "destroy", ko: "파기" },
   trueWorld: { en: "true in the world", ko: "세상에서 참인 때" },
-  knownSystem: { en: "known to the system", ko: "시스템이 안 때" },
+  knownSystem: { en: "known to the system", ko: "시스템이 알게 된 때" },
   usesPgSince: { en: "uses Postgres, since {date}", ko: "Postgres 사용, {date}부터" },
   learnedOn: { en: "learned {date}", ko: "{date}에 알게 됨" },
   trueNotKnown: { en: "true, not yet known", ko: "참, 아직 모름" },
