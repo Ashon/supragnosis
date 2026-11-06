@@ -370,7 +370,8 @@ surface token, `--select` among them.
 - **Three faces, two of them in the tools.** Pretendard for what a person reads and the names of
   things: running text, controls, the tools' headings, and the names the map draws. IBM Plex Mono for
   identifiers: relation kinds, ids, hashes, paths and commands. Fraunces for the site's headings
-  and its social image, and nowhere in the tools. Pretendard draws Hangul and Latin from one design,
+  and its social image, and nowhere in the tools; it has no Hangul, so a Korean page sets its
+  headings in Pretendard (i18n.md Section 7). Pretendard draws Hangul and Latin from one design,
   so a Korean name beside an English one keeps its height and weight, which a system stack that takes
   its Latin from one face and its Hangul from another does not; its Latin is Inter's, open and tall
   enough to read at 11px, with tabular figures. IBM Plex Mono's x-height, 0.516 of the em, is within
@@ -379,11 +380,13 @@ surface token, `--select` among them.
   subset - 92 files, each with a unicode-range, so a page fetches only the files its text needs - and
   IBM Plex Mono's Latin files at 400, 500 and 600, under `/fonts/`: the same bytes on the local
   console and on the read tier, under a versioned path cached for a year, and the viewer's policy
-  gains `font-src 'self'`. The Settings page and the landing are English pages and carry only the
-  nine Pretendard files that hold Latin and its punctuation, with the same IBM Plex Mono; a Hangul
-  name there falls back to the system's Korean face. Nothing is fetched from another host, and a face
-  that does not load falls back to the system stack the token names after it. The files are the ones
-  their authors publish, unmodified, with their licenses beside them.
+  gains `font-src 'self'`. The app's Settings and Setup pages and the Korean site pages can show
+  Korean and carry all 92; the English site pages carry only the nine Pretendard files that hold
+  Latin and its punctuation, with the same IBM Plex Mono, and a Hangul name there falls back to the
+  system's Korean face. *(Revised by i18n.md Section 7, its D7: the Settings page carried only the
+  nine.)* Nothing is fetched from another host, and a face that does not load falls back to the
+  system stack the token names after it. The files are the ones their authors publish, unmodified,
+  with their licenses beside them.
 - **Six sizes** in the viewer and on the Settings and Setup pages, each a token in rem so that a
   person's own text size scales them (U21): `--text-page` 24 (a page's title), `--text-sheet` 18 (a
   sheet's title), `--text-section` 15 (a section), `--text-body` 13, `--text-small` 12 and
@@ -974,7 +977,9 @@ reason for a refusal, or that nothing changed when the server cannot be reached.
 an error stays until it is dismissed, four at most, in a polite live region. Section 28.4 gives both
 surfaces one anatomy for them, and a clock that stops while a notice is read (U42).
 
-**Words are the reader's.** The interface stays in English. A system term may stay in a tooltip or a
+**Words are the reader's.** The interface speaks the reader's language, English or Korean, and what
+agents read stays in English (i18n.md). *(Revised by i18n.md Section 1, its D1: it was "The
+interface stays in English.")* A system term may stay in a tooltip or a
 disclosure, where it links the screen to these documents, and never in the line a person reads first.
 Hashes and ids live in footers and cards. One line never states two contradictory states. A host is
 named by its id; it is called "this Mac" in the app on a Mac and "this machine" elsewhere only when
@@ -1124,8 +1129,8 @@ principles page - to one floor (U19):
 
 - **Every control says what it is and what state it is in.** It has a name, and its kind and state
   are those Section 4 gives it. A button that shows only an icon is named by its act and its object:
-  "Remove team-hub", not an empty name. Each page declares its language, `<html lang="en">`, and the
-  map's canvas has a label that says what it draws.
+  "Remove team-hub", not an empty name. Each page declares the language it shows, `<html lang="en">`
+  or `<html lang="ko">` (i18n.md LG2), and the map's canvas has a label that says what it draws.
 - **A dialog holds focus.** It has a name, it moves focus into itself when it opens, Tab stays inside
   it, the page behind it is inert, and closing it gives focus back to what opened it. A form that is
   refused marks the refused field `aria-invalid`, says why beside the field, and moves focus to the
@@ -1510,8 +1515,10 @@ written.
   induced (P11): nobody knows the list in advance, and a table naming them would run out.
 - **The layout is remembered in the browser, not the store.** It is a view preference, the same for
   nobody else, and the store holds knowledge.
-- **The same English words everywhere.** The landing, the app and the viewer say Sync, Review,
-  Spoke; the documents keep their own terms and the tooltips point to them.
+- **The same words everywhere, in each language.** The landing, the app and the viewer say Sync,
+  Review, Spoke in English and the words of i18n.md Section 6 in Korean; the documents keep their
+  own terms and the tooltips point to them. *(Revised by i18n.md Section 6, its D6: it was "The
+  same English words everywhere".)*
 - **Areas are told apart by surface, not by line.** A border around every part made each one an
   object to read before the map; a step of tone separates an area without asking to be read. Lines
   stay where they carry a fact (U9).

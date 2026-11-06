@@ -1483,6 +1483,52 @@ const USAGE_REGISTRY: &[(u8, &[Clause])] = &[
     )]),
 ];
 
+// docs/i18n.md Section 11 - the pages' two languages (LG rows). Specified on 2026-11-06, built by
+// the steps of its Section 8.
+const I18N_REGISTRY: &[(u8, &[Clause])] = &[
+    (1, &[c(
+        "every string a person reads on the viewer, the app's pages, menu and tray and the site is in the \
+         page's language, from its surface's words, except a sentence written for one case; every entry \
+         holds both languages with the same placeholders and no Korean particle right after one",
+        Evidence::Deferred(
+            "no page has a words file yet. Revisit when i18n.md Section 8 steps 1-4 give each surface its \
+             words and the test that reads them",
+        ),
+    )]),
+    (2, &[c(
+        "a page declares the language it shows, a passage in the other language declares its own, and a \
+         site page links its twin as its alternate",
+        Evidence::Deferred(
+            "every page is English and says so. Revisit when i18n.md Section 8 step 1 writes the first \
+             Korean page and its twin's alternate link",
+        ),
+    )]),
+    (3, &[c(
+        "the MCP instructions, tool descriptions, prompts, the hook's text and the store's content, names \
+         and types are never translated",
+        Evidence::Deferred(
+            "holds today only because nothing is translated. Revisit when i18n.md Section 8 steps 3 and 4 \
+             add the words the app and the daemon serve",
+        ),
+    )]),
+    (4, &[c(
+        "a Korean site page has its English twin's elements that carry an id or a class, in order, and the \
+         same cases, and the principles page's generated regions are written into both",
+        Evidence::Deferred(
+            "no Korean site page exists. Revisit when i18n.md Section 8 steps 1 and 2 add the pages and the \
+             skeleton test",
+        ),
+    )]),
+    (5, &[c(
+        "a word another program picks from a closed set reaches a page by its id through the page's words, \
+         and only a sentence written for one case is shown in its writer's English",
+        Evidence::Deferred(
+            "the Log's nouns and verbs still come from the engine's proposal_words. Revisit when i18n.md \
+             Section 8 step 4 moves them to the viewer's words",
+        ),
+    )]),
+];
+
 // docs/recall.md Section 8 - the recall index (RC rows).
 const RECALL_REGISTRY: &[(u8, &[Clause])] = &[
     (1, &[c(
@@ -3079,6 +3125,12 @@ const FAMILIES: &[Family] = &[
         prefix: "J",
         rows: E2E_REGISTRY,
     },
+    Family {
+        doc: "docs/i18n.md",
+        text: include_str!("../../../docs/i18n.md"),
+        prefix: "LG",
+        rows: I18N_REGISTRY,
+    },
 ];
 
 /// The invariant numbers a document declares under one prefix, first occurrence of each, in
@@ -3483,6 +3535,9 @@ const DESIGN_DOCS: &[(&str, &str)] = &[
     // Listed when its step 3 was split: other documents now name its sections (compatibility.md
     // names the join's wire), and those names are read against it rather than as their own.
     ("docs/pairing.md", PAIRING_DOC),
+    // Listed the day it was written. Its guards will split between the viz crate (the viewer's words
+    // and the site's twins) and the app workspace, whose source SOURCES already scans.
+    ("docs/i18n.md", include_str!("../../../docs/i18n.md")),
 ];
 
 /// Sources scanned for the declared test names. Embedded at compile time, so this test performs no
