@@ -1491,16 +1491,19 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
          page's language, from its surface's words, except a sentence written for one case; every entry \
          holds both languages with the same placeholders and no Korean particle right after one",
         Evidence::Deferred(
-            "the site's scripts have their words and a test that reads them (landing.rs), the app and the \
-             viewer not yet. Revisit when i18n.md Section 8 steps 3 and 4 give those surfaces their words",
+            "the site's scripts and the principles page's regions have their words and tests that read \
+             them (landing.rs, this file), the app and the viewer not yet. Revisit when i18n.md Section 8 \
+             steps 3 and 4 give those surfaces their words",
         ),
     )]),
     (2, &[c(
         "a page declares the language it shows, a passage in the other language declares its own, and a \
          site page links its twin as its alternate",
         Evidence::Deferred(
-            "the landing and the Privacy page link their Korean twins as alternates (landing.rs), the \
-             principles page not yet. Revisit when i18n.md Section 8 step 2 writes its twin",
+            "the site's pages declare their language and link their Korean twins as alternates, and the \
+             Korean principles page marks the registry's clauses as English (landing.rs, this file); the \
+             app's pages and the viewer set no language yet. Revisit when i18n.md Section 8 steps 3 and 4 \
+             set it",
         ),
     )]),
     (3, &[c(
@@ -1514,10 +1517,10 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
     (4, &[c(
         "a Korean site page has its English twin's elements that carry an id or a class, in order, and the \
          same cases, and the principles page's generated regions are written into both",
-        Evidence::Deferred(
-            "the Korean landing and Privacy page keep their twins' skeleton (landing.rs), the principles \
-             page has no twin yet. Revisit when i18n.md Section 8 step 2 writes it and its regions",
-        ),
+        Evidence::Scenario(&[
+            "each_site_page_has_its_korean_twin",
+            "the_principles_page_reads_the_registry",
+        ]),
     )]),
     (5, &[c(
         "a word another program picks from a closed set reaches a page by its id through the page's words, \
@@ -5037,10 +5040,77 @@ fn structural_and_deferred_states_are_justified() {
 
 // ---- the principles page (design-system.md Section 11a, U12, U13) -------------------------------
 
-/// The page lives in `site/` and is read when the test runs, not compiled in, so the write mode below
-/// and the check that follows it read the same file.
-fn principles_page_path() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/principles/index.html")
+/// The pages live in `site/` and are read when the test runs, not compiled in, so the write mode below
+/// and the check that follows it read the same files: the English page and its Korean twin, which
+/// the registry's regions are written into in its own language (docs/i18n.md Section 4, LG4).
+fn principles_pages() -> [(std::path::PathBuf, Lang); 2] {
+    let site = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site");
+    [
+        (site.join("principles/index.html"), Lang::En),
+        (site.join("ko/principles/index.html"), Lang::Ko),
+    ]
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Lang {
+    En,
+    Ko,
+}
+
+/// The words the registry's regions say, in each page's language (docs/i18n.md Section 4): a key, its
+/// English for one and for more, and its Korean, `{name}` filled with a count. A clause itself stays in
+/// the registry's words, and the Korean page marks it `lang="en"`.
+const PAGE_WORDS: &[(&str, &str, &str, &str)] = &[
+    ("tested", "tested by {n} named test", "tested by {n} named tests", "이름 붙은 테스트 {n}개로 검사"),
+    ("construction", "holds by construction", "holds by construction", "구조로 성립"),
+    (
+        "pinned",
+        "owed, today's behavior pinned by {n} test",
+        "owed, today's behavior pinned by {n} tests",
+        "남은 과제, 오늘의 동작을 테스트 {n}개가 고정",
+    ),
+    ("owed", "owed", "owed", "남은 과제"),
+    ("tallyClauses", "{n} clause", "{n} clauses", "조항 {n}개"),
+    ("tallyTested", "{n} tested", "{n} tested", "테스트됨 {n}개"),
+    ("tallyConstruction", "{n} by construction", "{n} by construction", "구조로 성립 {n}개"),
+    ("tallyOwed", "{n} owed", "{n} owed", "남은 과제 {n}개"),
+    ("byPrinciple", "Clauses by principle", "Clauses by principle", "원칙별 조항"),
+    (
+        "ledgerCount",
+        "<b>{all}</b> clauses across <b>{principles}</b> principles: <b>{tested}</b> tested by name, <b>{construction}</b> hold by construction, <b>{owed}</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.",
+        "",
+        "원칙 <b>{principles}</b>개의 조항 <b>{all}</b>개: 이름 붙은 테스트로 검사 <b>{tested}</b>개, 구조로 성립 <b>{construction}</b>개, 남은 과제 <b>{owed}</b>개. 열 하나가 원칙 하나이고 블록 하나가 그 조항 하나이며, 커버리지 레지스트리에서 그대로 옮겨 적었습니다.",
+    ),
+    (
+        "heroCount",
+        "<b>{all}</b> clauses: <b>{tested}</b> tested by name, <b>{construction}</b> hold by construction, <b>{owed}</b> owed.",
+        "",
+        "조항 <b>{all}</b>개: 이름 붙은 테스트로 검사 <b>{tested}</b>개, 구조로 성립 <b>{construction}</b>개, 남은 과제 <b>{owed}</b>개.",
+    ),
+    ("howHeld", "How each one is held", "", "각 조항을 지키는 방법"),
+    ("legendTested", "Tested by name", "", "이름 붙은 테스트로 검사"),
+    ("legendConstruction", "Holds by construction", "", "구조로 성립"),
+    ("legendPinned", "Owed, today's behavior pinned", "", "남은 과제, 오늘의 동작 고정"),
+    ("legendOwed", "Owed", "", "남은 과제"),
+];
+
+/// A page word in `lang`, its placeholders filled; English takes the entry for one when `n` is 1 and
+/// the entry has one.
+fn page_word(lang: Lang, key: &str, values: &[(&str, usize)]) -> String {
+    let (_, one, other, ko) = PAGE_WORDS
+        .iter()
+        .find(|w| w.0 == key)
+        .unwrap_or_else(|| panic!("no page word `{key}`"));
+    let n = values.iter().find(|(k, _)| *k == "n").map(|(_, v)| *v);
+    let mut s = match lang {
+        Lang::Ko => ko.to_string(),
+        Lang::En if n == Some(1) || other.is_empty() => one.to_string(),
+        Lang::En => other.to_string(),
+    };
+    for (k, v) in values {
+        s = s.replace(&format!("{{{k}}}"), &v.to_string());
+    }
+    s
 }
 
 fn page_escape(s: &str) -> String {
@@ -5059,20 +5129,23 @@ fn page_unescape(s: &str) -> String {
 }
 
 /// A clause's state as the page draws it: its block's class, in the order the ledger stacks them
-/// from the bottom, and the words its list item says.
-fn page_state(e: &Evidence) -> (u8, &'static str, String) {
-    let plural = |n: usize| if n == 1 { "" } else { "s" };
+/// from the bottom.
+fn page_state(e: &Evidence) -> (u8, &'static str) {
     match e {
-        Evidence::Scenario(t) => {
-            (0, "t", format!("tested by {} named test{}", t.len(), plural(t.len())))
-        }
-        Evidence::Structural(_) => (1, "s", "holds by construction".to_string()),
-        Evidence::Characterized(t, _) => (
-            2,
-            "p",
-            format!("owed, today's behavior pinned by {} test{}", t.len(), plural(t.len())),
-        ),
-        Evidence::Deferred(_) => (3, "o", "owed".to_string()),
+        Evidence::Scenario(_) => (0, "t"),
+        Evidence::Structural(_) => (1, "s"),
+        Evidence::Characterized(..) => (2, "p"),
+        Evidence::Deferred(_) => (3, "o"),
+    }
+}
+
+/// The words a clause's list item says about its state.
+fn page_state_words(e: &Evidence, lang: Lang) -> String {
+    match e {
+        Evidence::Scenario(t) => page_word(lang, "tested", &[("n", t.len())]),
+        Evidence::Structural(_) => page_word(lang, "construction", &[]),
+        Evidence::Characterized(t, _) => page_word(lang, "pinned", &[("n", t.len())]),
+        Evidence::Deferred(_) => page_word(lang, "owed", &[]),
     }
 }
 
@@ -5083,25 +5156,17 @@ fn page_clauses(n: u8) -> Vec<&'static Clause> {
     out
 }
 
-fn page_tally(n: u8) -> String {
+/// A principle's count of clauses by state, a list in either language.
+fn page_tally(n: u8, lang: Lang) -> String {
     let cl = page_clauses(n);
     let count = |k: &[u8]| cl.iter().filter(|c| k.contains(&page_state(&c.evidence).0)).count();
-    let mut parts = Vec::new();
-    if count(&[0]) > 0 {
-        parts.push(format!("{} tested", count(&[0])));
-    }
-    if count(&[1]) > 0 {
-        parts.push(format!("{} by construction", count(&[1])));
-    }
-    if count(&[2, 3]) > 0 {
-        parts.push(format!("{} owed", count(&[2, 3])));
-    }
-    format!(
-        "{} clause{}: {}",
-        cl.len(),
-        if cl.len() == 1 { "" } else { "s" },
-        parts.join(", ")
-    )
+    let parts: Vec<String> =
+        [("tallyTested", &[0][..]), ("tallyConstruction", &[1]), ("tallyOwed", &[2, 3])]
+            .iter()
+            .filter(|(_, k)| count(k) > 0)
+            .map(|(key, k)| page_word(lang, key, &[("n", count(k))]))
+            .collect();
+    format!("{}: {}", page_word(lang, "tallyClauses", &[("n", cl.len())]), parts.join(", "))
 }
 
 /// The chapters of principles.md and the principles under each, in document order.
@@ -5128,8 +5193,8 @@ fn page_chapters() -> Vec<(u8, Vec<u8>)> {
 }
 
 /// What the page's marked regions hold, written from the registry: the ledger, each chapter's part of
-/// it, and each principle's clauses.
-fn page_regions() -> Vec<(String, Vec<String>)> {
+/// it, and each principle's clauses, in the page's language.
+fn page_regions(lang: Lang) -> Vec<(String, Vec<String>)> {
     let cells = |n: u8, tag: &str| -> String {
         page_clauses(n)
             .iter()
@@ -5139,7 +5204,10 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
     let chapters = page_chapters();
     let mut out = Vec::new();
     let mut ledger = vec![
-        "<div class=\"sky\" role=\"group\" aria-label=\"Clauses by principle\">".to_string(),
+        format!(
+            "<div class=\"sky\" role=\"group\" aria-label=\"{}\">",
+            page_word(lang, "byPrinciple", &[])
+        ),
         "  <div class=\"cols\">".to_string(),
     ];
     for (_, ps) in &chapters {
@@ -5147,7 +5215,7 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
         for p in ps {
             ledger.push(format!(
                 "      <a class=\"col\" href=\"#p{p}\" data-p=\"{p}\" aria-label=\"P{p}, {}\">{}</a>",
-                page_tally(*p),
+                page_tally(*p, lang),
                 cells(*p, "span")
             ));
         }
@@ -5169,25 +5237,34 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
     ledger.push("</div>".to_string());
     let all: Vec<&Clause> = REGISTRY.iter().flat_map(|(_, _, c)| c.iter()).collect();
     let count = |k: &[u8]| all.iter().filter(|c| k.contains(&page_state(&c.evidence).0)).count();
-    ledger.push(format!(
-        "<p class=\"count\"><b>{}</b> clauses across <b>{}</b> principles: <b>{}</b> tested by name, <b>{}</b> hold by construction, <b>{}</b> owed. Each column is a principle and each block one of its clauses, written here from the coverage registry.</p>",
-        all.len(),
-        REGISTRY.len(),
-        count(&[0]),
-        count(&[1]),
-        count(&[2, 3])
-    ));
-    ledger.push("<ul class=\"legend\"><li><i class=\"cell t\"></i>Tested by name</li><li><i class=\"cell s\"></i>Holds by construction</li><li><i class=\"cell p\"></i>Owed, today's behavior pinned</li><li><i class=\"cell o\"></i>Owed</li></ul>".to_string());
+    let counts = [
+        ("all", all.len()),
+        ("principles", REGISTRY.len()),
+        ("tested", count(&[0])),
+        ("construction", count(&[1])),
+        ("owed", count(&[2, 3])),
+    ];
+    ledger.push(format!("<p class=\"count\">{}</p>", page_word(lang, "ledgerCount", &counts)));
+    let legend: String = [
+        ("t", "legendTested"),
+        ("s", "legendConstruction"),
+        ("p", "legendPinned"),
+        ("o", "legendOwed"),
+    ]
+    .iter()
+    .map(|(class, key)| {
+        format!("<li><i class=\"cell {class}\"></i>{}</li>", page_word(lang, key, &[]))
+    })
+    .collect();
+    ledger.push(format!("<ul class=\"legend\">{legend}</ul>"));
     out.push(("ledger".to_string(), ledger));
     // the hero's count, beside the link to the ledger that lists them (design-system.md step 67)
     out.push((
         "count".to_string(),
         vec![format!(
-            "<p class=\"p-count\"><b>{}</b> clauses: <b>{}</b> tested by name, <b>{}</b> hold by construction, <b>{}</b> owed. <a href=\"#how-held\">How each one is held</a></p>",
-            all.len(),
-            count(&[0]),
-            count(&[1]),
-            count(&[2, 3])
+            "<p class=\"p-count\">{} <a href=\"#how-held\">{}</a></p>",
+            page_word(lang, "heroCount", &counts),
+            page_word(lang, "howHeld", &[])
         )],
     ));
     for (n, ps) in &chapters {
@@ -5200,14 +5277,19 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
     for (p, _, _) in REGISTRY {
         let mut lines = vec![
             "<details class=\"clauses\">".to_string(),
-            format!("  <summary><span class=\"bar\" aria-hidden=\"true\">{}</span><span class=\"tally\">{}</span></summary>", cells(*p, "i"), page_tally(*p)),
+            format!("  <summary><span class=\"bar\" aria-hidden=\"true\">{}</span><span class=\"tally\">{}</span></summary>", cells(*p, "i"), page_tally(*p, lang)),
             "  <ul class=\"cl\">".to_string(),
         ];
         for c in page_clauses(*p) {
-            let (_, class, words) = page_state(&c.evidence);
+            let (_, class) = page_state(&c.evidence);
+            let words = page_state_words(&c.evidence, lang);
+            // a clause is the registry's own English; on the Korean page it says so (WCAG 3.1.2)
+            let clause = match lang {
+                Lang::En => page_escape(c.demands),
+                Lang::Ko => format!("<span lang=\"en\">{}</span>", page_escape(c.demands)),
+            };
             lines.push(format!(
-                "    <li><i class=\"cell {class}\"></i><span>{}<span class=\"st\">{words}</span></span></li>",
-                page_escape(c.demands)
+                "    <li><i class=\"cell {class}\"></i><span>{clause}<span class=\"st\">{words}</span></span></li>"
             ));
         }
         lines.push("  </ul>".to_string());
@@ -5219,9 +5301,9 @@ fn page_regions() -> Vec<(String, Vec<String>)> {
 
 /// Replaces each marked region of `page` with what the registry writes; the begin marker's indent is
 /// the region's.
-fn page_with_regions(page: &str) -> Result<String, String> {
+fn page_with_regions(page: &str, lang: Lang) -> Result<String, String> {
     let mut out = page.to_string();
-    for (name, lines) in page_regions() {
+    for (name, lines) in page_regions(lang) {
         let begin = format!("<!-- registry:{name} -->");
         let end = format!("<!-- /registry:{name} -->");
         let b = out.find(&begin).ok_or_else(|| format!("the page has no `{begin}` marker"))?;
@@ -5270,23 +5352,55 @@ fn page_spans(page: &str, attr: &str) -> Vec<(u8, String)> {
 /// page's new ledger with it.
 #[test]
 fn the_principles_page_reads_the_registry() {
-    let path = principles_page_path();
-    let page = std::fs::read_to_string(&path).expect("site/principles/index.html");
-    let want = page_with_regions(&page).unwrap_or_else(|e| panic!("{e}"));
-    if std::env::var("SUPRAGNOSIS_WRITE_PAGE").as_deref() == Ok("1") {
-        std::fs::write(&path, &want).expect("rewrite the page");
-        return;
-    }
-    assert!(
-        page == want,
-        "site/principles/index.html does not show the registry as it is - rerun with \
-         SUPRAGNOSIS_WRITE_PAGE=1 to rewrite its marked regions, and review the diff"
-    );
-    for (n, _) in documented_principles() {
+    for (path, lang) in principles_pages() {
+        let page = std::fs::read_to_string(&path).expect("the principles page");
+        let want = page_with_regions(&page, lang).unwrap_or_else(|e| panic!("{e}"));
+        if std::env::var("SUPRAGNOSIS_WRITE_PAGE").as_deref() == Ok("1") {
+            std::fs::write(&path, &want).expect("rewrite the page");
+            continue;
+        }
         assert!(
-            page.contains(&format!("id=\"p{n}\" aria-labelledby=\"t-p{n}\"")),
-            "the page has no block for P{n}"
+            page == want,
+            "{} does not show the registry as it is - rerun with SUPRAGNOSIS_WRITE_PAGE=1 to \
+             rewrite its marked regions, and review the diff",
+            path.display()
         );
+        for (n, _) in documented_principles() {
+            assert!(
+                page.contains(&format!("id=\"p{n}\" aria-labelledby=\"t-p{n}\"")),
+                "{} has no block for P{n}",
+                path.display()
+            );
+        }
+    }
+}
+
+/// docs/i18n.md Section 4, its D8, for the regions' words: every entry holds both languages with the
+/// same named placeholders, and no Korean placeholder is followed directly by a particle that would
+/// change with the last sound of the word before it.
+#[test]
+fn the_principles_pages_words_hold_both_languages() {
+    const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
+    let names = |s: &str| {
+        let mut v: Vec<String> = s
+            .split('{')
+            .skip(1)
+            .filter_map(|p| p.split_once('}').map(|(n, _)| n.to_string()))
+            .collect();
+        v.sort();
+        v
+    };
+    for (key, one, other, ko) in PAGE_WORDS {
+        assert!(!one.is_empty() && !ko.is_empty(), "{key}: a language is empty");
+        for en in [one, other].into_iter().filter(|s| !s.is_empty()) {
+            assert_eq!(names(en), names(ko), "{key}: the placeholders differ");
+        }
+        for (i, _) in ko.match_indices('}') {
+            assert!(
+                !ko[i + 1..].starts_with(PARTICLES),
+                "{key}: a particle follows a placeholder in {ko:?}"
+            );
+        }
     }
 }
 
@@ -5295,123 +5409,147 @@ fn the_principles_page_reads_the_registry() {
 /// clauses it rests on, and every figure has its case.
 #[test]
 fn the_principles_page_shows_held_clauses_as_held_and_owed_ones_as_owed() {
-    let page = std::fs::read_to_string(principles_page_path()).expect("site/principles/index.html");
     let mut bad = Vec::new();
-    for (n, text) in page_spans(&page, "data-clause") {
-        match clause_holds(n, &text) {
-            Some(true) => {}
-            Some(false) => {
-                bad.push(format!("P{n} is shown as held but the registry owes it: {text}"))
-            }
-            None => bad.push(format!("P{n} has no clause \"{text}\"")),
-        }
-    }
-    let owed = page_spans(&page, "data-owed");
-    assert!(
-        !owed.is_empty(),
-        "the page shows no owed clause, which the registry does not support"
-    );
-    for (n, text) in owed {
-        match clause_holds(n, &text) {
-            Some(false) => {}
-            Some(true) => bad.push(format!(
-                "P{n} is tagged owed but the registry holds it - drop the tag: {text}"
-            )),
-            None => bad.push(format!("P{n} has no clause \"{text}\"")),
-        }
-    }
-    // Appendix A: one entry per row, with the same principles on its two sides together.
-    let appendix = &PRINCIPLES_DOC[PRINCIPLES_DOC.find("## Appendix A").expect("Appendix A")..];
-    let appendix = &appendix[..appendix.find("\n## ").unwrap_or(appendix.len())];
-    let mut rows: Vec<Vec<u8>> = Vec::new();
-    for line in appendix
-        .lines()
-        .filter(|l| l.starts_with("| ") && !l.starts_with("| Tension") && !l.starts_with("|--"))
-    {
-        let cell = line.trim_start_matches("| ").split(" |").next().unwrap_or("");
-        let mut nums: Vec<u8> = Vec::new();
-        let b = cell.as_bytes();
-        let mut i = 0;
-        while i < b.len() {
-            if b[i].is_ascii_digit() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
-                let j = (i..b.len()).find(|&j| !b[j].is_ascii_digit()).unwrap_or(b.len());
-                nums.push(cell[i..j].parse().expect("a number"));
-                i = j;
-            } else {
-                i += 1;
+    for (path, lang) in principles_pages() {
+        let page = std::fs::read_to_string(&path).expect("the principles page");
+        let before = bad.len();
+        // U13: on the Korean page a clause it names stays in the registry's English, marked so
+        if lang == Lang::Ko {
+            for attr in ["data-clause=\"", "data-owed=\""] {
+                for (i, _) in page.match_indices(attr) {
+                    if !page[..i].ends_with("<span lang=\"en\" ") {
+                        let line = page[..i].lines().count();
+                        bad.push(format!(
+                            "line {line}: a clause without lang=\"en\" before {attr}"
+                        ));
+                    }
+                }
             }
         }
-        nums.sort_unstable();
-        rows.push(nums);
-    }
-    let mut entries: Vec<Vec<u8>> = Vec::new();
-    let mut rest = page.as_str();
-    while let Some(i) = rest.find("<li data-a=\"") {
-        let li = &rest[i..rest[i..].find('>').map(|e| i + e).expect("a closed tag")];
-        let attr = |name: &str| -> Option<String> {
-            let k = format!("{name}=\"");
-            li.find(&k)
-                .map(|s| li[s + k.len()..][..li[s + k.len()..].find('"').unwrap()].to_string())
-        };
-        let mut nums: Vec<u8> = format!(
-            "{} {}",
-            attr("data-a").unwrap_or_default(),
-            attr("data-b").unwrap_or_default()
-        )
-        .split_whitespace()
-        .map(|s| s.parse().expect("a principle number"))
-        .collect();
-        nums.sort_unstable();
-        let rests = page_unescape(&attr("data-rests").unwrap_or_default());
-        let mut all_hold = true;
-        for r in rests.split('|').filter(|r| !r.is_empty()) {
-            let (p, text) = r.split_once(": ").expect("P<n>: <clause>");
-            let n: u8 = p.trim_start_matches('P').parse().expect("a principle number");
-            match clause_holds(n, text) {
-                Some(h) => all_hold &= h,
-                None => bad.push(format!("a tension rests on P{n}'s missing clause \"{text}\"")),
+        for (n, text) in page_spans(&page, "data-clause") {
+            match clause_holds(n, &text) {
+                Some(true) => {}
+                Some(false) => {
+                    bad.push(format!("P{n} is shown as held but the registry owes it: {text}"))
+                }
+                None => bad.push(format!("P{n} has no clause \"{text}\"")),
             }
         }
-        if rests.is_empty() {
-            bad.push(format!("the tension over {nums:?} names no clause it rests on"));
+        let owed = page_spans(&page, "data-owed");
+        assert!(
+            !owed.is_empty(),
+            "the page shows no owed clause, which the registry does not support"
+        );
+        for (n, text) in owed {
+            match clause_holds(n, &text) {
+                Some(false) => {}
+                Some(true) => bad.push(format!(
+                    "P{n} is tagged owed but the registry holds it - drop the tag: {text}"
+                )),
+                None => bad.push(format!("P{n} has no clause \"{text}\"")),
+            }
         }
-        let tagged = li.contains(" data-owed");
-        if tagged == all_hold {
+        // Appendix A: one entry per row, with the same principles on its two sides together.
+        let appendix = &PRINCIPLES_DOC[PRINCIPLES_DOC.find("## Appendix A").expect("Appendix A")..];
+        let appendix = &appendix[..appendix.find("\n## ").unwrap_or(appendix.len())];
+        let mut rows: Vec<Vec<u8>> = Vec::new();
+        for line in appendix
+            .lines()
+            .filter(|l| l.starts_with("| ") && !l.starts_with("| Tension") && !l.starts_with("|--"))
+        {
+            let cell = line.trim_start_matches("| ").split(" |").next().unwrap_or("");
+            let mut nums: Vec<u8> = Vec::new();
+            let b = cell.as_bytes();
+            let mut i = 0;
+            while i < b.len() {
+                if b[i].is_ascii_digit() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
+                    let j = (i..b.len()).find(|&j| !b[j].is_ascii_digit()).unwrap_or(b.len());
+                    nums.push(cell[i..j].parse().expect("a number"));
+                    i = j;
+                } else {
+                    i += 1;
+                }
+            }
+            nums.sort_unstable();
+            rows.push(nums);
+        }
+        let mut entries: Vec<Vec<u8>> = Vec::new();
+        let mut rest = page.as_str();
+        while let Some(i) = rest.find("<li data-a=\"") {
+            let li = &rest[i..rest[i..].find('>').map(|e| i + e).expect("a closed tag")];
+            let attr = |name: &str| -> Option<String> {
+                let k = format!("{name}=\"");
+                li.find(&k)
+                    .map(|s| li[s + k.len()..][..li[s + k.len()..].find('"').unwrap()].to_string())
+            };
+            let mut nums: Vec<u8> = format!(
+                "{} {}",
+                attr("data-a").unwrap_or_default(),
+                attr("data-b").unwrap_or_default()
+            )
+            .split_whitespace()
+            .map(|s| s.parse().expect("a principle number"))
+            .collect();
+            nums.sort_unstable();
+            let rests = page_unescape(&attr("data-rests").unwrap_or_default());
+            let mut all_hold = true;
+            for r in rests.split('|').filter(|r| !r.is_empty()) {
+                let (p, text) = r.split_once(": ").expect("P<n>: <clause>");
+                let n: u8 = p.trim_start_matches('P').parse().expect("a principle number");
+                match clause_holds(n, text) {
+                    Some(h) => all_hold &= h,
+                    None => {
+                        bad.push(format!("a tension rests on P{n}'s missing clause \"{text}\""))
+                    }
+                }
+            }
+            if rests.is_empty() {
+                bad.push(format!("the tension over {nums:?} names no clause it rests on"));
+            }
+            let tagged = li.contains(" data-owed");
+            if tagged == all_hold {
+                bad.push(format!(
+                    "the tension over {nums:?} is {}tagged owed, but its clauses {}",
+                    if tagged { "" } else { "not " },
+                    if all_hold { "all hold" } else { "are not all held" }
+                ));
+            }
+            entries.push(nums);
+            rest = &rest[i + 1..];
+        }
+        let (mut r, mut e) = (rows.clone(), entries.clone());
+        r.sort();
+        e.sort();
+        if r != e {
             bad.push(format!(
-                "the tension over {nums:?} is {}tagged owed, but its clauses {}",
-                if tagged { "" } else { "not " },
-                if all_hold { "all hold" } else { "are not all held" }
+                "Appendix A's rows {rows:?} and the page's tensions {entries:?} differ"
             ));
         }
-        entries.push(nums);
-        rest = &rest[i + 1..];
-    }
-    let (mut r, mut e) = (rows.clone(), entries.clone());
-    r.sort();
-    e.sort();
-    if r != e {
-        bad.push(format!("Appendix A's rows {rows:?} and the page's tensions {entries:?} differ"));
-    }
-    // Every figure has its case, and a case no test replays is held by the clauses its figure names.
-    let at = page
-        .find("<script type=\"application/json\" id=\"cases\">")
-        .expect("the cases block");
-    let body = &page[at..][page[at..].find('>').unwrap() + 1..];
-    let cases: serde_json::Value =
-        serde_json::from_str(&body[..body.find("</script>").unwrap()]).expect("the cases are JSON");
-    for (n, _) in documented_principles() {
-        let figure = page.contains(&format!("data-scene=\"{n}\""))
-            || page.contains(&format!("data-demo=\"{n}\""));
-        if !figure {
-            bad.push(format!("P{n} has no figure"));
+        // Every figure has its case, and a case no test replays is held by the clauses its figure names.
+        let at = page
+            .find("<script type=\"application/json\" id=\"cases\">")
+            .expect("the cases block");
+        let body = &page[at..][page[at..].find('>').unwrap() + 1..];
+        let cases: serde_json::Value =
+            serde_json::from_str(&body[..body.find("</script>").unwrap()])
+                .expect("the cases are JSON");
+        for (n, _) in documented_principles() {
+            let figure = page.contains(&format!("data-scene=\"{n}\""))
+                || page.contains(&format!("data-demo=\"{n}\""));
+            if !figure {
+                bad.push(format!("P{n} has no figure"));
+            }
+            if cases
+                .get(format!("p{n}"))
+                .and_then(|c| c.get("replay"))
+                .and_then(serde_json::Value::as_bool)
+                .is_none()
+            {
+                bad.push(format!("P{n}'s figure has no case saying whether a test replays it"));
+            }
         }
-        if cases
-            .get(format!("p{n}"))
-            .and_then(|c| c.get("replay"))
-            .and_then(serde_json::Value::as_bool)
-            .is_none()
-        {
-            bad.push(format!("P{n}'s figure has no case saying whether a test replays it"));
+        if bad.len() > before {
+            bad.insert(before, format!("in {}:", path.display()));
         }
     }
     assert!(

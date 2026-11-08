@@ -81,7 +81,7 @@ const WORDS = {
   noGraph: { en: "no graph", ko: "그래프 없음" },
   sameAsBefore: { en: "same as before", ko: "이전과 같음" },
   fHost: { en: "host", ko: "호스트" },
-  fFor: { en: "on behalf of", ko: "누구를 위해" },
+  fFor: { en: "on behalf of", ko: "위임자" },
   fWorkspace: { en: "workspace", ko: "워크스페이스" },
   fObserved: { en: "observed", ko: "관찰 시각" },
   fSource: { en: "source", ko: "출처" },
@@ -173,9 +173,12 @@ const val = v => VALUE[v] ? word(VALUE[v]) : v;
 // project runs in 2026, and its Monday is January 5.
 const INTL = LANG === "ko" ? "ko" : "en-US";
 const PLURAL = new Intl.PluralRules(INTL);
-const month = i => new Intl.DateTimeFormat(INTL, {month: "short", timeZone: "UTC"}).format(Date.UTC(2026, i, 1));
-const date = (i, d) => new Intl.DateTimeFormat(INTL, {month: "short", day: "numeric", timeZone: "UTC"}).format(Date.UTC(2026, i, d));
-const day = (i, hm) => new Intl.DateTimeFormat(INTL, {weekday: "short", timeZone: "UTC"}).format(Date.UTC(2026, 0, 5 + i)) + " " + hm;
+const MONTH = new Intl.DateTimeFormat(INTL, {month: "short", timeZone: "UTC"});
+const DATE = new Intl.DateTimeFormat(INTL, {month: "short", day: "numeric", timeZone: "UTC"});
+const WEEKDAY = new Intl.DateTimeFormat(INTL, {weekday: "short", timeZone: "UTC"});
+const month = i => MONTH.format(Date.UTC(2026, i, 1));
+const date = (i, d) => DATE.format(Date.UTC(2026, i, d));
+const day = (i, hm) => WEEKDAY.format(Date.UTC(2026, 0, 5 + i)) + " " + hm;
 
 // ---- the viewer's marks: its color functions copied character for character (a test compares) ----
 // The landing's tokens (site/style.css), one value each; a test holds them equal.
@@ -1506,9 +1509,14 @@ function boot() {
   try { reader(); } catch (e) { /* the whole page reads as it does without a script */ }
   try { ledger(); } catch (e) { /* the columns stay links to their principles */ }
   // a canvas does not make the browser fetch the Hangul a unicode-range holds back, so on a Korean
-  // page the figures wait for the faces of the words they draw (docs/i18n.md Section 7)
+  // page the figures wait for the faces of the words they draw: the words table, and what they take
+  // from the page, a chapter's name and the words a tension or a question carries (docs/i18n.md
+  // Section 7); the browser fetches the faces of the page's own text as it lays it out
+  const drawn = () => Object.values(WORDS).map(e => e.ko).join("")
+    + $$(".chap .eyebrow span").map(s => s.textContent).join("")
+    + $$("[data-side], [data-route]").map(e => (e.dataset.side || "") + (e.dataset.route || "")).join("");
   const faces = LANG === "ko" && document.fonts && document.fonts.load
-    ? document.fonts.load(`11px ${SANS}`, Object.values(WORDS).map(e => e.ko).join("") + $("main").textContent).catch(() => {})
+    ? document.fonts.load(`11px ${SANS}`, drawn()).catch(() => {})
     : Promise.resolve();
   faces.then(() => {
     $$("figure.scene").forEach(fig => { const p = +fig.dataset.scene; if (SCENE[p]) nearView(fig, guarded(fig, () => { mountScene(p, fig); listenAfterPress(fig); })); else fig.classList.add("still"); });
