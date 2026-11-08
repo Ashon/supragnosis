@@ -11,6 +11,8 @@ const PAGE: &str = include_str!("../../../site/index.html");
 const KO_PAGE: &str = include_str!("../../../site/ko/index.html");
 const PRIVACY: &str = include_str!("../../../site/privacy/index.html");
 const KO_PRIVACY: &str = include_str!("../../../site/ko/privacy/index.html");
+const PRINCIPLES: &str = include_str!("../../../site/principles/index.html");
+const KO_PRINCIPLES: &str = include_str!("../../../site/ko/principles/index.html");
 const LANDING_CSS: &str = include_str!("../../../site/style.css");
 const VIEWER: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
@@ -267,9 +269,14 @@ fn the_landing_says_the_next_step_and_reads_on_a_phone() {
     );
 }
 
+/// The `data-` attributes whose value a figure draws as words, so a twin says them in its own
+/// language: a tension's side that is not a principle, and the place a question is routed to.
+const SAID: &[&str] = &["data-side", "data-route"];
+
 /// The elements of a page that carry an id, a class or a `data-` attribute, in order, each as its
-/// tag and those attributes: what the landing's script and stylesheet hold on to, and so what a
-/// page's twin in the other language keeps (docs/i18n.md LG4). Comments are skipped.
+/// tag and those attributes: what the pages' scripts and stylesheet hold on to, and so what a
+/// page's twin in the other language keeps (docs/i18n.md LG4). An attribute in `SAID` is kept by its
+/// name alone. Comments are skipped.
 fn skeleton(html: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = html;
@@ -293,7 +300,9 @@ fn skeleton(html: &str) -> Vec<String> {
             let name = attrs[..eq].split_whitespace().last().unwrap_or_default();
             let value_end = attrs[eq + 2..].find('"').expect("a value closes");
             let value = &attrs[eq + 2..eq + 2 + value_end];
-            if name == "id" || name == "class" || name.starts_with("data-") {
+            if SAID.contains(&name) {
+                kept.push(name.to_string());
+            } else if name == "id" || name == "class" || name.starts_with("data-") {
                 kept.push(format!("{name}={value}"));
             }
             attrs = &attrs[eq + 2 + value_end + 1..];
@@ -305,14 +314,19 @@ fn skeleton(html: &str) -> Vec<String> {
     out
 }
 
-/// docs/i18n.md LG2 and LG4: the landing and the Privacy page each have a Korean twin under
-/// site/ko/. Each page declares its language, links its twin by the twin's own name, names both as
-/// alternates with its own canonical address, and the twin keeps the English page's skeleton.
+/// docs/i18n.md LG2 and LG4: the landing, the Privacy page and the principles page each have a
+/// Korean twin under site/ko/. Each page declares its language, links its twin by the twin's own
+/// name, names both as alternates with its own canonical address, and the twin keeps the English
+/// page's skeleton and, on the principles page, its cases.
 #[test]
 fn each_site_page_has_its_korean_twin() {
     let site = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site");
     let host = "https://supragnosis.dev/";
-    for (dir, en, ko) in [("", PAGE, KO_PAGE), ("privacy/", PRIVACY, KO_PRIVACY)] {
+    for (dir, en, ko) in [
+        ("", PAGE, KO_PAGE),
+        ("privacy/", PRIVACY, KO_PRIVACY),
+        ("principles/", PRINCIPLES, KO_PRINCIPLES),
+    ] {
         assert!(en.contains("<html lang=\"en\">"), "/{dir} does not say it is English");
         assert!(ko.contains("<html lang=\"ko\">"), "/ko/{dir} does not say it is Korean");
         // the twin links, each resolving to the other page's file
@@ -341,6 +355,13 @@ fn each_site_page_has_its_korean_twin() {
                 b.get(i)
             );
         }
+        // the cases are data, not words: the same block on both pages (principles_page.rs replays
+        // the English one)
+        let cases = |html: &'static str| {
+            html.split_once("<script type=\"application/json\" id=\"cases\">")
+                .map(|(_, rest)| rest.split_once("</script>").expect("the cases close").0)
+        };
+        assert_eq!(cases(en), cases(ko), "/ko/{dir} does not hold the English page's cases");
     }
 }
 
@@ -397,6 +418,83 @@ fn placeholders(s: &str) -> Vec<String> {
     out
 }
 
+/// A call's arguments: the text after a call's opening parenthesis, split at the commas at its own
+/// depth up to the parenthesis that closes it, strings skipped.
+fn args(rest: &str) -> Vec<&str> {
+    let (mut out, mut from) = (Vec::new(), 0);
+    let (mut depth, mut quote, mut escaped) = (0usize, None::<char>, false);
+    for (i, c) in rest.char_indices() {
+        match (quote, c) {
+            (Some(_), _) if escaped => escaped = false,
+            (Some(_), '\\') => escaped = true,
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'' | '`') => quote = Some(c),
+            (None, '(' | '[' | '{') => depth += 1,
+            (None, ')' | ']' | '}') if depth > 0 => depth -= 1,
+            (None, ',') if depth == 0 => {
+                out.push(rest[from..i].trim());
+                from = i + 1;
+            }
+            (None, ')') => {
+                out.push(rest[from..i].trim());
+                return out;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The keys a script looks up in its words table through `calls`, the functions that take a key:
+/// an argument that is a key, both keys of one that picks with `? :`, and the keys a map names when
+/// an argument looks its key up in one (`t(DONE[act])`, the map written on one line as
+/// `DONE = ...`); and whether it looks a key up by a number, as `"caption" + i`.
+fn lookups(after: &str, calls: &[&str]) -> (Vec<String>, bool) {
+    let (mut keys, mut numbered) = (Vec::new(), false);
+    let strings = |mut rest: &str, keys: &mut Vec<String>| {
+        while let Some(q) = rest.find('"') {
+            let (key, tail) = js_string(&rest[q..]).expect("a closed string");
+            keys.push(key);
+            rest = tail;
+        }
+    };
+    for call in calls {
+        for (i, _) in after.match_indices(call) {
+            // the lookup itself, not the end of a longer name like createElement(
+            let before = after[..i].chars().next_back();
+            if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                continue;
+            }
+            for arg in args(&after[i + call.len()..]) {
+                let map = arg.find('[').map(|b| &arg[..b]);
+                match js_string(arg) {
+                    Some((key, "")) => keys.push(key),
+                    Some((key, tail)) if key == "caption" && tail.trim() == "+ i" => {
+                        numbered = true
+                    }
+                    _ if map.is_some_and(|m| {
+                        !m.is_empty() && m.chars().all(|c| c.is_ascii_uppercase())
+                    }) =>
+                    {
+                        let def = format!(" {} = ", map.unwrap());
+                        let at = after
+                            .find(&def)
+                            .unwrap_or_else(|| panic!("no map {def:?} for {arg:?}"));
+                        strings(after[at..].lines().next().unwrap_or_default(), &mut keys);
+                    }
+                    // a pick, `cond ? "a" : "b"`
+                    _ if arg.contains(" ? ") => {
+                        strings(&arg[arg.find(" ? ").unwrap()..], &mut keys)
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    (keys, numbered)
+}
+
 /// docs/i18n.md Section 4, its D8, for the site's scripts: every entry of a words table holds both
 /// languages with the same named placeholders, no Korean placeholder is followed directly by a
 /// particle that would change with the name's last sound, every key a script looks up is in its
@@ -405,10 +503,11 @@ fn placeholders(s: &str) -> Vec<String> {
 fn the_sites_words_hold_both_languages() {
     // the particles whose form follows the last sound of the word before them
     const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
-    for (file, src, call) in [
-        ("site/stage.js", STAGE, "word(\""),
-        ("site/landing.js", LANDING_JS, "t(\""),
-        ("site/principles.js", PRINCIPLES_JS, "word(\""),
+    for (file, src, calls) in [
+        ("site/stage.js", STAGE, &["word("][..]),
+        // the landing also hands a key to tier(), which splits its entry around the tier's word
+        ("site/landing.js", LANDING_JS, &["t(", "tier("]),
+        ("site/principles.js", PRINCIPLES_JS, &["word("]),
     ] {
         let (table, after) = words(file, src);
         assert!(table.len() >= 10, "{file}: the table was not read ({} entries)", table.len());
@@ -423,17 +522,9 @@ fn the_sites_words_hold_both_languages() {
                 );
             }
         }
-        for (i, _) in after.match_indices(call) {
-            // the lookup itself, not the end of a longer name like createElement("
-            let before = after[..i].chars().next_back();
-            if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
-                continue;
-            }
-            let (key, tail) = after[i + call.len()..].split_once('"').unwrap();
-            // a key built at the call, like "caption" + i, is checked below
-            if !tail.starts_with([')', ',']) {
-                continue;
-            }
+        let (keys, numbered) = lookups(after, calls);
+        assert!(keys.len() >= 10, "{file}: the lookups were not read ({} keys)", keys.len());
+        for key in &keys {
             assert!(
                 table.iter().any(|(k, ..)| k == key),
                 "{file} looks up {key:?}, which it lacks"
@@ -441,12 +532,9 @@ fn the_sites_words_hold_both_languages() {
         }
         for (key, ..) in &table {
             // the stage's captions are looked up by their number, "caption" + i
-            let numbered = key.strip_prefix("caption").is_some_and(|n| n.parse::<u8>().is_ok());
-            assert!(
-                after.contains(&format!("\"{key}\""))
-                    || (numbered && after.contains("\"caption\" + i")),
-                "{file}: {key} is never looked up"
-            );
+            let by_number =
+                numbered && key.strip_prefix("caption").is_some_and(|n| n.parse::<u8>().is_ok());
+            assert!(keys.contains(key) || by_number, "{file}: {key} is never looked up");
         }
     }
 }

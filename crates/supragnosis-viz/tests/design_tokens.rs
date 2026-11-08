@@ -797,6 +797,7 @@ const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const LANDING_HTML: &str = include_str!("../../../site/index.html");
 const KO_LANDING_HTML: &str = include_str!("../../../site/ko/index.html");
 const PRINCIPLES_HTML: &str = include_str!("../../../site/principles/index.html");
+const KO_PRINCIPLES_HTML: &str = include_str!("../../../site/ko/principles/index.html");
 
 /// Whether a surface ships the file at a path it names.
 type Ships<'a> = &'a dyn Fn(&str) -> bool;
@@ -907,22 +908,37 @@ fn every_face_ships_with_its_surface() {
     }
 
     // The principles page reads the landing's stylesheet and links its Pretendard sheet, from one
-    // directory down, and fetches nothing from a font host (design-system.md Section 11a).
-    let page_links = stylesheet_links(PRINCIPLES_HTML);
-    for want in ["../fonts/pretendard-1.3.9/pretendard-latin.css", "../style.css"] {
+    // directory down, and fetches nothing from a font host (design-system.md Section 11a); its
+    // Korean twin links the sheet that holds Hangul, as the Korean landing does (i18n.md Section 7).
+    for (html, dir, sheet) in [
+        (
+            PRINCIPLES_HTML,
+            "site/principles",
+            "../fonts/pretendard-1.3.9/pretendard-latin.css",
+        ),
+        (
+            KO_PRINCIPLES_HTML,
+            "site/ko/principles",
+            "../../fonts/pretendard-1.3.9/pretendardvariable-dynamic-subset.css",
+        ),
+    ] {
+        let page_links = stylesheet_links(html);
+        let style = format!("{}style.css", &sheet[..sheet.find("fonts/").unwrap()]);
+        for want in [sheet, style.as_str()] {
+            assert!(
+                page_links.iter().any(|h| h == want),
+                "{dir} does not link {want}: {page_links:?}"
+            );
+            assert!(
+                root.join(dir).join(want).is_file(),
+                "{dir} links {want}, which is not shipped"
+            );
+        }
         assert!(
-            page_links.iter().any(|h| h == want),
-            "the principles page does not link {want}: {page_links:?}"
-        );
-        assert!(
-            root.join("site/principles").join(want).is_file(),
-            "the principles page links {want}, which is not shipped"
+            !html.contains("fonts.googleapis") && !html.contains("fonts.gstatic"),
+            "{dir} fetches a font from another host"
         );
     }
-    assert!(
-        !PRINCIPLES_HTML.contains("fonts.googleapis") && !PRINCIPLES_HTML.contains("fonts.gstatic"),
-        "the principles page fetches a font from another host"
-    );
 
     // The two policies that would refuse a font allow this origin's.
     assert!(

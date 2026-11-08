@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>원칙 - supragnosis</title>
+  <meta name="description" content="스물네 가지 원칙이 supragnosis가 무엇을 보관하고, 믿고, 공유하고, 거부할지 정합니다. 원칙마다 조항으로 나뉘고, 각 조항은 그것을 지키는 테스트를 밝히거나 남은 과제라고 밝힙니다.">
+  <link rel="canonical" href="https://supragnosis.dev/ko/principles/">
+  <link rel="alternate" hreflang="en" href="https://supragnosis.dev/principles/">
+  <link rel="alternate" hreflang="ko" href="https://supragnosis.dev/ko/principles/">
+  <link rel="alternate" hreflang="x-default" href="https://supragnosis.dev/principles/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="supragnosis - 공유 메모리가 정직함을 지키는 방법">
+  <meta property="og:description" content="스물네 가지 원칙을 조항으로 나누고, 조항마다 그것을 지키는 테스트를 밝히거나 남은 과제라고 밝힙니다.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://supragnosis.dev/ko/principles/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="supragnosis와 &quot;memory you can cross-examine&quot; 문구. 어두운 바탕 위에 관찰, 이벤트 로그, 프로젝션, 온톨로지, 개체가 별자리처럼 이어진 그림.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendardvariable-dynamic-subset.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- The Korean twin of site/principles/index.html (docs/i18n.md LG4): the same elements with an id,
+            a class or a data- attribute, in the same order, and the same cases. What each part is for is said
+       in the English page's comments. The registry's regions are written into both pages. -->
+  <script>document.documentElement.classList.add("js");</script>
+  <script src="../../principles.js" defer></script>
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../">supragnosis</a>
+    <nav aria-label="섹션">
+      <a href="../#how">작동 방식</a>
+      <a href="./" aria-current="page">원칙</a>
+      <a href="../#status">현황</a>
+      <a href="../../news/" hreflang="en">소식</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">문서</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../principles/" hreflang="en" lang="en">English</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="p-hero wrap" id="top">
+      <p class="eyebrow">원칙</p>
+      <h1>공유 메모리가 정직함을 지키는 방법.</h1>
+      <p class="sub">스물네 가지 원칙이 supragnosis가 무엇을 보관하고, 믿고, 공유하고, 거부할지 정합니다. 원칙마다 조항으로 나뉘고, 각 조항은 그것을 지키는 테스트나 구조를 밝히거나, 남은 과제라고 밝힙니다. 남은 과제란 코드가 아직 보장하지 않는다는 뜻입니다.</p>
+      <!-- registry:count -->
+      <p class="p-count">조항 <b>111</b>개: 이름 붙은 테스트로 검사 <b>78</b>개, 구조로 성립 <b>8</b>개, 남은 과제 <b>25</b>개. <a href="#how-held">각 조항을 지키는 방법</a></p>
+      <!-- /registry:count -->
+    </section>
+
+    <nav class="chnav" aria-label="장">
+      <div class="wrap">
+      <a href="#ch-kept"><b>1</b>무엇을 보관하는가</a>
+      <a href="#ch-shaped"><b>2</b>어떻게 모양을 갖추는가</a>
+      <a href="#ch-trust"><b>3</b>누가 말했고, 누가 보는가</a>
+      <a href="#ch-built"><b>4</b>어떻게 만드는가</a>
+      <a href="#ch-canon"><b>5</b>무엇이 정본이 되는가</a>
+      <a href="#ch-ops"><b>6</b>일부가 고장 날 때</a>
+      <a href="#tensions"><b>+</b>긴장 관계</a>
+      <a href="#how-held"><b>+</b>방법</a>
+      </div>
+    </nav>
+
+    <section class="chap wrap" id="ch-kept" aria-labelledby="h-kept">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">1장 <span>인식론</span></p>
+          <h2 id="h-kept">무엇을 보관하는가</h2>
+          <p class="thesis">사실 대신 주장을 보관합니다. 누가 말했는지, 언제 말했는지, 그 때문에 무엇을 믿게 되었는지까지.</p>
+        </div>
+        <!-- registry:chapter:1 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:1 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p1" aria-labelledby="t-p1">
+          <div class="ph"><span class="pn">P1</span><h3 id="t-p1">사실이 아니라 주장.</h3></div>
+            <p class="line">로그는 무엇을, 누가, 언제 말했는지를 보관합니다. 무엇을 믿을지는 로그에서 계산하고, 다시 계산해도 같은 그래프가 나옵니다.</p>
+            <p class="why">두 기기는 서로 다를 수 있고, 어느 쪽이든 틀릴 수 있습니다. 주장을 보관하고 믿음을 거기서 끌어내면, 더 나은 규칙이 나왔을 때 같은 로그를 다시 읽을 수 있습니다.</p>
+          <figure class="scene" data-scene="1" aria-label="애니메이션: 사실이 아니라 주장">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3"><span class="bn">1</span> <span class="bk">쓰기</span> <span class="bc">항목 하나하나가 주장입니다. 누가 무엇을 언제 말했는지. 그래프는 이 항목들로 계산합니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">버리기</span> <span class="bc">그래프를 버립니다. 로그는 그대로입니다.</span></li>
+            <li data-t="7.4"><span class="bn">3</span> <span class="bk">다시 재생</span> <span class="bc">로그를 다시 재생하면 다이제스트까지 똑같은 그래프가 만들어집니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="1">the graph is a projection: re-deriving it from the log reproduces it exactly</span></p>
+          </figure>
+          <!-- registry:clauses:1 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span class="tally">조항 5개: 테스트됨 4개, 구조로 성립 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">the graph is a projection: re-deriving it from the log reproduces it exactly</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a generator proposes; nothing but a verdict commits</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a read is answered from the log as it stands, not from a stale view of it</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">ingest validates well-formedness and nothing beyond it</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell s"></i><span><span lang="en">no API may write a fact that did not pass through an assertion directly into the graph</span><span class="st">구조로 성립</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:1 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-1-separation-of-assertion-and-fact-assertion-belief-separation">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p2" aria-labelledby="t-p2">
+          <div class="ph"><span class="pn">P2</span><h3 id="t-p2">모든 주장에는 작성자가 있습니다.</h3></div>
+            <p class="line">항목마다 기기, 그 기기가 대신해 일한 사람, 워크스페이스, 시각이 함께 담깁니다. 아무도 밝히지 않은 확신도는 밝히지 않은 채로 남습니다.</p>
+            <p class="why">에이전트는 대개 누군가를 대신해 일합니다. 이 연결 고리가 없으면 추측과 결정을 가를 수 없고, 잘못된 결정을 거슬러 찾아갈 수도 없습니다.</p>
+          <figure class="scene" data-scene="2" aria-label="애니메이션: 모든 주장에는 작성자가 있습니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3"><span class="bn">1</span> <span class="bk">펼치기</span> <span class="bc">항목에는 그것을 쓴 기기, 그 기기가 대신해 일한 사람, 워크스페이스, 시각, 출처가 담깁니다.</span></li>
+            <li data-t="4.7"><span class="bn">2</span> <span class="bk">명시 안 됨</span> <span class="bc">아무도 밝히지 않은 확신도는 밝히지 않은 채로 남습니다. 추측으로 채우지 않습니다.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">거슬러 찾기</span> <span class="bc">어떤 답이든 그 답이 나온 항목을 가리키고, 이 모든 정보가 함께 따라옵니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="2">an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="2">a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain</span></p>
+          </figure>
+          <!-- registry:clauses:2 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">조항 5개: 테스트됨 5개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">an attestation carries its acting host, principal, workspace and time, and an unstated confidence stays unstated</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a peer's claimed tier is stored verbatim, because the log is audit</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">at least one attestation, refused at ingest at the schema level</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a query result can carry its provenance: a hit dereferences to its observation, with its attestations and delegation chain</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a relayed attestation is authenticated by its origin's signature, not by the relay</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:2 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-2-provenance-is-a-first-class-citizen-identity-is-a-delegation-chain-provenance-first-identity-as-delegation-chain">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p3" aria-labelledby="t-p3">
+          <div class="ph"><span class="pn">P3</span><h3 id="t-p3">고치되, 지우지 않습니다.</h3></div>
+            <p class="line">수정은 항목을 대체하고, 예전 항목은 그대로 읽을 수 있습니다. 같은 항목이 두 번 도착해도 아무것도 바뀌지 않습니다.</p>
+            <p class="why">지우면 무언가를 믿었던 이유가 사라집니다. 대체하면 그 내력이 나중에 필요한 사람을 위해 남습니다.</p>
+          <figure class="scene" data-scene="3" aria-label="애니메이션: 고치되, 지우지 않습니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="1.6"><span class="bn">1</span> <span class="bk">쓰기</span> <span class="bc">개체의 설명을 한 번 씁니다.</span></li>
+            <li data-t="3.6"><span class="bn">2</span> <span class="bk">고치기</span> <span class="bc">수정이 그것을 대체합니다. 예전 항목은 로그에서 그대로 읽을 수 있습니다.</span></li>
+            <li data-t="5.4"><span class="bn">3</span> <span class="bk">다시</span> <span class="bc">같은 항목이 다시 도착하면 이미 있는 항목과 병합됩니다. 아무것도 바뀌지 않습니다.</span></li>
+            <li data-t="6.8"><span class="bn">4</span> <span class="bk">삭제?</span> <span class="bc">삭제는 없습니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="3">a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest</span></span></span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="3">a re-arrival merges monotonically and drops nothing, in any order</span></p>
+          </figure>
+          <!-- registry:clauses:3 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">조항 6개: 테스트됨 5개, 남은 과제 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a re-arrival merges monotonically and drops nothing, in any order</span><span class="st">이름 붙은 테스트 6개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">every encoding the log has ever used stays readable</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a relation accumulates attestations the way an entity and an observation do</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">entity merge preserves history, so un-merge is possible</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a re-materialization concurrent with an observe cannot interleave</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:3 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-3-supersede-instead-of-delete-supersede-dont-delete">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p4" aria-labelledby="t-p4">
+          <div class="ph"><span class="pn">P4</span><h3 id="t-p4">두 개의 시계.</h3></div>
+            <p class="line">무언가가 참이었던 때와 시스템이 그것을 알게 된 때를 따로 기록합니다.</p>
+            <p class="why">지식은 두 축 모두에서 낡습니다. 늦게 알게 된 사실이 늦게 참이 된 사실은 아닙니다.</p>
+          <figure class="scene" data-scene="4" aria-label="애니메이션: 두 개의 시계">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2"><span class="bn">1</span> <span class="bk">참</span> <span class="bc">billing-api는 1월 10일부터 Postgres를 써 왔습니다. 이것이 유효 시각, 곧 세상에서 참이었던 때입니다.</span></li>
+            <li data-t="3.8"><span class="bn">2</span> <span class="bk">알게 됨</span> <span class="bc">시스템은 그것을 3월 3일에 알게 되었습니다. 이것이 기록 시각이고, 두 시각은 따로 보관합니다.</span></li>
+            <li data-t="5"><span class="bn">3</span> <span class="bk">기록</span> <span class="bc">두 날짜 모두 항목과 함께, 로그와 그래프에 담깁니다.</span></li>
+            <li data-t="6.8"><span class="bn">4</span> <span class="bk">기준 시점</span> <span class="bc">어느 날짜를 기준으로 무엇을 믿었는지 물으면 두 축을 함께 읽습니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="4">as_of_valid / as_of_recorded time travel, and the asserted close of a disproven relation&#x27;s valid interval</span></span></span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="4">both time axes are captured at ingest, into the log and the projection</span></p>
+          </figure>
+          <!-- registry:clauses:4 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell o"></i></span><span class="tally">조항 2개: 테스트됨 1개, 남은 과제 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">both time axes are captured at ingest, into the log and the projection</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">as_of_valid / as_of_recorded time travel, and the asserted close of a disproven relation's valid interval</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:4 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-4-bitemporal---two-time-axes-bi-temporality">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr big" id="p5" aria-labelledby="t-p5">
+          <div class="pt">
+            <div class="ph"><span class="pn">P5</span><h3 id="t-p5">부재가 곧 거짓은 아닙니다.</h3></div>
+            <p class="line">아무것도 찾지 못한 검색은 &#x27;아니다&#x27;가 아니라 &#x27;찾지 못함&#x27;이라고 답합니다. 답이 아닌 답도 종류마다 제 이름을 지킵니다.</p>
+            <p class="why">노드마다 전체 그림의 일부만 가지고 있습니다. 빈자리를 &#x27;아니다&#x27;로 읽으면, 모르는 지식이 틀린 답이 됩니다.</p>
+            <!-- registry:clauses:5 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell o"></i></span><span class="tally">조항 5개: 테스트됨 3개, 구조로 성립 1개, 남은 과제 1개</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span><span lang="en">absence is a well-formed answer, never an error</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">absent is distinguished from unavailable, rather than collapsing into an empty result</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+                <li><i class="cell s"></i><span><span lang="en">an id outside the caller's grants answers as unknown, and a named scope outside them is refused by name</span><span class="st">구조로 성립</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a destroyed id answers as destroyed, recording the act and never the content</span><span class="st">남은 과제</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:5 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-5-open-world-assumption-open-world-assumption">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+          </div>
+          <figure class="demo" data-demo="5" aria-label="읽기가 줄 수 있는 답의 종류">
+            <canvas class="route" aria-hidden="true"></canvas>
+            <div class="ask">
+              <div class="qs" role="group" aria-label="질문">
+                <button type="button" data-out="found" aria-pressed="false">billing-api는 어떤 데이터베이스를 쓰나요?<small>이 노드가 가진 관계</small></button>
+                <button type="button" data-out="notfound" aria-pressed="true">billing-api가 Kafka를 쓰나요?<small>이 노드에는 그렇다고 말하는 것이 없음</small></button>
+                <button type="button" data-out="unavail" data-route="팀 허브" aria-pressed="false">팀 허브에 payments에 대해 묻기<small>허브에 닿지 않음</small></button>
+                <button type="button" data-out="withheld" data-route="팀 허브" aria-pressed="false">팀 허브에 'payroll'에 대해 묻기<small>허브가 이 기기와 공유하지 않는 워크스페이스</small></button>
+                <button type="button" data-out="trunc" aria-pressed="false">billing-api에 대한 모든 것<small>한 페이지가 넘는 분량</small></button>
+                <button type="button" disabled>파기된 항목 열기<small>남은 과제: 그 행위를 밝히는 툼스톤</small></button>
+              </div>
+              <div class="ans" aria-live="polite">
+                <ul class="p-answers">
+                  <li><span class="kind">찾음</span><p>Postgres.</p><p class="sm">laptop이 나를 대신해 월요일 10:02에 말했고, 내가 콘솔에서 확인했습니다.</p></li>
+                  <li class="on"><span class="kind">찾지 못함</span><p>이 노드에는 그렇다고 말하는 것이 없습니다.</p><p class="sm">모른다는 뜻이지, 아니라는 뜻이 아닙니다. 다른 노드가 알 수도 있고, 나중의 항목이 그렇다고 말할 수도 있습니다.</p></li>
+                  <li><span class="kind">사용할 수 없음</span><p>허브가 응답하지 않았습니다.</p><p class="sm">빈 결과가 아닙니다. 로컬의 답은 여전히 쓸 수 있으니, 허브에 닿을 때 다시 물어보세요.</p></li>
+                  <li><span class="kind">보류됨</span><p>팀 허브는 'payroll'을 이 기기와 공유하지 않습니다.</p><p class="sm">워크스페이스를 직접 지정했으므로, 거부도 그 이름을 밝힙니다.</p></li>
+                  <li><span class="kind">잘림</span><p>57개 중 20개를 보여 줍니다.</p><p class="sm">나머지는 빠진 것이 아니라 생략된 것입니다. 질문을 좁히거나 다음 페이지를 요청하세요.</p></li>
+                </ul>
+              </div>
+            </div>
+            <p class="cap"><span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="5">a destroyed id answers as destroyed, recording the act and never the content</span></span></p>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="5">absence is a well-formed answer, never an error</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="5">absent is distinguished from unavailable, rather than collapsing into an empty result</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="5">each value of the answer alphabet stays its own - unavailable, uncomputable, withheld and truncated never collapse into not found</span></p>
+          </figure>
+        </article>
+        <article class="pr big" id="p6" aria-labelledby="t-p6">
+          <div class="pt">
+            <div class="ph"><span class="pn">P6</span><h3 id="t-p6">이견도 정보입니다.</h3></div>
+            <p class="line">출처끼리 충돌하고 신뢰로도 가릴 수 없으면, 답은 &#x27;이견 있음&#x27;이라고 말하고 양쪽을 모두 보관합니다.</p>
+            <p class="why">말없이 정해진 승자는 사람이 들여다봐야 할 바로 그 자리를 가립니다.</p>
+            <!-- registry:clauses:6 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">조항 3개: 테스트됨 2개, 남은 과제 1개</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span><span lang="en">a conflict that trust does not settle surfaces as contested instead of resolving silently</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a defeated assertion stays in the log and is reinstated by re-resolution</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a contradiction between relations is surfaced too</span><span class="st">남은 과제</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:6 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-6-conflict-is-information-contradiction-is-signal">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+          </div>
+          <figure class="demo" data-demo="6" aria-label="Redis가 무엇인지를 두고 두 기기의 말이 다름">
+            <canvas aria-hidden="true"></canvas>
+            <div class="rows"></div>
+            <div class="ctl"><button class="b" data-a="replay" type="button">처음부터 재생</button><button class="b" data-a="confirm" type="button">"Database"로 확인</button></div>
+            <p class="cap" aria-live="polite">두 번째 기기는 Cache라고 말합니다. 둘 다 에이전트라서 신뢰로는 가릴 수 없습니다. 답은 가장 최근 값을 보여 주고, 이견이 있다고 말합니다.</p>
+            <ul class="caps" hidden>
+              <li data-k="0">한 기기가 Redis는 Database라고 말합니다. 반대하는 것이 없으니 그것이 믿음입니다.</li>
+              <li data-k="1">두 번째 기기는 Cache라고 말합니다. 둘 다 에이전트라서 신뢰로는 가릴 수 없습니다. 답은 가장 최근 값을 보여 주고, 이견이 있다고 말합니다.</li>
+              <li data-k="2">콘솔에서 Database로 확인했습니다. 신뢰가 결론을 냈으므로 표시가 사라집니다. Cache라는 주장은 로그에 남고, 충돌은 정리 보고서에 남습니다.</li>
+            </ul>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="6">a conflict that trust does not settle surfaces as contested instead of resolving silently</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="6">a defeated assertion stays in the log and is reinstated by re-resolution</span></p>
+          </figure>
+        </article>
+        <article class="pr" id="p7" aria-labelledby="t-p7">
+          <div class="ph"><span class="pn">P7</span><h3 id="t-p7">지우지 말고 순위로 잊습니다.</h3></div>
+            <p class="line">오래된 지식은 검색에서 아래로 내려가야지, 로그에서 빠져서는 안 됩니다. 통합은 제안만 하고 아무것도 커밋하지 않습니다.</p>
+            <p class="why">주의력에는 한계가 있고 로그에는 없습니다. 잊는다는 것은 주의력을 쓰는 방식입니다.</p>
+          <figure class="scene" data-scene="7" aria-label="애니메이션: 지우지 말고 순위로 잊습니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">유휴</span> <span class="bc">노드가 쉬고 있을 때, 통합이 로그를 읽습니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">초안</span> <span class="bc">검토할 후보의 초안을 쓰되, 하나도 커밋하지 않습니다. 정본은 바뀌지 않습니다.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">순위</span> <span class="bc">오래된 지식은 검색에서 가라앉아야 하고, 로그는 모든 항목을 보관합니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="7">forgetting happens as retrieval demotion at idle, never as deletion</span></span></span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="7">consolidation generates candidates and commits none of them</span></p>
+          </figure>
+          <!-- registry:clauses:7 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 4개: 테스트됨 2개, 남은 과제 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">consolidation generates candidates and commits none of them</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a generated summary is never stored by the server</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">forgetting happens as retrieval demotion at idle, never as deletion</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">a consolidation output enters the log only as a gated candidate's derived, lowest-trust, lineage-bearing enrichment</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:7 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-7-forgetting-is-demotion-consolidation-is-re-projection-forgetting-as-demotion-consolidation-as-re-projection">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-shaped" aria-labelledby="h-shaped">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">2장 <span>온톨로지</span></p>
+          <h2 id="h-shaped">어떻게 모양을 갖추는가</h2>
+          <p class="thesis">작게 시작해서, 쓰면서 자라고, 일관성을 지키는 어휘.</p>
+        </div>
+        <!-- registry:chapter:2 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell s"></i></span><span><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:2 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p8" aria-labelledby="t-p8">
+          <div class="ph"><span class="pn">P8</span><h3 id="t-p8">이름 하나에 뜻 하나.</h3></div>
+            <p class="line">타입은 쉬운 말로 된 정의가 있어야 어휘에 들어오고, 한 번 쓴 설명은 무언가를 빠뜨렸다고 지워지지 않습니다.</p>
+            <p class="why">여러 도구의 에이전트가 같은 어휘를 읽습니다. 뜻이 둘인 이름은 아무도 모르게 그래프를 둘로 가릅니다.</p>
+          <figure class="scene" data-scene="8" aria-label="애니메이션: 이름 하나에 뜻 하나">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">정의 없음</span> <span class="bc">정의 없는 새 타입은 입구에서 거부됩니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">정의됨</span> <span class="bc">쉬운 말로 된 정의가 있으면 어휘에 들어옵니다.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">비워 둠</span> <span class="bc">이미 쓴 설명은 나중에 그것을 비워 둔 항목이 와도 남습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="8">a type cannot enter the vocabulary without a natural-language definition</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="8">a description already captured, an entity&#x27;s or a relation&#x27;s, is never erased by a later omission, and a blank description is an omission</span></p>
+          </figure>
+          <!-- registry:clauses:8 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">조항 3개: 테스트됨 2개, 남은 과제 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a type cannot enter the vocabulary without a natural-language definition</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a description already captured, an entity's or a relation's, is never erased by a later omission, and a blank description is an omission</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">a relation type reads its direction from its name, and relates_to is the one catch-all, treated as not yet classified</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:8 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-8-clarity---one-meaning-per-concept-clarity">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p9" aria-labelledby="t-p9">
+          <div class="ph"><span class="pn">P9</span><h3 id="t-p9">스스로 모순될 수 없는 어휘.</h3></div>
+            <p class="line">한 타입에 정의가 둘이면 이견 있음으로 드러나고, 두 번 정의된 이름은 그것을 더하려는 변경을 막습니다.</p>
+            <p class="why">데이터끼리는 서로 다를 수 있습니다. 그 데이터를 읽는 어휘는 그럴 수 없습니다.</p>
+          <figure class="scene" data-scene="9" aria-label="애니메이션: 스스로 모순될 수 없는 어휘">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">두 정의</span> <span class="bc">두 기기가 Service를 서로 다르게 정의합니다. 그 타입은 이견 있음으로 드러납니다.</span></li>
+            <li data-t="5"><span class="bn">2</span> <span class="bk">두 축</span> <span class="bc">한 제안이 member_of를 개체 타입으로 더하려 하는데, 그 이름은 이미 관계 타입입니다. 이름이 드러나고, 병합은 막힙니다.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">추론</span> <span class="bc">추론으로 끌어낸 모순이 다음입니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="9">subtype cycles and domain/range coherence are checked</span></span></span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="9">conflicting definitions of one type surface as contested</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="9">a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge</span></p>
+          </figure>
+          <!-- registry:clauses:9 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 4개: 테스트됨 2개, 남은 과제 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">conflicting definitions of one type surface as contested</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a name defined on both T-Box axes is surfaced, and blocks a tbox_change merge</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">subtype cycles and domain/range coherence are checked</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">inference rules are tested for non-derivation of contradictions</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:9 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-9-coherence---contradiction-free-inference-coherence">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p10" aria-labelledby="t-p10">
+          <div class="ph"><span class="pn">P10</span><h3 id="t-p10">고치지 말고 확장합니다.</h3></div>
+            <p class="line">내 어휘는 로그 안에서 자랍니다. 핵심 모델은 고정되어 있고, 그것을 바꿀 때는 마이그레이션이 함께 옵니다.</p>
+            <p class="why">워크스페이스마다 자기 것에 이름을 붙입니다. 그 일에 새 빌드가 필요해서는 안 됩니다.</p>
+          <figure class="scene" data-scene="10" aria-label="애니메이션: 고치지 말고 확장합니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="3.2"><span class="bn">1</span> <span class="bk">확장</span> <span class="bc">내 어휘는 로그를 통해 자랍니다. 새 타입은 항목으로 도착하고, 핵심 모델은 건드리지 않습니다.</span></li>
+            <li data-t="5.8"><span class="bn">2</span> <span class="bk">마이그레이션</span> <span class="bc">핵심 자체가 바뀔 때는 마이그레이션이 함께 오고, 예전의 모든 로그를 여전히 읽을 수 있습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="10">the domain vocabulary extends through the log without touching the core model</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="10">a change to the core model comes with a migration path</span></p>
+          </figure>
+          <!-- registry:clauses:10 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i></span><span class="tally">조항 2개: 테스트됨 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">the domain vocabulary extends through the log without touching the core model</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a change to the core model comes with a migration path</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:10 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-10-schema-open-to-extension-closed-to-modification-extendibility--open-closed">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p11" aria-labelledby="t-p11">
+          <div class="ph"><span class="pn">P11</span><h3 id="t-p11">스키마는 쓰임에서 드러나게 합니다.</h3></div>
+            <p class="line">메모는 타입 없이 들어옵니다. 함께 언급된 이름들은 맥락을 이루고, 그 맥락을 승격하면 내력을 밝힌 항목이 기록됩니다.</p>
+            <p class="why">좋은 분류 체계를 미리 설계할 수 있는 사람은 없습니다. 쓰임에서 끌어낸 스키마는 그것이 나온 일에 맞습니다.</p>
+          <figure class="scene" data-scene="11" aria-label="애니메이션: 스키마는 쓰임에서 드러나게 합니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">타입 없음</span> <span class="bc">메모는 이름만 있고 타입 없이 들어옵니다. 어떤 스키마도 입력을 막지 않습니다. 타입 없는 이름은 Concept입니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">함께 언급</span> <span class="bc">함께 언급된 이름들은 맥락을 이룹니다. 맥락은 구성원으로 식별되는 파생 뷰이며, 일반 관계와 나란히 있습니다.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">승격</span> <span class="bc">맥락을 승격하면 일반 항목이 기록됩니다. 그 항목은 구성원을 내력으로 밝히고 가장 낮은 신뢰에서 시작하며, 신뢰를 높이려면 관문을 거칩니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="11">type candidates are induced from repeated co-occurrence</span></span></span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="11">no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="11">second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="11">promoting a recurring context is an ordinary gated assertion that carries its lineage</span></p>
+          </figure>
+          <!-- registry:clauses:11 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 7개: 테스트됨 4개, 남은 과제 3개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">second-order structure is a derived view identified by its member set, coexisting with binary relations rather than replacing them</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">promoting a recurring context is an ordinary gated assertion that carries its lineage</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">the T-Box is scoped to the workspace - an all-workspaces read is a union of glossaries, not one glossary</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">type candidates are induced from repeated co-occurrence</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">the escape hatch is complete: Concept, relates_to and free-form properties</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">corroboration counts independent principals, not repetitions</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:11 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-11-minimal-ontological-commitment-schema-is-induced-minimal-commitment-induced-schema">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p12" aria-labelledby="t-p12">
+          <div class="ph"><span class="pn">P12</span><h3 id="t-p12">저장소에 묶이지 않습니다.</h3></div>
+            <p class="line">모델은 어떤 인코딩보다 위에서 정의됩니다. 저장소는 어댑터이고, 이미 한 번 교체되었습니다.</p>
+            <p class="why">저장 형식은 의미보다 빨리 바뀝니다. 지식은 데이터베이스가 바뀌어도 살아남아야 합니다.</p>
+          <figure class="scene" data-scene="12" aria-label="애니메이션: 저장소에 묶이지 않습니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="1.8"><span class="bn">1</span> <span class="bk">위에</span> <span class="bc">그래프는 어떤 저장 형식보다 위에서 정의됩니다.</span></li>
+            <li data-t="4.2"><span class="bn">2</span> <span class="bk">교체</span> <span class="bc">저장소는 이미 한 번, cozo에서 redb로 교체되었습니다. 그 위의 그래프는 바뀌지 않았습니다.</span></li>
+            <li data-t="6"><span class="bn">3</span> <span class="bk">경계</span> <span class="bc">저장소의 개념은 도메인 모델로 넘어올 수 없습니다. 크레이트 그래프가 그런 코드를 쓸 수 없게 합니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="12">a storage concept cannot reach the domain model</span></p>
+          </figure>
+          <!-- registry:clauses:12 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell s"></i></span><span class="tally">조항 1개: 구조로 성립 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell s"></i><span><span lang="en">a storage concept cannot reach the domain model</span><span class="st">구조로 성립</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:12 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-12-minimal-encoding-bias-minimal-encoding-bias">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p13" aria-labelledby="t-p13">
+          <div class="ph"><span class="pn">P13</span><h3 id="t-p13">무엇인가, 그리고 무엇을 하는가.</h3></div>
+            <p class="line">&#x27;Person&#x27;은 종류이고 &#x27;reviewer&#x27;는 한동안 맡는 역할입니다. 역할은 하위 타입이 아니라 관계여야 합니다.</p>
+            <p class="why">하위 타입이 된 역할은 끝날 수 없습니다. 그 사람이 검토를 그만둘 뿐, 사람이기를 그만두지는 않습니다.</p>
+          <figure class="scene" data-scene="13" aria-label="애니메이션: 무엇인가, 그리고 무엇을 하는가">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">역할</span> <span class="bc">검토는 한동안 하는 일이므로, 사람의 한 종류가 아니라 기간이 있는 관계로 그립니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="13">essence is distinguished from role, and a role cannot subsume an essence</span></span></span></li>
+            <li data-t="5"><span class="bn">2</span> <span class="bk">끝남</span> <span class="bc">역할이 끝나면 관계가 닫힙니다. 여전히 사람입니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="13">essence is distinguished from role, and a role cannot subsume an essence</span></span></span></li>
+            </ol>
+            
+          </figure>
+          <!-- registry:clauses:13 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell o"></i></span><span class="tally">조항 1개: 남은 과제 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell o"></i><span><span lang="en">essence is distinguished from role, and a role cannot subsume an essence</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:13 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-13-distinguishing-essence-from-role-rigidity---ontoclean">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-trust" aria-labelledby="h-trust">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">3장 <span>정체성과 신뢰</span></p>
+          <h2 id="h-trust">누가 말했고, 누가 보는가</h2>
+          <p class="thesis">움직이지 않는 이름, 하나의 로그에서 나오는 하나의 그래프, 그리고 받는 쪽이 정하는 신뢰.</p>
+        </div>
+        <!-- registry:chapter:3 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:3 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p14" aria-labelledby="t-p14">
+          <div class="ph"><span class="pn">P14</span><h3 id="t-p14">움직이지 않는 이름.</h3></div>
+            <p class="line">식별자는 내용에서 나오므로, 같은 항목은 어느 기기에서나 같은 id를 가지며, 병합된 뒤에도 id는 여전히 찾아집니다.</p>
+            <p class="why">어디에 저장되었는지에 따라 정해지는 id는 다른 곳으로 옮겨 가는 순간 깨집니다.</p>
+          <figure class="scene" data-scene="14" aria-label="애니메이션: 움직이지 않는 이름">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">같은 내용</span> <span class="bc">두 기기가 같은 메모를 씁니다. 각자 내용에서 id를 계산하므로, 둘 다 같은 id를 얻습니다.</span></li>
+            <li data-t="4"><span class="bn">2</span> <span class="bk">동기화</span> <span class="bc">동기화하면 항목 하나이고, 한 번만 셉니다.</span></li>
+            <li data-t="6.2"><span class="bn">3</span> <span class="bk">병합 뒤</span> <span class="bc">pg를 Postgres에 병합한 뒤에도 pg를 찾으면 Postgres로 전달되어 찾아집니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="14">identifiers are content-derived, collision-resistant and independent of notation</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="14">an identifier stays resolvable after the thing it names is merged away</span></p>
+          </figure>
+          <!-- registry:clauses:14 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i><i class="cell s"></i></span><span class="tally">조항 8개: 테스트됨 6개, 구조로 성립 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">identifiers are content-derived, collision-resistant and independent of notation</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">an identifier stays resolvable after the thing it names is merged away</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">one content counts once even when a re-keying leaves it under two ids</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">an identity or a signature, once made, verifies under every later build</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">every entity and observation id the system hands out is a dereferenceable supragnosis:// URI</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a proposal id is a dereferenceable supragnosis:// URI as well</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell s"></i><span><span lang="en">a field added to the identity, attestation-order, re-arrival-merge or signing functions is a compile error until it is classified</span><span class="st">구조로 성립</span></span></li>
+              <li><i class="cell s"></i><span><span lang="en">the wire envelope and the well-formedness check are forced the same way</span><span class="st">구조로 성립</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:14 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-14-stable-identifiers-for-everything-stable-identifiers">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p15" aria-labelledby="t-p15">
+          <div class="ph"><span class="pn">P15</span><h3 id="t-p15">하나를 두 이름으로 부를 때: 시스템의 일.</h3></div>
+            <p class="line">두 이름이 같은 것이라고 시스템이 제안합니다. 판정이 그것을 커밋하고, 분리로 되돌릴 수 있습니다.</p>
+            <p class="why">도구마다 자기 어휘로 말합니다. 모든 클라이언트에게 먼저 합의하라고 하면, 서로 연결되는 날은 오지 않습니다.</p>
+          <figure class="scene" data-scene="15" aria-label="애니메이션: 하나를 두 이름으로 부를 때: 시스템의 일">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">제안</span> <span class="bc">두 도구가 한 데이터베이스를 pg와 Postgres라고 부릅니다. 시스템은 둘이 같은 것이라고 제안하되, 커밋하지는 않습니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="15">top-band candidates merge automatically</span></span></span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">병합</span> <span class="bc">검토자의 판정이 둘을 병합합니다.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">분리</span> <span class="bc">분리는 새 제안입니다. 병합되면 둘을 다시 나누고, 병합 기록은 로그에 남습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="15">the substrate proposes identity candidates rather than leaving them to the operator</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="15">a proposed identity is committed by the gate, never by the generator</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="15">a merge and a split are both reversible</span></p>
+          </figure>
+          <!-- registry:clauses:15 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 6개: 테스트됨 4개, 남은 과제 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a merge and a split are both reversible</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">the substrate proposes identity candidates rather than leaving them to the operator</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a proposed identity is committed by the gate, never by the generator</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">resolution is scoped to the workspace - a merge joins entities of one workspace, and an all-workspaces read is the union of each workspace's resolution</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">top-band candidates merge automatically</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">identity across workspaces is expressed only through an explicit alignment assertion</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:15 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-15-identity-resolution-is-the-substrates-responsibility-resolution-is-substrates-job">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr big full" id="p16" aria-labelledby="t-p16">
+          <div class="pt">
+            <div class="ph"><span class="pn">P16</span><h3 id="t-p16">같은 로그, 같은 그래프.</h3></div>
+            <p class="line">어떤 순서로든, 어떤 경로로든, 중복이 있든 없든, 같은 항목을 가진 기기는 같은 그래프를 만듭니다.</p>
+            <p class="why">노트북, 서버, 허브는 네트워크가 허락하는 대로 아무 순서로나 동기화합니다. 합의가 그 순서에 기대서는 안 됩니다.</p>
+            <!-- registry:clauses:16 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">조항 4개: 테스트됨 4개</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span><span lang="en">one observation set converges to one state regardless of order, partitioning or duplication</span><span class="st">이름 붙은 테스트 8개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a query response is reproducible, and ties and truncation break on a stable key</span><span class="st">이름 붙은 테스트 7개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a response labels the surface that answered, so a retrieval aid is told apart from the convergence surface</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a terminal state is absorbing, so a conclusion is never overturned by a later verdict</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:16 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-16-topology-independent-convergence-topology-independent-convergence">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+          </div>
+          <figure class="demo" data-demo="16" aria-label="세 기기가 같은 항목 여섯 개를 서로 다른 순서로 받음">
+            <canvas class="bare" aria-hidden="true"></canvas>
+            <div class="ctl"><button class="b" data-a="shuffle" type="button">순서 섞기</button><button class="b" data-a="dup" type="button">하나를 두 번 보내기</button><button class="b" data-a="cut" type="button">허브를 끊었다가 잇기</button></div>
+            <p class="cap" aria-live="polite">세 기기가 같은 항목 여섯 개를 세 가지 순서로 받았고, 모두 같은 그래프를 계산했습니다.</p>
+            <ul class="caps" hidden>
+              <li data-k="plain">항목 여섯 개가 세 기기에 각자 다른 순서로 갑니다.</li>
+              <li data-k="dup">desktop이 항목 하나를 두 번 받습니다.</li>
+              <li data-k="cut">도중에 허브의 연결이 끊깁니다. 나머지 둘은 계속 받습니다.</li>
+              <li data-k="done">세 가지 순서({orders}), 하나의 그래프: 모든 기기의 계산 결과가 {fp}입니다.</li>
+              <li data-k="done-dup">중복은 아무것도 바꾸지 않았습니다.</li>
+              <li data-k="done-cut">연결이 돌아오자 허브가 따라잡았고, 같은 결과에 이릅니다.</li>
+            </ul>
+            <p class="shows">항목: <span lang="en">1 billing-api is an App / 2 Postgres is a Database / 3 billing-api uses Postgres / 4 webhooks is a Feature / 5 billing-api sends webhooks / 6 webhooks use idempotency keys, a Pattern</span></p>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="16">one observation set converges to one state regardless of order, partitioning or duplication</span></p>
+          </figure>
+        </article>
+        <article class="pr" id="p17" aria-labelledby="t-p17">
+          <div class="ph"><span class="pn">P17</span><h3 id="t-p17">공유는 내가 정합니다.</h3></div>
+            <p class="line">워크스페이스를 허락하기 전에는 아무것도 나가지 않습니다. 비밀처럼 생긴 텍스트는 입구에서 거부됩니다.</p>
+            <p class="why">지식을 쓴 사람이 누가 그것을 볼지 정합니다. 모든 것을 공유하는 기본값은 되돌릴 수 없습니다.</p>
+          <figure class="scene" data-scene="17" aria-label="애니메이션: 공유는 내가 정합니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">동기화</span> <span class="bc">허락한 워크스페이스만 옮겨 갑니다. 나머지는 내 기기에 남습니다.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">oss 허락</span> <span class="bc">다른 워크스페이스를 허락하면, 다음 동기화부터 그것도 옮겨 갑니다.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">비밀</span> <span class="bc">자격 증명처럼 생긴 텍스트는 입구에서 거부되고, 거부 메시지는 그 텍스트를 되풀이하지 않습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="17">sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="17">credential-shaped text is refused at every local ingest door, and the refusal does not repeat it</span></p>
+          </figure>
+          <!-- registry:clauses:17 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">조항 6개: 테스트됨 6개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">sharing is opt-in per workspace and enforced at the sync boundary, federated retrieval included</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">the viewer socket and the sync bind admit only the local principal or an authenticated peer</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">the MCP daemon admits only the local principal - loopback TCP is host-local, not single-user</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a workspace boundary is not crossed by a derived suggestion either</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">credential-shaped text is refused at every local ingest door, and the refusal does not repeat it</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a remote search over sync reaches only a workspace the two nodes share: the query is not sent for any other, and the hub refuses one it does not share</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:17 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-17-knowledge-sovereignty---selective-sharing-knowledge-sovereignty">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr big" id="p18" aria-labelledby="t-p18">
+          <div class="pt">
+            <div class="ph"><span class="pn">P18</span><h3 id="t-p18">모든 쓰기는 틀릴 수 있습니다.</h3></div>
+            <p class="line">보낸 쪽이 주장하는 신뢰는 보낸 그대로 보관하고, 받는 쪽이 평가합니다. 서명은 누가 보냈는지를 증명할 뿐, 그것이 참이라는 증명은 아닙니다.</p>
+            <p class="why">에이전트의 메모리를 오염시키는 것은 공격입니다. 방어는 보낸 쪽이 선언하는 신뢰가 아니라, 받는 쪽이 계산하는 신뢰입니다.</p>
+            <!-- registry:clauses:18 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 6개: 테스트됨 4개, 남은 과제 2개</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span><span lang="en">a claimed tier is the receiver's to evaluate, and no wire claim or agent verdict can mint a human's direct act</span><span class="st">이름 붙은 테스트 6개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">the reserved surface-marker namespace is refused at every local ingest door</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">origin is provable and tampering detectable, and a signature is not mistaken for well-formedness</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">untrusted text never becomes markup in the console that reviews it</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">derived assertions without lineage are quarantined, retrieval is trust-weighted, and contamination can be traced back and cleaned</span><span class="st">남은 과제</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a replicated verdict marker is evaluated against the canon policy, not honored as sent</span><span class="st">남은 과제</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:18 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-18-writes-are-an-attack-surface-writes-are-an-attack-surface">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+          </div>
+          <figure class="demo" data-demo="18" aria-label="받는 노드가 보낸 쪽이 주장하는 신뢰를 평가함">
+            <div class="ctl top"><button class="b on" data-a="claim" type="button" aria-pressed="true">주장만 있을 때</button><button class="b" data-a="verdict" type="button" aria-pressed="false">사람의 판정이 있을 때</button></div>
+            <canvas aria-hidden="true"></canvas>
+            <div class="rows"></div>
+            <p class="cap" aria-live="polite">내 노드는 감사 기록을 위해 주장을 보낸 그대로 보관하고, 호스트 서명으로 평가합니다. 서명은 어느 기기가 보냈는지를 증명할 뿐, 사람이 확인했다는 증명은 아닙니다.</p>
+            <ul class="caps" hidden>
+              <li data-k="claim">내 노드는 감사 기록을 위해 주장을 보낸 그대로 보관하고, 호스트 서명으로 평가합니다. 서명은 어느 기기가 보냈는지를 증명할 뿐, 사람이 확인했다는 증명은 아닙니다.</li>
+              <li data-k="verdict">이번에는 신뢰가 사람이 콘솔에서 내린 판정에서 오고, 로그는 그 판정이 어디서 내려졌는지를 기록합니다. 그것을 다시 재생하는 모든 노드가 사람이 확인으로 셉니다. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="18">a replicated verdict marker is evaluated against the canon policy, not honored as sent</span></span></li>
+            </ul>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="18">a claimed tier is the receiver&#x27;s to evaluate, and no wire claim or agent verdict can mint a human&#x27;s direct act</span></p>
+          </figure>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-built" aria-labelledby="h-built">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">4장 <span>시스템</span></p>
+          <h2 id="h-built">어떻게 만드는가</h2>
+          <p class="thesis">결정은 코드가 하고, 모델은 돕습니다. 표면은 작게, 따로 돌볼 것은 없게.</p>
+        </div>
+        <!-- registry:chapter:4 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span><i class="cell s"></i><i class="cell s"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span></div>
+        <!-- /registry:chapter:4 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p19" aria-labelledby="t-p19">
+          <div class="ph"><span class="pn">P19</span><h3 id="t-p19">결정론적 핵심, 확률적 가장자리.</h3></div>
+            <p class="line">모델은 검색을 넓히고 제안의 초안을 씁니다. 무엇을 커밋할지는 매번 같은 답을 내는 코드가 정합니다.</p>
+            <p class="why">모델은 바뀔 수 있고, 없을 수 있고, 틀릴 수 있습니다. 그래프는 그 어느 것에도 기대서는 안 됩니다.</p>
+          <figure class="scene" data-scene="19" aria-label="애니메이션: 결정론적 핵심, 확률적 가장자리">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">넓히기</span> <span class="bc">모델이 검색을 넓혀, 질문과 겹치는 단어가 하나도 없는 메모까지 찾아냅니다.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">모델 없음</span> <span class="bc">모델이 없으면 검색은 키워드로 물러서고, 그렇다고 알립니다. 쓰기는 모델을 기다리지 않습니다.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">제안</span> <span class="bc">유사도는 두 이름이 같은 것이라고 제안할 수 있습니다. 커밋은 판정만이 합니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="19">a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="19">embedding similarity only generates identity candidates; a merge commits only through a verdict</span></p>
+          </figure>
+          <!-- registry:clauses:19 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i></span><span class="tally">조항 4개: 테스트됨 3개, 남은 과제 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a vector the store accepted is a vector the store returns - a dropped retrieval aid must not be reported as a backend that has none</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">embedding similarity only generates identity candidates; a merge commits only through a verdict</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">a probabilistic component's output enters as an assertion carrying its confidence, never as fact</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:19 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-19-deterministic-core-probabilistic-edge-deterministic-core-probabilistic-edge">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p20" aria-labelledby="t-p20">
+          <div class="ph"><span class="pn">P20</span><h3 id="t-p20">IO 없는 핵심.</h3></div>
+            <p class="line">도메인 로직은 디스크도 네트워크도 건드리지 않습니다. 저장소, 동기화, 모델은 바깥에서 끼워 넣습니다.</p>
+            <p class="why">메모리만으로 도는 규칙은 정확하게 테스트할 수 있고, 어떤 어댑터든 교체할 수 있습니다.</p>
+          <figure class="scene" data-scene="20" aria-label="애니메이션: IO 없는 핵심">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.8"><span class="bn">1</span> <span class="bk">안쪽으로</span> <span class="bc">모든 의존성은 안쪽을 향합니다. 핵심은 아무것에도 의존하지 않습니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">나갈 길 없음</span> <span class="bc">핵심에서 저장소로 나가는 화살표는 쓸 수 없습니다. 핵심에는 호출할 IO 의존성이 없습니다.</span></li>
+            <li data-t="6.4"><span class="bn">3</span> <span class="bk">메모리에서</span> <span class="bc">그래서 엔진의 모든 로직이 인메모리 어댑터 위에서 돌고, 그렇게 규칙을 정확하게 테스트합니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="20">dependencies point inward only</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="20">all engine logic runs against an in-memory adapter</span></p>
+          </figure>
+          <!-- registry:clauses:20 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell s"></i><i class="cell s"></i></span><span class="tally">조항 2개: 구조로 성립 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell s"></i><span><span lang="en">dependencies point inward only</span><span class="st">구조로 성립</span></span></li>
+              <li><i class="cell s"></i><span><span lang="en">all engine logic runs against an in-memory adapter</span><span class="st">구조로 성립</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:20 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-20-purity-of-the-domain-hexagonal-purity">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p21" aria-labelledby="t-p21">
+          <div class="ph"><span class="pn">P21</span><h3 id="t-p21">모델을 위한 작은 표면.</h3></div>
+            <p class="line">도구 열세 개, 쿼리 언어는 없습니다. 실패한 호출은 고치는 방법을 알려 줍니다.</p>
+            <p class="why">호출하는 쪽은 곁에 사람이 없는 모델입니다. 도구가 적고 분명할수록 더 자주 올바르게 쓰입니다.</p>
+          <figure class="scene" data-scene="21" aria-label="애니메이션: 모델을 위한 작은 표면">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.8"><span class="bn">1</span> <span class="bk">열셋</span> <span class="bc">observe부터 workspace_map까지, 도구 열세 개. <span class="ow"><span class="owed">남은 과제</span> <span lang="en" data-owed="21">the surface stays at one tool per recurring intent</span></span></span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">호출</span> <span class="bc">모델이 하려는 일에 맞는 도구를 호출합니다.</span></li>
+            <li data-t="5.8"><span class="bn">3</span> <span class="bk">실수</span> <span class="bc">실패한 호출은 무엇이 틀렸고 대신 어떻게 호출해야 하는지 알려 줍니다. 여기서는 이 노드에 없는 id와, 진짜 id를 어디서 얻는지를 알려 줍니다.</span></li>
+            <li data-t="7.2"><span class="bn">4</span> <span class="bk">쿼리?</span> <span class="bc">그대로 전달할 쿼리 언어가 없으므로, 쿼리 언어로 쓴 질의는 갈 곳이 없습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="21">a failure tells the caller how to correct itself, since the caller is a model with no human beside it</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="21">no query-language passthrough exists; the pinned tool list would show one</span></p>
+          </figure>
+          <!-- registry:clauses:21 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 4개: 테스트됨 2개, 남은 과제 2개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a failure tells the caller how to correct itself, since the caller is a model with no human beside it</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">no query-language passthrough exists; the pinned tool list would show one</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">the surface stays at one tool per recurring intent</span><span class="st">남은 과제</span></span></li>
+              <li><i class="cell o"></i><span><span lang="en">long-running work is non-blocking, and mediation asks through elicitation</span><span class="st">남은 과제</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:21 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-21-a-narrow-clear-surface-for-the-llm-narrow-llm-legible-surface">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+        <article class="pr" id="p22" aria-labelledby="t-p22">
+          <div class="ph"><span class="pn">P22</span><h3 id="t-p22">부산물로 쌓이는 지식.</h3></div>
+            <p class="line">커밋한 뒤, 에이전트에게 그 뒤에 있는 결정을 묻습니다. 새 세션은 워크스페이스에 무엇이 있는지 알고 시작합니다.</p>
+            <p class="why">지식을 보관하는 일이 따로 해야 하는 일이 되면 아무도 하지 않고, 시스템은 죽습니다.</p>
+          <figure class="scene" data-scene="22" aria-label="애니메이션: 부산물로 쌓이는 지식">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.6"><span class="bn">1</span> <span class="bk">커밋</span> <span class="bc">커밋합니다. 훅이 에이전트에게, 이 커밋이 diff에 드러나지 않는 결정을 내렸는지 묻습니다.</span></li>
+            <li data-t="4.6"><span class="bn">2</span> <span class="bk">답</span> <span class="bc">에이전트는 그 결정을 커밋을 가리키는 관찰로 기록합니다. 내린 결정이 없으면 아무것도 기록하지 않습니다.</span></li>
+            <li data-t="6.8"><span class="bn">3</span> <span class="bk">다음 세션</span> <span class="bc">다음 세션은 워크스페이스에 무엇이 있는지 알고 시작하며, 아무도 그것을 따로 정리하지 않습니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="22">a commit the agent made asks it for the decision behind the change, and a session starts knowing what the workspace holds, with the person asking for neither</span></p>
+          </figure>
+          <!-- registry:clauses:22 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i></span><span class="tally">조항 3개: 테스트됨 3개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a commit the agent made asks it for the decision behind the change, and a session starts knowing what the workspace holds, with the person asking for neither</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">curation surfaces as decisions where the person reads, never as a document to maintain</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">observe has minimal friction: free text alone is an observation</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:22 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-22-knowledge-management-is-a-by-product-of-work-knowledge-as-a-by-product">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-canon" aria-labelledby="h-canon">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">5장 <span>거버넌스</span></p>
+          <h2 id="h-canon">무엇이 정본이 되는가</h2>
+          <p class="thesis">쓰기는 자유롭습니다. 신뢰는 판정이 줍니다.</p>
+        </div>
+        <!-- registry:chapter:5 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell p"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span></div>
+        <!-- /registry:chapter:5 -->
+      </header>
+      <div class="prs">
+        <article class="pr big" id="p23" aria-labelledby="t-p23">
+          <div class="pt">
+            <div class="ph"><span class="pn">P23</span><h3 id="t-p23">정본으로 가는 관문.</h3></div>
+            <p class="line">무엇이든 쓸 수 있습니다. 무엇을 신뢰할지는 제안에 대한 판정만이 바꾸고, 제안만으로는 아무것도 바뀌지 않습니다.</p>
+            <p class="why">자유로운 쓰기와 신중한 승격은 서로 반대로 당깁니다. 관문을 승격에만 두면 둘 다 지킬 수 있습니다.</p>
+            <!-- registry:clauses:23 -->
+            <details class="clauses">
+              <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell p"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i><i class="cell o"></i></span><span class="tally">조항 14개: 테스트됨 9개, 남은 과제 5개</span></summary>
+              <ul class="cl">
+                <li><i class="cell t"></i><span><span lang="en">a proposal is itself an observation, and its state is a deterministic fold with merge absorbing</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">no merge without a diff: what a verdict would overturn is computed before it is cast</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">blocking checks are enforced by the fold, and reach the same conclusion on every node</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a merge the fold calls blocked has no commit effect - the grant fold and the state fold agree</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">the write surface refuses a proposal the fold could never resolve</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a merged verdict has the commit effect its kind promises</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a recall verdict is not delegable: a recall merge cast anywhere but the human console decides nothing, and the agent surface refuses to cast one</span><span class="st">이름 붙은 테스트 2개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">no proposal state blocks or delays an observe</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+                <li><i class="cell t"></i><span><span lang="en">a rejection is not a negation, and no verdict deletes an assertion</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+                <li><i class="cell p"></i><span><span lang="en">self-attestation is computed from the proposer and reviewer</span><span class="st">남은 과제, 오늘의 동작을 테스트 1개가 고정</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a reviewer is shown the informative checks - blast radius and the payload's trust profile</span><span class="st">남은 과제</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">every proposal kind the surface accepts has a commit effect</span><span class="st">남은 과제</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a verdict binds to the base it reviewed, and a stale or withdrawn proposal cannot merge</span><span class="st">남은 과제</span></span></li>
+                <li><i class="cell o"></i><span><span lang="en">a T-Box change passes the gate - a tbox_change merge defines the type - and direct define_type is the solo-exception shortcut</span><span class="st">남은 과제</span></span></li>
+              </ul>
+            </details>
+            <!-- /registry:clauses:23 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-23-gate-to-canon-gate-to-canon">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+          </div>
+          <figure class="demo" data-demo="23" aria-label="병합 제안과 그에 대한 판정">
+            <canvas aria-hidden="true"></canvas>
+            <div class="counters"><div><b data-k="log">7</b>로그의 항목</div><div><b data-k="canon">0</b>정본의 변경</div></div>
+            <div class="ctl"><button class="b" data-a="propose" type="button">병합 제안</button><button class="b" data-a="note" type="button">그동안 메모 쓰기</button><button class="b" data-a="merge" type="button">병합</button><button class="b" data-a="reject" type="button">거절</button><button class="b" data-a="reset" type="button">처음부터</button></div>
+            <p class="cap" aria-live="polite">제안은 로그의 항목 하나이고, 정본은 바뀌지 않았습니다. 누가 결정하기 전에, diff가 병합이 무엇을 옮길지 보여 줍니다. 관계 하나를 옮기고, 뒤집히는 믿음은 없습니다.</p>
+            <ul class="caps" hidden>
+              <li data-k="base">한 데이터베이스에 이름이 둘. 아직 아무것도 제안되지 않았습니다.</li>
+              <li data-k="proposed">제안은 로그의 항목 하나이고, 정본은 바뀌지 않았습니다. 누가 결정하기 전에, diff가 병합이 무엇을 옮길지 보여 줍니다. 관계 하나를 옮기고, 뒤집히는 믿음은 없습니다.</li>
+              <li data-k="note">제안이 기다리는 동안 orders 서비스에 대한 메모가 바로 기록되었습니다. 어떤 제안도 쓰기를 막지 않습니다.</li>
+              <li data-k="merge">판정이 커밋됩니다. 이제 pg는 Postgres로 전달되고, 예전 id도 여전히 찾아집니다.</li>
+              <li data-k="reject">거절되었고, 지워진 것은 없습니다. 두 이름과 모든 항목이 남습니다. 거절은 부정이 아닙니다.</li>
+            </ul>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="23">no merge without a diff: what a verdict would overturn is computed before it is cast</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="23">no proposal state blocks or delays an observe</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="23">a merged verdict has the commit effect its kind promises</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="23">a rejection is not a negation, and no verdict deletes an assertion</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="14">P14: an identifier stays resolvable after the thing it names is merged away</span></p>
+          </figure>
+        </article>
+      </div>
+    </section>
+    <section class="chap wrap" id="ch-ops" aria-labelledby="h-ops">
+      <header class="chap-head">
+        <div>
+          <p class="eyebrow">6장 <span>운영</span></p>
+          <h2 id="h-ops">일부가 고장 날 때</h2>
+          <p class="thesis">계속 서비스하고, 무엇이 꺼졌는지 말하고, 서비스하면 오해를 낳을 때만 거부합니다.</p>
+        </div>
+        <!-- registry:chapter:6 -->
+        <div class="mini" aria-hidden="true"><span><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span></div>
+        <!-- /registry:chapter:6 -->
+      </header>
+      <div class="prs">
+        <article class="pr" id="p24" aria-labelledby="t-p24">
+          <div class="ph"><span class="pn">P24</span><h3 id="t-p24">줄어들 때는 크게 알립니다.</h3></div>
+            <p class="line">한 부분이 시작하지 못하면, 나머지는 계속 서비스하면서 무엇이 꺼졌는지 말합니다. 거부는 계속하는 쪽이 더 나쁠 때만 합니다.</p>
+            <p class="why">오타 하나로 시작하지 않는 서버는 사람들이 업그레이드를 두려워하게 만들고, 아무도 업그레이드하지 않는 서버는 고쳐지지 않게 됩니다.</p>
+          <figure class="scene" data-scene="24" aria-label="애니메이션: 줄어들 때는 크게 알립니다">
+            <canvas aria-hidden="true"></canvas>
+            <ol class="beats">
+            <li data-t="2.4"><span class="bn">1</span> <span class="bk">모델 없음</span> <span class="bc">검색 모델이 없습니다. 의미 검색은 꺼지고, 키워드 검색은 계속 돌며, 노드가 그렇다고 알립니다.</span></li>
+            <li data-t="4.4"><span class="bn">2</span> <span class="bk">허브 끊김</span> <span class="bc">허브에 닿을 수 없습니다. 동기화는 꺼지고, 모든 로컬 읽기는 계속 되며, sync_status가 무엇을 바꿔야 하는지 알려 줍니다.</span></li>
+            <li data-t="6.6"><span class="bn">3</span> <span class="bk">모르는 키</span> <span class="bc">이 빌드가 모르는 설정이 있으면 시작을 거부합니다. 그러지 않으면 철자가 틀린 키가 아무 말 없이 아무 일도 하지 않기 때문입니다. TLS 없는 공개 주소도 거부합니다.</span></li>
+            </ol>
+            <p class="shows">보여 주는 조항: <span lang="en" data-clause="24">a subsystem that cannot come up leaves the node serving, and says what it disabled</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="24">the workaround reaches the operator&#x27;s own surface, not only a startup log</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="24">refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written</span><span class="sep" aria-hidden="true"> / </span><span lang="en" data-clause="19">P19: a failing probabilistic edge degrades and never blocks a write, and says so rather than degrading silently</span></p>
+          </figure>
+          <!-- registry:clauses:24 -->
+          <details class="clauses">
+            <summary><span class="bar" aria-hidden="true"><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell t"></i><i class="cell s"></i></span><span class="tally">조항 6개: 테스트됨 5개, 구조로 성립 1개</span></summary>
+            <ul class="cl">
+              <li><i class="cell t"></i><span><span lang="en">a subsystem that cannot come up leaves the node serving, and says what it disabled</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">the workaround reaches the operator's own surface, not only a startup log</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">a workaround narrows without asking only toward sharing less, never toward more</span><span class="st">이름 붙은 테스트 3개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written</span><span class="st">이름 붙은 테스트 4개로 검사</span></span></li>
+              <li><i class="cell t"></i><span><span lang="en">two conflicting settings resolve by a stated precedence that names what it ignored</span><span class="st">이름 붙은 테스트 1개로 검사</span></span></li>
+              <li><i class="cell s"></i><span><span lang="en">a workaround applies to the running state and never rewrites the operator's file</span><span class="st">구조로 성립</span></span></li>
+            </ul>
+          </details>
+          <!-- /registry:clauses:24 -->
+            <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md#principle-24-degrade-loudly-refuse-only-when-proceeding-is-worse-operational-posture">규범 원문</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">각 조항을 검사하는 방법</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="tensions wrap" id="tensions" aria-labelledby="ten-title">
+      <p class="eyebrow">긴장 관계</p>
+      <h2 id="ten-title">두 원칙이 서로 반대로 당길 때.</h2>
+      <p class="thesis">원칙은 서로 부딪칩니다. 부딪칠 때마다 정해 둔 결론이 있습니다. 결론을 뒷받침할 장치가 아직 없는 곳에서는 신중한 쪽이 이깁니다. 아무것도 자동으로 지우거나, 강등하거나, 병합하지 않습니다.</p>
+      <canvas class="tmap" aria-hidden="true"></canvas>
+      <ol class="tlist">
+        <li data-a="11 22" data-b="8 9" data-rests="P11: no schema blocks ingest: free text alone is an observation, an untyped entity is a Concept, and an undefined kind is kept as written"><button type="button" aria-pressed="false"><span class="vs">P11 + P22 vs P8 + P9</span> <span class="tn">느슨한 입력 대 분명한 스키마</span></button><p class="win">먼저 받아들이고, 다듬을 길을 남겨 둡니다. 들어오지 않은 지식은 다듬을 수도 없습니다.</p></li>
+        <li data-a="22" data-b="18" data-rests="P18: derived assertions without lineage are quarantined, retrieval is trust-weighted, and contamination can be traced back and cleaned" data-owed><button type="button" aria-pressed="false"><span class="vs">P22 vs P18</span> <span class="tn">느슨한 입력 대 오염</span> <em>남은 과제</em></button><p class="win">입력을 막지 않습니다. 수상한 지식도 들어오되 가장 낮은 등급에 둡니다. 잠긴 문이 아니라 꼬리표입니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 격리 등급이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="3 6" data-b="17" data-rests="P3: a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest" data-owed><button type="button" aria-pressed="false"><span class="vs">P3 + P6 vs P17</span> <span class="tn">모두 보관 대 개인정보</span> <em>남은 과제</em></button><p class="win">개인정보가 이깁니다. 파기 요구는 원칙 3의 유일한 예외이고, 툼스톤을 남깁니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 툼스톤이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="3" data-b="7" data-rests="P7: forgetting happens as retrieval demotion at idle, never as deletion" data-owed><button type="button" aria-pressed="false"><span class="vs">P3 vs P7</span> <span class="tn">모두 보관 대 망각</span> <em>남은 과제</em></button><p class="win">충돌이 아닙니다. 로그는 영원히 보관하고 검색에는 한계가 있습니다. 잊는다는 것은 저장 공간이 아니라 주의력을 쓰는 일입니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 검색 강등이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="15" data-b="" data-side="신중함" data-rests="P15: top-band candidates merge automatically" data-owed><button type="button" aria-pressed="false"><span class="vs">P15</span> <span class="tn">적극적 식별 대 신중함</span> <em>남은 과제</em></button><p class="win">기본은 신중함입니다. 확신 구간에서만 자동으로 병합하고, 확신이 없으면 후보를 제안합니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 자동 병합 구간이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="21" data-b="" data-side="표현력" data-rests="P21: the surface stays at one tool per recurring intent" data-owed><button type="button" aria-pressed="false"><span class="vs">P21</span> <span class="tn">작은 표면 대 표현력</span> <em>남은 과제</em></button><p class="win">기본은 작게입니다. 먼저 있는 도구를 조합하고, 같은 패턴이 되풀이될 때만 도구로 승격합니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인, 반복되는 의도마다 도구 하나로 표면이 유지되는지 보는 검사가 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="19" data-b="" data-side="검색 품질" data-rests="P19: embedding similarity only generates identity candidates; a merge commits only through a verdict"><button type="button" aria-pressed="false"><span class="vs">P19</span> <span class="tn">결정론적 핵심 대 검색 품질</span></button><p class="win">모델은 검색을 넓힐 뿐입니다. 무엇을 커밋할지는 결정론적으로 남습니다.</p></li>
+        <li data-a="24" data-b="" data-side="빠른 실패" data-rests="P24: refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written"><button type="button" aria-pressed="false"><span class="vs">P24</span> <span class="tn">계속 서비스 대 빠른 실패</span></button><p class="win">크게 알리며 줄어듭니다. 계속하면 틀린 답, 허가되지 않은 표면, 적힌 것과 다른 설정을 내보내게 될 때만 거부합니다.</p></li>
+        <li data-a="23" data-b="22" data-rests="P23: no proposal state blocks or delays an observe"><button type="button" aria-pressed="true"><span class="vs">P23 vs P22</span> <span class="tn">관문 대 낮은 마찰</span></button><p class="win">관문은 쓰기가 아니라 승격에만 있습니다. 검토가 밀려 있어도 지식은 존재하고, 낮은 등급에서 돌아다닙니다.</p></li>
+        <li data-a="23" data-b="" data-side="검토자의 주의력" data-rests="P23: a reviewer is shown the informative checks - blast radius and the payload&#x27;s trust profile" data-owed><button type="button" aria-pressed="false"><span class="vs">P23</span> <span class="tn">꼼꼼한 검토 대 검토자의 주의력</span> <em>남은 과제</em></button><p class="win">대부분은 자동입니다. 새로운 모순, 영향이 크거나 구조를 바꾸는 변경, 그리고 회수만 사람에게 갑니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인, 검토를 나누어 보내는 검사가 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="11" data-b="23" data-rests="P23: a T-Box change passes the gate - a tbox_change merge defines the type - and direct define_type is the solo-exception shortcut" data-owed><button type="button" aria-pressed="false"><span class="vs">P11 vs P23</span> <span class="tn">타입 승격 대 관문</span> <em>남은 과제</em></button><p class="win">관문이 곧 행위입니다. 병합된 타입 변경이 타입을 정의하고, 직접 정의하는 것은 혼자 일할 때의 지름길입니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 타입 변경의 관문이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="23" data-b="3 17" data-rests="P3: a destruction demand leaves an absorbing tombstone that propagates and refuses re-ingest" data-owed><button type="button" aria-pressed="false"><span class="vs">P23 vs P3 + P17</span> <span class="tn">최종 판정 대 파기 요구</span> <em>남은 과제</em></button><p class="win">파기가 이깁니다. 파기는 관문을 거치지 않고, 파기된 것에 기댄 결정은 그 효과와 함께 되돌려집니다. 행동하기 전에 어떤 결정이 무너지는지 보여 줍니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인 도려내기가 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="3 15" data-b="23" data-rests="P15: a merge and a split are both reversible|P16: a terminal state is absorbing, so a conclusion is never overturned by a later verdict"><button type="button" aria-pressed="false"><span class="vs">P3 + P15 vs P23</span> <span class="tn">병합 되돌리기 대 최종 병합</span></button><p class="win">둘 다 지켜집니다. 분리는 새 제안입니다. 병합은 로그에 남고, 전달만 사라집니다.</p></li>
+        <li data-a="5" data-b="17" data-rests="P5: an id outside the caller&#x27;s grants answers as unknown, and a named scope outside them is refused by name"><button type="button" aria-pressed="false"><span class="vs">P5 vs P17</span> <span class="tn">정직한 부재 대 있는 것 숨기기</span></button><p class="win">내 권한 밖의 id는 거부되는 대신 모르는 것으로 답합니다. 거부는 직접 지정한 범위에만 합니다.</p></li>
+        <li data-a="21" data-b="18" data-rests="P21: long-running work is non-blocking, and mediation asks through elicitation" data-owed><button type="button" aria-pressed="false"><span class="vs">P21 vs P18</span> <span class="tn">사람에게 묻기 대 받는 쪽이 평가하는 신뢰</span> <em>남은 과제</em></button><p class="win">채널은 질문을 나르고, 서명은 답을 나릅니다. 답만으로는 에이전트의 상한을 넘는 것을 아무것도 주지 않습니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인, elicitation으로 사람에게 묻는 기능이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+        <li data-a="18 24" data-b="" data-side="비례" data-rests="P24: refusal is reserved for proceeding being worse: a wrong answer, an unauthorized surface, or a configuration other than the one written"><button type="button" aria-pressed="false"><span class="vs">P18 + P24</span> <span class="tn">보증 대 비례</span></button><p class="win">지금 사람이 겪는 일을 지킵니다. 아직 아무도 겪지 않는 위협, 사고, 릴리즈에 대한 방어는 짓지 않고 남은 과제로 적어 둡니다. 비밀이나 공유하지 않은 지식이 새지 않게 막는 장치는 예외이고, 작게 짓습니다.</p></li>
+        <li data-a="16" data-b="18" data-rests="P18: a replicated verdict marker is evaluated against the canon policy, not honored as sent" data-owed><button type="button" aria-pressed="false"><span class="vs">P16 vs P18</span> <span class="tn">하나의 정본 대 노드마다 평가하는 신뢰</span> <em>남은 과제</em></button><p class="win">충돌이 아닙니다. 평가는 항목에만 기대고 정책은 로그에 있으므로, 하나의 로그는 하나의 정본을 냅니다. <span class="ow"><span class="owed">남은 과제</span> 이 결론을 뒷받침할 장치인, 복제된 판정 표시를 정본 정책에 비추어 평가하는 기능이 아직 없으므로, 신중한 쪽이 이깁니다.</span></p></li>
+      </ol>
+    </section>
+
+    <section class="held wrap" id="how-held" aria-labelledby="held-title">
+      <p class="eyebrow">방법</p>
+      <h2 id="held-title">원칙을 지키는 방법.</h2>
+      <p class="thesis">원칙은 여러 조건의 논리곱이므로 조항마다 검사합니다. 모든 조항은 네 가지 상태 중 하나를 밝히며, 아무 상태도 밝히지 않은 조항이 있거나 조항이 지목한 테스트가 더는 돌지 않으면 빌드가 실패합니다.</p>
+      <div class="p-ledger">
+        <!-- registry:ledger -->
+        <div class="sky" role="group" aria-label="원칙별 조항">
+          <div class="cols">
+            <div class="grp" data-n="7">
+              <a class="col" href="#p1" data-p="1" aria-label="P1, 조항 5개: 테스트됨 4개, 구조로 성립 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span></a>
+              <a class="col" href="#p2" data-p="2" aria-label="P2, 조항 5개: 테스트됨 5개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p3" data-p="3" aria-label="P3, 조항 6개: 테스트됨 5개, 남은 과제 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p4" data-p="4" aria-label="P4, 조항 2개: 테스트됨 1개, 남은 과제 1개"><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p5" data-p="5" aria-label="P5, 조항 5개: 테스트됨 3개, 구조로 성립 1개, 남은 과제 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span><span class="cell o"></span></a>
+              <a class="col" href="#p6" data-p="6" aria-label="P6, 조항 3개: 테스트됨 2개, 남은 과제 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p7" data-p="7" aria-label="P7, 조항 4개: 테스트됨 2개, 남은 과제 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="6">
+              <a class="col" href="#p8" data-p="8" aria-label="P8, 조항 3개: 테스트됨 2개, 남은 과제 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p9" data-p="9" aria-label="P9, 조항 4개: 테스트됨 2개, 남은 과제 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p10" data-p="10" aria-label="P10, 조항 2개: 테스트됨 2개"><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p11" data-p="11" aria-label="P11, 조항 7개: 테스트됨 4개, 남은 과제 3개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p12" data-p="12" aria-label="P12, 조항 1개: 구조로 성립 1개"><span class="cell s"></span></a>
+              <a class="col" href="#p13" data-p="13" aria-label="P13, 조항 1개: 남은 과제 1개"><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="5">
+              <a class="col" href="#p14" data-p="14" aria-label="P14, 조항 8개: 테스트됨 6개, 구조로 성립 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span><span class="cell s"></span></a>
+              <a class="col" href="#p15" data-p="15" aria-label="P15, 조항 6개: 테스트됨 4개, 남은 과제 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p16" data-p="16" aria-label="P16, 조항 4개: 테스트됨 4개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p17" data-p="17" aria-label="P17, 조항 6개: 테스트됨 6개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+              <a class="col" href="#p18" data-p="18" aria-label="P18, 조항 6개: 테스트됨 4개, 남은 과제 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="4">
+              <a class="col" href="#p19" data-p="19" aria-label="P19, 조항 4개: 테스트됨 3개, 남은 과제 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span></a>
+              <a class="col" href="#p20" data-p="20" aria-label="P20, 조항 2개: 구조로 성립 2개"><span class="cell s"></span><span class="cell s"></span></a>
+              <a class="col" href="#p21" data-p="21" aria-label="P21, 조항 4개: 테스트됨 2개, 남은 과제 2개"><span class="cell t"></span><span class="cell t"></span><span class="cell o"></span><span class="cell o"></span></a>
+              <a class="col" href="#p22" data-p="22" aria-label="P22, 조항 3개: 테스트됨 3개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span></a>
+            </div>
+            <div class="grp" data-n="1">
+              <a class="col" href="#p23" data-p="23" aria-label="P23, 조항 14개: 테스트됨 9개, 남은 과제 5개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell p"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span><span class="cell o"></span></a>
+            </div>
+            <div class="grp" data-n="1">
+              <a class="col" href="#p24" data-p="24" aria-label="P24, 조항 6개: 테스트됨 5개, 구조로 성립 1개"><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell t"></span><span class="cell s"></span></a>
+            </div>
+          </div>
+          <div class="labs" aria-hidden="true">
+            <div class="grp" data-n="7"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span></div>
+            <div class="grp" data-n="6"><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span></div>
+            <div class="grp" data-n="5"><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span></div>
+            <div class="grp" data-n="4"><span>19</span><span>20</span><span>21</span><span>22</span></div>
+            <div class="grp" data-n="1"><span>23</span></div>
+            <div class="grp" data-n="1"><span>24</span></div>
+          </div>
+          <div class="chn" aria-hidden="true">
+            <div class="grp" data-n="7"><span>1</span></div>
+            <div class="grp" data-n="6"><span>2</span></div>
+            <div class="grp" data-n="5"><span>3</span></div>
+            <div class="grp" data-n="4"><span>4</span></div>
+            <div class="grp" data-n="1"><span>5</span></div>
+            <div class="grp" data-n="1"><span>6</span></div>
+          </div>
+        </div>
+        <p class="count">원칙 <b>24</b>개의 조항 <b>111</b>개: 이름 붙은 테스트로 검사 <b>78</b>개, 구조로 성립 <b>8</b>개, 남은 과제 <b>25</b>개. 열 하나가 원칙 하나이고 블록 하나가 그 조항 하나이며, 커버리지 레지스트리에서 그대로 옮겨 적었습니다.</p>
+        <ul class="legend"><li><i class="cell t"></i>이름 붙은 테스트로 검사</li><li><i class="cell s"></i>구조로 성립</li><li><i class="cell p"></i>남은 과제, 오늘의 동작 고정</li><li><i class="cell o"></i>남은 과제</li></ul>
+        <!-- /registry:ledger -->
+        <dl class="gloss">
+          <dt>조항</dt><dd>원칙이 요구하는 것 하나로, 검사할 수 있을 만큼 작습니다.</dd>
+          <dt>테스트됨</dt><dd>레지스트리에 이름이 오른 테스트가 검사합니다.</dd>
+          <dt>구조로 성립</dt><dd>코드의 모양 자체가 그것을 성립시키므로, 테스트할 것이 없습니다.</dd>
+          <dt>고정됨</dt><dd>남은 과제이지만 오늘의 동작을 테스트가 붙잡고 있어, 바뀌면 드러납니다.</dd>
+          <dt>남은 과제</dt><dd>코드가 아직 보장하지 않습니다.</dd>
+          <dt>긴장 관계</dt><dd>서로 반대로 당기는 두 원칙과, 그 사이에 정해 둔 결론.</dd>
+        </dl>
+        <div class="detail" id="detail" aria-live="polite"></div>
+      </div>
+      <dl class="states">
+        <div><dt><i class="cell t"></i>이름 붙은 테스트로 검사</dt><dd>이름 붙은 테스트가 조항이 성립함을 보여 줍니다. 테스트 하나의 이름을 바꾸거나 지우면, 그 조항은 지켜지지 않는다고 스스로 알립니다.</dd></div>
+        <div><dt><i class="cell s"></i>구조로 성립</dt><dd>핵심에서 저장소로 가는 길이 없는 크레이트 그래프처럼, 코드로는 그 위반을 표현할 수 없습니다. 그 장치는 문서로 적혀 있습니다.</dd></div>
+        <div><dt><i class="cell p"></i>남은 과제, 동작 고정</dt><dd>조항은 아직 성립하지 않습니다. 돌고 있는 테스트가 오늘의 동작을 기록하므로, 과제를 갚는다는 것은 그 테스트를 고쳐 쓰는 것입니다.</dd></div>
+        <div><dt><i class="cell o"></i>남은 과제</dt><dd>보장되지 않습니다. 성립하지 않을 수도 있고, 성립하더라도 검사하는 것이 없습니다. 그것을 갚을 마일스톤이나, 기한이 되는 사건을 밝혀 둡니다.</dd></div>
+      </dl>
+      <h3>변화에 대한 규칙은 변화로 테스트합니다.</h3>
+      <p>대부분의 원칙은 어떤 차이를 금지합니다. 아무것도 잊혀서는 안 되고, 제안이 정본을 움직여서는 안 됩니다. 최종 상태로는 그것을 보여 줄 수 없으므로, 이 사례들은 어떤 행위의 전과 후에 저장소를 스냅숏으로 떠서 그 차이를 검사합니다.</p>
+<pre class="given"><b>given</b> 지금의 로그
+<b>when </b> pg를 Postgres에 병합하자는 제안을 기록한다
+<b>then </b> 정본은 하나도 바뀌지 않았다   제안은 결정이 아니다
+<b>when </b> 검토자가 그 제안을 병합한다
+<b>then </b> 정본은 그 병합만큼 바뀌었다   그 밖에는 바뀌지 않았다</pre>
+      <p class="refs"><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/principle_coverage.rs">레지스트리, principle_coverage.rs</a><a href="https://github.com/Ashon/supragnosis/blob/main/crates/supragnosis-engine/tests/policy_cases.rs">정책 사례, policy_cases.rs</a></p>
+    </section>
+
+    <section class="p-close wrap" aria-label="다음으로 갈 곳">
+      <a class="pri" href="https://github.com/Ashon/supragnosis/blob/main/docs/principles.md">규범 원문 읽기</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">남은 과제와 그 기한</a>
+      <a href="../#get-started">supragnosis 설치하기</a>
+    </section>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(위)</span> + gnosis <span>(앎)</span> = 메타 지식</p>
+    <nav aria-label="바닥글">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="https://github.com/Ashon/supragnosis/releases">릴리즈</a>
+      <a href="../../news/" hreflang="en">소식</a>
+      <a href="./">원칙</a>
+      <a href="../privacy/">개인정보</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">아키텍처</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/federation.md">연합</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/docs/proposal-workflow.md">제안 워크플로</a>
+    </nav>
+    <p class="fine">MIT 또는 Apache-2.0. 빌드 단계 없이 HTML과 CSS, 스크립트 몇 개로 만들었습니다. 이 페이지는 <code>site/ko/principles/</code>에 있습니다.</p>
+  </footer>
+
+  <!-- The cases are the English page's, the same block (docs/i18n.md LG4); principles_page.rs replays
+            them from the English page. -->
+  <script type="application/json" id="cases">
+{
+ "p1": {
+  "replay": true,
+  "values": {
+   "digest": "cf792c"
+  }
+ },
+ "p2": {
+  "replay": true,
+  "values": {
+   "confidence": "unstated"
+  }
+ },
+ "p3": {
+  "replay": true,
+  "values": {
+   "shown": "Postgres 16",
+   "entries": 2
+  }
+ },
+ "p4": {
+  "replay": true
+ },
+ "p5": {
+  "replay": false
+ },
+ "p6": {
+  "replay": true,
+  "values": {
+   "first": "Database",
+   "during": "Cache",
+   "after": "Database",
+   "tier": "human confirmed"
+  }
+ },
+ "p7": {
+  "replay": false
+ },
+ "p8": {
+  "replay": true
+ },
+ "p9": {
+  "replay": true
+ },
+ "p10": {
+  "replay": false
+ },
+ "p11": {
+  "replay": false
+ },
+ "p12": {
+  "replay": false
+ },
+ "p13": {
+  "replay": false
+ },
+ "p14": {
+  "replay": true,
+  "values": {
+   "id": "c34921"
+  }
+ },
+ "p15": {
+  "replay": false
+ },
+ "p16": {
+  "replay": true,
+  "values": {
+   "digest": "cf792c"
+  }
+ },
+ "p17": {
+  "replay": true
+ },
+ "p18": {
+  "replay": false,
+  "values": {
+   "claimed": "human confirmed",
+   "evaluated": "host signed",
+   "verdict_claimed": "agent extracted",
+   "verdict_evaluated": "human confirmed"
+  }
+ },
+ "p19": {
+  "replay": false
+ },
+ "p20": {
+  "replay": false
+ },
+ "p21": {
+  "replay": false
+ },
+ "p22": {
+  "replay": false
+ },
+ "p23": {
+  "replay": true,
+  "values": {
+   "log": {
+    "base": 6,
+    "propose": 1,
+    "note": 1,
+    "verdict": 1
+   },
+   "canon": {
+    "base": 0,
+    "merge": 1,
+    "reject": 0
+   }
+  }
+ },
+ "p24": {
+  "replay": false
+ }
+}
+  </script>
+</body>
+</html>
