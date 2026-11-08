@@ -4,6 +4,45 @@
 // and the notice an action leaves. Loaded before each page's own script.
 "use strict";
 
+// ---- Words (docs/i18n.md Section 4) ----------------------------------------------------------
+
+// The app's words in the language macOS gives it, which the shell hands every page with the language
+// itself (shell-init.js, app/assets/words.json). A sentence is one entry, looked up with t(key,
+// values) and its {name} placeholders filled; an English entry may hold a one and an other form,
+// picked by the count `n`.
+const WORDS = (window.supragnosisWords && window.supragnosisWords.words) || {};
+const LANG = (window.supragnosisWords && window.supragnosisWords.lang) || "en";
+const PLURAL = new Intl.PluralRules(LANG);
+const NUMBER = new Intl.NumberFormat(LANG);
+function said(key, values) {
+  let s = WORDS[key];
+  if (s === undefined) { console.warn("words: no " + key); return key; }
+  if (typeof s === "object") s = s[PLURAL.select(values && values.n)] || s.other;
+  return s;
+}
+const fill = (v) => typeof v === "number" ? NUMBER.format(v) : v;
+function t(key, values) {
+  return said(key, values).replace(/\{(\w+)\}/g, (m, k) => values && k in values ? String(fill(values[k])) : m);
+}
+// The same sentence as a list of text and the elements a placeholder stands for, for a sentence that
+// holds a <code> or a link: h(tag, props, ...tParts(key, {file: h("code", ...)})).
+function tParts(key, values) {
+  return said(key, values).split(/(\{\w+\})/).filter(Boolean)
+    .map((p) => { const k = /^\{(\w+)\}$/.exec(p); return k && values && k[1] in values ? fill(values[k[1]]) : p; });
+}
+// The page's markup holds its English and marks each string with its key: data-t for the text it
+// ends with (an icon before it stays), data-t-label for its title and aria-label, a title keeping the
+// key it names, "(Esc)". It is filled before the page's own script reads it.
+for (const el of document.querySelectorAll("[data-t]")) {
+  const text = [...el.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+  if (text) text.textContent = t(el.dataset.t); else el.textContent = t(el.dataset.t);
+}
+for (const el of document.querySelectorAll("[data-t-label]")) {
+  const name = t(el.dataset.tLabel);
+  if (el.hasAttribute("aria-label")) el.setAttribute("aria-label", name);
+  if (el.hasAttribute("title")) { const key = / \(([^)]+)\)$/.exec(el.title); el.title = tip(name, key && key[1]); }
+}
+
 // ---- The AI apps -----------------------------------------------------------------------------
 
 // The apps `supragnosis connect` knows (docs/client-connect.md Section 4), for both pages: the name
@@ -23,18 +62,15 @@ const APP_KIND = {
 // a connection. A page says what it knows - the row's state in this vocabulary, the line under the
 // name - and what goes at the row's end: a checkbox in Setup's plan, a button on Settings.
 const APP_PILL = {
-  connected: ["ok", "Connected"], todo: ["", "Not connected"], working: ["gold", "Connecting"],
-  attention: ["warn", "Needs you"], failed: ["bad", "Failed"], absent: ["", "Not installed"],
-  unavailable: ["", "Unavailable"],
+  connected: ["ok", t("app.connected")], todo: ["", t("app.todo")], working: ["gold", t("app.working")],
+  attention: ["warn", t("app.attention")], failed: ["bad", t("app.failed")], absent: ["", t("app.absent")],
+  unavailable: ["", t("app.unavailable")],
 };
-const CAPTURE = {
-  label: "Save the why behind each commit",
-  sub: "After a commit, Claude Code is asked to record the decision behind it, if there was one.",
-};
+const CAPTURE = { label: t("app.captureLabel"), sub: t("app.captureSub") };
 // What finishes a connection an app loads only at its start (onboarding.md Section 4.2, D9).
-const HELPER = { "claude-desktop": "Restart Claude Desktop", cursor: "Open Cursor" };
+const HELPER = { "claude-desktop": t("app.helperClaudeDesktop"), cursor: t("app.helperCursor") };
 function appPill(state) {
-  const [cls, text] = APP_PILL[state] || ["", state || "Unknown"];
+  const [cls, text] = APP_PILL[state] || ["", state || t("page.unknown")];
   return h("span", { class: "pill " + cls }, cls === "ok" || cls === "warn" || cls === "bad" ? h("span", { class: "dot" }) : null,
     state === "working" ? icon("spin", "i-spin") : null, text);
 }
@@ -170,7 +206,7 @@ const NOTICE_ICON = { ok: "ok", bad: "alert", info: "info" };
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function toast(kind, title, detail) {
   const host = document.getElementById("toasts");
-  const close = h("button", { type: "button", class: "btn quiet iconbtn", "aria-label": "Dismiss" }, icon("x"));
+  const close = h("button", { type: "button", class: "btn quiet iconbtn", "aria-label": t("page.dismiss") }, icon("x"));
   const el = h("div", { class: "toast " + kind },
     icon(NOTICE_ICON[kind] || "info"),
     h("div", { class: "grow" }, h("div", { class: "t-title", text: title }), detail ? h("div", { class: "t-detail", text: detail }) : null),

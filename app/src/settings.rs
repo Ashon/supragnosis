@@ -165,9 +165,9 @@ pub(crate) async fn peer_narrow(
         .map(|a| a.iter().filter_map(|w| w.as_str()).collect())
         .unwrap_or_default();
     Ok(if now.is_empty() {
-        "it may read nothing now".to_string()
+        word("sync.mayReadNothing")
     } else {
-        format!("it may read {}", now.join(", "))
+        word_with("sync.mayRead", &[("ws", &now.join(", "))])
     })
 }
 

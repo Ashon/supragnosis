@@ -368,10 +368,13 @@ pub(crate) fn show_graph(app: &tauri::AppHandle<Rt>) -> tauri::Result<()> {
 }
 
 /// The script every page of the window runs first (assets/shell-init.js), given the controls the
-/// map commands press, which the page reports it has when it loads.
+/// map commands press, which the page reports it has when it loads, and the app's language and its
+/// words (docs/i18n.md Section 3).
 pub(crate) fn shell_init_script() -> String {
     let controls = serde_json::json!(MAP_CONTROLS).to_string();
-    include_str!("../assets/shell-init.js").replace("/*MAP_CONTROLS*/[]", &controls)
+    include_str!("../assets/shell-init.js")
+        .replace("/*MAP_CONTROLS*/[]", &controls)
+        .replace("/*WORDS*/{ lang: \"en\", words: {} }", &page_words())
 }
 
 /// Shows the viewer window (creating it on first use / after the app retreated to the tray) and

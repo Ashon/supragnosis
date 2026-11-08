@@ -18,9 +18,17 @@
 //    on "this machine"; in the app on a Mac the shell says "this Mac", the word the app's pages use.
 //    Beside it, Setup's address (Section 29.10), which the viewer offers on an empty store; a viewer
 //    without it shows no button.
+// 6. The language (docs/i18n.md Section 3) - the one macOS gives the app, which the shell reads once,
+//    with the app's words in it (app/assets/words.json). A page that holds its words says so on its
+//    root (data-words), and the shell sets its <html lang> as the document starts; the page's own
+//    script fills its marked strings from the words (kit.js).
 //
 // Everything is built with DOM calls - no markup strings - like the settings page (S5).
 (function () {
+  // The shell writes the language and its words over this default when it installs the script.
+  window.supragnosisWords = /*WORDS*/{ lang: "en", words: {} };
+  var root = document.documentElement;
+  if (root && root.hasAttribute("data-words")) root.lang = window.supragnosisWords.lang;
   if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
 
   // The two pages' addresses, on the app's own schemes.

@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Merged by Tauri into the bundle's Info.plist. The one key it adds is what macOS shows when the
-     Welcome page asks Claude Desktop to quit and opens it again (docs/onboarding.md Section 4.2, D9):
-     the person is asked once whether this app may do that, and a refusal leaves the instruction to do
-     it by hand. -->
+<!-- Merged by Tauri into the bundle's Info.plist. NSAppleEventsUsageDescription is what macOS shows
+     when the Welcome page asks Claude Desktop to quit and opens it again (docs/onboarding.md Section
+     4.2, D9): the person is asked once whether this app may do that, and a refusal leaves the
+     instruction to do it by hand. CFBundleLocalizations names the languages app/assets/words.json
+     holds, so macOS picks one of them for the app and lists the app under System Settings > General >
+     Language & Region > Applications (docs/i18n.md Section 3). -->
 <plist version="1.0">
 <dict>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>ko</string>
+  </array>
   <key>NSAppleEventsUsageDescription</key>
   <string>Supragnosis asks Claude Desktop to quit and opens it again, so it loads the connection you just made.</string>
 </dict>

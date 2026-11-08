@@ -307,7 +307,7 @@ pub(crate) async fn restart_daemon(
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            Ok("restarted the daemon this app runs".to_string())
+            Ok(word("daemon.restartedChild"))
         }
         RestartBy::Cli => {
             let before = on_cli(app, cli_status).await.ok().flatten();
@@ -336,7 +336,7 @@ pub(crate) async fn restart_daemon(
             }
             outcome
         }
-        RestartBy::BringUp => Ok("starting the daemon".to_string()),
+        RestartBy::BringUp => Ok(word("daemon.bringingUp")),
     };
     bring_up(app.clone(), sock).await;
     outcome
@@ -375,8 +375,8 @@ pub(crate) fn restart_outcome(
     let replaced = after.is_some() && after != before;
     match cli {
         None => Err("the supragnosis CLI was not found".to_string()),
-        Some((true, _)) if up => Ok("restarted".to_string()),
-        Some((false, _)) if up && replaced => Ok("restarted".to_string()),
+        Some((true, _)) if up => Ok(word("daemon.restartedDone")),
+        Some((false, _)) if up && replaced => Ok(word("daemon.restartedDone")),
         Some((false, why)) if up => Err(format!("restart refused: {why}")),
         Some((ok, why)) => Err(format!(
             "the daemon did not answer within 30 seconds of the restart{} - `supragnosis status` says why",
@@ -450,7 +450,7 @@ pub(crate) async fn set_login(
         .and_then(|v| v["service"]["state"].as_str().map(|s| s != "absent"))
         .unwrap_or(false);
     if installed == on {
-        return Ok(if on { "already starts at login" } else { "already off" }.to_string());
+        return Ok(word(if on { "daemon.loginAlreadyOn" } else { "daemon.loginAlreadyOff" }));
     }
     let prev =
         std::mem::replace(&mut *app.state::<DaemonGuard>().0.lock().unwrap(), Daemon::Starting);
@@ -482,7 +482,7 @@ pub(crate) fn login_outcome(
     out: Option<&std::process::Output>,
 ) -> Result<String, String> {
     cli_change(out, |_| {
-        if installed { "no longer starts at login" } else { "starts at login" }.to_string()
+        word(if installed { "daemon.loginNowOff" } else { "daemon.loginNowOn" })
     })
 }
 
