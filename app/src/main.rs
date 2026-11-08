@@ -46,6 +46,7 @@ mod splash;
 mod tray;
 mod welcome;
 mod window;
+mod words;
 
 use apps::*;
 use cli::*;
@@ -57,6 +58,7 @@ use splash::*;
 use tray::*;
 use welcome::*;
 use window::*;
+use words::*;
 
 /// The runtime the app runs on: the platform's webview, and in the tests Tauri's mock of it, so a
 /// test can hold the app and run its commands, its tray and its exit.
@@ -429,6 +431,7 @@ const SRC: &str = concat!(
     include_str!("tray.rs"),
     include_str!("welcome.rs"),
     include_str!("window.rs"),
+    include_str!("words.rs"),
     include_str!("main.rs"),
 );
 

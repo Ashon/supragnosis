@@ -167,8 +167,11 @@ mod settings_tests {
             ("settings.html", include_str!("../assets/settings.html")),
             ("welcome.html", include_str!("../assets/welcome.html")),
         ] {
-            assert!(html.contains("<html lang=\"en\">"), "{file} does not declare its language");
+            assert!(html.contains("<html lang=\"en\""), "{file} does not declare its language");
         }
+        // The page that holds its words says so, and the shell sets its language (docs/i18n.md
+        // Section 3).
+        assert!(include_str!("../assets/settings.html").contains("<html lang=\"en\" data-words>"));
     }
 
     /// docs/settings-page.md S7 and semantic-retrieval.md Section 13: a daemon that cannot start because
@@ -257,7 +260,7 @@ mod settings_tests {
         let status = body(js, "function daemonStatus(");
         assert!(
             status.contains("d.embedder_conflict")
-                && status.contains("The search index needs rebuilding"),
+                && crate::says(status, "The search index needs rebuilding"),
             "the reason is not shown"
         );
         let daemon = body(js, "function renderDaemon(");
@@ -549,12 +552,16 @@ mod settings_tests {
             "keep.delete(\"act\")",
             "history.replaceState(",
             "if (!d.answering && d.shell !== \"starting\") restartDaemon();",
-            "\"Not restarted: the daemon answers\"",
-            "\"Not restarted: the daemon is still starting\"",
             "document.getElementById(\"copyDiagnostics\")",
             "revealFile(\"log\")",
         ] {
             assert!(asked.contains(part), "Settings does not act on the page's ask: {part}");
+        }
+        for said in [
+            "Not restarted: the daemon answers",
+            "Not restarted: the daemon is still starting",
+        ] {
+            assert!(crate::says(asked, said), "Settings does not say {said}");
         }
         // Show in Finder shows one of two files, and nothing a caller names; the caller check is
         // every command's (every_command_checks_its_caller_first).
@@ -914,7 +921,7 @@ mod settings_tests {
             "the privacy line promises what the code does not keep"
         );
         assert!(js.contains("Open Setup"), "the page does not name the way back");
-        assert!(settings.contains("\"Open Setup\""), "About does not say Open Setup");
+        assert!(crate::says(settings, "Open Setup"), "About does not say Open Setup");
         assert!(
             main.contains("\"tray-finish-setup\",\n                \"Finish Setup...\","),
             "the tray does not say Finish Setup..."
@@ -949,7 +956,7 @@ mod settings_tests {
             "the download takes the page's lock"
         );
         assert!(
-            row.contains("role: \"progressbar\"") && row.contains("\"Stop\""),
+            row.contains("role: \"progressbar\"") && crate::says(row, "Stop"),
             "the download's row has no progress or Stop"
         );
         assert!(body("downloadModel").contains("invoke(\"setup_run\", { step: \"model\" })"));
@@ -1020,7 +1027,7 @@ mod settings_tests {
     fn the_settings_page_says_each_fact_once() {
         let js = include_str!("../assets/settings.js");
         assert!(
-            js.contains("\"Update ready - restart to load \" + d.installed"),
+            crate::says(js, "Update ready - restart to load {installed}"),
             "drift is not one card"
         );
         // A store the daemon cannot open takes Restart away too: its card holds Rebuild index (S7).
@@ -1165,5 +1172,87 @@ mod settings_tests {
             env!("CARGO_PKG_REPOSITORY").starts_with("https://github.com/"),
             "app/Cargo.toml [package] must inherit repository from [workspace.package]"
         );
+    }
+
+    /// docs/i18n.md Section 4, its D8, for the app's words (app/assets/words.json): every entry holds
+    /// both languages - an English string, or its one and other forms, and a Korean string - with the
+    /// same named placeholders, no Korean placeholder is followed directly by a particle that would
+    /// change with the name's last sound, every key the app's pages and its Rust name is in the words,
+    /// and every entry is named by one of them.
+    #[test]
+    fn the_apps_words_hold_both_languages() {
+        // the particles whose form follows the last sound of the word before them
+        const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
+        let words: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(crate::WORDS_JSON).expect("the words are a map");
+        assert!(words.len() >= 100, "the words were not read ({} entries)", words.len());
+        let names = |s: &str| {
+            let mut v: Vec<String> = s
+                .split('{')
+                .skip(1)
+                .filter_map(|p| p.split_once('}').map(|(n, _)| n.to_string()))
+                .collect();
+            v.sort();
+            v
+        };
+        for (key, e) in &words {
+            let ko = e["ko"].as_str().unwrap_or_else(|| panic!("{key}: no Korean string"));
+            let en: Vec<&str> = match &e["en"] {
+                serde_json::Value::String(s) => vec![s.as_str()],
+                serde_json::Value::Object(f) => {
+                    assert!(f.contains_key("other"), "{key}: an English plural without other");
+                    f.values().filter_map(|v| v.as_str()).collect()
+                }
+                _ => panic!("{key}: no English"),
+            };
+            for form in en {
+                assert!(!form.is_empty() && !ko.is_empty(), "{key}: a language is empty");
+                assert_eq!(names(form), names(ko), "{key}: the placeholders differ");
+            }
+            for (i, _) in ko.match_indices('}') {
+                let next = ko[i + 1..].chars().next();
+                assert!(
+                    !next.is_some_and(|c| PARTICLES.contains(&c)),
+                    "{key}: a particle follows a placeholder in {ko:?}"
+                );
+            }
+        }
+        // A key is a quoted "section.name" whose section the words use; the scripts and the Rust
+        // name each one so, in a call or in a map a call reads. Every stretch between two quotes is
+        // read, not every other one, so a quote in a char literal or a comment hides no key.
+        let sources = [
+            include_str!("../assets/kit.js"),
+            include_str!("../assets/settings.js"),
+            include_str!("../assets/welcome.js"),
+            include_str!("../assets/shell-init.js"),
+            include_str!("../assets/settings.html"),
+            include_str!("../assets/welcome.html"),
+            super::SRC,
+        ];
+        let sections: std::collections::BTreeSet<&str> =
+            words.keys().filter_map(|k| k.split_once('.')).map(|(s, _)| s).collect();
+        let mut named = std::collections::BTreeSet::new();
+        for src in sources {
+            for quoted in src.split('"').skip(1) {
+                let Some((section, name)) = quoted.split_once('.') else {
+                    continue;
+                };
+                // A file the source includes ("daemon.rs") is not a key.
+                let file = matches!(name, "rs" | "js" | "json" | "css" | "html" | "toml" | "md");
+                if sections.contains(section)
+                    && !file
+                    && !name.is_empty()
+                    && name.chars().all(|c| c.is_ascii_alphanumeric())
+                {
+                    named.insert(quoted.to_string());
+                }
+            }
+        }
+        for key in &named {
+            assert!(words.contains_key(key), "the app names {key:?}, which its words lack");
+        }
+        for key in words.keys() {
+            assert!(named.contains(key), "{key} is never named");
+        }
     }
 }

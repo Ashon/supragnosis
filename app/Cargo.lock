@@ -2851,6 +2851,7 @@ name = "supragnosis-app"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "objc2-foundation",
  "serde_json",
  "tauri",
  "tauri-build",

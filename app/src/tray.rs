@@ -146,18 +146,18 @@ pub(crate) fn review_count(list: &serde_json::Value) -> usize {
 
 /// The tray's status line, from what the CLI observed plus the shell's own relationship to the
 /// daemon (a child it spawned is invisible to the CLI - no pidfile, no launchd job).
-/// Who runs the daemon, in the words the status line and the settings page use - including a child
-/// of this app, which the CLI cannot see (no pidfile, no launchd job).
+/// Who runs the daemon, in the app's words, which the status line and the settings page share -
+/// including a child of this app, which the CLI cannot see (no pidfile, no launchd job).
 pub(crate) fn who_runs(daemon: &Daemon, st: &serde_json::Value) -> String {
     match (daemon, st["managers"].get(0)) {
-        (Daemon::Spawned(_), _) => "while this app is open".to_string(),
+        (Daemon::Spawned(_), _) => word("daemon.whoApp"),
         (_, Some(m)) => match (m["type"].as_str(), m["source"].as_str()) {
-            (_, Some("canonical")) => "starts at login".to_string(),
-            (Some("launchd"), Some("homebrew")) => "Homebrew's service".to_string(),
-            (Some("pidfile"), _) => "supragnosis start".to_string(),
-            _ => "started outside this app".to_string(),
+            (_, Some("canonical")) => word("daemon.whoLogin"),
+            (Some("launchd"), Some("homebrew")) => word("daemon.whoHomebrew"),
+            (Some("pidfile"), _) => word("daemon.whoStart"),
+            _ => word("daemon.whoOutside"),
         },
-        (_, None) => "started outside this app".to_string(),
+        (_, None) => word("daemon.whoOutside"),
     }
 }
 

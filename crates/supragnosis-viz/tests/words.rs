@@ -195,8 +195,8 @@ fn no_retired_word_reaches_a_page() {
         .collect();
     assert!(retired.len() >= 20, "the table was not read: {retired:?}");
     // The sources are read from their directories, so a file added or moved is read without a list
-    // to keep: the viewer's markup and the parts its script is joined from, the app's pages, scripts
-    // and stylesheets, the shell's code but for its test modules (`#[cfg(test)] mod x;` in
+    // to keep: the viewer's markup and the parts its script is joined from, the app's pages, scripts,
+    // stylesheets and words, the shell's code but for its test modules (`#[cfg(test)] mod x;` in
     // main.rs), and every file of the viewer's server, whose refusals reach a notice - and Setup.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let read = |p: &Path| fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
@@ -212,7 +212,7 @@ fn no_retired_word_reaches_a_page() {
     for (dir, exts, code) in [
         ("crates/supragnosis-viz/assets", &["html"][..], false),
         ("crates/supragnosis-viz/assets/viewer", &["js"][..], false),
-        ("app/assets", &["html", "js", "css"][..], false),
+        ("app/assets", &["html", "js", "css", "json"][..], false),
         ("app/src", &["rs"][..], true),
         ("crates/supragnosis-viz/src", &["rs"][..], true),
     ] {

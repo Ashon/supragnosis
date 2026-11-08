@@ -12,11 +12,11 @@ const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 // ---- State -----------------------------------------------------------------------------------
 
 const SECTIONS = [
-  { id: "apps", label: "AI apps", icon: "bot", blurb: "How each AI app reaches Supragnosis. Every app goes through the bridge, which keeps no copy of the token." },
-  { id: "daemon", label: "This Mac", icon: "laptop", blurb: "The Supragnosis daemon on this Mac: the store your AI apps use." },
-  { id: "sync", label: "Sync", icon: "network", blurb: "How this Mac's knowledge travels between machines that run Supragnosis: the hubs it syncs to and, when it is a hub, what each peer may read." },
-  { id: "usage", label: "Usage", icon: "chart", blurb: "How your AI apps use this Mac's store: which functions they call, on which workspaces, day by day. The record stays on this Mac." },
-  { id: "about", label: "About", icon: "info", blurb: "Versions and where things live." },
+  { id: "apps", label: t("sec.apps"), icon: "bot", blurb: t("sec.appsBlurb") },
+  { id: "daemon", label: t("sec.daemon"), icon: "laptop", blurb: t("sec.daemonBlurb") },
+  { id: "sync", label: t("sec.sync"), icon: "network", blurb: t("sec.syncBlurb") },
+  { id: "usage", label: t("sec.usage"), icon: "chart", blurb: t("sec.usageBlurb") },
+  { id: "about", label: t("sec.about"), icon: "info", blurb: t("sec.aboutBlurb") },
 ];
 
 let state = null;          // what settings_state last returned
@@ -42,22 +42,22 @@ function keepPane() {
 
 function daemonStatus(d) {
   if (!d) return { kind: "", title: "", detail: "" };
-  if (d.situation === "conflict") return { kind: "bad", title: "Two managers run Supragnosis", detail: "supragnosis status names them; stop the one you did not choose." };
+  if (d.situation === "conflict") return { kind: "bad", title: t("daemon.conflict"), detail: t("daemon.conflictDetail") };
   // A store indexed by another model keeps the daemon from starting, and a restart fails the same
   // way (docs/settings-page.md Section 3.3): the card says why and holds Rebuild index instead.
   const c = d.embedder_conflict;
-  if (c) return { kind: "bad", title: "The search index needs rebuilding",
-    detail: "Indexed by " + c.recorded + ", and the daemon runs " + c.daemon + " - it cannot start until the index is rebuilt" };
+  if (c) return { kind: "bad", title: t("daemon.indexConflict"),
+    detail: t("daemon.indexConflictDetail", { recorded: c.recorded, daemon: c.daemon }) };
   if (d.running && d.installed && d.running !== d.installed)
-    return { kind: "warn", title: "Update ready - restart", detail: d.running + " is running, " + d.installed + " is installed" };
+    return { kind: "warn", title: t("daemon.drift"), detail: t("daemon.driftDetail", { running: d.running, installed: d.installed }) };
   const owed = d.store && d.store.owed_projections;
   if (d.answering === false || !d.running) {
-    if (d.shell === "starting") return { kind: "", title: "Starting...", detail: "" };
-    if (d.shell === "failed") return { kind: "bad", title: "Could not start", detail: d.cause || "" };
-    return { kind: "bad", title: "Stopped", detail: "Nothing runs the daemon. Restart starts it." };
+    if (d.shell === "starting") return { kind: "", title: t("daemon.starting"), detail: "" };
+    if (d.shell === "failed") return { kind: "bad", title: t("daemon.couldNotStart"), detail: d.cause || "" };
+    return { kind: "bad", title: t("daemon.stopped"), detail: t("daemon.stoppedDetail") };
   }
-  if (owed) return { kind: "warn", title: "Repairing - " + owed + (owed === 1 ? " item left" : " items left"), detail: [d.running, d.who].filter(Boolean).join(" - ") };
-  return { kind: "ok", title: "Running", detail: [d.running, d.who].filter(Boolean).join(" - ") };
+  if (owed) return { kind: "warn", title: t("daemon.repairing", { n: owed }), detail: [d.running, d.who].filter(Boolean).join(" - ") };
+  return { kind: "ok", title: t("daemon.running"), detail: [d.running, d.who].filter(Boolean).join(" - ") };
 }
 
 // The AI apps the command line reported, and how many have an entry - on the bridge or not, as the
@@ -103,12 +103,12 @@ function sectionItems(now) {
       let meta = null;
       // The count says what it counts, the tray's count: every app with an entry; while the apps
       // could not be read there is none (Section 29.14, P5).
-      if (s.id === "apps" && state && appsRead()) meta = h("span", { class: "meta", text: appsWithEntry() + " connected" });
+      if (s.id === "apps" && state && appsRead()) meta = h("span", { class: "meta", text: t("sec.connectedCount", { n: appsWithEntry() }) });
       return h("a", { class: "navitem", href: "#" + s.id, "aria-current": s.id === now ? "page" : null },
         h("span", { class: "tile" }, icon(s.icon)),
         h("span", { class: "label", text: s.label }),
         meta,
-        dot ? h("span", { class: "dot " + dot }, h("span", { class: "sr-only", text: dot === "bad" ? "has a problem" : "needs attention" })) : null);
+        dot ? h("span", { class: "dot " + dot }, h("span", { class: "sr-only", text: t(dot === "bad" ? "sec.hasProblem" : "sec.needsAttention") })) : null);
   });
 }
 
@@ -134,7 +134,7 @@ function actionButton(key, label, iconName, cls, run, name) {
 // Restart, from either of This Mac's buttons. However it went, the page then follows the daemon
 // until it answers (watchDaemon): a restart reported as failed can still come back under launchd.
 function restartDaemon() {
-  return act("restart", "daemon_restart", null, { title: "Daemon restarted", failTitle: "The restart did not finish" })
+  return act("restart", "daemon_restart", null, { title: t("daemon.restarted"), failTitle: t("daemon.restartUnfinished") })
     .then(watchDaemon);
 }
 
@@ -142,7 +142,7 @@ function restartDaemon() {
 // index, and the daemon that comes back embeds the store again. The page then follows the daemon and
 // the re-embedding until both settle (watchDaemon).
 function rebuildIndex() {
-  return act("rebuild", "search_rebuild", null, { title: "Rebuilding the search index", failTitle: "The index was not rebuilt" })
+  return act("rebuild", "search_rebuild", null, { title: t("daemon.rebuilding"), failTitle: t("daemon.notRebuilt") })
     .then(watchDaemon);
 }
 
@@ -160,11 +160,11 @@ async function act(key, cmd, args, opts) {
   try {
     const out = await invoke(cmd, args);
     const detail = opts && "detail" in opts ? opts.detail : opts && opts.title ? out : null;
-    toast("ok", (opts && opts.title) || out || "Done", detail);
+    toast("ok", (opts && opts.title) || out || t("page.done"), detail);
     if (opts && opts.after) await opts.after(out);
     return true;
   } catch (e) {
-    toast("bad", (opts && opts.failTitle) || "That did not work", String(e));
+    toast("bad", (opts && opts.failTitle) || t("page.failed"), String(e));
     return false;
   } finally {
     pending.delete(key);
@@ -173,19 +173,21 @@ async function act(key, cmd, args, opts) {
 }
 
 // The line under an app's name: what the pill does not already say - or, once this visit connected
-// it, the next step the CLI named, said once here and not again in the notice (Section 29.6).
+// it, the next step the CLI named, said once here and not again in the notice (Section 29.6). The
+// app's state comes as its entry's kind, and the page says it (docs/i18n.md Section 5).
+const APP_STATE = { newer: "app.stateNewer", http: "app.stateHttp", stdio: "app.stateStdio", other: "app.stateOther", unread: "app.stateUnread" };
 function appDetail(a) {
   if (appNotes[a.id] && a.kind === "connected") return appNotes[a.id];
-  if (a.kind === "connected") return "Through the bridge";
-  if (a.kind === "off" || a.state === "not installed") return null;
-  return a.state.charAt(0).toUpperCase() + a.state.slice(1);
+  if (a.kind === "connected") return t("app.byBridge");
+  return APP_STATE[a.state] ? t(APP_STATE[a.state]) : null;
 }
 // A Settings row's kind, in the AI app row's words (kit.js).
 function appState(a) {
   if (a.kind === "off") return "todo";
-  if (a.kind === "absent") return a.state === "not installed" ? "absent" : "unavailable";
+  if (a.kind === "absent") return a.state === "absent" ? "absent" : "unavailable";
   return a.kind;
 }
+const APP_ACTION = { connect: "app.connect", disconnect: "app.disconnect", switch: "app.switch" };
 
 function renderApps() {
   // flatMap: Claude Code's row is two rows, its own and the capture switch's.
@@ -193,20 +195,20 @@ function renderApps() {
     const key = "app:" + a.id;
     const end = [];
     if (a.action) {
-      const disconnect = a.action === "Disconnect";
-      end.push(actionButton(key, a.action, disconnect ? "unplug" : "plug", disconnect ? "danger" : "primary",
+      const disconnect = a.action === "disconnect";
+      end.push(actionButton(key, t(APP_ACTION[a.action]), disconnect ? "unplug" : "plug", disconnect ? "danger" : "primary",
         () => act(key, "app_toggle", { id: a.id }, {
-          title: disconnect ? null : APPS[a.id] + " connected", detail: null,
-          // The row keeps only the next step: "Claude Desktop connected - <next>" says the first half
-          // in its pill already.
-          after: (out) => { appNotes[a.id] = disconnect ? null : (String(out).split(" connected - ")[1] || null); },
-          failTitle: APPS[a.id] + (disconnect ? " was not disconnected" : " was not connected"),
+          title: disconnect ? null : t("app.didConnect", { app: APPS[a.id] }), detail: null,
+          // The row keeps only the next step, the CLI's, on the answer's second line: the first
+          // says "connected", which its pill says already.
+          after: (out) => { appNotes[a.id] = disconnect ? null : (String(out).split("\n")[1] || null); },
+          failTitle: t(disconnect ? "app.notDisconnected" : "app.notConnected", { app: APPS[a.id] }),
         })));
     }
     // The helper that finishes a connection, after this visit made it (onboarding.md D9).
     if (HELPER[a.id] && appNotes[a.id] && a.kind === "connected") {
       end.unshift(actionButton("helper:" + a.id, HELPER[a.id], a.id === "cursor" ? "open" : "restart", "",
-        () => act("helper:" + a.id, "app_helper", { id: a.id }, { failTitle: "Do it by hand" })));
+        () => act("helper:" + a.id, "app_helper", { id: a.id }, { failTitle: t("app.byHand") })));
     }
     const detail = appDetail(a);
     const row = appRow({ id: a.id, state: appState(a), sub: detail ? h("div", { class: "sub", text: detail }) : null, end });
@@ -217,7 +219,7 @@ function renderApps() {
     const input = h("input", {
       type: "checkbox", role: "switch", checked: a.capture, disabled: pending.size > 0,
       "aria-label": CAPTURE.label,
-      on: { change: (e) => act("capture", "capture_set", { on: e.target.checked }, { failTitle: "Capture did not change" }) },
+      on: { change: (e) => act("capture", "capture_set", { on: e.target.checked }, { failTitle: t("app.captureNotChanged") }) },
     });
     return [row, h("div", { class: "row sub-row", "data-k": "capture:" + a.id },
       h("div", { class: "body" },
@@ -226,9 +228,9 @@ function renderApps() {
       h("label", { class: "switch" }, input, h("span", { class: "track" })))];
   });
   return [
-    h("div", { class: "group-title", text: "Apps on this Mac" }),
+    h("div", { class: "group-title", text: t("app.onThisMac") }),
     h("div", { class: "card" }, rows),
-    h("p", { class: "hint", text: "Connecting writes one entry into the app's own settings, backed up first. Quit and reopen an app for it to load the change." }),
+    h("p", { class: "hint", text: t("app.hint") }),
   ];
 }
 
@@ -245,64 +247,64 @@ function renderDaemon() {
     h("div", { class: "row hero", "data-k": "daemon" },
       h("span", { class: "lead " + st.kind }, icon("power")),
       h("div", { class: "body" },
-        h("div", { class: "title", text: drift ? "Update ready - restart to load " + d.installed : st.title || "Unknown" }),
-        h("div", { class: "sub mono", text: drift ? d.running + " is running" : st.detail || "" })),
+        h("div", { class: "title", text: drift ? t("daemon.driftLoad", { installed: d.installed }) : st.title || t("page.unknown") }),
+        h("div", { class: "sub mono", text: drift ? t("daemon.runningVersion", { running: d.running }) : st.detail || "" })),
       drift ? h("div", { class: "end" },
-        actionButton("restart", "Restart", "restart", "primary", () => restartDaemon()))
+        actionButton("restart", t("daemon.restart"), "restart", "primary", () => restartDaemon()))
         : conflict ? h("div", { class: "end" },
-          actionButton("rebuild", "Rebuild index", "restart", "primary", () => rebuildIndex())) : null)));
+          actionButton("rebuild", t("daemon.rebuild"), "restart", "primary", () => rebuildIndex())) : null)));
 
   const store = d.store || {};
   const owed = store.owed_projections;
   const recovery = store.last_recovery;
   const storeText = owed === undefined || owed === null
-    ? "Unknown - the CLI did not report it"
-    : owed === 0 ? "Up to date" : "Repairing - " + owed + (owed === 1 ? " item left" : " items left");
+    ? t("daemon.storeUnknown")
+    : owed === 0 ? t("daemon.upToDate") : t("daemon.repairing", { n: owed });
 
   const loginInput = h("input", {
     type: "checkbox", role: "switch", checked: d.login === true,
     disabled: d.login === null || d.login === undefined || busy,
-    "aria-label": "Start at Login",
-    on: { change: (e) => act("login", "login_set", { on: e.target.checked }, { title: e.target.checked ? "Starts at login" : "No longer starts at login", failTitle: e.target.checked ? "Start at Login was not turned on" : "Start at Login was not turned off" }) },
+    "aria-label": t("daemon.login"),
+    on: { change: (e) => act("login", "login_set", { on: e.target.checked }, { title: t(e.target.checked ? "daemon.loginOn" : "daemon.loginOff"), failTitle: t(e.target.checked ? "daemon.loginNotOn" : "daemon.loginNotOff") }) },
   });
-  out.push(h("div", { class: "group-title", text: "Startup" }),
+  out.push(h("div", { class: "group-title", text: t("daemon.startup") }),
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Start at Login" }),
+          h("div", { class: "title", text: t("daemon.login") }),
           h("div", { class: "sub", text: d.login === null || d.login === undefined
-            ? "Needs a newer supragnosis-server"
-            : "Keeps the daemon running whenever you are logged in, so AI apps always find it." })),
+            ? t("daemon.loginNeedsNewer")
+            : t("daemon.loginSub") })),
         h("label", { class: "switch" }, loginInput, h("span", { class: "track" }))),
       // Not drawn while the card above holds the section's act: a row
       // with nothing to press said nothing (design-system.md Section 29.6).
       drift || conflict ? null : h("div", { class: "row" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Restart the daemon" }),
-          h("div", { class: "sub", text: "Loads an upgraded binary. AI apps reconnect on their own." })),
-        h("div", { class: "end" }, actionButton("restart", "Restart", "restart", "", () => restartDaemon())))),
+          h("div", { class: "title", text: t("daemon.restartTitle") }),
+          h("div", { class: "sub", text: t("daemon.restartSub") })),
+        h("div", { class: "end" }, actionButton("restart", t("daemon.restart"), "restart", "", () => restartDaemon())))),
     // What a report needs, and where the daemon writes (design-system.md Section 29.5).
-    h("div", { class: "group-title", text: "Troubleshooting" }),
+    h("div", { class: "group-title", text: t("daemon.troubleshooting") }),
     h("div", { class: "card" },
       h("div", { class: "row", "data-k": "diagnostics" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Diagnostics" }),
-          h("div", { class: "sub", text: "Setup's check, the daemon's status, this app's state and the log's last lines, for a report. Nothing leaves this Mac." })),
-        h("div", { class: "end" }, h("button", { class: "btn", id: "copyDiagnostics", on: { click: copyDiagnostics } }, "Copy Diagnostics"))),
+          h("div", { class: "title", text: t("daemon.diagnostics") }),
+          h("div", { class: "sub", text: t("daemon.diagnosticsSub") })),
+        h("div", { class: "end" }, h("button", { class: "btn", id: "copyDiagnostics", on: { click: copyDiagnostics } }, t("daemon.copyDiagnostics")))),
       h("div", { class: "row", "data-k": "log" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "The daemon's log" }),
+          h("div", { class: "title", text: t("daemon.log") }),
           h("div", { class: "sub mono selectable", text: d.log || "~/.supragnosis/log" })),
-        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("log") } }, "Show in Finder")))),
-    h("div", { class: "group-title", text: "Search" }),
+        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("log") } }, t("page.showInFinder"))))),
+    h("div", { class: "group-title", text: t("daemon.search") }),
     h("div", { class: "card" }, searchRow(d)),
-    h("div", { class: "group-title", text: "Store" }),
+    h("div", { class: "group-title", text: t("daemon.store") }),
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("span", { class: "lead" }, icon("drive")),
         h("div", { class: "body" },
           h("div", { class: "title", text: storeText }),
-          recovery ? h("div", { class: "sub", text: "Last recovery re-projected " + (recovery.observations || 0) + " observations" }) : null))));
+          recovery ? h("div", { class: "sub", text: t("daemon.recovery", { n: recovery.observations || 0 }) }) : null))));
   return out;
 }
 
@@ -318,10 +320,10 @@ async function downloadModel() {
   render();
   try {
     const out = await invoke("setup_run", { step: "model" });
-    if (out && out.ok) toast("ok", "Search by meaning is on");
-    else if (!stopAsked) toast("bad", "The model did not download", (out && out.why) || "See the details in Setup.");
+    if (out && out.ok) toast("ok", t("search.on"));
+    else if (!stopAsked) toast("bad", t("search.notDownloadedNow"), (out && out.why) || t("search.seeSetup"));
   } catch (e) {
-    toast("bad", "The model did not download", String(e));
+    toast("bad", t("search.notDownloadedNow"), String(e));
   } finally {
     downloading = false;
     await load();
@@ -349,40 +351,40 @@ async function adoptDownload() {
 
 async function stopDownload() {
   stopAsked = true;
-  try { toast("ok", await invoke("setup_stop", { step: "model" }), "The next download fetches what is missing."); }
-  catch (e) { toast("bad", "The download did not stop", String(e)); }
+  try { await invoke("setup_stop", { step: "model" }); toast("ok", t("search.stopped"), t("search.fetchesMissing")); }
+  catch (e) { toast("bad", t("search.didNotStop"), String(e)); }
 }
 
 function searchRow(d) {
   const s = d.semantic;
   let title, sub, kind;
-  if (!s) { title = "Keyword only"; sub = d.answering === false ? "Known once the daemon answers." : "This daemon runs without a search model, so search matches words."; kind = ""; }
+  if (!s) { title = t("search.keywordOnly"); sub = t(d.answering === false ? "search.knownLater" : "search.noModel"); kind = ""; }
   else if (s.state === "on" && indexing()) {
     const b = s.backfill;
-    title = "Indexing"; sub = "Embedding what is in the store: " + b.embedded + " of " + b.found; kind = "ok";
+    title = t("search.indexing"); sub = t("search.embedding", { done: b.embedded, all: b.found }); kind = "ok";
   }
-  else if (s.state === "on") { title = "Search by meaning"; sub = "Multilingual, on this Mac (" + s.model + ")"; kind = "ok"; }
+  else if (s.state === "on") { title = t("search.byMeaning"); sub = t("search.multilingual", { model: s.model }); kind = "ok"; }
   // The page's own sentence; the CLI's note is Copy Diagnostics' (design-system.md Section 29.6).
-  else { title = "Keyword only - the model is not downloaded"; sub = "Search matches words until the model (224 MB) is downloaded."; kind = "warn"; }
+  else { title = t("search.notDownloaded"); sub = t("search.untilDownloaded"); kind = "warn"; }
   let end = null, bar = null;
   if (s && s.state === "on" && indexing()) {
     const b = s.backfill, pct = b.found ? Math.round(100 * b.embedded / b.found) : 0;
-    bar = h("div", { class: "bar", role: "progressbar", "aria-label": "Indexing",
+    bar = h("div", { class: "bar", role: "progressbar", "aria-label": t("search.indexing"),
       "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, h("span"));
     bar.firstChild.style.width = pct + "%";
   } else if (s && s.state === "on" && d.answering) {
     // Rebuild index, whenever the daemon runs with a model (docs/settings-page.md Section 3.3).
-    end = actionButton("rebuild", "Rebuild index", "restart", "", () => rebuildIndex());
+    end = actionButton("rebuild", t("daemon.rebuild"), "restart", "", () => rebuildIndex());
   }
   if (s && s.state !== "on") {
     if (downloading) {
-      bar = h("div", { class: "bar" + (modelPct === null ? " busy" : ""), role: "progressbar", "aria-label": "Model download",
+      bar = h("div", { class: "bar" + (modelPct === null ? " busy" : ""), role: "progressbar", "aria-label": t("search.modelDownload"),
         "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": modelPct === null ? null : String(modelPct) }, h("span"));
       if (modelPct !== null) bar.firstChild.style.width = modelPct + "%";
-      end = [h("span", { class: "sub", text: modelProgress || "Starting..." }),
-        h("button", { class: "btn quiet", on: { click: stopDownload } }, "Stop")];
+      end = [h("span", { class: "sub", text: modelProgress || t("daemon.starting") }),
+        h("button", { class: "btn quiet", on: { click: stopDownload } }, t("search.stop"))];
     } else {
-      end = h("button", { class: "btn", on: { click: downloadModel } }, icon("download"), "Download");
+      end = h("button", { class: "btn", on: { click: downloadModel } }, icon("download"), t("search.download"));
     }
   }
   return h("div", { class: "row", "data-k": "model" },
@@ -399,7 +401,7 @@ if (window.__TAURI__) window.__TAURI__.event.listen("setup-line", (e) => {
   try { ev = JSON.parse(p.line); } catch (_) { return; }
   const m = ev && /^(\d+) of (\d+) MB/.exec(ev.say || "");
   if (m) {
-    modelProgress = m[1] + " of " + m[2] + " MB";
+    modelProgress = t("search.progress", { done: +m[1], all: +m[2] });
     modelPct = Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2])));
     render();
   }
@@ -411,51 +413,50 @@ function renderSync() {
   const f = state.federation;
   if (!f) {
     return [h("div", { class: "callout warn" }, icon("warn"),
-      h("div", { class: "grow", text: "Sync status is unavailable - this Mac's daemon did not answer." }))];
+      h("div", { class: "grow", text: t("sync.unavailable") }))];
   }
   if (f.configured === false) {
     return [h("div", { class: "card" },
       h("div", { class: "row" },
         h("span", { class: "lead" }, icon("network")),
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Sync is not set up on this Mac" }),
-          h("div", { class: "sub" }, "This Mac keeps its knowledge to itself. To join a hub or host one, describe it in ",
-            h("code", { text: "~/.supragnosis/supragnosis.toml" }), ".")),
-        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("config") } }, "Show in Finder"))))];
+          h("div", { class: "title", text: t("sync.notSetUp") }),
+          h("div", { class: "sub" }, tParts("sync.describeIn", { file: h("code", { text: "~/.supragnosis/supragnosis.toml" }) }))),
+        h("div", { class: "end" }, h("button", { class: "btn quiet", on: { click: () => revealFile("config") } }, t("page.showInFinder")))))];
   }
   const out = [];
-  const role = f.role === "hub" ? "Hub" : "Spoke";
-  out.push(h("div", { class: "group-title", text: "This Mac" }),
+  const role = t(f.role === "hub" ? "sync.hub" : "sync.spoke");
+  out.push(h("div", { class: "group-title", text: t("sec.daemon") }),
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("span", { class: "lead" }, icon("network")),
         h("div", { class: "body" },
-          h("div", { class: "title" }, role, h("span", { class: "pill gold", text: f.role === "hub" ? "Serves peers" : "Syncs to hubs" })),
+          h("div", { class: "title" }, role, h("span", { class: "pill gold", text: t(f.role === "hub" ? "sync.servesPeers" : "sync.syncsToHubs") })),
           h("div", { class: "sub mono selectable", text: f.node_id || "" })))));
 
   const hubs = f.servers || [];
   if (hubs.length) {
-    out.push(h("div", { class: "group-title", text: "Hubs this Mac syncs to" }),
+    out.push(h("div", { class: "group-title", text: t("sync.hubs") }),
       h("div", { class: "card" }, hubs.map((hub) => {
         const ws = (hub.workspaces || []).map((w) => {
           const ahead = (w.local_ahead | 0) || (w.hub_ahead | 0);
-          return w.workspace + ": " + (ahead ? "this Mac +" + (w.local_ahead | 0) + ", hub +" + (w.hub_ahead | 0) : "in sync");
+          return ahead ? t("sync.ahead", { ws: w.workspace, local: w.local_ahead | 0, hub: w.hub_ahead | 0 }) : t("sync.inSync", { ws: w.workspace });
         });
         // The rows the viewer's Peers tab had (docs/design-system.md Section 6): a workspace this Mac
         // shares that the hub does not admit, one the hub admits that this Mac does not share, and
         // whether the hub has answered what it shares - unknown is not "nothing".
         const extra = [
-          ...(hub.local_only || []).map((w) => w + ": not admitted by the hub"),
-          ...(hub.peer_only || []).map((w) => w + ": admitted, not shared from this Mac"),
-          !hub.negotiated_at ? "What it shares: unknown - no answer yet"
-            : state.federation.updated_ms ? "What it shares: agreed " + Math.max(0, Math.round((state.federation.updated_ms - hub.negotiated_at) / 1000)) + "s ago" : null,
+          ...(hub.local_only || []).map((w) => t("sync.notAdmitted", { ws: w })),
+          ...(hub.peer_only || []).map((w) => t("sync.notShared", { ws: w })),
+          !hub.negotiated_at ? t("sync.sharesUnknown")
+            : state.federation.updated_ms ? t("sync.sharesAgreed", { ago: t("page.secondsAgo", { s: Math.max(0, Math.round((state.federation.updated_ms - hub.negotiated_at) / 1000)) }) }) : null,
         ].filter(Boolean);
         return h("div", { class: "row", "data-k": "hub:" + hub.url },
           h("div", { class: "body" },
             h("div", { class: "title" }, String(hub.url || "").replace(/^https?:\/\//, ""),
               hub.healthy
-                ? h("span", { class: "pill ok" }, h("span", { class: "dot" }), "Reachable")
-                : h("span", { class: "pill bad" }, h("span", { class: "dot" }), "Unreachable")),
+                ? h("span", { class: "pill ok" }, h("span", { class: "dot" }), t("sync.reachable"))
+                : h("span", { class: "pill bad" }, h("span", { class: "dot" }), t("sync.unreachable"))),
             hub.version ? h("div", { class: "sub mono", text: "v" + hub.version }) : null,
             ws.map((line) => h("div", { class: "sub", text: line })),
             extra.map((line) => h("div", { class: "sub", text: line }))));
@@ -468,52 +469,51 @@ function renderSync() {
   const admitted = f.role === "hub" ? (f.admitted || []) : [];
   const ids = [...new Set([...admitted.map((p) => p.node_id), ...known.map((p) => p.node_id)])];
   if (ids.length || f.role === "hub") {
-    out.push(h("div", { class: "group-title", text: f.role === "hub" ? "Peers, and what each may read" : "Peers that have checked in" }));
+    out.push(h("div", { class: "group-title", text: t(f.role === "hub" ? "sync.peersHub" : "sync.peersSpoke") }));
     out.push(h("div", { class: "card" }, ids.length ? ids.map((id) => {
       const seen = known.find((p) => p.node_id === id);
       const peer = admitted.find((p) => p.node_id === id);
       const ago = seen && f.updated_ms && seen.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - seen.last_seen_ms) / 1000)) : null;
       const checkedIn = seen
-        ? seen.last_action + (ago !== null ? " " + ago + "s ago" : "") + " (" + (seen.hits | 0) + "), "
-          + (seen.release ? "v" + seen.release : "release not known") + ", sync " + (seen.protocol | 0)
-        : "has not checked in yet";
+        ? t("sync.checkedIn", { action: seen.last_action, ago: ago !== null ? t("page.secondsAgo", { s: ago }) : "", hits: seen.hits | 0,
+          release: seen.release ? t("sync.release", { release: seen.release }) : t("sync.releaseUnknown"), protocol: seen.protocol | 0 }).replace("  ", " ")
+        : t("sync.notCheckedIn");
       let chips = null;
       if (peer) {
         const shared = peer.shared_workspaces || [];
         chips = h("div", { class: "chips" }, shared.length
           ? shared.map((w) => h("span", { class: "chip" }, w,
               h("button", {
-                class: "chip-x", title: tip("Stop sharing " + w), "aria-label": "Stop sharing " + w,
+                class: "chip-x", title: tip(t("sync.stopSharingWs", { ws: w })), "aria-label": t("sync.stopSharingWs", { ws: w }),
                 disabled: pending.size > 0, on: { click: () => confirmNarrow(peer, w) },
               }, icon("x"))))
-          : [h("span", { class: "sub", text: "admitted, may read nothing" })]);
+          : [h("span", { class: "sub", text: t("sync.readsNothing") })]);
       } else if (f.role === "hub") {
-        chips = h("div", { class: "sub", text: "not admitted" });
+        chips = h("div", { class: "sub", text: t("sync.peerNotAdmitted") });
       }
       return h("div", { class: "row", "data-k": "peer:" + id },
         h("div", { class: "body" },
           h("div", { class: "title mono selectable", text: id }),
           h("div", { class: "sub", text: checkedIn }),
           chips));
-    }) : [h("div", { class: "row" }, h("div", { class: "body" }, h("div", { class: "sub", text: f.role === "hub"
-      ? "No peer is admitted or has checked in. Admitting one stays in supragnosis.toml." : "No peer has checked in yet." })))]));
-    if (f.role === "hub") out.push(h("p", { class: "hint", text: "Removing a grant takes effect at once and is written to supragnosis.toml. It stops future reads; it does not take back what has already synced. Granting a workspace, and admitting or removing a peer, stay in the file." }));
+    }) : [h("div", { class: "row" }, h("div", { class: "body" }, h("div", { class: "sub", text: t(f.role === "hub" ? "sync.noPeerHub" : "sync.noPeer") })))]));
+    if (f.role === "hub") out.push(h("p", { class: "hint", text: t("sync.hint") }));
   }
   return out;
 }
 
 function confirmNarrow(peer, ws) {
   const keep = (peer.shared_workspaces || []).filter((w) => w !== ws);
-  const stop = h("button", { class: "btn danger solid" }, "Stop sharing");
+  const stop = h("button", { class: "btn danger solid" }, t("sync.stopSharing"));
   stop.addEventListener("click", async () => {
     closeDialog();
-    await act("narrow:" + peer.node_id, "peer_narrow", { node: peer.node_id, keep }, { title: "Stopped sharing " + ws });
+    await act("narrow:" + peer.node_id, "peer_narrow", { node: peer.node_id, keep }, { title: t("sync.stoppedSharing", { ws }) });
   });
   openDialog([
     h("div", { class: "d-head" },
-      h("h3", { id: "d-title", text: "Stop sharing \"" + ws + "\" with this peer?" }),
-      h("p", { text: "It takes effect at once and is written to supragnosis.toml. The peer keeps what it has already synced; it reads nothing new from this workspace." })),
-    h("div", { class: "d-foot" }, h("button", { class: "btn", on: { click: closeDialog } }, "Cancel"), stop),
+      h("h3", { id: "d-title", text: t("sync.confirmTitle", { ws }) }),
+      h("p", { text: t("sync.confirmBody") })),
+    h("div", { class: "d-foot" }, h("button", { class: "btn", on: { click: closeDialog } }, t("page.cancel")), stop),
   ], "d-title");
 }
 
@@ -521,25 +521,25 @@ function renderAbout() {
   const a = state.about || {};
   const d = state.daemon || {};
   const pairs = [
-    ["App", a.app],
-    ["CLI", d.installed || (a.cli ? "unknown" : "not found")],
-    ["Daemon", d.running || daemonStatus(d).title],
-    ["CLI location", a.cli || "not found"],
-    ["Data", a.data],
-    ["License", a.license],
-    ["Source", a.source],
+    [t("about.app"), a.app],
+    [t("about.cli"), d.installed || t(a.cli ? "about.unknown" : "about.notFound")],
+    [t("about.daemon"), d.running || daemonStatus(d).title],
+    [t("about.cliLocation"), a.cli || t("about.notFound")],
+    [t("about.data"), a.data],
+    [t("about.license"), a.license],
+    [t("about.source"), a.source],
   ];
   return [
     h("div", { class: "card kv selectable" }, pairs.flatMap(([k, v]) => [h("div", { class: "k", text: k }), h("div", { class: "v", text: v || "-" })])),
     // The first run's page, again (docs/onboarding.md Section 6): it shows only what is not done.
-    h("div", { class: "group-title", text: "Setup" }),
+    h("div", { class: "group-title", text: t("about.setup") }),
     h("div", { class: "card" },
       h("div", { class: "row" },
         h("div", { class: "body" },
-          h("div", { class: "title", text: "Setup" }),
-          h("div", { class: "sub", text: "The four steps of the first run: what is done, and what is left." })),
-        h("div", { class: "end" }, h("a", { class: "btn", href: withBack("welcome.html") }, "Open Setup")))),
-    h("p", { class: "hint", text: "Dependency licenses are in the manifest and lockfile at the source above, which cannot disagree with the build. Icons by Lucide (ISC)." }),
+          h("div", { class: "title", text: t("about.setup") }),
+          h("div", { class: "sub", text: t("about.setupSub") })),
+        h("div", { class: "end" }, h("a", { class: "btn", href: withBack("welcome.html") }, t("about.openSetup"))))),
+    h("p", { class: "hint", text: t("about.hint") }),
   ];
 }
 
@@ -564,17 +564,17 @@ function draw() {
   let body;
   if (loadError && !state) {
     body = [h("div", { class: "callout bad" }, icon("alert"),
-      h("div", { class: "grow" }, "The settings could not be read.", h("div", { class: "sub selectable", text: loadError })))];
+      h("div", { class: "grow" }, t("page.unread"), h("div", { class: "sub selectable", text: loadError })))];
   } else if (!state) {
     body = renderSkeleton();
   } else if (!state.cli) {
     body = [h("div", { class: "callout warn" }, icon("warn"),
-      h("div", { class: "grow", text: "The supragnosis CLI was not found. Install supragnosis-server (brew install supragnosis-server) and reopen Settings." }))];
+      h("div", { class: "grow", text: t("page.noCli") }))];
   } else if (state.cli_newer && (id === "apps" || id === "daemon")) {
     // docs/compatibility.md Section 6: the CLI answered in a schema this app does not read, so these
     // sections are not drawn from a payload whose meaning moved.
     body = [h("div", { class: "callout warn" }, icon("warn"),
-      h("div", { class: "grow", text: "This supragnosis-server is newer than the app. Update the app (brew upgrade --cask supragnosis) and reopen Settings." }))];
+      h("div", { class: "grow", text: t("page.cliNewer") }))];
   } else {
     // An explicit switch rather than a lookup by name: the id comes from the URL's hash, and a
     // property lookup would also find what every object has (constructor, __proto__).
@@ -595,8 +595,8 @@ function draw() {
 
 // The pane's windows and the ways the calls chart splits (docs/usage.md Section 4.1). The counts are
 // the CLI's: the page adds its hours into local days and keeps the five largest series apart.
-const USAGE_WINDOWS = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
-const USAGE_SPLITS = [["name", "Function"], ["workspace", "Workspace"], ["app", "App"], ["rw", "Read or write"]];
+const USAGE_WINDOWS = [["7d", t("usage.days", { n: 7 })], ["30d", t("usage.days", { n: 30 })], ["90d", t("usage.days", { n: 90 })]];
+const USAGE_SPLITS = [["name", t("usage.function")], ["workspace", t("usage.workspace")], ["app", t("usage.app")], ["rw", t("usage.readOrWrite")]];
 // `of` is the window the data on screen was read for and `at` when, so the days end where the read
 // did and the words name the window the numbers are of.
 const usage = { since: "7d", split: "name", data: null, of: null, at: 0, error: null, reading: false, shown: false };
@@ -623,8 +623,11 @@ async function readUsage() {
 const DAY = 86400000;
 const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const total = (hours, f) => hours.reduce((n, hr) => n + f(hr), 0);
-const counted = (n) => n >= 10000 ? Math.round(n / 1000) + "K" : n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(n);
-const dayName = (t) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+// Counts and days in the page's language (docs/i18n.md Section 4): 1.2K, 12K; 1.2천, 1.2만.
+const COMPACT = new Intl.NumberFormat(LANG, { notation: "compact" });
+const counted = (n) => COMPACT.format(n);
+const DAY_NAME = new Intl.DateTimeFormat(LANG, { month: "short", day: "numeric" });
+const dayName = (t) => DAY_NAME.format(t);
 
 // One column per local day from the window's start to the read, oldest first, each with the hours in
 // it. The first day starts where the window does, so it can be partial. An hour that starts before
@@ -639,13 +642,13 @@ function usageDays(data, until) {
   return days;
 }
 
-const shownName = (split, n) => n !== "-" ? n : split === "workspace" ? "No workspace" : "Unnamed app";
+const shownName = (split, n) => n !== "-" ? n : t(split === "workspace" ? "usage.noWorkspace" : "usage.unnamedApp");
 
 // The calls chart's series for a split: the five largest in the window, the rest as Other.
 function callSeries(days, split) {
   if (split === "rw") return [
-    { name: "Reads", get: (d) => total(d.hours, (hr) => hr.calls - hr.writes) },
-    { name: "Writes", get: (d) => total(d.hours, (hr) => hr.writes) }];
+    { name: t("usage.reads"), get: (d) => total(d.hours, (hr) => hr.calls - hr.writes) },
+    { name: t("usage.writes"), get: (d) => total(d.hours, (hr) => hr.writes) }];
   const key = { name: "by_name", workspace: "by_workspace", app: "by_app" }[split];
   const sums = new Map();
   for (const d of days) for (const hr of d.hours) for (const [n, c] of hr[key]) sums.set(n, (sums.get(n) || 0) + c);
@@ -653,7 +656,7 @@ function callSeries(days, split) {
   const top = ranked.slice(0, 5);
   const count = (d, pick) => total(d.hours, (hr) => hr[key].reduce((n, [k, c]) => n + (pick(k) ? c : 0), 0));
   const series = top.map((n) => ({ name: shownName(split, n), get: (d) => count(d, (k) => k === n) }));
-  if (ranked.length > top.length) series.push({ name: "Other", other: true, get: (d) => count(d, (k) => !top.includes(k)) });
+  if (ranked.length > top.length) series.push({ name: t("usage.other"), other: true, get: (d) => count(d, (k) => !top.includes(k)) });
   return series;
 }
 
@@ -671,7 +674,7 @@ const niceMax = (v) => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2
 // every number again in the table under the chart (the dataviz rules this page follows).
 function columnChart(label, days, series) {
   if (days.every((d) => series.every((se) => !se.get(d)))) {
-    return h("div", { class: "ucard" }, h("p", { class: "hint", text: "None in this window." }));
+    return h("div", { class: "ucard" }, h("p", { class: "hint", text: t("usage.none") }));
   }
   const W = 640, H = 170, L = 36, T = 8, B = 22, pw = W - L - 6, ph = H - T - B;
   const slots = series.map((se, i) => se.other ? "so" : "s" + (i + 1));
@@ -680,7 +683,7 @@ function columnChart(label, days, series) {
   const slot = pw / days.length, cw = Math.max(2, Math.min(24, slot * 0.66));
   const y = (v) => T + ph - (v / max) * ph;
   const chart = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "uchart", role: "img", tabindex: 0,
-    "aria-label": label + " per day; the numbers are in the table below the chart" });
+    "aria-label": t("usage.chartLabel", { label }) });
   // Counts take whole-number ticks: the middle one only when it is whole.
   for (const v of Number.isInteger(max / 2) ? [0, max / 2, max] : [0, max]) {
     chart.append(svgEl("line", { x1: L, x2: W - 6, y1: y(v), y2: y(v), class: v ? "grid" : "base" }),
@@ -734,8 +737,8 @@ function columnChart(label, days, series) {
     show(Math.max(0, Math.min(days.length - 1, (at >= 0 ? at : days.length - 1) + step)));
   });
   const legend = h("div", { class: "ulegend" }, series.map((se, k) => h("span", null, h("span", { class: "key " + slots[k] }), se.name)));
-  const table = h("details", { class: "unumbers" }, h("summary", { text: "Numbers" }),
-    usageTable(["Day", ...series.map((se) => se.name), "Total"],
+  const table = h("details", { class: "unumbers" }, h("summary", { text: t("usage.numbers") }),
+    usageTable([t("usage.day"), ...series.map((se) => se.name), t("usage.total")],
       days.map((d, i) => [dayName(d.t), ...series.map((se) => se.get(d)), sums[i]]).reverse()));
   return h("div", { class: "ucard" }, legend, h("div", { class: "uplot" }, chart, tip), table);
 }
@@ -750,14 +753,14 @@ function usageTable(head, rows, names = 1) {
 
 function renderUsage() {
   if (!usage.shown) { usage.shown = true; queueMicrotask(readUsage); }
-  const windows = h("div", { class: "useg", role: "group", "aria-label": "Window" },
+  const windows = h("div", { class: "useg", role: "group", "aria-label": t("usage.window") },
     USAGE_WINDOWS.map(([id, label]) => h("button", {
       type: "button", class: "btn" + (usage.since === id ? " on" : ""), "aria-pressed": String(usage.since === id),
       on: { click: () => { if (usage.since !== id) { usage.since = id; readUsage(); } } },
     }, label)));
   const out = [h("div", { class: "ubar" }, windows)];
   const failed = (text) => h("div", { class: "callout bad" }, icon("alert"),
-    h("div", { class: "grow" }, "The usage log could not be read.", h("div", { class: "sub selectable", text })));
+    h("div", { class: "grow" }, t("usage.unread"), h("div", { class: "sub selectable", text })));
   if (!usage.data) return out.concat(usage.error ? [failed(usage.error)] : renderSkeleton());
   if (usage.error) out.push(failed(usage.error));
   const dim = usage.reading || usage.of !== usage.since;
@@ -769,12 +772,12 @@ function usageBody(data) {
   const since = USAGE_WINDOWS.find(([id]) => id === usage.of)[1];
   if (!data.calls && !hours.length) {
     return h("div", { class: "callout info" }, icon("info"), h("div", { class: "grow",
-      text: "Nothing was recorded in the last " + since + ". The daemon writes the usage log as AI apps call it, and the Claude Code hook as it gives a session its index or asks about a commit." }));
+      text: t("usage.nothing", { since }) }));
   }
   const writes = total(hours, (hr) => hr.writes), missed = total(hours, (hr) => hr.empty + hr.not_found + hr.errors);
   const tile = (label, value, sub) => h("div", { class: "utile" },
     h("div", { class: "ul", text: label }), h("div", { class: "uv", text: value }), h("div", { class: "us", text: sub }));
-  const split = h("div", { class: "useg", role: "group", "aria-label": "Split by" },
+  const split = h("div", { class: "useg", role: "group", "aria-label": t("usage.splitBy") },
     USAGE_SPLITS.map(([id, label]) => h("button", {
       type: "button", class: "btn" + (usage.split === id ? " on" : ""), "aria-pressed": String(usage.split === id),
       on: { click: () => { usage.split = id; render(); } },
@@ -785,38 +788,38 @@ function usageBody(data) {
   const rc = data.recall || { opens: 0, index_opens: 0, observes: 0, cited: 0, reach: [] };
   return [
     h("div", { class: "utiles" },
-      tile("Calls", counted(data.calls), counted(data.calls - writes) + " reads, " + counted(writes) + " writes"),
-      tile("Found nothing or failed", data.calls ? Math.round((missed / data.calls) * 100) + "%" : "-", counted(missed) + " of " + counted(data.calls) + " calls"),
-      tile("Indexes the hook gave", counted(hk.session_indexes + hk.subagent_indexes), hk.session_indexes + " to sessions, " + hk.subagent_indexes + " to subagents"),
-      tile("Commit questions answered", hk.commit_questions ? hk.answered_with_a_record + " of " + hk.commit_questions : "-", "an observe names the commit"),
-      tile("Opened from an index", rc.opens ? rc.index_opens + " of " + rc.opens : "-", "records opened from an index line"),
-      tile("Writes that cite a record", rc.observes ? rc.cited + " of " + rc.observes : "-", "observes naming what they built on")),
-    h("div", { class: "group-title uhead" }, h("span", { text: "Calls" }), split),
-    columnChart("Calls", days, callSeries(days, usage.split)),
-    h("div", { class: "group-title", text: "Found nothing or failed" }),
-    columnChart("Calls that found nothing or failed", days, series([
-      ["Found nothing", (hr) => hr.empty], ["Named nothing", (hr) => hr.not_found], ["Failed", (hr) => hr.errors]])),
-    h("div", { class: "group-title", text: "Indexes the Claude Code hook gave" }),
-    columnChart("Indexes given", days, series([
-      ["To sessions", (hr) => hr.session_indexes], ["To subagents", (hr) => hr.subagent_indexes]])),
-    h("div", { class: "group-title", text: "Commit questions" }),
-    columnChart("Commit questions", days, series([
-      ["Answered with a record", (hr) => hr.answered], ["Not answered", (hr) => hr.commit_questions - hr.answered, true]])),
+      tile(t("usage.calls"), counted(data.calls), t("usage.readsWrites", { reads: counted(data.calls - writes), writes: counted(writes) })),
+      tile(t("usage.missed"), data.calls ? Math.round((missed / data.calls) * 100) + "%" : "-", t("usage.missedOf", { missed: counted(missed), calls: counted(data.calls) })),
+      tile(t("usage.indexesGiven"), counted(hk.session_indexes + hk.subagent_indexes), t("usage.indexesTo", { sessions: hk.session_indexes, subagents: hk.subagent_indexes })),
+      tile(t("usage.commitAnswered"), hk.commit_questions ? t("page.kOfN", { k: hk.answered_with_a_record, n: hk.commit_questions }) : "-", t("usage.commitAnsweredSub")),
+      tile(t("usage.fromIndex"), rc.opens ? t("page.kOfN", { k: rc.index_opens, n: rc.opens }) : "-", t("usage.fromIndexSub")),
+      tile(t("usage.citing"), rc.observes ? t("page.kOfN", { k: rc.cited, n: rc.observes }) : "-", t("usage.citingSub"))),
+    h("div", { class: "group-title uhead" }, h("span", { text: t("usage.calls") }), split),
+    columnChart(t("usage.calls"), days, callSeries(days, usage.split)),
+    h("div", { class: "group-title", text: t("usage.missed") }),
+    columnChart(t("usage.missedCalls"), days, series([
+      [t("usage.foundNothing"), (hr) => hr.empty], [t("usage.namedNothing"), (hr) => hr.not_found], [t("usage.failed"), (hr) => hr.errors]])),
+    h("div", { class: "group-title", text: t("usage.hookIndexes") }),
+    columnChart(t("usage.indexes"), days, series([
+      [t("usage.toSessions"), (hr) => hr.session_indexes], [t("usage.toSubagents"), (hr) => hr.subagent_indexes]])),
+    h("div", { class: "group-title", text: t("usage.commitQuestions") }),
+    columnChart(t("usage.commitQuestions"), days, series([
+      [t("usage.answered"), (hr) => hr.answered], [t("usage.notAnswered"), (hr) => hr.commit_questions - hr.answered, true]])),
     data.recall ? [
-      h("div", { class: "group-title", text: "Records opened" }),
-      columnChart("Records opened", days, series([
-        ["From an index line", (hr) => hr.index_opens], ["Elsewhere", (hr) => hr.opens - hr.index_opens, true]])),
-      h("div", { class: "group-title", text: "Writes that cite a record" }),
-      columnChart("Observes", days, series([
-        ["Cite a record", (hr) => hr.cited], ["Cite none", (hr) => hr.observes - hr.cited, true]])),
+      h("div", { class: "group-title", text: t("usage.opened") }),
+      columnChart(t("usage.opened"), days, series([
+        [t("usage.fromIndexLine"), (hr) => hr.index_opens], [t("usage.elsewhere"), (hr) => hr.opens - hr.index_opens, true]])),
+      h("div", { class: "group-title", text: t("usage.citing") }),
+      columnChart(t("usage.observes"), days, series([
+        [t("usage.cite"), (hr) => hr.cited], [t("usage.citeNone"), (hr) => hr.observes - hr.cited, true]])),
     ] : null,
-    rc.reach.length ? h("div", { class: "group-title", text: "How far back each session index reaches" }) : null,
-    rc.reach.length ? h("div", { class: "ucard" }, usageTable(["Workspace", "Hours back, latest session index"], rc.reach)) : null,
-    h("div", { class: "group-title", text: "By function and workspace" }),
-    h("div", { class: "ucard" }, usageTable(["Function", "Workspace", "Calls", "Found nothing", "Named nothing", "Failed"],
+    rc.reach.length ? h("div", { class: "group-title", text: t("usage.reach") }) : null,
+    rc.reach.length ? h("div", { class: "ucard" }, usageTable([t("usage.workspace"), t("usage.hoursBack")], rc.reach)) : null,
+    h("div", { class: "group-title", text: t("usage.byCall") }),
+    h("div", { class: "ucard" }, usageTable([t("usage.function"), t("usage.workspace"), t("usage.calls"), t("usage.foundNothing"), t("usage.namedNothing"), t("usage.failed")],
       data.by_call.map((r) => [r.kind === "tool" ? r.name : r.kind + ":" + r.name, shownName("workspace", r.workspace), r.calls, r.empty, r.not_found, r.errors]), 2)),
-    h("div", { class: "group-title", text: "By app" }),
-    h("div", { class: "ucard" }, usageTable(["App", "Calls"], data.by_app.map(([app, n]) => [shownName("app", app), n]))),
+    h("div", { class: "group-title", text: t("usage.byApp") }),
+    h("div", { class: "ucard" }, usageTable([t("usage.app"), t("usage.calls")], data.by_app.map(([app, n]) => [shownName("app", app), n]))),
   ];
 }
 
@@ -849,11 +852,11 @@ function closeDialog() {
 async function copyDiagnostics() {
   try {
     await invoke("clipboard_copy", { text: await invoke("diagnostics") });
-    toast("ok", "Diagnostics copied");
-  } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
+    toast("ok", t("daemon.diagnosticsCopied"));
+  } catch (e) { toast("bad", t("daemon.diagnosticsFailed"), String(e)); }
 }
 async function revealFile(what) {
-  try { await invoke("reveal", { what }); } catch (e) { toast("bad", "Could not show it in Finder", String(e)); }
+  try { await invoke("reveal", { what }); } catch (e) { toast("bad", t("page.notShownInFinder"), String(e)); }
 }
 
 // What the page last drew from: the reads that come on their own - the window's focus, the watch -
@@ -923,7 +926,7 @@ function actAsked() {
   if (act === "restart") {
     if (!d) return;
     if (!d.answering && d.shell !== "starting") restartDaemon();
-    else toast("info", d.answering ? "Not restarted: the daemon answers" : "Not restarted: the daemon is still starting");
+    else toast("info", t(d.answering ? "daemon.notRestartedAnswers" : "daemon.notRestartedStarting"));
     return;
   }
   if (act === "diagnostics") { const b = document.getElementById("copyDiagnostics"); if (b) b.focus(); return; }

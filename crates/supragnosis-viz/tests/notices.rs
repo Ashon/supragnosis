@@ -8,6 +8,7 @@
 const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const VIEWER_CSS: &str = include_str!("../assets/viewer.css");
 const KIT: &str = include_str!("../../../app/assets/kit.js");
+const WORDS: &str = include_str!("../../../app/assets/words.json");
 const SETTINGS_CSS: &str = include_str!("../../../app/assets/settings.css");
 const SETTINGS_HTML: &str = include_str!("../../../app/assets/settings.html");
 const WELCOME_HTML: &str = include_str!("../../../app/assets/welcome.html");
@@ -76,8 +77,12 @@ fn a_notice_has_one_anatomy() {
             t.contains("icon(NOTICE_ICON[kind]"),
             "\n{name}'s notice leads with its kind's icon"
         );
+        // The app's pages name it from their words (app/assets/words.json, docs/i18n.md Section 4).
+        let words: serde_json::Value = serde_json::from_str(WORDS).expect("the app's words");
         assert!(
-            t.contains("\"aria-label\", \"Dismiss\"") || t.contains("\"aria-label\": \"Dismiss\""),
+            t.contains("\"aria-label\", \"Dismiss\"")
+                || (t.contains("\"aria-label\": t(\"page.dismiss\")")
+                    && words["page.dismiss"]["en"] == "Dismiss"),
             "\n{name}'s dismiss is named Dismiss"
         );
         assert!(t.contains("icon(\"x\")"), "\n{name}'s dismiss shows the set's x");

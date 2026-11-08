@@ -21,51 +21,28 @@ pub(crate) fn cli_connect_list(cli: &dyn Cli) -> Option<serde_json::Value> {
     run_cli_json(cli, &["connect", "--json"])
 }
 
-/// One AI app's row on the settings page, from the CLI's report on it: what state it is in, the
-/// label of its one button - `None` where a click could do nothing (not installed, settings
-/// unreadable, a CLI too old to know `connect`) - and the kind of state, which picks the row's pill:
-/// `connected`, `attention` (connected some other way, which a click replaces), `off` or `absent`.
-/// Any entry other than the bridge is named, because the person clicking is about to replace it.
+/// One AI app's row on the settings page, from the CLI's report on it: what state it is in, its one
+/// button - `None` where a click could do nothing (not installed, settings unreadable, a CLI too old
+/// to know `connect`) - and the kind of state, which picks the row's pill: `connected`, `attention`
+/// (connected some other way, which a click replaces), `off` or `absent`. The state and the button
+/// are ids from closed sets, which the page says in its words (docs/i18n.md Section 5); any entry
+/// other than the bridge has its own, because the person clicking is about to replace it.
 pub(crate) fn app_row(
     report: Option<&serde_json::Value>,
-) -> (String, Option<&'static str>, &'static str) {
+) -> (&'static str, Option<&'static str>, &'static str) {
     let Some(r) = report else {
-        return ("needs a newer supragnosis-server".into(), None, "absent");
+        return ("newer", None, "absent");
     };
     if !r["installed"].as_bool().unwrap_or(false) {
-        return ("not installed".into(), None, "absent");
+        return ("absent", None, "absent");
     }
     match r["entry"].as_str().unwrap_or("none") {
-        "bridge" => {
-            // Claude Code's row also says whether the capture hook is in (client-connect.md 12.4).
-            let capture = match r["capture"].as_str() {
-                Some("on") => ", capture on",
-                Some("off") => ", capture off",
-                _ => "",
-            };
-            (
-                format!("connected through the bridge{capture}"),
-                Some("Disconnect"),
-                "connected",
-            )
-        }
-        "http" => (
-            "connected over HTTP, with a copy of the token in its settings".into(),
-            Some("Switch to the bridge"),
-            "attention",
-        ),
-        "stdio" => (
-            "connected by an old stdio entry".into(),
-            Some("Switch to the bridge"),
-            "attention",
-        ),
-        "other" => (
-            "another Supragnosis entry is configured".into(),
-            Some("Switch to the bridge"),
-            "attention",
-        ),
-        "unknown" => ("its settings file could not be read".into(), None, "absent"),
-        _ => ("not connected".into(), Some("Connect"), "off"),
+        "bridge" => ("bridge", Some("disconnect"), "connected"),
+        "http" => ("http", Some("switch"), "attention"),
+        "stdio" => ("stdio", Some("switch"), "attention"),
+        "other" => ("other", Some("switch"), "attention"),
+        "unknown" => ("unread", None, "absent"),
+        _ => ("none", Some("connect"), "off"),
     }
 }
 
@@ -140,19 +117,25 @@ async fn toggle_app(app: &tauri::AppHandle<Rt>, id: &str) -> Result<String, Stri
     .ok()
     .flatten();
     let message = match out {
-        None => Err(format!("{name}: the supragnosis command was not found")),
-        Some(o) if o.status.success() && connected => Ok(format!("{name} disconnected")),
+        None => Err(word_with("app.noCommand", &[("app", &name)])),
+        Some(o) if o.status.success() && connected => {
+            Ok(word_with("app.didDisconnect", &[("app", &name)]))
+        }
         Some(o) if o.status.success() => {
-            // The CLI's "next" line is the one thing the person still has to do.
+            // The CLI's "next" line is the one thing the person still has to do, on a line of its
+            // own, which Settings keeps under the app's name.
             let next = String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .find_map(|l| l.trim().strip_prefix("next").map(|n| n.trim().to_string()));
+            let done = word_with("app.didConnect", &[("app", &name)]);
             Ok(match next {
-                Some(n) => format!("{name} connected - {n}"),
-                None => format!("{name} connected"),
+                Some(n) => format!("{done}\n{n}"),
+                None => done,
             })
         }
-        Some(o) => Err(format!("connecting {name} failed: {}", cli_outcome(&o).1)),
+        Some(o) => {
+            Err(word_with("app.connectFailed", &[("app", &name), ("why", &cli_outcome(&o).1)]))
+        }
     };
     refresh_status(app).await;
     message
@@ -186,12 +169,10 @@ pub(crate) async fn capture_set(
     let out = on_cli(&app, move |c| c.run(&args)).await.ok().flatten();
     refresh_status(&app).await;
     match out {
-        None => Err("supragnosis CLI not found".into()),
-        Some(o) if o.status.success() => Ok(if on {
-            "Claude Code asks for the why behind each commit".into()
-        } else {
-            "Claude Code no longer asks after a commit".into()
-        }),
+        None => Err(word("app.cliMissing")),
+        Some(o) if o.status.success() => {
+            Ok(word(if on { "app.captureOn" } else { "app.captureOff" }))
+        }
         Some(o) => Err(cli_outcome(&o).1),
     }
 }
@@ -204,9 +185,7 @@ pub(crate) async fn app_helper(webview: tauri::Webview<Rt>, id: String) -> Resul
     own_page_caller(&webview)?;
     tokio::task::spawn_blocking(move || match id.as_str() {
         "claude-desktop" => restart_claude_desktop(),
-        "cursor" => open_app(&["-a", "Cursor"]).map(|_| {
-            "Cursor is open. Turn supragnosis on under Settings > MCP if it is off.".to_string()
-        }),
+        "cursor" => open_app(&["-a", "Cursor"]).map(|_| word("app.cursorOpen")),
         other => Err(format!("{other:?} has no helper")),
     })
     .await
@@ -217,7 +196,7 @@ pub(crate) async fn app_helper(webview: tauri::Webview<Rt>, id: String) -> Resul
 const CLAUDE_DESKTOP: &str = "com.anthropic.claudefordesktop";
 
 fn restart_claude_desktop() -> Result<String, String> {
-    let by_hand = "Quit Claude Desktop (Cmd+Q) and open it again - it reads its servers at launch.";
+    let by_hand = word("app.claudeByHand");
     let running = || {
         Command::new("osascript")
             .args(["-e", &format!("application id \"{CLAUDE_DESKTOP}\" is running")])
@@ -230,15 +209,13 @@ fn restart_claude_desktop() -> Result<String, String> {
             .output()
             .map_err(|e| format!("{by_hand} ({e})"))?;
         if !quit.status.success() {
-            return Err(format!(
-                "{by_hand} macOS did not let Supragnosis ask it to quit: {}",
-                String::from_utf8_lossy(&quit.stderr).trim()
-            ));
+            let why = String::from_utf8_lossy(&quit.stderr).trim().to_string();
+            return Err(word_with("app.claudeNoQuit", &[("byHand", &by_hand), ("why", &why)]));
         }
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         while running() {
             if std::time::Instant::now() > deadline {
-                return Err(format!("{by_hand} It is still running - it may be asking something."));
+                return Err(word_with("app.claudeStill", &[("byHand", &by_hand)]));
             }
             std::thread::sleep(Duration::from_millis(300));
         }
@@ -246,7 +223,7 @@ fn restart_claude_desktop() -> Result<String, String> {
     open_app(&["-b", CLAUDE_DESKTOP]).map_err(|e| format!("{by_hand} ({e})"))?;
     // It is open; whether it loaded supragnosis is its row's to say, once it reaches the server
     // (design-system.md Section 29.10).
-    Ok("Claude Desktop is open. Its row says when it reaches the server.".into())
+    Ok(word("app.claudeOpen"))
 }
 
 fn open_app(args: &[&str]) -> Result<(), String> {

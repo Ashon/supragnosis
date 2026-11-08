@@ -360,19 +360,26 @@ mod status_text_tests {
     #[test]
     fn an_app_item_says_what_a_click_will_do() {
         let r = |installed: bool, entry: &str| serde_json::json!({"installed": installed, "entry": entry});
-        let (state, action, kind) = app_row(Some(&r(true, "bridge")));
-        assert!(state.contains("bridge") && action == Some("Disconnect") && kind == "connected");
+        assert_eq!(app_row(Some(&r(true, "bridge"))), ("bridge", Some("disconnect"), "connected"));
         let (state, action, kind) = app_row(Some(&r(true, "http")));
-        assert!(state.contains("HTTP") && action == Some("Switch to the bridge"), "{state}");
+        assert_eq!((state, action), ("http", Some("switch")));
         assert_eq!(kind, "attention", "a copy of the token is something to fix");
-        assert_eq!(app_row(Some(&r(true, "other"))).1, Some("Switch to the bridge"));
-        assert_eq!(app_row(Some(&r(false, "none"))), ("not installed".into(), None, "absent"));
+        assert_eq!(app_row(Some(&r(true, "other"))).1, Some("switch"));
+        assert_eq!(app_row(Some(&r(false, "none"))), ("absent", None, "absent"));
         assert_eq!(app_row(Some(&r(true, "unknown"))).1, None);
         assert_eq!(app_row(None).1, None, "an old CLI cannot connect anything");
-        assert_eq!(
-            app_row(Some(&r(true, "none"))),
-            ("not connected".into(), Some("Connect"), "off")
-        );
+        assert_eq!(app_row(Some(&r(true, "none"))), ("none", Some("connect"), "off"));
+        // The page says each state and button in its words (docs/i18n.md Section 5).
+        let js = include_str!("../assets/settings.js");
+        for (code, en) in [
+            ("http", "Connected over HTTP, with a copy of the token in its settings"),
+            ("disconnect", "Disconnect"),
+            ("switch", "Switch to the bridge"),
+            ("connect", "Connect"),
+        ] {
+            let line = js.lines().find(|l| l.contains(&format!(" {code}: \""))).expect(code);
+            assert!(crate::says(line, en), "the page does not say {code} as {en:?}");
+        }
     }
 
     /// client-connect.md Section 5: the CLI runs with the login shell's `PATH`. From the Finder the app
@@ -446,12 +453,14 @@ mod status_text_tests {
     #[test]
     fn the_ai_app_row_is_built_once() {
         let kit = include_str!("../assets/kit.js");
-        for part in [
-            "attention: [\"warn\", \"Needs you\"]",
-            "label: \"Save the why behind each commit\"",
-            "const HELPER = { \"claude-desktop\": \"Restart Claude Desktop\", cursor: \"Open Cursor\" };",
+        let line = |start: &str| kit.lines().find(|l| l.contains(start)).unwrap_or_default();
+        for (start, said) in [
+            ("attention: [\"warn\", ", "Needs you"),
+            ("const CAPTURE = { label: ", "Save the why behind each commit"),
+            ("const HELPER = { \"claude-desktop\": ", "Restart Claude Desktop"),
+            ("const HELPER = { \"claude-desktop\": ", "Open Cursor"),
         ] {
-            assert!(kit.contains(part), "kit.js does not hold: {part}");
+            assert!(crate::says(line(start), said), "kit.js does not hold {said:?} at {start}");
         }
     }
 
@@ -509,7 +518,9 @@ mod status_text_tests {
         let js = include_str!("../assets/settings.js");
         let switch = js.lines().find(|l| l.contains("\"login_set\"")).expect("the switch");
         assert!(
-            switch.contains("failTitle: e.target.checked ? \"Start at Login was not turned on\" : \"Start at Login was not turned off\""),
+            switch.contains("failTitle: t(e.target.checked ? ")
+                && crate::says(switch, "Start at Login was not turned on")
+                && crate::says(switch, "Start at Login was not turned off"),
             "the switch names its own failure: {switch}"
         );
     }
@@ -875,17 +886,23 @@ mod status_text_tests {
         let words = &settings[settings.find("function daemonStatus(").expect("daemonStatus")..];
         let words = &words[..words.find("\n}\n").expect("it closes")];
         for word in [
-            "\"Two managers run Supragnosis\"",
-            "\"Update ready - restart\"",
-            "\"Starting...\"",
-            "\"Could not start\"",
-            "\"Stopped\"",
-            "\"Repairing - \"",
-            "\"Running\"",
+            "Two managers run Supragnosis",
+            "Update ready - restart",
+            "Starting...",
+            "Could not start",
+            "Stopped",
+            "Repairing - {n} items left",
+            "Running",
         ] {
-            assert!(words.contains(word), "This Mac's card does not say {word}");
+            assert!(crate::says(words, word), "This Mac's card does not say {word}");
         }
-        assert!(settings.contains("owed === 0 ? \"Up to date\" : \"Repairing - \""));
+        let store = settings
+            .lines()
+            .find(|l| l.contains("owed === 0 ? "))
+            .expect("the store's line");
+        assert!(
+            crate::says(store, "Up to date") && crate::says(store, "Repairing - {n} items left")
+        );
         let welcome = include_str!("../assets/welcome.js");
         assert!(welcome.contains("title: \"Keep Supragnosis running\""));
         let setup = include_str!("../../crates/supragnosis-cli/src/setup.rs");
@@ -1136,8 +1153,12 @@ mod window_tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let js = include_str!("../assets/settings.js");
-        assert!(!js.contains("text: \"General\""), "the sidebar still heads its one group");
-        assert!(js.contains("text: appsWithEntry() + \" connected\""), "the count says no unit");
+        assert!(
+            !js.contains("text: \"General\"") && !crate::says(js, "General"),
+            "the sidebar still heads its one group"
+        );
+        let count = js.lines().find(|l| l.contains("n: appsWithEntry()")).expect("the count");
+        assert!(crate::says(count, "{n} connected"), "the count says no unit");
         assert!(
             js.contains("a.kind === \"connected\" || a.kind === \"attention\""),
             "the count is not the tray's"
@@ -1331,6 +1352,13 @@ mod tray_tests {
         assert!(
             shell_init_script().contains(&format!("controls: {list}")),
             "the page is not given the list"
+        );
+        // The words are put where the shell's default stood; a default left in place hands every
+        // page no words, and each would show its keys.
+        assert!(
+            shell_init_script()
+                .contains(&format!("window.supragnosisWords = {};", crate::page_words())),
+            "the pages are not given their words"
         );
         let all: Vec<String> = MAP_CONTROLS.iter().map(|c| c.to_string()).collect();
         assert!(
