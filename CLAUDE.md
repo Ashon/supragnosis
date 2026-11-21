@@ -54,3 +54,17 @@ B.1, B.2):
   실제 앱과 실제 서버로 손 점검을 마친다.
 - **기능상 버그 수정은 패치로, 기능은 대기.** 버그 수정은 마지막 릴리즈 태그에서 가른 브랜치에 골라 넣어
   패치 릴리즈(x.y.z+1)로 낸다. 기능은 main에 두고, 사람이 정한 다음 마이너 릴리즈에 함께 나간다.
+
+## 배포는 growth-experts가 맡는다
+
+2026-11-21부터 supragnosis의 배포는 growth-experts 세션(~/git/github/ashon/growth-experts)이
+맡는다. 이 저장소의 세션은 지금처럼 코드와 릴리즈 커밋(버전, CHANGELOG, docs/releases 노트)을 맡고,
+태그 다음은 growth-experts가 맡는다: Homebrew tap 확인, MCP Registry(server.json), crates.io,
+Claude 디렉터리 플러그인, 발표 글.
+
+- 릴리즈 시점은 그대로 사람이 정한다 (위의 "릴리즈는 사람이 먼저 꺼낼 때만").
+- 배포 체크리스트는 growth-experts 대시보드의 Release 페이지에 있다. 이 체크아웃(worktree 제외)에는
+  growth-experts MCP(http://127.0.0.1:4400/mcp)가 붙어 있어 list_release_tasks와 save_release_task로
+  읽고 쓴다.
+- 배포 채널에 닿는 변경(릴리즈, server.json, 크레이트 이름, 플러그인 매니페스트)은 체크리스트에
+  적거나 growth-experts 세션에 SendMessage로 알린다.
