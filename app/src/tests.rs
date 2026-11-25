@@ -904,7 +904,10 @@ mod status_text_tests {
             crate::says(store, "Up to date") && crate::says(store, "Repairing - {n} items left")
         );
         let welcome = include_str!("../assets/welcome.js");
-        assert!(welcome.contains("title: \"Keep Supragnosis running\""));
+        assert!(
+            welcome.contains("title: t(\"setup.stepServer\")")
+                && crate::says(welcome, "Keep Supragnosis running")
+        );
         let setup = include_str!("../../crates/supragnosis-cli/src/setup.rs");
         assert!(setup.contains(
             "\"Running while this app is open. Setup keeps it running at login instead.\""

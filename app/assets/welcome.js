@@ -3,7 +3,8 @@
 // Every state this page draws is an event `supragnosis setup --events` wrote (O4): the checklist
 // from `setup --check`, and while a step runs, the lines it streams. The page holds only the plan -
 // what the person has ticked - and the log of what ran. Its acts are setup's steps, the app's two
-// helpers, and the choices the app remembers. Built with DOM calls only (kit.js, S5).
+// helpers, and the choices the app remembers. Built with DOM calls only (kit.js, S5), in the words of
+// the app's language (kit.js t(), docs/i18n.md Section 4).
 "use strict";
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
@@ -11,17 +12,17 @@ const listen = (ev, fn) => window.__TAURI__.event.listen(ev, fn);
 const GRAPH = "viz://localhost/";
 
 const STEPS = [
-  { step: "server", title: "Keep Supragnosis running", log: "server" },
-  { step: "apps", title: "Connect your AI apps", log: "apps" },
-  { step: "model", title: "Search by meaning", log: "model" },
-  { step: "first", title: "Try it", log: "first" },
+  { step: "server", title: t("setup.stepServer"), log: "server" },
+  { step: "apps", title: t("setup.stepApps"), log: "apps" },
+  { step: "model", title: t("search.byMeaning"), log: "model" },
+  { step: "first", title: t("setup.stepFirst"), log: "first" },
 ];
 const PILL = {
-  done: ["ok", "Done"], todo: ["", "Not done"], working: ["gold", "Working"],
-  attention: ["warn", "Needs you"], failed: ["bad", "Failed"], skipped: ["", "Not needed here"],
+  done: ["ok", t("page.done")], todo: ["", t("setup.todo")], working: ["gold", t("setup.working")],
+  attention: ["warn", t("app.attention")], failed: ["bad", t("app.failed")], skipped: ["", t("setup.skipped")],
 };
 // The last step's work is the person's: while it waits, it says so rather than "Working".
-const FIRST_PILL = Object.assign({}, PILL, { working: ["gold", "Waiting for an entry"] });
+const FIRST_PILL = Object.assign({}, PILL, { working: ["gold", t("setup.waitingEntry")] });
 // A setup event's state, in the AI app row's words (kit.js, design-system.md Section 29.6).
 const APP_STATE = { done: "connected", skipped: "absent" };
 
@@ -79,7 +80,7 @@ async function check() {
   else firstWaitSince = null;
   // The first entry, arrived while the page shows, is said in the live region (Section 10).
   if (before && before.state !== "done" && first && first.state === "done") {
-    announce("First entry recorded in " + (first.id || "the store"));
+    announce(first.id ? t("setup.firstIn", { ws: first.id }) : t("setup.firstInStore"));
   }
   if (!applied && events.length && !needsPlan()) applied = true;
   for (const id of todoApps()) if (!(id in plan.apps)) plan.apps[id] = true;
@@ -149,19 +150,20 @@ async function run(key, opts) {
   const log = logFor(key);
   try {
     const out = await invoke("setup_run", { step: key, noCapture: !!(opts && opts.noCapture) });
-    log.push({ kind: "exit", text: out.ok ? "finished" : "failed (exit " + out.code + ")" + (out.why ? ": " + out.why : "") });
+    log.push({ kind: "exit", text: out.ok ? t("setup.finished")
+      : out.why ? t("setup.exitedWhy", { code: out.code, why: out.why }) : t("setup.exited", { code: out.code }) });
     if (out.ok && key.startsWith("app=")) connectedHere.add(key.slice(4));
-    if (!out.ok) toast("bad", (opts && opts.failTitle) || "That step did not finish", out.why || "See its details.");
-    announce(stepName(key) + (out.ok ? ": done" : ": failed"));
+    if (!out.ok) toast("bad", (opts && opts.failTitle) || t("setup.notFinished"), out.why || t("setup.seeDetails"));
+    announce(t(out.ok ? "setup.saidDone" : "setup.saidFailed", { step: stepName(key) }));
   } catch (e) {
     log.push({ kind: "err", text: String(e) });
     if (/already running/.test(String(e))) {
       // Started on an earlier visit and still going: say so, and wait for it (adoptRunning).
-      toast("ok", stepName(key) + " is already running");
+      toast("ok", t("setup.alreadyRunning", { step: stepName(key) }));
       adoptRunning();
     } else {
-      toast("bad", (opts && opts.failTitle) || "That step did not run", String(e));
-      announce(stepName(key) + ": failed");
+      toast("bad", (opts && opts.failTitle) || t("setup.notRun"), String(e));
+      announce(t("setup.saidFailed", { step: stepName(key) }));
     }
   } finally {
     delete running[key];
@@ -177,11 +179,11 @@ async function rebuild() {
   running.rebuild = true;
   render();
   try {
-    toast("ok", "Rebuilding the search index", await invoke("search_rebuild"));
-    announce("Rebuild index: done");
+    toast("ok", t("daemon.rebuilding"), await invoke("search_rebuild"));
+    announce(t("setup.saidDone", { step: t("daemon.rebuild") }));
   } catch (e) {
-    toast("bad", "The index was not rebuilt", String(e));
-    announce("Rebuild index: failed");
+    toast("bad", t("daemon.notRebuilt"), String(e));
+    announce(t("setup.saidFailed", { step: t("daemon.rebuild") }));
   } finally {
     delete running.rebuild;
     await check();
@@ -190,7 +192,7 @@ async function rebuild() {
 
 // What a step is called when its end is said: its card's title, or the app it connects.
 function stepName(key) {
-  if (key.startsWith("app=")) return "Connect " + (APPS[key.slice(4)] || key.slice(4));
+  if (key.startsWith("app=")) return t("setup.connectApp", { app: APPS[key.slice(4)] || key.slice(4) });
   const s = STEPS.find((x) => x.step === (key === "takeover" ? "server" : key));
   return s ? s.title : key;
 }
@@ -219,12 +221,12 @@ async function applyPlan() {
   if (server && server.state === "todo" && !plan.login) {
     try { info.prefs = await invoke("welcome_set", { loginOff: true }); } catch (_) { /* remembered next time */ }
   }
-  if (model && model.state === "todo" && plan.model) run("model", { failTitle: "The model did not download" });
-  if (server && server.state === "todo" && plan.login) await run("server", { failTitle: "The daemon is not kept running" });
-  if (takingOver) await run("takeover", { failTitle: "The daemon was not taken over" });
+  if (model && model.state === "todo" && plan.model) run("model", { failTitle: t("search.notDownloadedNow") });
+  if (server && server.state === "todo" && plan.login) await run("server", { failTitle: t("setup.notKept") });
+  if (takingOver) await run("takeover", { failTitle: t("setup.notTakenOver") });
   for (const id of todoApps()) {
     if (plan.apps[id] === false) continue;
-    await run("app=" + id, { noCapture: id === "claude-code" && !plan.capture, failTitle: APPS[id] + " was not connected" });
+    await run("app=" + id, { noCapture: id === "claude-code" && !plan.capture, failTitle: t("app.notConnected", { app: APPS[id] }) });
   }
   for (const id of replacing) {
     await switchToBridge(id);
@@ -242,7 +244,7 @@ async function helper(id) {
     toast("ok", out);
   } catch (e) {
     logs.apps.push({ kind: "err", text: String(e) });
-    toast("bad", "Do it by hand", String(e));
+    toast("bad", t("app.byHand"), String(e));
   } finally {
     delete running[key];
     render();
@@ -260,22 +262,23 @@ async function switchToBridge(id) {
     connectedHere.add(id);
   } catch (e) {
     logs.apps.push({ kind: "err", text: String(e) });
-    toast("bad", APPS[id] + " was not switched", String(e));
+    toast("bad", t("setup.notSwitched", { app: APPS[id] }), String(e));
   } finally {
     delete running[key];
     await check();
   }
 }
 
-async function copy(text, what) {
-  try { await invoke("clipboard_copy", { text }); toast("ok", what + " copied"); }
-  catch (e) { toast("bad", "Could not copy", String(e)); }
+// `copied` is the key of what the notice says was copied.
+async function copy(text, copied) {
+  try { await invoke("clipboard_copy", { text }); toast("ok", t(copied)); }
+  catch (e) { toast("bad", t("setup.notCopied"), String(e)); }
 }
 
 function logText() {
   return STEPS.map((s) => {
     const lines = logs[s.log].map((l) => (l.kind === "cmd" ? "$ " : "") + l.text);
-    return "## " + s.title + "\n" + (lines.length ? lines.join("\n") : "(nothing ran)");
+    return "## " + s.title + "\n" + (lines.length ? lines.join("\n") : t("setup.nothingRan"));
   }).join("\n\n");
 }
 
@@ -300,13 +303,13 @@ function sayNodes(text) {
     if (!(i % 2)) return part;
     const code = h("code", { text: part });
     if (!part.startsWith("supragnosis ")) return code;
-    return h("span", { class: "cmd" }, code, h("button", { type: "button", class: "btn quiet copycmd", "aria-label": "Copy " + part,
-      on: { click: (e) => { e.preventDefault(); e.stopPropagation(); copy(part, "The command"); } } }, "Copy"));
+    return h("span", { class: "cmd" }, code, h("button", { type: "button", class: "btn quiet copycmd", "aria-label": t("setup.copyThis", { what: part }),
+      on: { click: (e) => { e.preventDefault(); e.stopPropagation(); copy(part, "setup.commandCopied"); } } }, t("setup.copy")));
   });
 }
 
 function pill(map, state) {
-  const [cls, text] = map[state] || ["", state || "Unknown"];
+  const [cls, text] = map[state] || ["", state || t("page.unknown")];
   return h("span", { class: "pill " + cls }, cls === "ok" || cls === "warn" || cls === "bad" ? h("span", { class: "dot" }) : null,
     state === "working" && map !== FIRST_PILL ? icon("spin", "i-spin") : null, text);
 }
@@ -325,11 +328,11 @@ function drawer(s) {
   const open = !!drawers[s.step];
   const lines = logs[s.log];
   const toggle = h("button", { class: "drawer-toggle", "aria-expanded": open ? "true" : "false",
-    on: { click: () => { drawers[s.step] = !open; render(); } } }, icon("chevron"), "Details");
+    on: { click: () => { drawers[s.step] = !open; render(); } } }, icon("chevron"), t("setup.details"));
   if (!open) return toggle;
   const body = lines.length
     ? lines.map((l) => h("div", { class: "l-" + l.kind, text: l.text }))
-    : [h("div", { class: "l-none", text: "Nothing has run for this step yet." })];
+    : [h("div", { class: "l-none", text: t("setup.nothingYet") })];
   return [toggle, h("div", { class: "drawer", "data-log": s.log }, body)];
 }
 
@@ -350,16 +353,16 @@ function stepCard(s, i) {
 function serverBody(e, state, say) {
   const controls = [];
   if (state === "todo" && !applied) {
-    controls.push(check_(plan.login, "Start at Login", (v) => { plan.login = v; }));
+    controls.push(check_(plan.login, t("daemon.login"), (v) => { plan.login = v; }));
   } else if (state === "attention" && /embed rebuild/.test(say)) {
     // A store indexed by another model keeps the daemon from starting (onboarding.md Section 4.1, O4).
-    controls.push(button("Rebuild index", "restart", "primary", rebuild, "rebuild"));
+    controls.push(button(t("daemon.rebuild"), "restart", "primary", rebuild, "rebuild"));
   } else if (state === "attention" && /--take-over/.test(say) && !applied) {
-    controls.push(check_(plan.takeover, "Take over the daemon that runs now, so it starts at login", (v) => { plan.takeover = v; }));
+    controls.push(check_(plan.takeover, t("setup.takeOverPlan"), (v) => { plan.takeover = v; }));
   } else if ((state === "todo" || state === "failed") && !running.server) {
-    controls.push(button("Start at Login", "power", "primary", () => run("server", { failTitle: "The daemon is not kept running" }), "server"));
+    controls.push(button(t("daemon.login"), "power", "primary", () => run("server", { failTitle: t("setup.notKept") }), "server"));
   } else if (state === "attention" && /--take-over/.test(say)) {
-    controls.push(button("Take over", "power", "", () => run("takeover", { failTitle: "The daemon was not taken over" }), "takeover"));
+    controls.push(button(t("setup.takeOver"), "power", "", () => run("takeover", { failTitle: t("setup.notTakenOver") }), "takeover"));
   }
   return [h("p", { class: "say" }, sayNodes(say)), h("div", { class: "controls" }, controls)];
 }
@@ -383,14 +386,14 @@ function appsBody(e, state, say) {
           check_(plan.capture, CAPTURE.label, (v) => { plan.capture = v; }), h("div", { class: "sub", text: CAPTURE.sub }));
       }
     } else if ((st === "todo" || st === "failed") && APPS[a.id]) {
-      end.push(button("Connect", "plug", "primary", () => run(key, { noCapture: a.id === "claude-code" && !plan.capture, failTitle: name + " was not connected" }), key));
+      end.push(button(t("app.connect"), "plug", "primary", () => run(key, { noCapture: a.id === "claude-code" && !plan.capture, failTitle: t("app.notConnected", { app: name }) }), key));
     } else if (st === "attention" && /--replace/.test(a.say) && !applied) {
       // Replacing an entry the person made is in the plan, unchecked (O8).
       tick = h("input", { type: "checkbox", checked: !!plan.replace[a.id],
         on: { change: (ev) => { plan.replace[a.id] = ev.target.checked; } } });
-      end.push(h("span", { class: "sub", text: "Switch to the bridge" }), tick);
+      end.push(h("span", { class: "sub", text: t("app.switch") }), tick);
     } else if (st === "attention" && /--replace/.test(a.say)) {
-      end.push(button("Switch to the bridge", "plug", "", () => switchToBridge(a.id), "replace:" + a.id));
+      end.push(button(t("app.switch"), "plug", "", () => switchToBridge(a.id), "replace:" + a.id));
     }
     if (st === "done" && HELPER[a.id] && connectedHere.has(a.id)) {
       end.push(button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
@@ -409,15 +412,15 @@ function modelBody(e, state, say) {
     const l = live.model;
     const m = l && /^(\d+) of (\d+) MB/.exec(l.say || "");
     const pct = m ? Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2]))) : null;
-    const bar = h("div", { class: "bar" + (m ? "" : " busy"), role: "progressbar", "aria-label": "Model download",
+    const bar = h("div", { class: "bar" + (m ? "" : " busy"), role: "progressbar", "aria-label": t("search.modelDownload"),
       "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": pct === null ? null : String(pct) }, h("span"));
     if (m) bar.firstChild.style.width = pct + "%";
     out.push(bar);
-    controls.push(button("Not now", null, "quiet", stopModel));
+    controls.push(button(t("setup.notNow"), null, "quiet", stopModel));
   } else if (state === "todo" && !applied) {
-    controls.push(check_(plan.model, "Download it now, in the background", (v) => { plan.model = v; }));
+    controls.push(check_(plan.model, t("setup.downloadPlan"), (v) => { plan.model = v; }));
   } else if (state === "todo" || state === "failed") {
-    controls.push(button("Download", "download", "", () => run("model", { failTitle: "The model did not download" }), "model"));
+    controls.push(button(t("search.download"), "download", "", () => run("model", { failTitle: t("search.notDownloadedNow") }), "model"));
   }
   out.push(h("div", { class: "controls" }, controls));
   return out;
@@ -425,7 +428,7 @@ function modelBody(e, state, say) {
 
 async function stopModel() {
   try { const out = await invoke("setup_stop", { step: "model" }); logs.model.push({ kind: "exit", text: out }); }
-  catch (e) { toast("bad", "The download did not stop", String(e)); }
+  catch (e) { toast("bad", t("search.didNotStop"), String(e)); }
 }
 
 function firstBody(e, state, say) {
@@ -438,7 +441,7 @@ function firstBody(e, state, say) {
     const lead = m ? say.slice(0, m.index).trim() : "";
     if (lead) out.push(h("p", { class: "say" }, sayNodes(lead)));
     out.push(h("div", { class: "ask" }, h("q", { class: "selectable", text: ask }),
-      h("button", { class: "btn quiet", on: { click: () => copy(ask, "The question") } }, icon("copy"), "Copy")));
+      h("button", { class: "btn quiet", on: { click: () => copy(ask, "setup.questionCopied") } }, icon("copy"), t("setup.copy"))));
     // No app has reached the server: an app's restart, where its row offers one, is repeated here.
     if (/^No connected app has reached the server/.test(say)) {
       const helpers = appEvents().filter((a) => a.state === "done" && HELPER[a.id] && connectedHere.has(a.id))
@@ -446,7 +449,7 @@ function firstBody(e, state, say) {
       if (helpers.length) out.push(h("div", { class: "controls" }, helpers));
     }
     const mins = waitedMinutes();
-    if (mins >= 1) out.push(h("p", { class: "say quiet", text: "Waiting " + mins + (mins === 1 ? " minute" : " minutes") }));
+    if (mins >= 1) out.push(h("p", { class: "say quiet", text: t("setup.waited", { n: mins }) }));
     if (mins >= 2 && Array.isArray(e.checks) && e.checks.length) {
       out.push(h("ul", { class: "checks" }, e.checks.map((c) => h("li", { text: c }))));
     }
@@ -456,7 +459,7 @@ function firstBody(e, state, say) {
       h("div", { class: "ask entry" }, h("q", { class: "selectable", text: e.quote })));
     if (e.entity) {
       out.push(h("div", { class: "controls" },
-        h("button", { class: "btn quiet", on: { click: () => openGraph(e.id, e.entity) } }, "Show in the Graph", icon("arrow"))));
+        h("button", { class: "btn quiet", on: { click: () => openGraph(e.id, e.entity) } }, t("setup.showInGraph"), icon("arrow"))));
     }
   } else {
     out.push(h("p", { class: "say" }, sayNodes(say)));
@@ -469,11 +472,9 @@ function essentialsDone() {
 }
 
 function renderIntro() {
-  const text = !applied && needsPlan()
-    ? "Four steps. Each one says what it ran and what it changed. Nothing changes until you click Set up."
-    : "Each step says what it ran. You can leave, and come back from Open Setup in Settings > About.";
+  const text = !applied && needsPlan() ? t("setup.introPlan") : t("setup.introLater");
   // The heading says the work is done once the essentials are, not only a notice that leaves.
-  const title = essentialsDone() ? "Supragnosis is set up" : "Set up Supragnosis";
+  const title = t(essentialsDone() ? "setup.headDone" : "setup.head");
   return h("div", { class: "wintro" }, h("h2", { text: title }), h("p", { text }));
 }
 
@@ -484,24 +485,24 @@ function renderActions() {
   const main = [];
   if (!applied && needsPlan()) {
     // Set up is the default button, which Return presses.
-    main.push(h("button", { class: "btn primary", id: "setup-go", disabled: busy() || !events.length, on: { click: applyPlan } }, "Set up"),
-      h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
+    main.push(h("button", { class: "btn primary", id: "setup-go", disabled: busy() || !events.length, on: { click: applyPlan } }, t("setup.go")),
+      h("button", { class: "btn quiet", on: { click: finishLater } }, t("setup.later")));
   } else {
     const essentials = essentialsDone();
     const first = stepEvent("first");
     main.push(h("button", { class: "btn " + (essentials ? "primary" : ""), on: { click: () => openGraph(first && first.state === "done" ? first.id : null) } },
-      "Open the Graph", icon("arrow")));
-    if (!essentials) main.push(h("button", { class: "btn quiet", on: { click: finishLater } }, "Finish later"));
+      t("setup.openGraph"), icon("arrow")));
+    if (!essentials) main.push(h("button", { class: "btn quiet", on: { click: finishLater } }, t("setup.later")));
   }
   // While the plan runs, the foot says how far it is (Section 6a).
-  if (applied && busy() && planTotal) main.push(h("span", { class: "progress-say", text: "Setting up... " + Math.min(planDone, planTotal) + " of " + planTotal }));
+  if (applied && busy() && planTotal) main.push(h("span", { class: "progress-say", text: t("setup.progress", { k: Math.min(planDone, planTotal), n: planTotal }) }));
   // One Copy Diagnostics, once a step has run or failed in this visit or the check could not be read,
   // since before that the log is empty and the reads say what the cards already do (Section 29.5).
   const ran = Object.values(logs).some((l) => l.length > 0) || !!loadError
     || STEPS.some((st) => stateOf(st.step) === "failed") || waitedMinutes() >= 2;
   const diag = h("button", { class: "btn quiet copydiag", on: { click: async () => {
-    try { copy(await invoke("diagnostics") + "\n\n" + logText(), "Diagnostics"); } catch (e) { toast("bad", "Could not gather diagnostics", String(e)); }
-  } } }, "Copy Diagnostics");
+    try { copy(await invoke("diagnostics") + "\n\n" + logText(), "daemon.diagnosticsCopied"); } catch (e) { toast("bad", t("daemon.diagnosticsFailed"), String(e)); }
+  } } }, t("daemon.copyDiagnostics"));
   host.replaceChildren(...main, ...(ran ? [diag] : []));
 }
 

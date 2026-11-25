@@ -607,18 +607,22 @@ mod settings_tests {
             "h(\"div\", { class: \"ask entry\" }, h(\"q\", { class: \"selectable\", text: e.quote }))",
             "if (e.entity) {",
             "openGraph(e.id, e.entity)",
-            "\"Show in the Graph\"",
             "const lead = m ? say.slice(0, m.index).trim() : \"\";",
             "mins >= 2 && Array.isArray(e.checks)",
             "/^No connected app has reached the server/",
         ] {
             assert!(first.contains(part), "firstBody lacks {part}");
         }
+        assert!(crate::says(first, "Show in the Graph"), "firstBody lacks the way to the entry");
         assert!(!js.contains("The entry appears here"), "the page no longer promises it");
         assert!(body("openGraph").contains("\"entity=\" + encodeURIComponent(entity)"));
         let check = &js[js.find("async function check()").unwrap()..];
         let check = &check[..check.find("\n}\n").unwrap()];
-        assert!(check.contains("announce(\"First entry recorded in \""));
+        assert!(
+            check.contains("announce(first.id ? t(\"setup.firstIn\", { ws: first.id })")
+                && crate::says(check, "First entry recorded in {ws}"),
+            "the entry's arrival is not announced"
+        );
         assert!(
             check.contains("firstWaitSince = Date.now()"),
             "the wait counts from the first wait seen"
@@ -911,29 +915,34 @@ mod settings_tests {
         let settings = include_str!("../assets/settings.js");
         let main = super::SRC;
         assert!(
-            html.contains("<h1 id=\"pageTitle\">Setup</h1>"),
+            html.contains("<h1 id=\"pageTitle\" data-t=\"about.setup\">Setup</h1>")
+                && crate::says(html, "Setup"),
             "the title bar does not say Setup"
         );
         assert!(
-            html.contains(
+            crate::says(
+                html,
                 "Supragnosis keeps your memory on this Mac. It is shared only if you set up sync."
             ),
             "the privacy line promises what the code does not keep"
         );
-        assert!(js.contains("Open Setup"), "the page does not name the way back");
+        assert!(
+            crate::says(
+                js,
+                "Each step says what it ran. You can leave, and come back from Open Setup in Settings > About."
+            ),
+            "the page does not name the way back"
+        );
         assert!(crate::says(settings, "Open Setup"), "About does not say Open Setup");
         assert!(
             main.contains("\"tray-finish-setup\",\n                \"Finish Setup...\","),
             "the tray does not say Finish Setup..."
         );
-        for part in [
-            "role: \"progressbar\"",
-            "\"aria-valuenow\"",
-            "Setting up... ",
-            "Supragnosis is set up",
-            "function announce(",
-        ] {
+        for part in ["role: \"progressbar\"", "\"aria-valuenow\"", "function announce("] {
             assert!(js.contains(part), "the page does not say its progress: {part}");
+        }
+        for said in ["Setting up... {k} of {n}", "Supragnosis is set up"] {
+            assert!(crate::says(js, said), "the page does not say its progress: {said}");
         }
         assert!(
             html.contains("id=\"announce\"") && html.contains("aria-live=\"polite\""),

@@ -82,9 +82,15 @@ fn the_viewer_title_bar_is_a_mac_toolbar() {
 /// Cmd+[ go back; Settings titles itself by the pane on screen.
 #[test]
 fn the_app_pages_go_back_to_the_graph() {
-    for (file, html, title) in
-        [("settings.html", SETTINGS_HTML, ""), ("welcome.html", WELCOME_HTML, "Setup")]
-    {
+    // Setup's title is its name in the app's words (docs/i18n.md Section 4); Settings' is its pane's.
+    for (file, html, title) in [
+        ("settings.html", SETTINGS_HTML, "<h1 id=\"pageTitle\"></h1>"),
+        (
+            "welcome.html",
+            WELCOME_HTML,
+            "<h1 id=\"pageTitle\" data-t=\"about.setup\">Setup</h1>",
+        ),
+    ] {
         let bar = header(html);
         assert!(
             bar.contains("id=\"close\" class=\"tback\"") && bar.contains(">Graph</a>"),
@@ -94,10 +100,7 @@ fn the_app_pages_go_back_to_the_graph() {
             !bar.contains("crumb") && !bar.contains("i-x") && !bar.contains("</svg>supragnosis"),
             "{file}: the crumb or the x remains"
         );
-        assert!(
-            bar.contains(&format!("<h1 id=\"pageTitle\">{title}</h1>")),
-            "{file}: the title is not the page's"
-        );
+        assert!(bar.contains(title), "{file}: the title is not the page's");
         assert!(
             bar.find("id=\"close\"") < bar.find("id=\"pageTitle\""),
             "{file}: the way back does not lead"
