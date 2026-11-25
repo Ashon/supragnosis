@@ -55,6 +55,10 @@
     --shadow: rgba(60,45,20,0.16); --shadow-soft: rgba(60,45,20,0.1); --scrim: rgba(40,32,20,0.28); }
 }
 
+/* A page in Korean (docs/i18n.md Section 7), as the site sets it: a line breaks between words, and
+   Hangul in a mono string - Setup's question - takes Pretendard, since IBM Plex Mono has none. */
+:lang(ko) { word-break: keep-all; --mono: "IBM Plex Mono", "Pretendard Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
 * { box-sizing: border-box; }
 /* An element the page hides stays hidden, whatever display its class gives it. */
 [hidden] { display: none !important; }

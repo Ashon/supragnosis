@@ -323,13 +323,15 @@ pub(crate) fn without_entry(text: &str) -> String {
                 for k in ["quote", "app", "entity"] {
                     e.remove(k);
                 }
-                // The done sentence named the workspace and the app; the report says only that an
-                // entry is in (design-system.md Section 29.13).
+                // The done sentence named the workspace and the app, and so do its code's values;
+                // the report says only that an entry is in (design-system.md Section 29.13).
                 if e.get("step").and_then(|v| v.as_str()) == Some("first")
                     && e.get("state").and_then(|v| v.as_str()) == Some("done")
                 {
                     e.insert("say".into(), "An entry is in the store.".into());
-                    e.remove("id");
+                    for k in ["id", "code", "values"] {
+                        e.remove(k);
+                    }
                 }
                 serde_json::Value::Object(e).to_string()
             }

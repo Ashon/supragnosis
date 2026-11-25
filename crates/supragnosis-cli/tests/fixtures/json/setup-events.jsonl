@@ -1,15 +1,15 @@
 {"schema":1}
-{"step":"server","state":"todo","say":"Stopped. Setup starts it now and at every login."}
-{"step":"server","state":"working","say":"Running supragnosis service install --no-model.","cmd":"supragnosis service install --no-model"}
-{"step":"server","state":"working","say":"Running supragnosis service install --no-model.","out":"installed com.supragnosis.daemon -> /Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist"}
-{"step":"server","state":"done","say":"Running, and the login job starts it at every login."}
-{"step":"apps","state":"todo","say":"None connected yet."}
-{"step":"app","id":"claude-desktop","state":"working","say":"Running supragnosis connect claude-desktop.","out":"  backup  /Users/you/.supragnosis/backups/claude-desktop-1792310400.json"}
-{"step":"app","id":"claude-desktop","state":"done","say":"Claude Desktop is connected; it reaches the server once it loads the change: quit Claude (Cmd+Q) and open it again - it reads its servers at launch."}
-{"step":"app","id":"codex","state":"skipped","say":"Codex is not installed."}
-{"step":"app","id":"cursor","state":"attention","say":"Cursor already has an entry setup did not write (http). Setup leaves it: `supragnosis connect cursor --replace` switches it to the bridge."}
-{"step":"model","state":"working","say":"40 of 224 MB. Search matches words until it is here."}
-{"step":"model","state":"failed","say":"`supragnosis embed fetch --events` failed: the download failed (connection reset). Search matches words until the model is here; run setup again when online."}
-{"step":"first","state":"working","say":"Claude Code has reached the server. Ask it, in the project you are working on: \"Remember one decision we made in this project today, and why.\"","checks":["Does the app list supragnosis's tools? Its tools or MCP list shows them.","Some agents answer without recording. Ask it to use supragnosis to remember the decision."]}
-{"step":"first","id":"billing","state":"done","say":"An entry is in \"billing\", from Claude Code, just now.","quote":"The ledger is a Postgres table, not a schema, because invoices need row locks.","app":"Claude Code","entity":"5f1c0a9e2b7d4c38"}
+{"step":"server","state":"todo","say":"Stopped. Setup starts it now and at every login.","code":"serverStopped"}
+{"step":"server","state":"working","say":"Running supragnosis service install --no-model.","code":"running","values":{"cmd":"supragnosis service install --no-model"},"cmd":"supragnosis service install --no-model"}
+{"step":"server","state":"working","say":"Running supragnosis service install --no-model.","code":"running","values":{"cmd":"supragnosis service install --no-model"},"out":"installed com.supragnosis.daemon -> /Users/you/Library/LaunchAgents/com.supragnosis.daemon.plist"}
+{"step":"server","state":"done","say":"Running, and the login job starts it at every login.","code":"serverLoginJob"}
+{"step":"apps","state":"todo","say":"None connected yet.","code":"appsNone"}
+{"step":"app","id":"claude-desktop","state":"working","say":"Running supragnosis connect claude-desktop.","code":"running","values":{"cmd":"supragnosis connect claude-desktop"},"out":"  backup  /Users/you/.supragnosis/backups/claude-desktop-1792310400.json"}
+{"step":"app","id":"claude-desktop","state":"done","say":"Claude Desktop is connected, and has not reached the server since it started. If it was just connected: quit Claude (Cmd+Q) and open it again - it reads its servers at launch.","code":"appNotReached","values":{"name":"Claude Desktop","next":"quit Claude (Cmd+Q) and open it again - it reads its servers at launch"}}
+{"step":"app","id":"codex","state":"skipped","say":"Codex is not installed.","code":"appAbsent","values":{"name":"Codex"}}
+{"step":"app","id":"cursor","state":"attention","say":"Cursor already has an entry setup did not write (http). Setup leaves it: `supragnosis connect cursor --replace` switches it to the bridge.","code":"appOther","values":{"entry":"http","id":"cursor","name":"Cursor"},"wants":"replace"}
+{"step":"model","state":"working","say":"40 of 224 MB. Search matches words until it is here.","code":"modelProgress","values":{"all":224,"done":40}}
+{"step":"model","state":"failed","say":"`supragnosis embed fetch --events` failed: the download failed (connection reset). Search matches words until the model is here; run setup again when online.","code":"failedModel","values":{"why":"`supragnosis embed fetch --events` failed: the download failed (connection reset)."}}
+{"step":"first","state":"working","say":"Claude Code has reached the server. Ask it, in the project you are working on: \"Remember one decision we made in this project today, and why.\"","code":"askOne","values":{"name":"Claude Code"},"checks":["Does the app list supragnosis's tools? Its tools or MCP list shows them.","Some agents answer without recording. Ask it to use supragnosis to remember the decision."]}
+{"step":"first","id":"billing","state":"done","say":"An entry is in \"billing\", from Claude Code, just now.","code":"entryFrom","values":{"ago":0,"app":"Claude Code","ws":"billing"},"quote":"The ledger is a Postgres table, not a schema, because invoices need row locks.","app":"Claude Code","entity":"5f1c0a9e2b7d4c38"}
 {"step":"summary","state":"failed","say":"Set up. Still going: Search by meaning, Try it."}

@@ -393,16 +393,16 @@ function searchRow(d) {
     h("div", { class: "end" }, end));
 }
 
-// The download's progress, from the lines setup streams for it.
+// The download's progress, from the values of the lines setup streams for it (docs/i18n.md Section 5).
 if (window.__TAURI__) window.__TAURI__.event.listen("setup-line", (e) => {
   const p = e.payload || {};
   if (p.key !== "model") return;
   let ev = null;
   try { ev = JSON.parse(p.line); } catch (_) { return; }
-  const m = ev && /^(\d+) of (\d+) MB/.exec(ev.say || "");
+  const m = ev && ev.code === "modelProgress" && ev.values;
   if (m) {
-    modelProgress = t("search.progress", { done: +m[1], all: +m[2] });
-    modelPct = Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2])));
+    modelProgress = t("search.progress", { done: m.done, all: m.all });
+    modelPct = Math.min(100, Math.round((100 * m.done) / Math.max(1, m.all)));
     render();
   }
 });

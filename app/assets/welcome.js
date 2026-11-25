@@ -48,6 +48,27 @@ function waitedMinutes() { return firstWaitSince === null ? 0 : Math.floor((Date
 
 // ---- Reading the checklist ---------------------------------------------------------------------
 
+// What setup says, in the app's words when the event carries a code they hold (docs/i18n.md Section
+// 5): its values fill the sentence, an age in seconds and a list of names are said in the page's
+// words, and an app's next step by the app's id. An event without a code, or with one these words
+// lack - a CLI older or newer than the app - keeps setup's own sentence.
+const NAMES = new Intl.ListFormat(LANG, { type: "conjunction" });
+function agoWords(s) {
+  if (s < 60) return t("setup.justNow");
+  if (s < 3600) return t("setup.minutesAgo", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("setup.hoursAgo", { n: Math.floor(s / 3600) });
+  return t("setup.daysAgo", { n: Math.floor(s / 86400) });
+}
+function coded(e) { return !!(e && e.code && ("event." + e.code) in WORDS); }
+function sayOf(e) {
+  if (!coded(e)) return (e && e.say) || "";
+  const v = Object.assign({}, e.values);
+  if (typeof v.ago === "number") v.ago = agoWords(v.ago);
+  if (Array.isArray(v.names)) v.names = NAMES.format(v.names);
+  if ("next" in v && ("next." + e.id) in WORDS) v.next = t("next." + e.id);
+  return t("event." + e.code, v);
+}
+
 function stepEvent(step) { return events.find((e) => e.step === step && (step === "first" || !("id" in e))); }
 function appEvents() { return events.filter((e) => e.step === "app"); }
 function stateOf(step) {
@@ -59,8 +80,9 @@ function stateOf(step) {
 function runKeyOf(step) { return step === "server" && running.takeover ? "takeover" : step; }
 function busy() { return Object.keys(running).length > 0; }
 function todoApps() { return appEvents().filter((e) => e.state === "todo" && APPS[e.id]).map((e) => e.id); }
-function replaceApps() { return appEvents().filter((e) => e.state === "attention" && /--replace/.test(e.say) && APPS[e.id]).map((e) => e.id); }
-function canTakeOver() { const e = stepEvent("server"); return !!(e && e.state === "attention" && /--take-over/.test(e.say)); }
+// The act an event wants, which its row offers: switching an app's entry, taking the daemon over.
+function replaceApps() { return appEvents().filter((e) => e.state === "attention" && e.wants === "replace" && APPS[e.id]).map((e) => e.id); }
+function canTakeOver() { const e = stepEvent("server"); return !!(e && e.state === "attention" && e.wants === "take-over"); }
 function needsPlan() {
   return ["server", "model"].some((s) => stepEvent(s) && stepEvent(s).state === "todo") || todoApps().length > 0
     || replaceApps().length > 0 || canTakeOver();
@@ -84,8 +106,9 @@ async function check() {
   }
   if (!applied && events.length && !needsPlan()) applied = true;
   for (const id of todoApps()) if (!(id in plan.apps)) plan.apps[id] = true;
-  // A check that changed nothing draws nothing (Section 29.5).
-  const now = JSON.stringify([events, loadError, applied]);
+  // A check that changed nothing draws nothing (Section 29.5): an age is compared as the page says
+  // it, since its seconds move at every check.
+  const now = JSON.stringify([events, loadError, applied], (k, v) => k === "ago" && typeof v === "number" ? agoWords(v) : v);
   if (now === checkedFrom) return;
   checkedFrom = now;
   render();
@@ -119,7 +142,7 @@ listen("setup-line", (e) => {
   // reader stay where they are; an event that changes what a card says draws (Section 29.5).
   let entry, changed = false;
   if (ev && ev.step) {
-    entry = ev.cmd ? { kind: "cmd", text: ev.cmd } : ev.out ? { kind: "out", text: ev.out } : { kind: "event", text: ev.state + ": " + ev.say };
+    entry = ev.cmd ? { kind: "cmd", text: ev.cmd } : ev.out ? { kind: "out", text: ev.out } : { kind: "event", text: (PILL[ev.state] || ["", ev.state])[1] + ": " + sayOf(ev) };
     const at = ev.step === "app" ? "app=" + ev.id : ev.step;
     const was = live[at];
     changed = !was || was.state !== ev.state || was.say !== ev.say;
@@ -157,7 +180,9 @@ async function run(key, opts) {
     announce(t(out.ok ? "setup.saidDone" : "setup.saidFailed", { step: stepName(key) }));
   } catch (e) {
     log.push({ kind: "err", text: String(e) });
-    if (/already running/.test(String(e))) {
+    let still = [];
+    try { still = await invoke("setup_running"); } catch (_) { /* not known: a failure, then */ }
+    if (still.includes(key)) {
       // Started on an earlier visit and still going: say so, and wait for it (adoptRunning).
       toast("ok", t("setup.alreadyRunning", { step: stepName(key) }));
       adoptRunning();
@@ -340,9 +365,9 @@ function stepCard(s, i) {
   const e = stepEvent(s.step);
   const state = stateOf(s.step) || "todo";
   const l = live[s.step];
-  const say = (l && running[runKeyOf(s.step)] ? l.say : e && e.say) || "";
+  const shown = l && running[runKeyOf(s.step)] ? l : e;
   const num = h("div", { class: "num " + state }, state === "done" || state === "skipped" ? icon("check") : String(i + 1));
-  const body = { server: serverBody, apps: appsBody, model: modelBody, first: firstBody }[s.step](e, state, say);
+  const body = { server: serverBody, apps: appsBody, model: modelBody, first: firstBody }[s.step](e, state, shown);
   return h("section", { class: "step", "aria-labelledby": "t-" + s.step, "data-k": "step:" + s.step },
     num,
     h("div", { class: "shead" }, h("h3", { id: "t-" + s.step, text: s.title }),
@@ -350,24 +375,25 @@ function stepCard(s, i) {
     h("div", null, body, drawer(s)));
 }
 
-function serverBody(e, state, say) {
+function serverBody(e, state, shown) {
   const controls = [];
+  const wants = shown && shown.wants;
   if (state === "todo" && !applied) {
     controls.push(check_(plan.login, t("daemon.login"), (v) => { plan.login = v; }));
-  } else if (state === "attention" && /embed rebuild/.test(say)) {
+  } else if (state === "attention" && wants === "rebuild") {
     // A store indexed by another model keeps the daemon from starting (onboarding.md Section 4.1, O4).
     controls.push(button(t("daemon.rebuild"), "restart", "primary", rebuild, "rebuild"));
-  } else if (state === "attention" && /--take-over/.test(say) && !applied) {
+  } else if (state === "attention" && wants === "take-over" && !applied) {
     controls.push(check_(plan.takeover, t("setup.takeOverPlan"), (v) => { plan.takeover = v; }));
   } else if ((state === "todo" || state === "failed") && !running.server) {
     controls.push(button(t("daemon.login"), "power", "primary", () => run("server", { failTitle: t("setup.notKept") }), "server"));
-  } else if (state === "attention" && /--take-over/.test(say)) {
+  } else if (state === "attention" && wants === "take-over") {
     controls.push(button(t("setup.takeOver"), "power", "", () => run("takeover", { failTitle: t("setup.notTakenOver") }), "takeover"));
   }
-  return [h("p", { class: "say" }, sayNodes(say)), h("div", { class: "controls" }, controls)];
+  return [h("p", { class: "say" }, sayNodes(sayOf(shown))), h("div", { class: "controls" }, controls)];
 }
 
-function appsBody(e, state, say) {
+function appsBody(e, state, shown) {
   const rows = appEvents().map((a) => {
     const name = APPS[a.id] || a.id;
     const key = "app=" + a.id;
@@ -387,31 +413,31 @@ function appsBody(e, state, say) {
       }
     } else if ((st === "todo" || st === "failed") && APPS[a.id]) {
       end.push(button(t("app.connect"), "plug", "primary", () => run(key, { noCapture: a.id === "claude-code" && !plan.capture, failTitle: t("app.notConnected", { app: name }) }), key));
-    } else if (st === "attention" && /--replace/.test(a.say) && !applied) {
+    } else if (st === "attention" && a.wants === "replace" && !applied) {
       // Replacing an entry the person made is in the plan, unchecked (O8).
       tick = h("input", { type: "checkbox", checked: !!plan.replace[a.id],
         on: { change: (ev) => { plan.replace[a.id] = ev.target.checked; } } });
       end.push(h("span", { class: "sub", text: t("app.switch") }), tick);
-    } else if (st === "attention" && /--replace/.test(a.say)) {
+    } else if (st === "attention" && a.wants === "replace") {
       end.push(button(t("app.switch"), "plug", "", () => switchToBridge(a.id), "replace:" + a.id));
     }
     if (st === "done" && HELPER[a.id] && connectedHere.has(a.id)) {
       end.push(button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
     }
-    if (st !== "todo" && st !== "skipped") sub = h("div", { class: "sub" }, sayNodes(l && running[key] ? l.say : a.say));
+    if (st !== "todo" && st !== "skipped") sub = h("div", { class: "sub" }, sayNodes(sayOf(l && running[key] ? l : a)));
     return appRow({ id: a.id, state: APP_STATE[st] || st, sub, option, end, pick: !!tick });
   });
-  return [h("p", { class: "say" + (state === "done" ? " quiet" : "") }, sayNodes(say)),
+  return [h("p", { class: "say" + (state === "done" ? " quiet" : "") }, sayNodes(sayOf(shown))),
     rows.length ? h("div", { class: "apps" }, rows) : null];
 }
 
-function modelBody(e, state, say) {
+function modelBody(e, state, shown) {
   const controls = [];
-  const out = [h("p", { class: "say" }, sayNodes(say))];
+  const out = [h("p", { class: "say" }, sayNodes(sayOf(shown)))];
   if (running.model) {
     const l = live.model;
-    const m = l && /^(\d+) of (\d+) MB/.exec(l.say || "");
-    const pct = m ? Math.min(100, Math.round((100 * +m[1]) / Math.max(1, +m[2]))) : null;
+    const m = l && l.code === "modelProgress" && l.values;
+    const pct = m ? Math.min(100, Math.round((100 * m.done) / Math.max(1, m.all))) : null;
     const bar = h("div", { class: "bar" + (m ? "" : " busy"), role: "progressbar", "aria-label": t("search.modelDownload"),
       "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": pct === null ? null : String(pct) }, h("span"));
     if (m) bar.firstChild.style.width = pct + "%";
@@ -431,27 +457,29 @@ async function stopModel() {
   catch (e) { toast("bad", t("search.didNotStop"), String(e)); }
 }
 
-function firstBody(e, state, say) {
+function firstBody(e, state, shown) {
   const out = [];
+  const say = sayOf(shown);
+  const known = coded(shown);
   if (state === "working") {
-    // Setup's sentence says which app has reached the server and ends with the question, quoted;
-    // the page sets the question apart with a Copy button (design-system.md Section 29.10).
-    const m = /"([^"]+)"\s*$/.exec(say);
-    const ask = m ? m[1] : say;
-    const lead = m ? say.slice(0, m.index).trim() : "";
-    if (lead) out.push(h("p", { class: "say" }, sayNodes(lead)));
+    // Setup's sentence says which app has reached the server, and the question follows it, set
+    // apart with a Copy button (design-system.md Section 29.10); both in the page's words. A
+    // sentence in no words the page holds is shown whole, as the question.
+    const ask = known ? t("setup.tryIt") : say;
+    if (known) out.push(h("p", { class: "say" }, sayNodes(say)));
     out.push(h("div", { class: "ask" }, h("q", { class: "selectable", text: ask }),
       h("button", { class: "btn quiet", on: { click: () => copy(ask, "setup.questionCopied") } }, icon("copy"), t("setup.copy"))));
     // No app has reached the server: an app's restart, where its row offers one, is repeated here.
-    if (/^No connected app has reached the server/.test(say)) {
+    if (shown.code === "askNone") {
       const helpers = appEvents().filter((a) => a.state === "done" && HELPER[a.id] && connectedHere.has(a.id))
         .map((a) => button(HELPER[a.id], a.id === "cursor" ? "open" : "restart", "", () => helper(a.id), "helper:" + a.id));
       if (helpers.length) out.push(h("div", { class: "controls" }, helpers));
     }
     const mins = waitedMinutes();
     if (mins >= 1) out.push(h("p", { class: "say quiet", text: t("setup.waited", { n: mins }) }));
-    if (mins >= 2 && Array.isArray(e.checks) && e.checks.length) {
-      out.push(h("ul", { class: "checks" }, e.checks.map((c) => h("li", { text: c }))));
+    const checks = known ? [t("setup.checkTools"), t("setup.checkRecord")] : e.checks;
+    if (mins >= 2 && Array.isArray(checks) && checks.length) {
+      out.push(h("ul", { class: "checks" }, checks.map((c) => h("li", { text: c }))));
     }
   } else if (state === "done" && e && e.quote) {
     // The entry itself, in the block the question used, and the way to it on the graph.

@@ -327,7 +327,7 @@ mod settings_tests {
         );
         let welcome = include_str!("../assets/welcome.js");
         assert!(
-            welcome.contains("state === \"attention\" && /embed rebuild/.test(say)")
+            welcome.contains("state === \"attention\" && wants === \"rebuild\"")
                 && welcome.contains("await invoke(\"search_rebuild\")"),
             "Setup's server card does not offer the rebuild"
         );
@@ -591,9 +591,9 @@ mod settings_tests {
     }
 
     /// design-system.md Section 29.10: Try it quotes the entry in the question's block and opens the
-    /// graph on its entity when it names one; the waiting sentence is setup's, with the question set
-    /// apart; the page counts how long it has waited (O4), to show the minutes, the checks the
-    /// event carries and the foot's Copy Diagnostics; the entry's arrival is announced; and the
+    /// graph on its entity when it names one; the waiting sentence is setup's, said by its code, with
+    /// the question set apart; the page counts how long it has waited (O4), to show the minutes, the
+    /// checks and the foot's Copy Diagnostics; the entry's arrival is announced; and the
     /// shell gives the viewer Setup's address for an empty store.
     #[test]
     fn try_it_quotes_the_entry_and_counts_its_wait() {
@@ -607,9 +607,9 @@ mod settings_tests {
             "h(\"div\", { class: \"ask entry\" }, h(\"q\", { class: \"selectable\", text: e.quote }))",
             "if (e.entity) {",
             "openGraph(e.id, e.entity)",
-            "const lead = m ? say.slice(0, m.index).trim() : \"\";",
-            "mins >= 2 && Array.isArray(e.checks)",
-            "/^No connected app has reached the server/",
+            "const ask = known ? t(\"setup.tryIt\") : say;",
+            "mins >= 2 && Array.isArray(checks)",
+            "shown.code === \"askNone\"",
         ] {
             assert!(first.contains(part), "firstBody lacks {part}");
         }
@@ -1019,10 +1019,7 @@ mod settings_tests {
             welcome.contains("loadInfo().then(check).then(adoptRunning);"),
             "Setup does not pick up a running step"
         );
-        assert!(
-            welcome.contains("/already running/.test(String(e))"),
-            "a second start reads as a failure"
-        );
+        assert!(welcome.contains("still.includes(key)"), "a second start reads as a failure");
         assert!(
             settings.contains("load().then(adoptDownload).then(actAsked);"),
             "Settings does not pick up a running download"
@@ -1260,7 +1257,10 @@ mod settings_tests {
         for key in &named {
             assert!(words.contains_key(key), "the app names {key:?}, which its words lack");
         }
-        for key in words.keys() {
+        // A sentence for one of setup's codes, or an app's next step, is named by the event that
+        // carries the code or the app's id ("event." + code, "next." + id); the CLI's test holds
+        // those to what setup says (setup.rs, the_apps_words_say_what_setup_says).
+        for key in words.keys().filter(|k| !k.starts_with("event.") && !k.starts_with("next.")) {
             assert!(named.contains(key), "{key} is never named");
         }
     }

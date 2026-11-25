@@ -267,12 +267,7 @@ pub(crate) fn setup_step(a: &SetupArgs, out: &SetupOut, step: &str) -> Result<bo
     let exe = std::env::current_exe().context("the path of this binary")?;
     let ran = setup_run(out, &exe, name, id, &args)?;
     if let Err(why) = ran {
-        let hint = match name {
-            "server" => "`supragnosis status` says who runs the daemon.",
-            "app" => "The app's settings are as they were, or the copy made first is named above.",
-            _ => "Search matches words until the model is here; run setup again when online.",
-        };
-        out.emit(&Event::new(name, id, State::Failed, format!("{why} {hint}")));
+        out.emit(&Event::new(name, id, State::Failed, setup::failed_said(name, &why)));
         return Ok(false);
     }
     let after = setup::checklist(&setup_observe(a.app_daemon)?);
@@ -308,7 +303,7 @@ pub(crate) fn setup_run(
             .with_context(|| format!("running {shown}"))?;
         return Ok(if st.success() { Ok(()) } else { Err(format!("`{shown}` failed ({st}).")) });
     }
-    let running = format!("Running {shown}.");
+    let running = setup::running_said(&shown);
     let mut start = Event::new(step, id, State::Working, running.clone());
     start.cmd = Some(shown.clone());
     out.emit(&start);
@@ -490,7 +485,7 @@ pub(crate) fn setup_observe(app_daemon: Option<u32>) -> Result<setup::Observed> 
                     .filter(|(n, _)| setup::client_app(n) == Some(id.as_str()))
                     .map(|(_, first)| *first)
                     .min()
-                    .map(|t| setup::ago(t, now)),
+                    .map(|t| setup::since(t, now)),
                 id,
             }
         })
@@ -583,7 +578,7 @@ pub(crate) fn newest_entry() -> setup::FirstEntry {
         .map(str::to_string);
     setup::FirstEntry::Some {
         workspace: o["workspace"].as_str().map(str::to_string),
-        ago: setup::ago(o["hlc"]["wall"].as_u64().unwrap_or(0), supragnosis_core::now_millis()),
+        ago: setup::since(o["hlc"]["wall"].as_u64().unwrap_or(0), supragnosis_core::now_millis()),
         said,
         app,
         entity,

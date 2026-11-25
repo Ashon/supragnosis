@@ -182,7 +182,7 @@ fn a_refused_store_names_both_ways_on() {
     for text in [
         embedder_refusal("hashing-256", other),
         embedder_conflict_line("hashing-256", other),
-        embedder_conflict_attention("hashing-256", other),
+        embedder_conflict_attention("hashing-256", other).say,
     ] {
         for part in [
             "'hashing-256'",
@@ -362,8 +362,11 @@ fn setup_events_match_their_example() {
         .map(|l| serde_json::from_str(l).expect("each line is JSON"))
         .collect();
     assert_eq!(lines[0], serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
-    let fields: BTreeSet<&str> =
-        ["step", "id", "state", "say", "cmd", "out", "quote", "app", "entity", "checks"].into();
+    let fields: BTreeSet<&str> = [
+        "step", "id", "state", "say", "code", "values", "wants", "cmd", "out", "quote", "app",
+        "entity", "checks",
+    ]
+    .into();
     let states: BTreeSet<&str> =
         ["todo", "working", "done", "attention", "failed", "skipped"].into();
     let steps: BTreeSet<&str> = ["server", "apps", "app", "model", "first", "summary"].into();
@@ -375,7 +378,10 @@ fn setup_events_match_their_example() {
     }
     assert_eq!(lines.last().unwrap()["step"], "summary", "the last line summarizes");
     // What the CLI writes has the same fields: every one of them, when an act runs.
-    let mut e = setup::Event::new("app", Some("cursor"), setup::State::Working, "Running.");
+    let said =
+        setup::Said::coded("running", &[("cmd", "supragnosis connect cursor".into())], "Running.")
+            .wanting("replace");
+    let mut e = setup::Event::new("app", Some("cursor"), setup::State::Working, said);
     e.cmd = Some("supragnosis connect cursor".into());
     e.out = Some("  wrote   /x".into());
     e.quote = Some("Auth is JWT.".into());

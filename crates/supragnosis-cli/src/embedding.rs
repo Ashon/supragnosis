@@ -299,12 +299,18 @@ pub(crate) fn daemon_embedder_conflict() -> Option<(String, String)> {
 }
 
 /// Setup's server step for a daemon that cannot open its store (onboarding.md Section 4.1).
-pub(crate) fn embedder_conflict_attention(recorded: &str, daemon: &str) -> String {
-    format!(
+pub(crate) fn embedder_conflict_attention(recorded: &str, daemon: &str) -> setup::Said {
+    let say = format!(
         "The daemon cannot start: its store was indexed by '{recorded}' and it runs '{daemon}'. \
          Rebuild index in Settings > This Mac, or `supragnosis embed rebuild`, rebuilds the index \
          with '{daemon}'."
+    );
+    setup::Said::coded(
+        "serverIndexConflict",
+        &[("recorded", recorded.into()), ("daemon", daemon.into())],
+        say,
     )
+    .wanting("rebuild")
 }
 
 /// `supragnosis embed fetch` (semantic-retrieval.md Section 6): the one download, by the person's
@@ -353,23 +359,14 @@ pub(crate) fn embed_fetch_events(
     println!("{}", serde_json::json!({ "schema": setup::EVENTS_SCHEMA }));
     let mb = model.download_mb();
     if model.present(cache) {
-        emit(&Event::new(
-            "model",
-            None,
-            State::Done,
-            "Search by meaning is on: the model is here.",
-        ));
+        emit(&Event::new("model", None, State::Done, setup::model_here()));
         return Ok(());
     }
     emit(&Event::new(
         "model",
         None,
         State::Working,
-        format!(
-            "Downloading the search model {} ({mb} MB, once) into {}.",
-            model.name(),
-            cache.display()
-        ),
+        setup::model_downloading(model.name(), mb, &cache.display().to_string()),
     ));
     let (tx, rx) = std::sync::mpsc::channel();
     let to = cache.to_path_buf();
@@ -392,23 +389,18 @@ pub(crate) fn embed_fetch_events(
     };
     match result {
         Ok(_) if model.present(cache) => {
-            emit(&Event::new(
-                "model",
-                None,
-                State::Done,
-                "Search by meaning is on: the model is here.",
-            ));
+            emit(&Event::new("model", None, State::Done, setup::model_here()));
             Ok(())
         }
         Ok(_) => {
-            let say = format!("The download ended, but the model in {} is not complete. Run setup again to fetch what is missing.", cache.display());
-            emit(&Event::new("model", None, State::Failed, say.clone()));
-            anyhow::bail!(say)
+            let said = setup::model_incomplete(&cache.display().to_string());
+            emit(&Event::new("model", None, State::Failed, said.clone()));
+            anyhow::bail!(said.say)
         }
         Err(e) => {
-            let say = format!("The download failed ({e}). Search matches words until it is here; run setup again when online.");
-            emit(&Event::new("model", None, State::Failed, say.clone()));
-            anyhow::bail!(say)
+            let said = setup::model_failed(&e.to_string());
+            emit(&Event::new("model", None, State::Failed, said.clone()));
+            anyhow::bail!(said.say)
         }
     }
 }
