@@ -38,7 +38,7 @@ const KIND_WORDS = {
 const NO_EFFECT_SAID = { tbox_change: ["a type change", "type changes"], recall: ["a recall", "recalls"] };
 function noEffectSaid(p) { return NO_EFFECT_SAID[p.kind] || ["this kind of proposal", "proposals of its kind"]; }
 // A proposal's state said as its outcome (Section 29.3, U17); the ids stay the fold's.
-const OUTCOME = { merged: "Accepted", rejected: "Rejected", withdrawn: "Withdrawn", blocked: "Blocked" };
+const OUTCOME = { merged: word("stateAccepted"), rejected: word("stateRejected"), withdrawn: word("stateWithdrawn"), blocked: word("stateBlocked") };
 // How a proposal's target is said: the server's label (it names a merged-away entity, and a gate
 // act's source in its own words), then the graph's name; a hash id nothing can name is left out.
 function targetSaid(p, i) {

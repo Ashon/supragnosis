@@ -57,10 +57,17 @@ function tierDot(t) { return html`<span class="tsw tmark t-${String(t)}" title="
 // the server had nothing to add, so an untranslatable row still says something.
 // Returns text, not markup: callers interpolate it into an html template, which escapes it once.
 // What the Log says for a proposal event (Section 9, U17): the proposal's noun and what happened to
-// it, then its targets in names - "Merge proposed: PostgreSQL into Postgres". The engine sends the
-// noun and the verb with the row, from its one table; a row without them - an older node's, or a
-// kind it has no word for - says "Something changed" and keeps the stored text in its card.
+// it, then its targets in names - "Merge proposed: PostgreSQL into Postgres". The server sends the
+// kind, the event and a verdict's decision, and the page says them in its words (docs/i18n.md
+// Section 5); a row it has no words for - a kind newer than the page, or one whose opening has not
+// arrived - says "Something changed" and keeps the stored text in its card.
 const HASH_ID = /^[0-9a-f]{16,}$/;   // a content address, as observation and entity ids are
+// A proposal's noun by its kind, and what happened to it by its event and a verdict's decision.
+const NOUNS = { entity_merge: "nounMerge", entity_split: "nounUnmerge", claim_promotion: "nounConfirm", claim_demotion: "nounDemote", tbox_change: "nounTypeChange", recall: "nounRecall" };
+const HAPPENED = { opened: "evProposed", verdict_merge: "evAccepted", verdict_reject: "evRejected", withdrawn: "evWithdrawn", comment: "evDiscussed" };
+function nounOf(p) { return Object.hasOwn(NOUNS, p.kind) ? word(NOUNS[p.kind]) : null; }
+// A proposal's state as the Log says it, after its noun: "Merge - accepted".
+function stateSaid(s) { return (OUTCOME[s] || (s === "open" ? word("stateOpen") : s || "")).toLowerCase(); }
 function proposalLine(p) {
   const ts = p.targets || [];
   // Two entities can share a display name - that is what a duplicate IS, and a merge of them is
@@ -80,20 +87,22 @@ function proposalLine(p) {
     // A merge reads as a direction: what disappears, and what it folds into.
     const gone = ts.filter(t => t.id !== p.into.id).map(named).filter(Boolean);
     const into = named(p.into);
-    what = gone.length && into ? `${gone.join(", ")} into ${into}` : (into || gone.join(", "));
+    what = gone.length && into ? word("goneInto", { gone: gone.join(", "), into }) : (into || gone.join(", "));
   } else if (ts.length) {
     what = ts.map(named).filter(Boolean).join(", ");
   }
-  const noun = p.noun, verb = p.verb;
-  if (!noun || !verb) return "Something changed" + (what ? ": " + what : "");
+  const noun = nounOf(p), ev = p.event === "verdict" ? "verdict_" + p.decision : p.event;
+  const known = noun && Object.hasOwn(HAPPENED, ev);
+  const said = known ? word(HAPPENED[ev], { noun }) : word("somethingChanged");
+  const line = what ? word("saidOn", { said, what }) : said;
+  if (!known || p.event !== "verdict") return line;
   // State is worth saying on a verdict precisely when it disagrees with the decision - an accepted
   // merge that a check blocks is the case a reader must not miss.
-  const state = p.event === "verdict" && p.decision === "merge" && p.state === "blocked" ? ". A check blocks it"
-    // A blocked merge a person then rejected (proposal-workflow.md Section 7.1, design-system.md 29.3).
-    : p.event === "verdict" && p.decision === "merge" && p.state === "rejected" ? ". A check blocked it, and it was rejected"
-    : p.event === "verdict" && p.state && !(p.decision === "merge" && p.state === "merged") && !(p.decision === "reject" && p.state === "rejected")
-      ? " (" + p.state + ")" : "";
-  return `${noun} ${verb}${what ? ": " + what : ""}${state}`;
+  if (p.decision === "merge" && p.state === "blocked") return word("checkBlocksIt", { line });
+  // A blocked merge a person then rejected (proposal-workflow.md Section 7.1, design-system.md 29.3).
+  if (p.decision === "merge" && p.state === "rejected") return word("checkBlockedRejected", { line });
+  const agrees = (p.decision === "merge" && p.state === "merged") || (p.decision === "reject" && p.state === "rejected");
+  return p.state && !agrees ? word("lineState", { line, state: stateSaid(p.state) }) : line;
 }
 
 // A Log row (design-system.md Section 9, U17): what happened, in words, under a who-line - the tier,
@@ -162,7 +171,7 @@ function obsCardHtml(o) {
     const p = o.proposal;
     const full = proposals.find(q => q.id === p.proposal);
     parts.push(html`<div class="osec">${word("proposal")}</div>`,
-      html`<div class="ocprop">${p.noun || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
+      html`<div class="ocprop">${nounOf(p) || word("proposal")} - ${stateSaid(p.state)}</div>`,
       full && full.rationale ? html`<div class="ocwhy">"${full.rationale}"</div>` : "",
       html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">${word("openInReview")}</button></div>`);
     const ts = p.targets || [];

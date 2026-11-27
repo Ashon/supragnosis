@@ -306,9 +306,9 @@ impl Engine {
                 let payload: serde_json::Value =
                     serde_json::from_str(&ev.payload).unwrap_or(serde_json::Value::Null);
                 let view = proposals.get(&pid);
+                // The page says the kind, the event and the decision in its own words
+                // (docs/i18n.md Section 5).
                 let decision = payload.get("decision").and_then(|d| d.as_str());
-                let (noun, verb) =
-                    proposal_words(view.map_or("", |v| v.kind.as_str()), ev.event, decision);
                 ProposalEventSummary {
                     event: match ev.event {
                         ProposalEventKind::Opened => "opened",
@@ -324,8 +324,6 @@ impl Engine {
                         .map(|v| v.targets.iter().map(|t| eref(t)).collect())
                         .unwrap_or_default(),
                     into: view.and_then(|v| v.into.as_deref()).map(eref),
-                    noun,
-                    verb,
                     proposal: pid,
                 }
             });

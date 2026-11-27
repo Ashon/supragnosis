@@ -1698,9 +1698,9 @@ async fn a_decided_confirmation_names_its_source_and_says_its_undo() {
         .find(|o| o["proposal"]["event"] == "verdict")
         .expect("the verdict's row");
     assert_eq!(verdict["proposal"]["targets"][0]["name"], row["labels"][0], "{verdict}");
-    // And say what happened in the engine's words (U17).
-    assert_eq!(verdict["proposal"]["noun"], "Claim confirmation", "{verdict}");
-    assert_eq!(verdict["proposal"]["verb"], "accepted", "{verdict}");
+    // And carry the ids the page says what happened by (U17, docs/i18n.md Section 5).
+    assert_eq!(verdict["proposal"]["kind"], "claim_promotion", "{verdict}");
+    assert_eq!(verdict["proposal"]["decision"], "merge", "{verdict}");
 
     let none = uds_get(&sock, "/api/resolve/undo?proposal=nothing").await;
     assert!(none.contains("404"), "nothing to undo: {none}");

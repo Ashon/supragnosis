@@ -692,8 +692,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     (17, &[c(
         "no line a person reads first spells a system identifier: tiers by their legend names, and every proposal kind and event with a sentence and no hash id",
         // crates/supragnosis-viz/tests/words.rs: every interpolation of a tier goes through tierName,
-        // and a row the page cannot phrase says so; the engine's unit tests: its one table of the
-        // Log's words covers every kind, event and decision it sends on a row.
+        // a row the page cannot phrase says so, and the viewer's words cover every kind, event and
+        // decision the server sends on a row.
         // review.rs: Decided's titles from the server's labels and its outcomes in words.
         Evidence::Scenario(&[
             "a_tier_is_named_never_spelled",
@@ -1525,10 +1525,8 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
     (5, &[c(
         "a word another program picks from a closed set reaches a page by its id through the page's words, \
          and only a sentence written for one case is shown in its writer's English",
-        Evidence::Deferred(
-            "the Log's nouns and verbs still come from the engine's proposal_words. Revisit when i18n.md \
-             Section 8 step 4 moves them to the viewer's words",
-        ),
+        // the Log's proposal words, by kind, event and decision; a refusal's reason is shown as sent
+        Evidence::Scenario(&["every_proposal_event_has_a_sentence"]),
     )]),
 ];
 

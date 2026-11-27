@@ -32,7 +32,7 @@ fn review_is_always_in_the_status_bar_with_one_count() {
         "Needs you lists conflicts trust already settled"
     );
     assert!(
-        function("signalItems").contains("\"Settled conflict: \""),
+        says(function("signalItems"), "Settled conflict: {name}'s type"),
         "a settled conflict is listed nowhere"
     );
 }

@@ -4,7 +4,7 @@
 //! and the fold, the undo and the curation rows are in the engine's policy cases.
 
 mod support;
-use support::says;
+use support::{keys_of, says};
 
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
@@ -95,9 +95,16 @@ fn every_reverse_is_on_its_decided_item() {
 /// diff said to be today's, and the Accept hint only where there is an Accept.
 #[test]
 fn decided_says_what_was_decided() {
-    assert!(SCRIPT.contains(
-        "const OUTCOME = { merged: \"Accepted\", rejected: \"Rejected\", withdrawn: \"Withdrawn\", blocked: \"Blocked\" };"
-    ));
+    let outcome = SCRIPT.lines().find(|l| l.starts_with("const OUTCOME = ")).expect("OUTCOME");
+    for (state, en) in [
+        ("merged", "Accepted"),
+        ("rejected", "Rejected"),
+        ("withdrawn", "Withdrawn"),
+        ("blocked", "Blocked"),
+    ] {
+        let said = keys_of(en).iter().any(|k| outcome.contains(&format!("{state}: word(\"{k}\")")));
+        assert!(said, "the {state} outcome is not said {en:?}");
+    }
     assert!(
         function("targetSaid").contains("p.labels && p.labels[i]"),
         "titles ignore the server's labels"
@@ -113,7 +120,7 @@ fn decided_says_what_was_decided() {
         "a rejected blocked merge does not say its reject is provisional"
     );
     let line = function("proposalLine");
-    assert!(line.contains(". A check blocked it, and it was rejected"));
+    assert!(says(line, "{line}. A check blocked it, and it was rejected"));
 }
 
 /// One count, Needs you's, with contested type definitions in it; the queue says what it asks.
@@ -158,12 +165,12 @@ fn suggestions_and_health_are_queues() {
     assert!(function("segItems").contains("signalItems(seg)"));
     let items = function("signalItems");
     for title in [
-        "\"Possible duplicate: \"",
-        "\"Overloaded region: \"",
-        "\"Unlinked: \"",
-        "\"Conflicting merges: \"",
+        "Possible duplicate: {a} ~ {b}",
+        "Overloaded region: {n} entities",
+        "Unlinked: {name}",
+        "Conflicting merges: {names}",
     ] {
-        assert!(items.contains(title), "{title} is not an item");
+        assert!(says(items, title), "{title} is not an item");
     }
     let detail = function("signalDetail");
     assert!(detail.contains("class=\"propmerge\"") && detail.contains("class=\"reify\""));
@@ -252,17 +259,23 @@ fn under_all_the_console_files_where_items_live() {
     let items = function("signalItems");
     assert!(
         items.contains("curation.stray_verdicts")
-            && items.contains("A verdict filed away from its proposal: "),
+            && says(items, "A verdict filed away from its proposal: {title}"),
         "Health does not list a verdict filed away from its proposal"
     );
     let detail = function("signalDetail");
-    for part in [
-        "where the proposal does not live, so it decides nothing",
-        "data-stray=",
-        "Show the proposal",
-    ] {
-        assert!(detail.contains(part), "a stray verdict's item does not say {part}");
-    }
+    assert!(
+        detail.contains("data-stray="),
+        "a stray verdict's item does not show its proposal"
+    );
+    assert!(says(detail, "Show the proposal"));
+    // its act by its decision, said whole
+    assert!(detail.contains("word(STRAY[act], { filed: v.filed_in, waits: v.proposal_in })"));
+    let stray = SCRIPT.lines().find(|l| l.starts_with("const STRAY = ")).expect("STRAY");
+    let accept = keys_of("This accept was filed in {filed}, where the proposal does not live, so it decides nothing. The proposal still waits in {waits}.");
+    assert!(
+        stray.contains(&format!("merge: \"{}\"", accept[0])),
+        "a stray accept is not said"
+    );
     assert!(
         function("wireDecisions").contains("[data-stray]"),
         "Show the proposal does nothing"
@@ -309,8 +322,9 @@ fn the_same_name_is_said_on_the_local_console() {
     );
     let items = function("signalItems");
     assert!(
-        items.contains("\"Same name in \" + spaces + \" workspaces: \"")
-            && items.contains("a merge cannot join entities of two workspaces"),
+        says(items, "Same name in {n} workspaces: {name}")
+            && items.contains("{ n: spaces, name: ")
+            && says(items, "Each workspace keeps its own entity by this name, and a merge cannot join entities of two workspaces."),
         "the shared-name row does not say what it is"
     );
     assert!(
@@ -468,20 +482,22 @@ fn the_console_says_what_a_repeat_found() {
         "These two are already merged.",
         "This merge is already un-merged.",
     ] {
-        assert!(found.contains(part), "a found act is not said: {part}");
+        assert!(says(found, part), "a found act is not said: {part}");
     }
     let write = function("consoleWrite");
     assert!(
         write.contains("body.found && body.state === \"merged\" && typeof said !== \"function\"")
     );
-    assert!(write.contains("\"Nothing changed: this is already so.\""));
+    assert!(says(write, "Nothing changed: this is already so."));
     // Section 29.25: Un-merge opens the split it proposed, found or new.
     assert!(
         function("proposeSplit").contains("if (o && o.proposal_id) openReviewItem(o.proposal_id);")
     );
-    assert!(SCRIPT.contains(
-        "b => foundSaid(b, \"merge\") || \"Merge proposed - it waits under Needs you for a verdict\""
-    ));
+    assert!(SCRIPT.contains("b => foundSaid(b, \"merge\") || word(\"mergeProposed\")"));
+    assert_eq!(
+        keys_of("Merge proposed - it waits under Needs you for a verdict"),
+        ["mergeProposed"]
+    );
     let keep = function("keepInstead");
     assert!(keep.contains("state: o.body.state || \"open\""), "Keep assumes what it opened");
     assert!(keep.contains("waits under Needs you, but a check holds it back."));
@@ -491,29 +507,31 @@ fn the_console_says_what_a_repeat_found() {
     ));
     // Section 29.27: the band says what it held back, apart from absence.
     let band = function("bandEmptyReason");
+    assert!(band.contains("band.held_back != null ? band.held_back : null"));
+    assert!(band.contains("held ? word(\"noneWaiting\", { held: answered }) : word(\"bandNone\")"));
     for part in [
-        "band.held_back != null ? band.held_back : null",
-        "already proposed, split apart or held back by your reject",
-        "held ? \"none waiting - \" + answered : \"none - no embedding-near pairs\"",
+        "{n} near pairs are already proposed, split apart or held back by your reject",
+        "none waiting - {held}",
+        "none - no embedding-near pairs",
         "none waiting - no near pairs that are not already proposed, split apart or held back by your reject",
     ] {
-        assert!(band.contains(part), "the empty band does not say: {part}");
+        assert!(says(band, part), "the empty band does not say: {part}");
     }
     // Section 29.28: the ladder says what it held back, by name, after what the band says by meaning.
     let ladder = function("ladderEmptyReason");
+    assert!(ladder.contains("if (!ladder || ladder.held_back == null) return \"\";"));
+    assert!(ladder.contains("word(held === 1 ? \"heldAlikeOne\" : \"heldAlikeN\", { n: held })"));
     for part in [
-        "if (!ladder || ladder.held_back == null) return \"\";",
-        "alike-named pair${held === 1 ? \" is\" : \"s are\"} already proposed, split apart or held back by your reject",
-        "\"none - no two names match once case, spaces and symbols are dropped, a trailing -s or -ies is folded, or an alias is counted\"",
+        "{n} alike-named pairs are already proposed, split apart or held back by your reject",
+        "none - no two names match once case, spaces and symbols are dropped, a trailing -s or -ies is folded, or an alias is counted",
     ] {
-        assert!(ladder.contains(part), "the empty ladder does not say: {part}");
+        assert!(says(ladder, part), "the empty ladder does not say: {part}");
     }
     let hint = function("signalHint");
-    let (meaning, name) = (
-        hint.find("${band}").expect("by meaning"),
-        hint.find("${name}").expect("by name"),
+    assert!(
+        hint.contains("[word(\"suggestionsHint\"), band, name]"),
+        "by name follows by meaning"
     );
-    assert!(meaning < name, "by name follows by meaning");
     assert!(hint.contains(
         "!(curation.name_variants || []).length ? ladderEmptyReason(curation.name_ladder)"
     ));

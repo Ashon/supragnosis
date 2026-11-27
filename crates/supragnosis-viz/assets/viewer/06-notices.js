@@ -103,7 +103,7 @@ function toast(kind, title, detail, action) {
     el.appendChild(act);
   }
   const close = document.createElement("button");
-  close.type = "button"; close.className = "tx"; close.setAttribute("aria-label", "Dismiss");
+  close.type = "button"; close.className = "tx"; close.setAttribute("aria-label", word("dismiss"));
   close.appendChild(icon("x"));
   close.onclick = () => dismiss(el);
   el.appendChild(close);
@@ -140,21 +140,22 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
   let r;
   try { r = await fetch(path + query, { cache: "no-store" }); }
   catch (e) {
-    if (quiet) return { ok: false, why: "the server is not answering" };
-    toast("bad", "Could not reach the server", "Nothing was changed. Is the daemon running?"); return null;
+    if (quiet) return { ok: false, why: word("serverNotAnswering") };
+    toast("bad", word("couldNotReach"), word("nothingWasChanged")); return null;
   }
   let body = null;
   try { body = await r.json(); } catch (_) { /* a refusal without a JSON body */ }
-  if (quiet) return r.ok ? { ok: true, body: body || {} } : { ok: false, why: (body && body.error) || "the server answered " + r.status };
+  // A refusal's reason is the server's sentence, shown as it wrote it (docs/i18n.md Section 5).
+  if (quiet) return r.ok ? { ok: true, body: body || {} } : { ok: false, why: (body && body.error) || word("serverAnsweredStatus", { status: r.status }) };
   if (!r.ok) {
-    toast("bad", "Refused", (body && body.error) || ("HTTP " + r.status));
+    toast("bad", word("refusedTitle"), (body && body.error) || word("serverAnswered", { status: r.status }));
     return null;
   }
   waitAllAt = 0;   // what waits elsewhere is read again after an act (Section 29.21)
   // An act that found itself already in force changed nothing, and says so (Section 29.23); a
   // caller whose notice reads what was found says it in its own words.
   if (body && body.found && body.state === "merged" && typeof said !== "function") {
-    toast("ok", "Nothing changed: this is already so.");
+    toast("ok", word("alreadySo"));
     return body;
   }
   // The notice may read what the act found (Section 29.23).
@@ -170,9 +171,9 @@ async function consoleWrite(path, query, said, action, detail, quiet) {
 function foundSaid(body, noun) {
   if (!body || !body.found) return null;
   if (body.state === "open" || body.state === "blocked") {
-    return noun === "merge" ? "A merge of these two already waits under Needs you." : "An un-merge of this merge already waits under Needs you.";
+    return word(noun === "merge" ? "mergeWaits" : "unmergeWaits");
   }
-  if (body.state === "merged") return noun === "merge" ? "These two are already merged." : "This merge is already un-merged.";
+  if (body.state === "merged") return word(noun === "merge" ? "alreadyMerged" : "alreadyUnmerged");
   return null;
 }
 
@@ -189,7 +190,7 @@ function renderGlossary() {
   const item = x => {
     const parts = [html`<div class="item"><span class="nm">${x.name}</span>`,
       spansWorkspaces ? html`<span class="gws">${String(x.workspace || "")}</span>` : "",
-      html`<span class="src">${plural(x.sources | 0, "source")}</span>`,
+      html`<span class="src">${word((x.sources | 0) === 1 ? "oneSource" : "sources", { n: x.sources | 0 })}</span>`,
       html`<div class="def">${x.description}</div>`];
     // Contested definitions take the same settling rows as an entity's type, so a type conflict and
     // an entity-type conflict read identically - one mediation pattern (IR5).
@@ -199,10 +200,11 @@ function renderGlossary() {
     }
     return html`${parts}</div>`;
   };
-  const section = (title, items) => html`<div class="gsec">${title} (${items.length})</div>${
-    items.length ? items.map(item) : html`<div class="empty">none defined - use define_type</div>`}`;
-  glossaryBodyEl.innerHTML =
-    html`${section("entity types", group("entity"))}${section("relation types", group("relation"))}`;
+  const section = (title, items) => html`<div class="gsec">${title}</div>${
+    items.length ? items.map(item) : html`<div class="empty">${word("noneDefined")}</div>`}`;
+  const entities = group("entity"), relations = group("relation");
+  glossaryBodyEl.innerHTML = html`${section(word("entityTypesN", { n: entities.length }), entities)}${
+    section(word("relationTypesN", { n: relations.length }), relations)}`;
   glossCtEl.textContent = glossaryTypes.length || "";
   // An empty scope shows Definitions only while it has one (Section 29.10).
   document.getElementById("defsBox").classList.toggle("none", !glossaryTypes.length);
@@ -229,17 +231,16 @@ async function refreshGlossary() {
 // here" and "it ran over part of the workspace" (Principle 5: absence is not a negation). The
 // server reports which via curation.merge_band; older payloads without the field read as computed.
 function bandEmptyReason(band) {
-  if (band && band.available === false) {
-    return "unavailable - no embedder is configured, so this signal was not computed (which is not a claim that no pairs exist)";
-  }
+  if (band && band.available === false) return word("bandUnavailable");
   // What it held back, said apart from absence (Section 29.27): a count of 0 is a known none.
   const held = band && band.held_back != null ? band.held_back : null;
-  const answered = held ? `${held} near pair${held === 1 ? " is" : "s are"} already proposed, split apart or held back by your reject` : "";
+  const answered = held ? word(held === 1 ? "heldNearOne" : "heldNearN", { n: held }) : "";
   if (band && band.embedded < band.examined) {
-    return `none ${held ? "waiting " : ""}among the ${band.embedded} of ${band.examined} entities carrying a name vector${answered ? " - " + answered : ""} - the rest were projected before an embedder existed, so reproject to cover them`;
+    const part = { embedded: band.embedded, examined: band.examined, held: answered };
+    return word(held ? "bandPartialHeld" : "bandPartial", part);
   }
-  if (held === null) return "none waiting - no near pairs that are not already proposed, split apart or held back by your reject";
-  return held ? "none waiting - " + answered : "none - no embedding-near pairs";
+  if (held === null) return word("bandNoneWaiting");
+  return held ? word("noneWaiting", { held: answered }) : word("bandNone");
 }
 
 // Why the name-variant ladder came back empty (Section 29.28): it always runs, so its line says only
@@ -249,8 +250,8 @@ function ladderEmptyReason(ladder) {
   if (!ladder || ladder.held_back == null) return "";
   const held = ladder.held_back;
   return held
-    ? `none waiting - ${held} alike-named pair${held === 1 ? " is" : "s are"} already proposed, split apart or held back by your reject`
-    : "none - no two names match once case, spaces and symbols are dropped, a trailing -s or -ies is folded, or an alias is counted";
+    ? word("noneWaiting", { held: word(held === 1 ? "heldAlikeOne" : "heldAlikeN", { n: held }) })
+    : word("ladderNone");
 }
 
 // Read-only curation signals (Principle 7, generate-not-commit): merge candidates / grab-bags / orphans.
@@ -266,44 +267,46 @@ function signalItems(seg) {
   if (seg === "suggestions") {
     // Merge band (resolution-identity.md Section 3, Principle 15): embedding-near distinct-name pairs.
     for (const m of curation.merge_suggestions || []) {
-      add("m:" + m.a + "|" + m.b, "Possible duplicate: " + m.a_name + " ~ " + m.b_name,
-        { pair: m, meta: "similar " + m.similarity.toFixed(2) + (m.shared_neighbors ? ", " + m.shared_neighbors + " shared neighbors" : "") });
+      const sim = { sim: m.similarity.toFixed(2), n: m.shared_neighbors };
+      add("m:" + m.a + "|" + m.b, word("possibleDuplicate", { a: m.a_name, b: m.b_name }),
+        { pair: m, meta: word(m.shared_neighbors ? "similarShared" : "similar", sim) });
     }
     // Name variants: the deterministic sibling of the band. A pair can be proposed; three or more show
     // as chips, since propose_merge takes a pair. data-src tells the server which surface found it.
     for (const v of curation.name_variants || []) {
       const m = v.members || [];
-      const meta = "grouped by " + v.rung + (v.shared_neighbors ? ", " + v.shared_neighbors + " shared neighbors" : "");
-      if (m.length === 2) add("v:" + m[0].id + "|" + m[1].id, "Possible duplicate: " + m[0].name + " ~ " + m[1].name,
+      const by = { rung: Object.hasOwn(RUNGS, v.rung) ? word(RUNGS[v.rung]) : v.rung, n: v.shared_neighbors };
+      const meta = word(v.shared_neighbors ? "groupedByShared" : "groupedBy", by);
+      if (m.length === 2) add("v:" + m[0].id + "|" + m[1].id, word("possibleDuplicate", { a: m[0].name, b: m[1].name }),
         { pair: { a: m[0].id, b: m[1].id, a_name: m[0].name, b_name: m[1].name }, src: "variant:" + v.rung, meta });
-      else add("v:" + v.key, "Possible duplicates: " + nameList(names(m)), { group: m, meta });
+      else add("v:" + v.key, word("possibleDuplicates", { names: nameList(names(m)) }), { group: m, meta });
     }
     // A name two workspaces share is two entities (Section 29.16): titled as written, each chip saying
     // its workspace, read from the graph the page holds.
     for (const g of curation.duplicates || []) {
       const ms = (g.members || []).map(m => { const n = nodeById(m.id); return n && n.workspace ? { ...m, ws: n.workspace } : m; });
       const spaces = new Set(ms.map(m => m.ws).filter(Boolean)).size || ms.length;
-      add("d:" + g.key, "Same name in " + spaces + " workspaces: " + (ms[0] ? ms[0].name : g.key), { group: ms, hint: "Each workspace keeps its own entity by this name, and a merge cannot join entities of two workspaces." });
+      add("d:" + g.key, word("sameNameIn", { n: spaces, name: ms[0] ? ms[0].name : g.key }), { group: ms, hint: word("sameNameWhy") });
     }
   } else {
     // Contradictory accepted merges (Principle 6): the remedy is a settling merge, never an edit.
-    for (const c of curation.merge_cycles || []) add("y:" + names(c.members).join("|"), "Conflicting merges: " + nameList(names(c.members)),
-      { group: c.members || [], hint: "These accepted merges fold into each other - settle them with a new merge." });
-    for (const b of curation.grab_bags || []) add("g:" + b.id, "Overloaded region: " + b.size + " entities", { bag: b });
-    for (const o of curation.orphans || []) add("o:" + o.id, "Unlinked: " + o.name, { node: o });
+    for (const c of curation.merge_cycles || []) add("y:" + names(c.members).join("|"), word("conflictingMerges", { names: nameList(names(c.members)) }),
+      { group: c.members || [], hint: word("conflictingWhy") });
+    for (const b of curation.grab_bags || []) add("g:" + b.id, word("overloadedRegion", { n: b.size }), { bag: b });
+    for (const o of curation.orphans || []) add("o:" + o.id, word("unlinked", { name: o.name }), { node: o });
     // Conflicts trust settled (resolution.md Section 4.1): informational, and still listed (P6).
     for (const c of (curation.contradictions || []).filter(c => !c.contested)) {
-      add("k:" + c.id, "Settled conflict: " + c.name + (c.field === "definition" ? "'s definition" : "'s type"), { settled: c });
+      add("k:" + c.id, word(c.field === "definition" ? "settledDefinition" : "settledType", { name: c.name }), { settled: c });
     }
     // T-Box axis collisions (Principle 9): a name defined on both axes - informative, usually a mistake.
-    for (const n of curation.type_axis_collisions || []) add("x:" + n, "A type on both axes: " + n, { axis: n });
+    for (const n of curation.type_axis_collisions || []) add("x:" + n, word("bothAxes", { name: n }), { axis: n });
     // A verdict filed away from its proposal decides nothing (proposal-workflow.md I2); an earlier
     // build filed one cast under All in the node default. Listed under All on this node only
     // (design-system.md Section 29.15).
     for (const v of curation.stray_verdicts || []) {
       const p = proposals.find(q => q.id === v.proposal);
       if (!p || (p.state !== "open" && p.state !== "blocked")) continue;   // listed while the proposal still waits
-      add("sv:" + v.observation, "A verdict filed away from its proposal: " + proposalTitle(p), { stray: v });
+      add("sv:" + v.observation, word("strayVerdict", { title: proposalTitle(p) }), { stray: v });
     }
   }
   return items;
@@ -311,20 +314,22 @@ function signalItems(seg) {
 // The line over a signal queue: what it is, and for the merge band, why it may be empty (P5).
 function signalHint(seg) {
   if (seg === "suggestions") {
-    const band = curation && !(curation.merge_suggestions || []).length ? " By meaning: " + bandEmptyReason(curation.merge_band) + "." : "";
+    const band = curation && !(curation.merge_suggestions || []).length ? word("byMeaning", { why: bandEmptyReason(curation.merge_band) }) : "";
     // By name after by meaning: two counts, never a total - a pair both near and alike is in each.
     const ladder = curation && !(curation.name_variants || []).length ? ladderEmptyReason(curation.name_ladder) : "";
-    const name = ladder ? " By name: " + ladder + "." : "";
-    return html`<div class="hint">Possible duplicates the store found, and names two workspaces share. Proposing a duplicate opens a merge that waits under Needs you.${band}${name}</div>`;
+    const name = ladder ? word("byName", { why: ladder }) : "";
+    return html`<div class="hint">${[word("suggestionsHint"), band, name].filter(Boolean).join(" ")}</div>`;
   }
-  if (seg === "health") return html`<div class="hint">Signals about the shape of the knowledge. Nothing here needs deciding today.</div>`;
+  if (seg === "health") return html`<div class="hint">${word("healthHint")}</div>`;
   return "";
 }
 function nchipHtml(n) {
-  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText("Focus " + n.name)}">${n.ws ? n.name + " - " + n.ws : n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
+  return html`<button type="button" class="nchip" data-id="${n.id}" title="${tipText(word("focusName", { name: n.name }))}">${n.ws ? n.name + " - " + n.ws : n.name}${n.type ? html`<span class="ty">${n.type}</span>` : ""}</button>`;
 }
-// How a stray verdict's act is said (Section 29.15).
-const STRAY_ACTS = { merge: "accept", reject: "reject", withdraw: "withdrawal" };
+// What a stray verdict's act is, by its decision (Section 29.15).
+const STRAY = { merge: "strayAccept", reject: "strayReject", withdraw: "strayWithdraw", other: "strayOther" };
+// A name variant's rung, by its id (proposal_types.rs VariantRung).
+const RUNGS = { separator: "rungSeparator", plural: "rungPlural", alias: "rungAlias" };
 function signalDetail(it) {
   const b = it.body;
   const parts = [html`<h3>${it.title}</h3>`];
@@ -333,36 +338,39 @@ function signalDetail(it) {
     parts.push(html`<div class="ms" data-a="${m.a}" data-b="${m.b}"${b.src ? html` data-src="${b.src}"` : ""}>`,
       nchipHtml({ id: m.a, name: m.a_name }), html`<span class="msx">~</span>`, nchipHtml({ id: m.b, name: m.b_name }),
       html`<span class="mssim">${b.meta}</span>`,
-      html`<button class="propmerge" title="${tipText("Propose a merge")}">Propose</button>`, html`</div>`);
+      html`<button class="propmerge" title="${tipText(word("proposeMerge"))}">${word("propose")}</button>`, html`</div>`);
     // What Propose does is said here, once, rather than in the button's tooltip (Section 4, U25).
-    parts.push(html`<p class="hint">Propose opens a merge of the pair, folding the first into the second; it then waits under Needs you.</p>`);
+    parts.push(html`<p class="hint">${word("proposeWhy")}</p>`);
   } else if (b.group) {
     parts.push(html`<div class="chips">${b.group.map(nchipHtml)}</div>`);
     if (b.meta) parts.push(html`<p class="hint">${b.meta}</p>`);
     if (b.hint) parts.push(html`<p class="hint">${b.hint}</p>`);
   } else if (b.bag) {
     const nm = b.bag.member_names.slice(0, 10).join(", ") + (b.bag.member_names.length > 10 ? ", ..." : "");
-    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}<button class="reify" title="${tipText("Name this region")}">Name this region</button></div>`);
+    parts.push(html`<div class="gb" data-hid="${b.bag.id}"><span class="sz">${b.bag.size}</span>${nm}<button class="reify" title="${tipText(word("nameRegion"))}">${word("nameRegion")}</button></div>`);
   } else if (b.node) {
-    parts.push(html`<div class="chips">${nchipHtml(b.node)}</div>`, html`<p class="hint">Observed with no relation to anything else.</p>`);
+    parts.push(html`<div class="chips">${nchipHtml(b.node)}</div>`, html`<p class="hint">${word("unlinkedWhy")}</p>`);
   } else if (b.settled) {
     const c = b.settled, others = (c.competitors || []).map(x => x.value);
-    parts.push(html`<p class="why">${c.current} is shown; ${others.join(", ")} ${others.length > 1 ? "were" : "was"} also asserted.</p>`);
+    const said = { current: c.current, others: others.join(", ") };
+    parts.push(html`<p class="why">${word(others.length > 1 ? "settledShownN" : "settledShownOne", said)}</p>`);
   } else if (b.axis) {
-    parts.push(html`<p class="why">Defined as both an entity type and a relation type - see Definitions in the filters.</p>`);
+    parts.push(html`<p class="why">${word("bothAxesWhy")}</p>`);
   } else if (b.stray) {
-    const v = b.stray, act = STRAY_ACTS[v.decision] || "verdict";
-    parts.push(html`<p class="why">This ${act} was filed in ${v.filed_in}, where the proposal does not live, so it decides nothing. The proposal still waits in ${v.proposal_in}.</p>`);
-    if (proposals.some(q => q.id === v.proposal)) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-stray="${v.proposal}">Show the proposal</button>${skipButton()}</div>`);
+    const v = b.stray, act = Object.hasOwn(STRAY, v.decision) ? v.decision : "other";
+    parts.push(html`<p class="why">${word(STRAY[act], { filed: v.filed_in, waits: v.proposal_in })}</p>`);
+    if (proposals.some(q => q.id === v.proposal)) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-stray="${v.proposal}">${word("showProposal")}</button>${skipButton()}</div>`);
     else parts.push(html`<div class="rv-acts">${skipButton()}</div>`);
-    parts.push(html`<p class="hint"><kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+    parts.push(moveHint());
     return parts;
   }
-  if (itemNodes(it).length) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-map="1">Show on the map</button>${skipButton()}</div>`);
+  if (itemNodes(it).length) parts.push(html`<div class="rv-acts"><button type="button" class="btn" data-map="1">${word("showOnMap")}</button>${skipButton()}</div>`);
   else parts.push(html`<div class="rv-acts">${skipButton()}</div>`);
-  parts.push(html`<p class="hint"><kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+  parts.push(moveHint());
   return parts;
 }
+// The line under a queue's item that names its keys.
+function moveHint() { return html`<p class="hint"><kbd>J</kbd> <kbd>K</kbd> ${word("moveBetween")}</p>`; }
 // The handlers a rendered curation or review fragment needs, bound on its container.
 function wireCuration(host) {
   // A finding names an observation without showing its text; clicking is the separate, deliberate act
@@ -396,11 +404,11 @@ function wireCuration(host) {
       const form = document.createElement("span");
       form.className = "reifyform";
       const inp = document.createElement("input");
-      inp.placeholder = "region name (optional)";
+      inp.placeholder = word("regionNameOptional");
       inp.onclick = (e2) => e2.stopPropagation();
       const ok = document.createElement("button");
-      ok.type = "button"; ok.title = tipText("Name this region");
-      ok.setAttribute("aria-label", "Name this region");
+      ok.type = "button"; ok.title = tipText(word("nameRegion"));
+      ok.setAttribute("aria-label", word("nameRegion"));
       ok.appendChild(icon("check"));
       ok.onclick = async (e2) => {
         e2.stopPropagation();
@@ -408,7 +416,7 @@ function wireCuration(host) {
         let q = "?hyperedge=" + encodeURIComponent(row.dataset.hid);
         if (inp.value.trim()) q += "&name=" + encodeURIComponent(inp.value.trim());
         if (ws) q += "&workspace=" + encodeURIComponent(ws);
-        await consoleWrite("/api/reify", q, "Region named - it is an entity now, related to its members");
+        await consoleWrite("/api/reify", q, word("regionNamed"));
         await poll();   // the group node + member_of edges appear; the page re-renders
       };
       form.append(inp, ok);
@@ -428,7 +436,7 @@ function wireCuration(host) {
       if (row.dataset.src) q += "&src=" + encodeURIComponent(row.dataset.src);
       // Under All the server files the merge where its pair lives (design-system.md Section 29.15).
       if (ws) q += "&workspace=" + encodeURIComponent(ws);
-      const o = await consoleWrite("/api/propose_merge", q, b => foundSaid(b, "merge") || "Merge proposed - it waits under Needs you for a verdict");
+      const o = await consoleWrite("/api/propose_merge", q, b => foundSaid(b, "merge") || word("mergeProposed"));
       await poll();
       if (o && o.found) openReviewItem(o.proposal_id);
     };
@@ -448,5 +456,5 @@ async function refreshCuration() {
   renderReview();
 }
 
-function nameOf(id) { const n = nodeById(id); return n ? n.name : HASH_ID.test(id) ? "(an entity not on the map)" : "(" + id + ")"; }
+function nameOf(id) { const n = nodeById(id); return n ? n.name : HASH_ID.test(id) ? word("entityNotOnMap") : "(" + id + ")"; }
 

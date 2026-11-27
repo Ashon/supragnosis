@@ -97,13 +97,59 @@ fn a_tier_is_named_never_spelled() {
 }
 
 /// A proposal row the page cannot phrase says so in words, and a target's name is never cut short.
-/// The words themselves are the engine's (`every_proposal_event_has_a_sentence` in its unit tests).
 #[test]
 fn a_proposal_row_it_cannot_phrase_says_so() {
     let line = &SCRIPT[SCRIPT.find("function proposalLine(").expect("proposalLine")..];
     let line = &line[..line.find("\n}\n").expect("it closes")];
-    assert!(line.contains("\"Something changed\""));
+    assert!(says(line, "Something changed"));
     assert!(!line.contains("slice(0, 8)"), "a name is cut short");
+}
+
+/// The ids a one-line map of the viewer's script holds, each with the key of the entry that says it:
+/// `const NAME = { id: "key", ... };`.
+fn word_map(name: &str) -> Vec<(&'static str, &'static str)> {
+    let def = format!("const {name} = {{ ");
+    let at = SCRIPT.find(&def).unwrap_or_else(|| panic!("no map {name}")) + def.len();
+    let line = SCRIPT[at..].lines().next().expect("a line");
+    let body = line.strip_suffix(" };").unwrap_or_else(|| panic!("{name} is not on one line"));
+    body.split(", ")
+        .map(|pair| pair.split_once(": ").expect("id: \"key\""))
+        .map(|(id, key)| (id, key.trim_matches('"')))
+        .collect()
+}
+
+/// U17 and docs/i18n.md Section 5: the Log says every proposal event the server sends in the page's
+/// words, looked up by its ids - a noun for every kind in `PROPOSAL_KINDS`, and what happened for
+/// every event in `ProposalEventKind::ALL`, a verdict's for each decision in `VERDICT_DECISIONS` - so a
+/// new kind or event cannot reach a page as "opened new_kind: 9f778c20". That each key is an entry
+/// with both languages is held by `the_viewers_words_hold_both_languages`.
+#[test]
+fn every_proposal_event_has_a_sentence() {
+    use supragnosis_core::ProposalEventKind;
+    use supragnosis_engine::{PROPOSAL_KINDS, VERDICT_DECISIONS};
+    let (nouns, happened) = (word_map("NOUNS"), word_map("HAPPENED"));
+    let has = |map: &[(&str, &str)], id: &str| map.iter().any(|(i, _)| *i == id);
+    for kind in PROPOSAL_KINDS {
+        assert!(has(&nouns, kind), "the Log has no noun for {kind}");
+    }
+    let mut events = Vec::new();
+    for event in ProposalEventKind::ALL {
+        let id = serde_json::to_value(event).expect("an event serializes");
+        let id = id.as_str().expect("an event's id is a string").to_string();
+        if event == ProposalEventKind::Verdict {
+            events.extend(VERDICT_DECISIONS.iter().map(|d| format!("{id}_{d}")));
+        } else {
+            events.push(id);
+        }
+    }
+    for id in &events {
+        assert!(has(&happened, id), "the Log has no words for {id}");
+    }
+    // and only those, so a word no row can say does not wait in the table
+    assert_eq!((nouns.len(), happened.len()), (PROPOSAL_KINDS.len(), events.len()));
+    // the line looks an event up by the id built above
+    let line = &SCRIPT[SCRIPT.find("function proposalLine(").expect("proposalLine")..];
+    assert!(line.contains("p.event === \"verdict\" ? \"verdict_\" + p.decision : p.event"));
 }
 
 /// Every Log row says who and when under what happened: the tier by its name, the writer as the strip
