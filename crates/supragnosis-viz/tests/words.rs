@@ -247,7 +247,9 @@ fn no_retired_word_reaches_a_page() {
 #[test]
 fn the_maps_activity_speaks_in_sentences() {
     let html = include_str!("../assets/viewer.html");
-    assert!(html.contains("<div id=\"log\" role=\"region\" aria-label=\"Activity\">"));
+    assert!(html.contains(
+        "<div id=\"log\" role=\"region\" data-t-label=\"activity\" aria-label=\"Activity\">"
+    ));
     let at = SCRIPT.find("async function handleEvent(").expect("handleEvent");
     let handle = &SCRIPT[at..];
     let handle = &handle[..handle.find("\n}\n").expect("it closes")];

@@ -113,7 +113,9 @@ fn list_leaves_the_camera_idle_in_place() {
     assert!(SCRIPT.contains("const IDLE_WHEN_LISTING = [\"zin\", \"zout\", \"fit\"];"));
     assert!(function("idleWhileEmpty")
         .contains("listOn && IDLE_WHEN_LISTING.includes(id) ? \"listIdle\""));
-    assert!(PAGE.contains("<span id=\"listIdle\" hidden>List shows the map as a table.</span>"));
+    assert!(PAGE.contains(
+        "<span id=\"listIdle\" hidden data-t=\"listIdle\">List shows the map as a table.</span>"
+    ));
     assert!(function("setList").contains("idleWhileEmpty();"));
     assert!(function("arrowTabs").contains(
         "if (tabs[j].getAttribute(\"aria-disabled\") === \"true\") { tabs[j].focus(); return; }"

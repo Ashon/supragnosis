@@ -71,7 +71,7 @@ fn the_viewers_controls_say_what_they_are() {
     // The page says its language, and the map is named.
     assert!(PAGE.contains("<html lang=\"en\">"), "the viewer does not declare its language");
     assert!(
-        PAGE.contains("<canvas id=\"c\" role=\"img\" aria-label=\""),
+        PAGE.contains("<canvas id=\"c\" role=\"img\" data-t-label=\"mapLabel\" aria-label=\""),
         "the map's canvas has no name"
     );
 }

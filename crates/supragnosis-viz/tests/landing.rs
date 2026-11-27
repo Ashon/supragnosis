@@ -501,8 +501,6 @@ fn lookups(after: &str, calls: &[&str]) -> (Vec<String>, bool) {
 /// table, and every entry is looked up.
 #[test]
 fn the_sites_words_hold_both_languages() {
-    // the particles whose form follows the last sound of the word before them
-    const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
     for (file, src, calls) in [
         ("site/stage.js", STAGE, &["word("][..]),
         // the landing also hands a key to tier(), which splits its entry around the tier's word
@@ -510,18 +508,7 @@ fn the_sites_words_hold_both_languages() {
         ("site/principles.js", PRINCIPLES_JS, &["word("]),
     ] {
         let (table, after) = words(file, src);
-        assert!(table.len() >= 10, "{file}: the table was not read ({} entries)", table.len());
-        for (key, en, ko) in &table {
-            assert!(!en.is_empty() && !ko.is_empty(), "{file} {key}: a language is empty");
-            assert_eq!(placeholders(en), placeholders(ko), "{file} {key}: the placeholders differ");
-            for (i, _) in ko.match_indices('}') {
-                let next = ko[i + 1..].chars().next();
-                assert!(
-                    !next.is_some_and(|c| PARTICLES.contains(&c)),
-                    "{file} {key}: a particle follows a placeholder in {ko:?}"
-                );
-            }
-        }
+        both_languages(file, &table);
         let (keys, numbered) = lookups(after, calls);
         assert!(keys.len() >= 10, "{file}: the lookups were not read ({} keys)", keys.len());
         for key in &keys {
@@ -536,5 +523,67 @@ fn the_sites_words_hold_both_languages() {
                 numbered && key.strip_prefix("caption").is_some_and(|n| n.parse::<u8>().is_ok());
             assert!(keys.contains(key) || by_number, "{file}: {key} is never looked up");
         }
+    }
+}
+
+/// Each entry of a words table holds both languages, with the same named placeholders, and no
+/// Korean placeholder is followed directly by a particle that would change with the name's last
+/// sound (docs/i18n.md Section 4).
+fn both_languages(file: &str, table: &[(String, String, String)]) {
+    // the particles whose form follows the last sound of the word before them
+    const PARTICLES: &[char] = &['을', '를', '이', '가', '은', '는', '과', '와', '로', '으'];
+    assert!(table.len() >= 10, "{file}: the table was not read ({} entries)", table.len());
+    for (key, en, ko) in table {
+        assert!(!en.is_empty() && !ko.is_empty(), "{file} {key}: a language is empty");
+        assert_eq!(placeholders(en), placeholders(ko), "{file} {key}: the placeholders differ");
+        for (i, _) in ko.match_indices('}') {
+            let next = ko[i + 1..].chars().next();
+            assert!(
+                !next.is_some_and(|c| PARTICLES.contains(&c)),
+                "{file} {key}: a particle follows a placeholder in {ko:?}"
+            );
+        }
+    }
+}
+
+/// docs/i18n.md Section 4, its D8, for the viewer's words (assets/viewer/00-words.js): each entry
+/// holds both languages as the site's do, every key the markup marks (data-t, data-t-label,
+/// data-t-ph) or the script looks up is in the table, each marked string's English is its entry's,
+/// and every entry is used.
+#[test]
+fn the_viewers_words_hold_both_languages() {
+    const HTML: &str = include_str!("../assets/viewer.html");
+    let (table, after) = words("viewer.js", VIEWER);
+    both_languages("viewer.js", &table);
+    let en = |key: &str| table.iter().find(|(k, ..)| k == key).map(|(_, en, _)| en.as_str());
+    let (mut keys, _) = lookups(after, &["word("]);
+    for attr in [" data-t=\"", " data-t-label=\"", " data-t-ph=\""] {
+        for (i, _) in HTML.match_indices(attr) {
+            let rest = &HTML[i + attr.len()..];
+            let key = &rest[..rest.find('"').expect("a closed attribute")];
+            assert!(en(key).is_some(), "viewer.html marks {key:?}, which the words lack");
+            // the English the markup holds is its entry's, so a page that runs no script says it
+            let tag = &HTML[HTML[..i].rfind('<').unwrap()..];
+            let tag = &tag[..tag.find('>').unwrap()];
+            let said = match attr {
+                " data-t=\"" => HTML[i..].split_once('>').map(|(_, t)| t),
+                " data-t-ph=\"" => tag.split_once(" placeholder=\"").map(|(_, t)| t),
+                _ => {
+                    tag.split_once(" aria-label=\"").or(tag.split_once(" title=\"")).map(|(_, t)| t)
+                }
+            }
+            .expect("the marked string");
+            let said = said.trim_start_matches(|c| c != '"' && c != '<' && !char::is_alphabetic(c));
+            let said = said.split_once('<').map_or(said, |(t, _)| t);
+            let said = said.split_once('"').map_or(said, |(t, _)| t).trim();
+            let said = said.split_once(" (").map_or(said, |(t, _)| t);
+            if !said.is_empty() {
+                assert_eq!(Some(said), en(key), "viewer.html's {key} holds other English");
+            }
+            keys.push(key.to_string());
+        }
+    }
+    for (key, ..) in &table {
+        assert!(keys.contains(key), "viewer.js: {key} is never used");
     }
 }

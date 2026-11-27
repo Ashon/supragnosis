@@ -2,20 +2,20 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Graph - Supragnosis</title>
+<title data-t="pageTitle">Graph - Supragnosis</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6.25' y='6.25' width='51.5' height='51.5' rx='11.56' fill='%230c0e14'/%3E%3Cg stroke='%23f0c469' stroke-width='4.44' stroke-linecap='round'%3E%3Cline x1='32' y1='32' x2='32' y2='19.9'/%3E%3Cline x1='32' y1='32' x2='43.5' y2='28.3'/%3E%3Cline x1='32' y1='32' x2='39.1' y2='41.8'/%3E%3Cline x1='32' y1='32' x2='24.9' y2='41.8'/%3E%3Cline x1='32' y1='32' x2='20.5' y2='28.3'/%3E%3C/g%3E%3C/svg%3E">
 <!-- Pretendard as its author publishes it: 92 files, each with a unicode-range, so the page fetches
      only what its text needs (docs/design-system.md Section 4, U11). -->
 <link rel="stylesheet" href="/fonts/pretendard-1.3.9/pretendardvariable-dynamic-subset.css">
 <link rel="stylesheet" href="/viewer.css">
 <canvas id="gl" aria-hidden="true"></canvas>
-<canvas id="c" role="img" aria-label="Map of the entities and relations in this scope"></canvas>
+<canvas id="c" role="img" data-t-label="mapLabel" aria-label="Map of the entities and relations in this scope"></canvas>
 <!-- The map's window (design-system.md Section 6): paints the frame around a rounded opening over
      the full-window canvas. Decoration only. -->
 <div id="mapwin" aria-hidden="true"></div>
-<section id="listwin" hidden aria-label="Entities"></section>
-<div id="empty"><div class="e-title" id="emptyTitle">Nothing here yet.</div><div class="e-sub">Ask a connected AI app to remember something, or pick a workspace that holds knowledge.</div></div>
-<div id="loader"><div class="spin"></div><span id="loaderSay">Arranging...</span></div>
+<section id="listwin" hidden data-t-label="entities" aria-label="Entities"></section>
+<div id="empty"><div class="e-title" id="emptyTitle" data-t="emptyTitle">Nothing here yet.</div><div class="e-sub" data-t="emptySub">Ask a connected AI app to remember something, or pick a workspace that holds knowledge.</div></div>
+<div id="loader"><div class="spin"></div><span id="loaderSay" data-t="arranging">Arranging...</span></div>
 <header>
   <!-- The title bar is a Mac toolbar (design-system.md Section 6, U26): at its leading end the mark,
        the filters panel's toggle - or, on every page but the Graph, the way back to it - and the
@@ -24,11 +24,11 @@
        Lucide's panel-left and panel-right, the way back its chevron-left (ISC, https://lucide.dev). -->
   <div class="tlead">
     <span class="mark"><svg viewBox="16 16 32 32" width="14" height="14" aria-hidden="true"><g stroke="currentColor" stroke-width="4.44" stroke-linecap="round"><line x1="32" y1="32" x2="32" y2="19.9"/><line x1="32" y1="32" x2="43.5" y2="28.3"/><line x1="32" y1="32" x2="39.1" y2="41.8"/><line x1="32" y1="32" x2="24.9" y2="41.8"/><line x1="32" y1="32" x2="20.5" y2="28.3"/></g></svg></span>
-    <button id="panelL" type="button" aria-pressed="true" title="Filters panel ([)" aria-label="Filters panel">
+    <button id="panelL" type="button" aria-pressed="true" data-t-label="filtersPanel" title="Filters panel ([)" aria-label="Filters panel">
       <span class="i i-panel-left" aria-hidden="true"></span>
     </button>
-    <a id="backGraph" class="tback" href="#" hidden title="Back to the graph (Esc)"><span class="i i-chevron-left" aria-hidden="true"></span>Graph</a>
-    <h1 id="placeTitle">All workspaces</h1>
+    <a id="backGraph" class="tback" href="#" hidden data-t="graph" data-t-label="backToGraph" title="Back to the graph (Esc)"><span class="i i-chevron-left" aria-hidden="true"></span>Graph</a>
+    <h1 id="placeTitle" data-t="allWorkspaces">All workspaces</h1>
   </div>
   <div class="ttrail">
     <!-- The search field advertises its own shortcut: "/" (or Cmd+K) focuses it from anywhere on the
@@ -36,22 +36,22 @@
          field is focused or already holds a term, so it never sits on top of what you typed. The list
          under it is the engine's answer from /api/search (docs/design-system.md Section 8). -->
     <div class="searchwrap">
-      <input id="search" placeholder="search knowledge" aria-label="Search" size="18" autocomplete="off" spellcheck="false"
+      <input id="search" data-t-ph="searchPlaceholder" placeholder="search knowledge" data-t-label="search" aria-label="Search" size="18" autocomplete="off" spellcheck="false"
              role="combobox" aria-expanded="false" aria-controls="searchPop" aria-autocomplete="list">
       <kbd class="slashkey" aria-hidden="true">/</kbd>
-      <div id="searchPop" class="searchpop" role="listbox" aria-label="search results" hidden></div>
+      <div id="searchPop" class="searchpop" role="listbox" data-t-label="searchResults" aria-label="search results" hidden></div>
     </div>
-    <button id="panelR" type="button" aria-pressed="true" title="Log panel (])" aria-label="Log panel">
+    <button id="panelR" type="button" aria-pressed="true" data-t-label="logPanel" title="Log panel (])" aria-label="Log panel">
       <span class="i i-panel-right" aria-hidden="true"></span>
     </button>
   </div>
   <!-- Workspace selection lives ONLY in the left rail's chips (one UI, one mechanism); the title says
        the scope on screen. -->
 </header>
-<div id="log" role="region" aria-label="Activity"></div>
+<div id="log" role="region" data-t-label="activity" aria-label="Activity"></div>
 <!-- The strip: the Log folded (design-system.md Section 6). While the right side is empty it shows
      the scope's newest observation; clicking it opens the Log. Filled by viewer.js. -->
-<button id="strip" type="button" title="Open the Log"></button>
+<button id="strip" type="button" data-t-label="openLog" title="Open the Log"></button>
 <div id="detail"></div>
 <!-- Observation detail card (a focused, dismissable view of one observation): a log row opens it, so
      the log lists stay compact. Populated by viewer.js; a backdrop click or Escape closes it. -->
@@ -60,22 +60,22 @@
   <div id="wschips"></div>
   <div class="railbody">
     <!-- data-needs="entities": hidden while the scope holds no entity (design-system.md Section 29.10). -->
-    <div class="rsec" data-needs="entities">Entity types <span class="ct" id="nodeCt"></span></div>
+    <div class="rsec" data-needs="entities" data-t="entityTypes">Entity types <span class="ct" id="nodeCt"></span></div>
     <div id="legendNodes" data-needs="entities"></div>
-    <div class="rsec" data-needs="entities">Relation types <span class="ct" id="edgeCt"></span></div>
+    <div class="rsec" data-needs="entities" data-t="relationTypes">Relation types <span class="ct" id="edgeCt"></span></div>
     <div id="legendEdges" data-needs="entities"></div>
     <!-- The type definitions, moved from the dock's Types tab (design-system.md Section 6): every
          defined type with its definition, a contested one with its mediation act, and the types defined
          here with no node in the graph. Opens by itself when a definition is contested. -->
-    <details id="defsBox"><summary class="rsec"><span class="i i-chevron-right" aria-hidden="true"></span>Definitions <span class="ct" id="glossCt"></span></summary>
+    <details id="defsBox"><summary class="rsec" data-t="definitions"><span class="i i-chevron-right" aria-hidden="true"></span>Definitions <span class="ct" id="glossCt"></span></summary>
       <div id="glossaryBody"></div></details>
-    <div class="rsec" data-needs="entities">Trust</div>
+    <div class="rsec" data-needs="entities" data-t="trust">Trust</div>
     <div id="legendTrust" data-needs="entities"></div>
     <!-- When each entity was last said (design-system.md Section 29.19): a window dims what it leaves out. -->
-    <div class="rsec" data-needs="entities">Said</div>
+    <div class="rsec" data-needs="entities" data-t="said">Said</div>
     <div id="legendSaid" data-needs="entities"></div>
     <!-- The map's key: each mark the view draws, and only those (design-system.md Section 29.9). -->
-    <div class="rsec" id="marksHead">On the map</div>
+    <div class="rsec" id="marksHead" data-t="onTheMap">On the map</div>
     <div id="legendMarks"></div>
   </div>
 </aside>
@@ -83,14 +83,14 @@
   <!-- The observation log: the source of truth (Principle 1). The graph is a projection OF this log;
        this dock reads the raw events workspace-wide, newest-first, with their provenance. Proposals and
        the curation signals moved to the Review page (design-system.md Section 7). -->
-  <div class="rsec">Log <span class="ct" id="logCt"></span></div>
+  <div class="rsec" data-t="log">Log <span class="ct" id="logCt"></span></div>
   <div class="panels">
     <div class="tabpanel on" data-panel="log"><div id="logBody"></div></div>
   </div>
 </aside>
 <!-- The Review page (design-system.md Section 7): everything that waits for a decision, one item at a
      time. A route of this page, #review, over the canvas. -->
-<section id="reviewPage" hidden aria-label="Review">
+<section id="reviewPage" hidden data-t-label="review" aria-label="Review">
   <div class="rv-queue">
     <div class="rv-seg" id="rvSeg"></div>
     <div class="rv-list" id="rvList"></div>
@@ -102,24 +102,24 @@
 <div id="toasts" role="status" aria-live="polite"></div>
 <!-- A map preview opened from Review, and its way back (design-system.md Section 29.3). -->
 <div id="previewBar" hidden><span class="pv-t"></span>
-  <button type="button" class="btn" data-pv="back" aria-keyshortcuts="Escape">Back to Review</button>
-  <button type="button" class="btn" data-pv="done">Done</button></div>
-<div id="statusbar"><span id="stats"></span><button type="button" id="showAll" class="spill" hidden>Show all</button>
+  <button type="button" class="btn" data-pv="back" aria-keyshortcuts="Escape" data-t="backToReview">Back to Review</button>
+  <button type="button" class="btn" data-pv="done" data-t="done">Done</button></div>
+<div id="statusbar"><span id="stats"></span><button type="button" id="showAll" class="spill" hidden data-t="showAll">Show all</button>
   <!-- The working set, said where a phone keeps it, with its Clear (design-system.md Section 29.11). -->
-  <span id="kept" class="spill" hidden><span class="kn"></span><button type="button" class="kx" title="Clear" aria-label="Clear"><span class="i i-x" aria-hidden="true"></span></button></span>
+  <span id="kept" class="spill" hidden><span class="kn"></span><button type="button" class="kx" data-t-label="clear" title="Clear" aria-label="Clear"><span class="i i-x" aria-hidden="true"></span></button></span>
   <!-- The scope's one tier while the Trust legend is out of sight with the left panel (U2). -->
-  <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span><button type="button" id="retry" class="spill" hidden>Retry</button>
+  <span id="tierNote" class="hint" hidden></span><span id="session" class="hint"></span><span id="status"></span><button type="button" id="retry" class="spill" hidden data-t="retry">Retry</button>
   <!-- The way to Review (design-system.md Section 6, U20): always here, with what waits in this scope
        and how many of those are contested beliefs. -->
-  <button id="reviewPill" class="spill warn" type="button" hidden title="Open the Review page"></button>
+  <button id="reviewPill" class="spill warn" type="button" hidden data-t-label="openReview" title="Open the Review page"></button>
   <!-- What sync is doing (design-system.md Section 6, U8); opens Settings > Sync. Absent where sync is
        not set up. -->
-  <button id="syncPill" class="spill" type="button" hidden title="Sync settings"></button>
+  <button id="syncPill" class="spill" type="button" hidden data-t-label="syncSettings" title="Sync settings"></button>
   <!-- Settings lives on the status bar rather than inside a dock panel: it is not about the graph
        being viewed, and it will hold more than federation. A panel would have tied it to one topic. -->
   <!-- The gear is Lucide's "settings" icon (ISC, https://lucide.dev), the set the desktop app uses.
        It replaced a hand-drawn circle with eight spokes, which read as a sun. -->
-  <button id="settingsBtn" title="Settings" aria-label="Settings">
+  <button id="settingsBtn" data-t-label="settings" title="Settings" aria-label="Settings">
     <span class="i i-settings" aria-hidden="true"></span>
   </button>
 </div>
@@ -130,10 +130,10 @@
      clean under its CSP. -->
 <dialog id="settings" aria-labelledby="settingsTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle" id="settingsTitle">Settings</span>
+    <span class="ftitle" id="settingsTitle" data-t="settings">Settings</span>
     <!-- Same glyph and hit target as the detail / observation card closers, so "close" looks the
          same everywhere it appears. `method="dialog"` closes without any script. -->
-    <button class="fclose" title="Close (Esc)" aria-label="Close">
+    <button class="fclose" data-t-label="close" title="Close (Esc)" aria-label="Close">
       <span class="i i-x" aria-hidden="true"></span>
     </button>
   </form>
@@ -148,76 +148,76 @@
      the rAF loop; click/drag pans the camera. Hidden while empty or toggled off - it precedes
      #viewpop/#hud in the DOM so `#minimap.on ~` sibling rules can shift them left only while
      the minimap is actually visible. -->
-<canvas id="minimap" title="Minimap"></canvas>
+<canvas id="minimap" data-t-label="minimap" title="Minimap"></canvas>
 <!-- View options live OFF the primary panels (they are preferences, not data): a compact
      checkbox popover behind the HUD's view button, map-tool style. Same button ids and .tog/.on
      mechanics as before - only the presentation moved. -->
-<div id="viewpop" role="group" aria-label="View">
+<div id="viewpop" role="group" data-t-label="view" aria-label="View">
   <!-- Two choices with one name each (design-system.md Section 5): which regions are drawn, and which
        boundaries. Each is one choice of three, so each is a radio group. -->
-  <div class="grp"><span class="ghdr" id="lRegions">Regions</span>
-    <div id="regionsSeg" class="seg" aria-labelledby="lRegions" aria-describedby="regionsDesc"><button type="button" data-v="all">All</button><button type="button" data-v="selected">Selected</button><button type="button" data-v="off">Off</button></div>
+  <div class="grp"><span class="ghdr" id="lRegions" data-t="regions">Regions</span>
+    <div id="regionsSeg" class="seg" aria-labelledby="lRegions" aria-describedby="regionsDesc"><button type="button" data-v="all" data-t="regionsAll">All</button><button type="button" data-v="selected" data-t="regionsSelected">Selected</button><button type="button" data-v="off" data-t="regionsOff">Off</button></div>
     <!-- What the chosen option draws, said under the choice rather than in a tooltip (Section 4, U25). -->
     <p class="vdesc" id="regionsDesc"></p></div>
-  <div class="grp"><span class="ghdr" id="lBoundaries">Boundaries<kbd class="keyhint" aria-hidden="true">b</kbd></span>
+  <div class="grp"><span class="ghdr" id="lBoundaries" data-t="boundaries">Boundaries<kbd class="keyhint" aria-hidden="true">b</kbd></span>
     <div id="legendBoundary" class="seg" aria-labelledby="lBoundaries" aria-describedby="boundaryDesc"></div>
     <p class="vdesc" id="boundaryDesc"></p></div>
   <!-- On/off view state: each is a switch that says on or off, and an option that is off is drawn at
        full strength (Section 4). Each carries a line under its name that says what it shows, read with
        it (aria-describedby), since a tooltip is seen by no keyboard and no finger (U25). -->
-  <div class="grp"><span class="ghdr">Show</span><div class="btns">
-    <button id="labelsBtn" class="tog on" aria-describedby="dLabels">Labels</button>
-    <p class="vdesc" id="dLabels">Names of entities and regions.</p>
-    <button id="edgesBtn" class="tog on" aria-describedby="dEdges">Relations</button>
-    <p class="vdesc" id="dEdges">Lines between entities.</p>
-    <button id="arrowsBtn" class="tog on" aria-describedby="dArrows">Arrows</button>
-    <p class="vdesc" id="dArrows">Which way each relation points. An active relation always shows it.</p>
-    <button id="histBtn" class="tog on" aria-describedby="dHist">History</button>
-    <p class="vdesc" id="dHist">Relations that were superseded, drawn faint.</p>
-    <button id="miniBtn" class="tog on" aria-describedby="dMini">Minimap</button>
-    <p class="vdesc" id="dMini">The whole graph, while you are zoomed in; click or drag it to move.</p>
-    <button id="clusterBtn" class="tog" aria-describedby="dCluster">Arrange by type</button>
-    <p class="vdesc" id="dCluster">A circle of entities for each type, with the relations between types kept.</p>
+  <div class="grp"><span class="ghdr" data-t="show">Show</span><div class="btns">
+    <button id="labelsBtn" class="tog on" aria-describedby="dLabels" data-t="labels">Labels</button>
+    <p class="vdesc" id="dLabels" data-t="labelsSub">Names of entities and regions.</p>
+    <button id="edgesBtn" class="tog on" aria-describedby="dEdges" data-t="relations">Relations</button>
+    <p class="vdesc" id="dEdges" data-t="relationsSub">Lines between entities.</p>
+    <button id="arrowsBtn" class="tog on" aria-describedby="dArrows" data-t="arrows">Arrows</button>
+    <p class="vdesc" id="dArrows" data-t="arrowsSub">Which way each relation points. An active relation always shows it.</p>
+    <button id="histBtn" class="tog on" aria-describedby="dHist" data-t="history">History</button>
+    <p class="vdesc" id="dHist" data-t="historySub">Relations that were superseded, drawn faint.</p>
+    <button id="miniBtn" class="tog on" aria-describedby="dMini" data-t="minimap">Minimap</button>
+    <p class="vdesc" id="dMini" data-t="minimapSub">The whole graph, while you are zoomed in; click or drag it to move.</p>
+    <button id="clusterBtn" class="tog" aria-describedby="dCluster" data-t="arrangeByType">Arrange by type</button>
+    <p class="vdesc" id="dCluster" data-t="arrangeByTypeSub">A circle of entities for each type, with the relations between types kept.</p>
   </div></div>
   <!-- What changes the picture least, under a disclosure whose summary names a switch that is off
        (design-system.md Section 29.12). -->
-  <details id="moreView" class="grp"><summary class="ghdr"><span class="i i-chevron-right" aria-hidden="true"></span><span id="moreSum">More</span></summary><div class="btns">
-    <button id="footBtn" class="tog on" aria-describedby="dFoot">Footprint</button>
-    <p class="vdesc" id="dFoot">A glow on what agents used.</p>
-    <button id="pulseBtn" class="tog on" aria-describedby="dPulse">Pulses</button>
-    <p class="vdesc" id="dPulse">A ring when an entity is touched.</p>
-    <button id="peersBtn" class="tog" aria-describedby="dPeers">Peers</button>
-    <p class="vdesc" id="dPeers">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
-    <button id="resetLayout" aria-describedby="dReset">Reset layout</button>
-    <p class="vdesc" id="dReset">Forgets where this scope's entities were and lays it out again.</p>
+  <details id="moreView" class="grp"><summary class="ghdr"><span class="i i-chevron-right" aria-hidden="true"></span><span id="moreSum" data-t="more">More</span></summary><div class="btns">
+    <button id="footBtn" class="tog on" aria-describedby="dFoot" data-t="footprint">Footprint</button>
+    <p class="vdesc" id="dFoot" data-t="footprintSub">A glow on what agents used.</p>
+    <button id="pulseBtn" class="tog on" aria-describedby="dPulse" data-t="pulses">Pulses</button>
+    <p class="vdesc" id="dPulse" data-t="pulsesSub">A ring when an entity is touched.</p>
+    <button id="peersBtn" class="tog" aria-describedby="dPeers" data-t="peers">Peers</button>
+    <p class="vdesc" id="dPeers" data-t="peersSub">Other machines, as dots that move to the entities they touch. On by default on a hub.</p>
+    <button id="resetLayout" aria-describedby="dReset" data-t="resetLayout">Reset layout</button>
+    <p class="vdesc" id="dReset" data-t="resetLayoutSub">Forgets where this scope's entities were and lays it out again.</p>
   </div></details>
   <!-- The keys and their switch are in the Keys dialog (Section 29.12). -->
-  <button id="keysOpen" type="button">Keys...</button>
-  <p class="vdesc" id="dShownWithRel" hidden>Shown with relations.</p>
+  <button id="keysOpen" type="button" data-t="keysMore">Keys...</button>
+  <p class="vdesc" id="dShownWithRel" hidden data-t="shownWithRelations">Shown with relations.</p>
 </div>
 <!-- The Keys dialog (design-system.md Section 29.12): every key of the Graph page, and at its foot the
      switch that turns the single keys off (WCAG 2.1.4). Native <dialog>: it holds focus and makes the
      page behind it inert. -->
 <dialog id="keysDlg" aria-labelledby="keysTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle" id="keysTitle">Keys</span>
-    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+    <span class="ftitle" id="keysTitle" data-t="keys">Keys</span>
+    <button class="fclose" data-t-label="close" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
   </form>
   <div class="kbody">
-    <h3>Find</h3>
-    <dl><dt><kbd>/</kbd> or <kbd>Cmd+K</kbd></dt><dd>Search</dd><dt><kbd>Cmd+Enter</kbd></dt><dd>Keep the answer on the map</dd></dl>
-    <h3>Panels</h3>
-    <dl><dt><kbd>[</kbd></dt><dd>Filters</dd><dt><kbd>]</kbd></dt><dd>Log</dd></dl>
-    <h3>Map</h3>
-    <dl><dt><kbd>=</kbd> or <kbd>+</kbd></dt><dd>Zoom in</dd><dt><kbd>-</kbd></dt><dd>Zoom out</dd><dt><kbd>0</kbd></dt><dd>Fit to view</dd>
-      <dt><kbd>l</kbd></dt><dd>Map or List</dd><dt><kbd>b</kbd></dt><dd>Boundaries</dd><dt><kbd>?</kbd></dt><dd>Keys</dd></dl>
-    <h3>Selection</h3>
-    <dl><dt><kbd>Cmd+[</kbd> and <kbd>Cmd+]</kbd></dt><dd>Back and Forward</dd><dt><kbd>Esc</kbd></dt><dd>Close what is on top</dd></dl>
-    <h3>Lists</h3>
-    <dl><dt>Arrow keys</dt><dd>Move</dd><dt><kbd>Enter</kbd></dt><dd>Choose</dd></dl>
+    <h3 data-t="find">Find</h3>
+    <dl><dt><kbd>/</kbd> <span data-t="or">or</span> <kbd>Cmd+K</kbd></dt><dd data-t="search">Search</dd><dt><kbd>Cmd+Enter</kbd></dt><dd data-t="keepAnswer">Keep the answer on the map</dd></dl>
+    <h3 data-t="panels">Panels</h3>
+    <dl><dt><kbd>[</kbd></dt><dd data-t="filters">Filters</dd><dt><kbd>]</kbd></dt><dd data-t="log">Log</dd></dl>
+    <h3 data-t="map">Map</h3>
+    <dl><dt><kbd>=</kbd> <span data-t="or">or</span> <kbd>+</kbd></dt><dd data-t="zoomIn">Zoom in</dd><dt><kbd>-</kbd></dt><dd data-t="zoomOut">Zoom out</dd><dt><kbd>0</kbd></dt><dd data-t="fitToView">Fit to view</dd>
+      <dt><kbd>l</kbd></dt><dd data-t="mapOrList">Map or List</dd><dt><kbd>b</kbd></dt><dd data-t="boundaries">Boundaries</dd><dt><kbd>?</kbd></dt><dd data-t="keys">Keys</dd></dl>
+    <h3 data-t="selection">Selection</h3>
+    <dl><dt><kbd>Cmd+[</kbd> <span data-t="and">and</span> <kbd>Cmd+]</kbd></dt><dd data-t="backAndForward">Back and Forward</dd><dt><kbd>Esc</kbd></dt><dd data-t="closeTop">Close what is on top</dd></dl>
+    <h3 data-t="lists">Lists</h3>
+    <dl><dt data-t="arrowKeys">Arrow keys</dt><dd data-t="move">Move</dd><dt><kbd>Enter</kbd></dt><dd data-t="choose">Choose</dd></dl>
     <div class="btns">
-      <button id="keysBtn" class="tog on" aria-describedby="dKeys">Single-key shortcuts</button>
-      <p class="vdesc" id="dKeys">Letters and symbols act on the Graph page, outside a text field, while no dialog or card is open.</p>
+      <button id="keysBtn" class="tog on" aria-describedby="dKeys" data-t="singleKeys">Single-key shortcuts</button>
+      <p class="vdesc" id="dKeys" data-t="singleKeysSub">Letters and symbols act on the Graph page, outside a text field, while no dialog or card is open.</p>
     </div>
   </div>
 </dialog>
@@ -225,25 +225,25 @@
      offers the merge either way. -->
 <dialog id="sameDlg" aria-labelledby="sameTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle" id="sameTitle">Same as...</span>
-    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+    <span class="ftitle" id="sameTitle" data-t="sameAs">Same as...</span>
+    <button class="fclose" data-t-label="close" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
   </form>
   <div class="sbody">
     <input id="sameQ" type="search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="sameList" aria-autocomplete="list">
-    <div id="sameList" role="listbox" aria-label="Entities"></div>
+    <div id="sameList" role="listbox" data-t-label="entities" aria-label="Entities"></div>
     <div id="sameActs"></div>
   </div>
 </dialog>
 <!-- Reject all blocked (design-system.md Section 29.21): each Blocked item with the check that holds it. -->
 <dialog id="blockedDlg" aria-labelledby="blockedTitle">
   <form method="dialog" class="fchead">
-    <span class="ftitle" id="blockedTitle">Reject all blocked</span>
-    <button class="fclose" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
+    <span class="ftitle" id="blockedTitle" data-t="rejectAllBlocked">Reject all blocked</span>
+    <button class="fclose" data-t-label="close" title="Close (Esc)" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>
   </form>
   <div class="sbody">
-    <p class="bwhy">If a check passes later, the accept it carries still merges it.</p>
+    <p class="bwhy" data-t="blockedWhy">If a check passes later, the accept it carries still merges it.</p>
     <ul id="blockedList"></ul>
-    <div class="bacts"><button type="button" class="btn" id="blockedCancel">Cancel</button><button type="button" class="btn p" id="blockedGo">Reject all</button></div>
+    <div class="bacts"><button type="button" class="btn" id="blockedCancel" data-t="cancel">Cancel</button><button type="button" class="btn p" id="blockedGo" data-t="rejectAll">Reject all</button></div>
   </div>
 </dialog>
 <!-- HUD icons: inline stroke SVGs (no icon font - the viewer stays CDN-free). currentColor
@@ -253,30 +253,30 @@
        reader and for anyone who cannot tell its colors apart. Lucide's list (ISC). -->
   <!-- Follow (design-system.md Section 29.4): frames new activity in this scope while the map is not in
        use, and waits while it is. Lucide's locate and locate-off (ISC). -->
-  <button id="followBtn" class="on" title="Follow" aria-label="Follow" aria-pressed="true">
+  <button id="followBtn" class="on" data-t-label="follow" title="Follow" aria-label="Follow" aria-pressed="true">
     <span class="i i-locate" aria-hidden="true"></span>
   </button>
   <!-- Map | List (design-system.md Section 29.11): one tab list after Follow, the window's two views.
        Map is Lucide's waypoints, List its list (ISC). -->
-  <div id="mapList" role="tablist" aria-label="Show as">
-    <button id="mapTab" type="button" role="tab" title="Map" aria-label="Map" aria-selected="true" aria-controls="c" class="on">
+  <div id="mapList" role="tablist" data-t-label="showAs" aria-label="Show as">
+    <button id="mapTab" type="button" role="tab" data-t-label="map" title="Map" aria-label="Map" aria-selected="true" aria-controls="c" class="on">
       <span class="i i-waypoints" aria-hidden="true"></span>
     </button>
-    <button id="listBtn" type="button" role="tab" title="List" aria-label="List" aria-selected="false" aria-controls="listwin" tabindex="-1">
+    <button id="listBtn" type="button" role="tab" data-t-label="list" title="List" aria-label="List" aria-selected="false" aria-controls="listwin" tabindex="-1">
       <span class="i i-list" aria-hidden="true"></span>
     </button>
   </div>
-  <span id="listIdle" hidden>List shows the map as a table.</span>
-  <button id="viewBtn" title="View options" aria-label="View options" aria-expanded="false" aria-controls="viewpop">
+  <span id="listIdle" hidden data-t="listIdle">List shows the map as a table.</span>
+  <button id="viewBtn" data-t-label="viewOptions" title="View options" aria-label="View options" aria-expanded="false" aria-controls="viewpop">
     <span class="i i-eye" aria-hidden="true"></span>
   </button>
-  <button id="zin" title="Zoom in" aria-label="Zoom in">
+  <button id="zin" data-t-label="zoomIn" title="Zoom in" aria-label="Zoom in">
     <span class="i i-plus" aria-hidden="true"></span>
   </button>
-  <button id="zout" title="Zoom out" aria-label="Zoom out">
+  <button id="zout" data-t-label="zoomOut" title="Zoom out" aria-label="Zoom out">
     <span class="i i-minus" aria-hidden="true"></span>
   </button>
-  <button id="fit" title="Fit to view" aria-label="Fit to view">
+  <button id="fit" data-t-label="fitToView" title="Fit to view" aria-label="Fit to view">
     <span class="i i-scan" aria-hidden="true"></span>
   </button>
 </div>

@@ -56,7 +56,7 @@ fn an_empty_scope_keeps_no_idle_controls() {
         assert!(SCRIPT.contains(handler), "an idle button still acts: {handler}");
     }
     assert!(
-        PAGE.contains("<div class=\"e-title\" id=\"emptyTitle\">"),
+        PAGE.contains("<div class=\"e-title\" id=\"emptyTitle\" data-t=\"emptyTitle\">"),
         "the description exists"
     );
     assert!(function("refreshEmpty").contains("kids[0].id = \"emptyTitle\""));

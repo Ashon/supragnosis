@@ -173,7 +173,7 @@ fn the_small_controls_say_what_they_are() {
         "the settings dialog has no name"
     );
     assert!(
-        page.contains("<span class=\"ftitle\" id=\"settingsTitle\">"),
+        page.contains("<span class=\"ftitle\" id=\"settingsTitle\" data-t=\"settings\">"),
         "the dialog's title has no id"
     );
     let confirm = rule(".contested .confirm");

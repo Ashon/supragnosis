@@ -186,7 +186,7 @@ fn the_cloud_is_a_region_everywhere() {
 #[test]
 fn the_map_says_when_each_entity_was_said() {
     assert!(
-        PAGE.contains("<div class=\"rsec\" data-needs=\"entities\">Said</div>"),
+        PAGE.contains("<div class=\"rsec\" data-needs=\"entities\" data-t=\"said\">Said</div>"),
         "no Said section"
     );
     let when = function("obsWhen");

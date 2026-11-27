@@ -58,11 +58,11 @@ fn the_keys_dialog_holds_the_switch() {
         .expect("the dialog")..];
     let dialog = &dialog[..dialog.find("</dialog>").unwrap()];
     for part in [
-        "<h3>Find</h3>",
-        "<h3>Panels</h3>",
-        "<h3>Map</h3>",
-        "<h3>Selection</h3>",
-        "<h3>Lists</h3>",
+        "<h3 data-t=\"find\">Find</h3>",
+        "<h3 data-t=\"panels\">Panels</h3>",
+        "<h3 data-t=\"map\">Map</h3>",
+        "<h3 data-t=\"selection\">Selection</h3>",
+        "<h3 data-t=\"lists\">Lists</h3>",
         "Cmd+Enter",
         "id=\"keysBtn\"",
     ] {
@@ -70,7 +70,8 @@ fn the_keys_dialog_holds_the_switch() {
     }
     assert!(dialog
         .contains("on the Graph page, outside a text field, while no dialog or card is open."));
-    assert!(PAGE.contains("<button id=\"keysOpen\" type=\"button\">Keys...</button>"));
+    assert!(PAGE
+        .contains("<button id=\"keysOpen\" type=\"button\" data-t=\"keysMore\">Keys...</button>"));
     assert!(
         function("openKeys").contains("keysDlg.showModal()"),
         "the dialog does not hold focus"
@@ -139,7 +140,9 @@ fn boundaries_only_draw() {
 #[test]
 fn retry_follows_a_stale_line() {
     assert!(
-        PAGE.contains("<button type=\"button\" id=\"retry\" class=\"spill\" hidden>Retry</button>")
+        PAGE.contains(
+            "<button type=\"button\" id=\"retry\" class=\"spill\" hidden data-t=\"retry\">Retry</button>"
+        )
     );
     let late = function("sayLate");
     assert!(

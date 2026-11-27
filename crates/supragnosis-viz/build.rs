@@ -126,6 +126,8 @@ fn main() {
 /// nothing of its own (no header, no separator): the joined text is the one file the parts were
 /// cut from, byte for byte. The two-digit prefix is the order:
 ///
+/// - `00-words.js` - the words in English and Korean, the page's language, and its markup filled
+///   in that language (docs/i18n.md Section 4), before any other part reads the page
 /// - `01-state.js` - the type band and palette, the canvases, List, the page's shared state
 /// - `02-frame.js` - the layout's last report, level of detail, render scheduling, the camera,
 ///   type colors

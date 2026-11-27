@@ -1,4 +1,3 @@
-"use strict";
 // --- The type band (docs/design-system.md Section 5, U16) -----------------------------------------
 // A type's color is one of sixteen measured colors - eight hues in two tones - not a generated one.
 // Every hue stands at least 25 degrees of OKLCH hue from gold, coral and teal, which mean human
