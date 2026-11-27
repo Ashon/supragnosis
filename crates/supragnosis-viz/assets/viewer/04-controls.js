@@ -277,7 +277,7 @@ function renderLegend() {
       const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(t);
       if (isEdge) { sw.style.height = "3px"; sw.style.borderRadius = "2px"; }  // line-like look
       const n = document.createElement("span"); n.className = "n"; n.textContent = String(counts[t] || 0);
-      el.append(sw, document.createTextNode(t || "(none)"), n);
+      el.append(sw, document.createTextNode(t || word("noType")), n);
       if (offSet.has(t)) el.appendChild(icon("eye-off"));
       el.onclick = (e) => {
         if (e.altKey) { only(t); return; }

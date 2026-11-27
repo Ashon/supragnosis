@@ -238,6 +238,7 @@ const WORDS = {
   typeIn: { en: "{type} in {ws}", ko: "{ws}의 {type}" },
   lastSaid: { en: "Last said {when}", ko: "마지막 언급 {when}" },
   twoSourcesDisagree: { en: "Two sources disagree", ko: "두 출처가 다르게 말합니다" },
+  plusNMore: { en: "+{n} more", ko: "+{n}개 더" },
   // List (01-state.js)
   colName: { en: "Name", ko: "이름" },
   colType: { en: "Type", ko: "타입" },

@@ -603,7 +603,7 @@
   #viewpop .seg { display:flex; gap:2px; padding:2px; border-radius:var(--r-control); background:var(--panel-2); }
   /* Each choice starts from its words' width, so a longer Korean label keeps one line. */
   #viewpop .seg button { flex:1 1 auto; white-space:nowrap; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:28px;
-                         padding:2px 6px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:var(--r-inset); }
+                         padding:2px 4px; font-size:var(--text-body); color:var(--ink2); background:none; border:none; border-radius:var(--r-inset); }
   #viewpop .seg button.on { background:var(--select); color:var(--gold-ink); }
   #viewpop .seg .sw { width:10px; height:10px; border-radius:var(--r-mark); flex:none; }
   #viewpop #keysOpen { margin-top:7px; padding:4px 8px; min-height:28px; font-size:var(--text-body); align-self:flex-start; }

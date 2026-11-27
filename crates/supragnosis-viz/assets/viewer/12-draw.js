@@ -595,7 +595,7 @@ function draw() {
       const omitted = edgeLabels.length - shown, an = focus || hover;
       if (omitted > 0 && an) {
         ctx.font = 11 * TEXT_SCALE + "px " + NAME_FAMILY;
-        const t = "+" + omitted + " more", px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
+        const t = word("plusNMore", { n: omitted }), px = snap(an.x*cam.s + cam.x), py = snap(an.y*cam.s + cam.y + nodeRadius(an)*cam.s + 15), w = ctx.measureText(t).width;
         ctx.globalAlpha = 0.9; ctx.fillStyle = SURFACE; pill(px, py, w);
         ctx.globalAlpha = 1; ctx.fillStyle = INK2; ctx.fillText(t, px, py);
       }

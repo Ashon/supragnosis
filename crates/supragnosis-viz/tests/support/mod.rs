@@ -56,8 +56,31 @@ pub fn keys_of(en: &str) -> Vec<String> {
     keys
 }
 
-/// Whether `src` says the sentence `en`: names, as a string, the key of a viewer entry whose English
-/// is `en`.
+/// Whether `src` says the sentence `en`: looks up, in the first argument of a `word(` call, the key
+/// of a viewer entry whose English is `en`. The key spelled anywhere else, as an id or a kind, says
+/// nothing.
 pub fn says(src: &str, en: &str) -> bool {
-    keys_of(en).iter().any(|k| src.contains(&format!("\"{k}\"")))
+    let keys = keys_of(en);
+    src.match_indices("word(").any(|(at, _)| {
+        let call = !src[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_');
+        call && keys.iter().any(|k| first_arg(&src[at + 5..]).contains(&format!("\"{k}\"")))
+    })
+}
+
+/// A call's first argument, from just after its `(`: up to the first `,` or `)` outside brackets
+/// and strings.
+fn first_arg(args: &str) -> &str {
+    let (mut depth, mut quote) = (0usize, None);
+    for (i, c) in args.char_indices() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'' | '`') => quote = Some(c),
+            (None, '(' | '[' | '{') => depth += 1,
+            (None, ',' | ')') if depth == 0 => return &args[..i],
+            (None, ')' | ']' | '}') => depth -= 1,
+            _ => {}
+        }
+    }
+    args
 }
