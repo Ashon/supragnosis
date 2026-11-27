@@ -101,7 +101,8 @@ fn a_confirmation_says_what_it_confirms() {
 
     let ask = function("askHtml");
     assert!(
-        ask.contains("role=\"radiogroup\" aria-label=\"${word(\"confirmFrom\")}\"") && says(ask, "Confirm from"),
+        ask.contains("role=\"radiogroup\" aria-label=\"${word(\"confirmFrom\")}\"")
+            && says(ask, "Confirm from"),
         "the source cannot be chosen"
     );
     assert!(ask.contains("v.sources.length > 1"), "a single source asks to be chosen");
@@ -112,7 +113,8 @@ fn a_confirmation_says_what_it_confirms() {
     assert!(says(ask, "Reading what this confirms..."));
     assert!(ask.contains("mine.cut ? \"...\""), "a cut quote does not say so");
     assert!(
-        says(ask, "It also states {n} relations.") && says(ask, "It also defines {n} types: {names}."),
+        says(ask, "It also states {n} relations.")
+            && says(ask, "It also defines {n} types: {names}."),
         "the rest of the bundle is unsaid"
     );
     assert!(
@@ -182,7 +184,11 @@ fn a_person_can_demote_a_claim() {
     }
     assert!(function("openDemote").contains("kind: \"claim_demotion\""));
     let cast = function("castDemote");
-    for part in ["/api/resolve/undo?proposal=", "word(\"undid\", { said })", "/api/observations?id="] {
+    for part in [
+        "/api/resolve/undo?proposal=",
+        "word(\"undid\", { said })",
+        "/api/observations?id=",
+    ] {
         assert!(cast.contains(part), "the act does not: {part}");
     }
     assert!(says(cast, "Demoted to {tier}: {claim}"));

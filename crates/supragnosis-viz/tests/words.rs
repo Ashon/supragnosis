@@ -290,7 +290,8 @@ fn the_maps_activity_speaks_in_sentences() {
     // Who acted is the app the local event names, else "An agent" (design-system.md Section 29.8).
     assert!(SCRIPT.contains("function actorOf(ev) { return ev.app || word(\"anAgent\"); }"));
     assert!(
-        SCRIPT.contains("return a.app && mine ? word(\"appOn\", { app: a.app, machine }) : machine;"),
+        SCRIPT
+            .contains("return a.app && mine ? word(\"appOn\", { app: a.app, machine }) : machine;"),
         "the who-line does not name the app"
     );
     assert!(says(handle, "Agents used {n} entities") && says(handle, "Agents used {n} entity"));

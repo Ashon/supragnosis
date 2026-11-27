@@ -278,7 +278,10 @@ fn the_same_name_is_said_on_the_local_console() {
     for part in ["namesakes.tag !== heldGraph.tag", "nsshow"] {
         assert!(also.contains(part), "the sheet's line does not hold {part}");
     }
-    for en in ["Not compared with other workspaces: {why}", "Also named in {ws}: {name} ({type})"] {
+    for en in [
+        "Not compared with other workspaces: {why}",
+        "Also named in {ws}: {name} ({type})",
+    ] {
         assert!(says(also, en), "the sheet's line does not say {en}");
     }
     let read = function("readNamesakes");
