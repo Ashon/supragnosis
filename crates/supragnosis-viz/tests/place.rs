@@ -46,7 +46,7 @@ fn follow_waits_while_the_map_is_in_use() {
     // The notice says what the passing row says (design-system.md Section 29.6).
     assert!(note.contains("activitySaid(ev)"), "the notice has words of its own");
     assert!(note.contains("label: word(\"show\")"), "the notice has no Show");
-    assert!(!note.contains("\"New in \""), "the notice reads like a write elsewhere");
+    assert!(!says(note, "New in {ws}"), "the notice reads like a write elsewhere");
     let hud = &PAGE[PAGE.find("<div id=\"hud\">").expect("the toolbar")..];
     assert!(hud.contains("<button id=\"followBtn\""), "Follow is not on the camera toolbar");
     assert!(hud.contains("i-locate"));

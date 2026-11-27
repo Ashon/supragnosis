@@ -164,7 +164,7 @@ function obsCardHtml(o) {
     parts.push(html`<div class="osec">${word("proposal")}</div>`,
       html`<div class="ocprop">${p.noun || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
       full && full.rationale ? html`<div class="ocwhy">"${full.rationale}"</div>` : "",
-      html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">Open in Review</button></div>`);
+      html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">${word("openInReview")}</button></div>`);
     const ts = p.targets || [];
     if (ts.length) {
       // A target that no longer has a node is one this merge folded away - it stays listed (the act
@@ -456,7 +456,7 @@ async function fillNodeLog(node, colEl, secEl) {
   // host adds the first without the second. Equal is the common case, so the second number appears
   // only when they part - which is when it says something (docs/inspector.md Section 5).
   const setCount = n => {
-    if (secEl) secEl.innerHTML = html`${word("evidence")} <span class="ct">${n}${node.sources !== n ? word("attestationsN", { n: node.sources }) : ""}</span>`;
+    if (secEl) secEl.innerHTML = html`${word("evidence")} <span class="ct">${NUMBER.format(n)}${node.sources !== n ? word("attestationsN", { n: node.sources }) : ""}</span>`;
   };
   if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list); setCount(nodeLogCache.list.length); }
   else colEl.textContent = word("loading");

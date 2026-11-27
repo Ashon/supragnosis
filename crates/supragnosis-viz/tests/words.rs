@@ -293,7 +293,8 @@ fn the_maps_activity_speaks_in_sentences() {
         SCRIPT.contains("return a.app && mine ? word(\"appOn\", { app: a.app, machine }) : machine;"),
         "the who-line does not name the app"
     );
-    assert!(says(handle, "Agents used {n} entities") && handle.contains("footprint.size === 1"));
+    assert!(says(handle, "Agents used {n} entities") && says(handle, "Agents used {n} entity"));
+    assert!(handle.contains("word(footprint.size === 1 ? \"agentsUsedOne\" : \"agentsUsedN\""));
     assert!(!handle.contains("`session ${"), "the status bar names the session by its id");
 }
 

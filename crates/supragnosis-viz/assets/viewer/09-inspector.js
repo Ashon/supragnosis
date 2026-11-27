@@ -375,7 +375,7 @@ function candRowHtml(c) {
 function fieldHtml(f) {
   return html`${[
     html`<div class="wfield${f.contested ? " hot" : ""}">`,
-    html`<div class="wfhead">${f.field}${f.contested ? html` <span class="wtag">${word("contestedTag")}</span>` : ""}</div>`,
+    html`<div class="wfhead">${fieldSaid(f.field)}${f.contested ? html` <span class="wtag">${word("contestedTag")}</span>` : ""}</div>`,
     (f.candidates || []).map(candRowHtml),
     html`</div>`]}`;
 }

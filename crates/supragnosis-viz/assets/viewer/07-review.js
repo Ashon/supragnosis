@@ -783,7 +783,7 @@ async function fetchProposalDiff(id) {
 // that still enforces nothing, an empty diff would read as "changes nothing".
 // A diff row's field, in the screen's words (design-system.md Section 29.6): the engine's ids
 // `kind` and `edge` are a type and a relation.
-const FIELD_SAID = { kind: word("fieldType"), type: word("fieldType"), edge: word("fieldRelation"), tier: word("trust"), definition: word("fieldDefinition"), description: word("fieldDescription") };
+const FIELD_SAID = { canonical_name: word("colName"), kind: word("fieldType"), type: word("fieldType"), edge: word("fieldRelation"), tier: word("trust"), definition: word("fieldDefinition"), description: word("fieldDescription") };
 function fieldSaid(f) { return FIELD_SAID[f] || String(f || ""); }
 function diffHtml(d) {
   if (!d) return html`<div class="dnote">computing the diff...</div>`;
