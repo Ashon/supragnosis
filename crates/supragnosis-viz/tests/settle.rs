@@ -3,6 +3,9 @@
 //! demotion that undoes it - is `viz_resolve_files_in_the_observations_workspace_and_can_be_undone`
 //! in http.rs.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 fn function(name: &str) -> &'static str {
@@ -134,7 +137,7 @@ fn a_confirmation_says_what_it_confirms() {
 
     let legend = function("renderTrustLegend");
     assert!(
-        legend.contains("What these mean") && legend.contains("TIER_MEANS[t]"),
+        says(legend, "What these mean") && legend.contains("TIER_MEANS[t]"),
         "the tiers are not defined under the legend"
     );
     for line in [

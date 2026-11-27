@@ -3,13 +3,13 @@
 // receiver-evaluated (resolution.md Section 3) - the trust of its best support, not of its winning
 // value. When the loaded scope has one tier the map draws no ring and the legend says which, as the
 // inspector's scope line does; otherwise every node shows its tier and Agent, the default, is no ring.
-const TIER_NAME = { unverified: "Unverified", agent_extracted: "Agent", host_signed: "Host signed", human_confirmed: "Human confirmed" };
+const TIER_NAME = { unverified: word("tierUnverified"), agent_extracted: word("tierAgent"), host_signed: word("tierHostSigned"), human_confirmed: word("tierHumanConfirmed") };
 // What each tier means, said of a source (Section 29.2); under the Trust legend and in the ask.
 const TIER_MEANS = {
-  human_confirmed: "Confirmed through this app on one of your machines, by you or another program on your account; agents are told to leave it to you. No agent's claim outranks it; a later review can lower it.",
-  host_signed: "Above Agent, but not confirmed through this app: a trusted machine's signed claim, or a review an agent accepted.",
-  agent_extracted: "What an AI app writes, and what this app writes for you, until a review raises or lowers it.",
-  unverified: "Trusted less than an agent's claim: a review lowered it, or its sender marked it so.",
+  human_confirmed: word("meansHumanConfirmed"),
+  host_signed: word("meansHostSigned"),
+  agent_extracted: word("meansAgent"),
+  unverified: word("meansUnverified"),
 };
 // A tier as a person reads it: the Trust legend's name, never the identifier (Section 9, U17). A tier
 // this page does not know keeps its identifier, so a new one still says something.
@@ -26,8 +26,8 @@ function noteTrustAndContest() {
 }
 let trustMeansOpen = false;   // the disclosure survives the legend's redraw
 // Said (Section 29.19): a window of time dims every entity not said in it, as a dimmed tier does.
-const SAID_WINDOWS = [["any", "Any time"], ["today", "Today"], ["week", "Last 7 days"], ["visit", "Since your last visit"]];
-const SAID_BEFORE = { today: "today", week: "the last 7 days", visit: "your last visit" };
+const SAID_WINDOWS = [["any", word("saidAny")], ["today", word("saidToday")], ["week", word("saidWeek")], ["visit", word("saidVisit")]];
+const SAID_BEFORE = { today: word("beforeToday"), week: word("beforeWeek"), visit: word("beforeVisit") };
 let saidWin = "any";
 // Where the chosen window starts, or null when it has none here (no earlier visit).
 function saidSince(win = saidWin) {
@@ -54,7 +54,7 @@ function renderSaidLegend() {
     el.append(document.createTextNode(label));
     const n = document.createElement("span"); n.className = "n";
     if (since === null) {
-      n.textContent = "No earlier visit here";
+      n.textContent = word("noEarlierVisit");
       el.setAttribute("aria-disabled", "true");
     } else n.textContent = String(drawn.filter(x => win === "any" || (x.last_said || 0) >= since).length);
     el.append(n);
@@ -64,7 +64,7 @@ function renderSaidLegend() {
     };
     host.appendChild(el);
   }
-  radioGroup(host, "Said");
+  radioGroup(host, word("said"));
 }
 // The last visit (Section 29.19): a visit ends after half an hour with the
 // page unseen, and the last visit to a scope is when this browser last showed it before this visit,
@@ -119,14 +119,14 @@ function renderTrustLegend() {
     if (!filters) {
       el.className = "tlg" + (off ? " off" : "");
       if (off) {
-        const none = document.createElement("span"); none.className = "sr-only"; none.textContent = ", none here";
+        const none = document.createElement("span"); none.className = "sr-only"; none.textContent = ", " + word("noneHere");
         el.append(none);
       }
     } else {
       el.type = "button";
       el.className = "tlg toggle" + (trustOff.has(t) ? " dim" : "");
       // A tier the scope does not hold is disabled and says so where its count would be.
-      const n = document.createElement("span"); n.className = "n"; n.textContent = count[t] ? String(count[t]) : "none here";
+      const n = document.createElement("span"); n.className = "n"; n.textContent = count[t] ? String(count[t]) : word("noneHere");
       el.append(n);
       if (!count[t]) el.disabled = true;
       else {
@@ -143,15 +143,15 @@ function renderTrustLegend() {
   const note = document.createElement("div");
   note.className = "tnote";
   note.textContent = trustUniform
-    ? "All here: " + TIER_NAME[trustUniform] + ", so no entity is ringed."
-    : "A ring is the strongest source behind an entity. Agent claims, the usual case, draw no ring.";
+    ? word("allHereNoRing", { tier: TIER_NAME[trustUniform] })
+    : word("ringIs");
   host.appendChild(note);
   // What each tier means, where trust is decided (Section 29.2) - a tooltip cannot carry it (U25).
   const means = document.createElement("details");
   means.className = "tmeans";
   means.open = trustMeansOpen;
   const sum = document.createElement("summary");
-  sum.append(icon("chevron-right"), document.createTextNode("What these mean"));
+  sum.append(icon("chevron-right"), document.createTextNode(word("whatTheseMean")));
   means.appendChild(sum);
   for (const t of ["human_confirmed", "host_signed", "agent_extracted", "unverified"]) {
     const line = document.createElement("div");
@@ -171,7 +171,7 @@ function renderTierNote() {
   if (!el) return;
   const show = !!trustUniform && !dockLEl.classList.contains("on");
   el.hidden = !show;
-  el.textContent = show ? "All here: " + TIER_NAME[trustUniform] : "";
+  el.textContent = show ? word("allHere", { tier: TIER_NAME[trustUniform] }) : "";
 }
 function trustRing(n, r) {
   const t = trustUniform ? null : n.trust_tier;
@@ -201,7 +201,7 @@ async function poll() {
     const r = await fetch(url, askedWith(heldGraph, url));
     if (r.status === 304) heardBack();
     else {
-      if (!r.ok) { sayLate("the server answered HTTP " + r.status); return; }
+      if (!r.ok) { sayLate(word("serverAnswered", { status: r.status })); return; }
       const g = await r.json();
       if (g.error) { sayLate(g.error); return; }
       await commonTypesRead;   // answered once, beside the first graph read (Section 29.9)
@@ -233,7 +233,7 @@ async function poll() {
     refreshProposals();
     refreshLog();
     refreshStrip();
-  } catch (e) { sayLate("the server is not answering"); }
+  } catch (e) { sayLate(word("serverSilent")); }
 }
 
 function currentWs() { return wsInput.value.trim(); }
@@ -282,16 +282,15 @@ function chipIsCurrent(ws) {
 }
 function renderChipsActive() {
   chipBar.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", chipIsCurrent(c.dataset.ws)));
-  radioGroup(chipBar, "Workspace");
+  radioGroup(chipBar, word("workspace"));
   syncSearchScope();
 }
 // The search field's placeholder tells the person what scope the query will run in.
 function syncSearchScope() {
   const cur = currentWs();
   let ph;
-  if (cur === "*" || cur === "all") ph = "Search all workspaces";
-  else if (cur === "") ph = "Search " + defaultName();
-  else ph = "Search " + cur;
+  if (cur === "*" || cur === "all") ph = word("searchAll");
+  else ph = word("searchIn", { ws: cur || defaultName() });
   searchEl.placeholder = ph;
   // The placeholder goes when the person types, so the field's name says the scope too.
   searchEl.setAttribute("aria-label", ph);
@@ -316,20 +315,21 @@ async function loadWorkspaces() {
       return c;
     };
     // A panel heading like the ones below it (docs/design-system.md Section 4).
-    const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = "Workspace";
+    const lbl = document.createElement("div"); lbl.className = "rsec wshead"; lbl.textContent = word("workspace");
     const named = list.some(w => chipIsCurrent(w));
     // A workspace the address names and the list does not still shows its chip, selected and muted
     // (Section 29.9): the page is in that scope, and nothing is filed under it.
     const unlisted = wsUnlisted(cur) ? [mk(cur, cur, "unlisted")] : [];
-    const chips = [mk("All", "*"), ...(cur === "" && !named ? [mk(defaultName(), "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
+    const chips = [mk(word("all"), "*"), ...(cur === "" && !named ? [mk(defaultName(), "")] : []), ...list.map(w => mk(w, w)), ...unlisted];
     const note = [];
     if (openedAll && (cur === "*" || cur === "all")) {
       const n = document.createElement("div"); n.className = "wsnote";
-      n.textContent = "Showing all workspaces - " + defaultName() + (openedHeld ? " holds " + openedHeld.d + " of " + openedHeld.t : " is empty");
+      n.textContent = openedHeld ? word("showingAllHolds", { ws: defaultName(), d: openedHeld.d, t: openedHeld.t })
+        : word("showingAllEmpty", { ws: defaultName() });
       note.push(n);
     }
     chipBar.replaceChildren(lbl, ...chips, ...note);
-    radioGroup(chipBar, "Workspace");   // one scope at a time (Section 4)
+    radioGroup(chipBar, word("workspace"));   // one scope at a time (Section 4)
   } catch (e) { /* server not up - retry next cycle */ }
 }
 
@@ -394,10 +394,10 @@ async function refreshEmpty() {
   const unknown = wsUnlisted(cur);
   const kids = scopeEntries
     // Entries that name no entity are not an empty scope (P5): the Log holds them.
-    ? [line("Nothing on the map yet.", "e-title"), line("The entries here name no entity - the Log holds them.", "e-sub")]
-    : [...(unknown ? [line("No workspace is called " + cur + ".", "e-title")] : []),
-      line("Nothing here yet.", unknown ? "e-sub" : "e-title"),
-      line("Ask a connected AI app to remember something" + (others.length ? ", or pick a workspace that holds knowledge:" : "."), "e-sub")];
+    ? [line(word("nothingOnMap"), "e-title"), line(word("entriesNameNoEntity"), "e-sub")]
+    : [...(unknown ? [line(word("noWorkspaceCalled", { ws: cur }), "e-title")] : []),
+      line(word("emptyTitle"), unknown ? "e-sub" : "e-title"),
+      line(word(others.length ? "askOrPick" : "askToRemember"), "e-sub")];
   // The camera's idle buttons are described by the map's first sentence.
   kids[0].id = "emptyTitle";
   if (others.length) {
@@ -415,7 +415,7 @@ async function refreshEmpty() {
   // to ask (Section 29.10). The shell gives its address; a browser has none and shows no button.
   if (window.supragnosisSetup && !storeEntries) {
     const b = document.createElement("button");
-    b.type = "button"; b.className = "chip"; b.textContent = "Open Setup";
+    b.type = "button"; b.className = "chip"; b.textContent = word("openSetup");
     b.onclick = () => { location.href = window.supragnosisSetup + "?from=" + encodeURIComponent(String(location.href).split("#")[0]); };
     const row = document.createElement("div"); row.className = "e-ws"; row.append(b);
     kids.push(row);

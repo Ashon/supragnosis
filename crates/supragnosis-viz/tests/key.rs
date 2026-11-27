@@ -2,6 +2,9 @@
 //! viewer's script for the key, the counted chips, the counts of what is drawn, the store's colors,
 //! the trust filters and the hover card. Each test names the rule it holds.
 
+mod support;
+use support::{keys_of, says};
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
@@ -20,20 +23,21 @@ fn function(name: &str) -> &'static str {
 fn the_maps_key_names_only_what_is_drawn() {
     let marks = function("renderMarks");
     for (word, gate) in [
-        ("\"Two sources disagree - select to decide\"", "contestedCount"),
-        ("\"Soft cloud: a region - entities said together\"", "drawnCounts().reg"),
-        ("\"Outline: a workspace\"", "boundaryMode === \"workspace\""),
-        ("\"Outline: the machine that signed\"", "boundaryMode === \"origin\""),
-        ("\"Glow: what agents used\"", "footprint.size"),
-        ("\"Ring that grows and fades: just touched\"", "showPulses"),
+        ("Two sources disagree - select to decide", "contestedCount"),
+        ("Soft cloud: a region - entities said together", "drawnCounts().reg"),
+        ("Outline: a workspace", "boundaryMode === \"workspace\""),
+        ("Outline: the machine that signed", "boundaryMode === \"origin\""),
+        ("Glow: what agents used", "footprint.size"),
+        ("Ring that grows and fades: just touched", "showPulses"),
     ] {
+        let key = format!("\"{}\"", keys_of(word)[0]);
         let line = marks
             .lines()
-            .find(|l| l.contains(word))
+            .find(|l| l.contains(&key))
             .unwrap_or_else(|| panic!("the key does not say {word}"));
         assert!(line.contains(gate), "{word} shows only while {gate} draws it: {line}");
     }
-    assert!(marks.contains("\"Larger: more relations\""), "the key says what size means");
+    assert!(says(marks, "Larger: more relations"), "the key says what size means");
     assert!(marks.contains("head.hidden = !rows.length"), "an empty key has no heading");
     assert!(function("showStats").contains("renderMarks()"), "the key follows every count");
     for toggle in ["renderBoundaryChips", "renderRegionsSeg"] {
@@ -47,16 +51,13 @@ fn the_maps_key_names_only_what_is_drawn() {
 fn the_type_chips_count_and_offer_only() {
     let legend = function("renderLegend");
     assert!(legend.contains("className = \"n\""), "a chip carries its count");
-    assert!(
-        legend.contains("\"Only\"") && legend.contains("e.altKey"),
-        "Only, or Option-click"
-    );
+    assert!(says(legend, "Only") && legend.contains("e.altKey"), "Only, or Option-click");
     assert!(
         legend.contains("icon(\"eye-off\")"),
         "a hidden type shows eye-off, not a hollow disc"
     );
     let hidden = function("sectionHidden");
-    assert!(hidden.contains("\" hidden \"") && hidden.contains("\"Show all\""));
+    assert!(says(hidden, "{n} hidden") && says(hidden, "Show all"));
     let all = function("showAll");
     for set in ["typeOff.clear()", "edgeTypeOff.clear()", "trustOff.clear()"] {
         assert!(all.contains(set), "Show all clears {set}");
@@ -78,8 +79,8 @@ fn the_counts_are_of_what_is_drawn() {
         assert!(!counts.contains(view), "the counts do not follow {view}");
     }
     let line = function("statsLine");
-    for word in [" of ", " hidden)", " dimmed"] {
-        assert!(line.contains(word), "the stats line says {word:?}");
+    for word in ["{shown} of {n} entities", "({n} types hidden)", "{tiers} dimmed"] {
+        assert!(says(line, word), "the stats line says {word:?}");
     }
     let show = function("showStats");
     assert!(
@@ -127,8 +128,11 @@ fn a_trust_filter_dims_and_keeps_the_count() {
     );
     let legend = function("renderTrustLegend");
     assert!(legend.contains("trustOff.has(t)") && legend.contains("el.disabled = true"));
-    assert!(legend.contains("\"none here\""), "an empty tier says none here");
-    assert!(legend.contains("A ring is the strongest source behind an entity."));
+    assert!(says(legend, "none here"), "an empty tier says none here");
+    assert!(says(
+        legend,
+        "A ring is the strongest source behind an entity. Agent claims, the usual case, draw no ring."
+    ));
     // Dimming is drawing, not filtering: the layout and the counts keep a dimmed entity.
     let counts = function("drawnCounts");
     let shown = counts.lines().find(|l| l.contains("shown.add(")).expect("the shown set");
@@ -141,15 +145,11 @@ fn a_trust_filter_dims_and_keeps_the_count() {
 #[test]
 fn the_hover_card_says_what_an_entity_is() {
     let tip = function("showTip");
-    for part in [
-        "n.type + \" in \" + n.workspace",
-        "plural(n.degree || 0, \"relation\")",
-        "plural(n.sources || 0, \"source\")",
-        "tierName(n.trust_tier)",
-        "split(\"\\n\")[0]",
-        "Two sources disagree",
-    ] {
+    for part in ["tierName(n.trust_tier)", "split(\"\\n\")[0]"] {
         assert!(tip.contains(part), "the hover card lacks {part}");
+    }
+    for en in ["{type} in {ws}", "{n} relations", "{n} sources", "Two sources disagree"] {
+        assert!(says(tip, en), "the hover card does not say {en:?}");
     }
     let hov = function("hoverSet");
     assert!(
@@ -165,7 +165,7 @@ fn an_unlisted_workspace_is_named_as_such() {
     let chips = function("loadWorkspaces");
     assert!(chips.contains("mk(cur, cur, \"unlisted\")"), "its chip shows, muted");
     let empty = function("refreshEmpty");
-    assert!(empty.contains("\"No workspace is called \""));
+    assert!(says(empty, "No workspace is called {ws}."));
 }
 
 /// One word for the cloud: "region" wherever the map's soft clouds are named.
@@ -195,18 +195,14 @@ fn the_map_says_when_each_entity_was_said() {
         "an old time reads as this year's"
     );
     let legend = function("renderSaidLegend");
-    for part in [
-        "\"No earlier visit here\"",
-        "radioGroup(host, \"Said\")",
-        "!typeOff.has(n.type)",
-    ] {
+    assert!(says(legend, "No earlier visit here"));
+    for part in ["radioGroup(host, word(\"said\"))", "!typeOff.has(n.type)"] {
         assert!(legend.contains(part), "the Said legend does not hold {part}");
     }
-    assert!(SCRIPT.contains("[\"visit\", \"Since your last visit\"]"));
+    assert!(SCRIPT.contains("[\"visit\", word(\"saidVisit\")]"));
     assert!(SCRIPT.contains("const VISIT_GAP = 30 * 60 * 1000;"));
-    assert!(
-        function("statsLine").contains("\", said before \" + SAID_BEFORE[saidWin] + \" dimmed\"")
-    );
+    let line = function("statsLine");
+    assert!(says(line, "said before {when} dimmed") && line.contains("SAID_BEFORE[saidWin]"));
     assert!(
         SCRIPT.contains("saidOut(e.a) || saidOut(e.b)"),
         "a dimmed entity's relations stay lit"
@@ -215,12 +211,9 @@ fn the_map_says_when_each_entity_was_said() {
         SCRIPT.contains("Last said ${obsWhen(node.last_said)}"),
         "the sheet does not say it"
     );
+    assert!(says(function("showTip"), "Last said {when}"), "the hover card does not say it");
     assert!(
-        SCRIPT.contains("Last said ${obsWhen(n.last_said)}"),
-        "the hover card does not say it"
-    );
-    assert!(
-        SCRIPT.contains("listHead(\"said\", \"Last said\")"),
+        SCRIPT.contains("listHead(\"said\", word(\"colLastSaid\"))"),
         "List has no Last said column"
     );
 }

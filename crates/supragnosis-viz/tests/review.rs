@@ -3,6 +3,9 @@
 //! console's rationale - is `a_decided_confirmation_names_its_source_and_says_its_undo` in http.rs,
 //! and the fold, the undo and the curation rows are in the engine's policy cases.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
@@ -329,7 +332,11 @@ fn same_as_and_keep_instead_hold_their_order() {
         "no Same as... dialog"
     );
     let open = function("openSameAs");
-    assert!(open.contains("\"Search \" + node.workspace") && open.contains("showModal()"));
+    assert!(
+        says(open, "Search {ws}")
+            && open.contains("ws: node.workspace")
+            && open.contains("showModal()")
+    );
     let search = SCRIPT
         .find("async function searchSame()")
         .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
@@ -341,15 +348,17 @@ fn same_as_and_keep_instead_hold_their_order() {
     );
     assert!(search.contains("sameSel = -1"), "an answer arrives with a row chosen");
     let render = function("renderSame");
-    for part in [
-        "Nothing else is in ",
-        "No entity in ",
-        "\"Merge \"",
-        "Merge ${sameFor.name} into ${c.name}",
+    for en in [
+        "Nothing else is in {ws} yet.",
+        "No entity in {ws} matches.",
+        "Merge {a} into {b}",
     ] {
-        let part = part.trim_matches('"');
-        assert!(render.contains(part), "the picker does not say {part}");
+        assert!(says(render, en), "the picker does not say {en:?}");
     }
+    assert!(
+        render.contains("{ a: sameFor.name, b: c.name }"),
+        "the merge does not name both"
+    );
     let keep = SCRIPT
         .find("async function keepInstead(item)")
         .map(|at| &SCRIPT[at..at + SCRIPT[at..].find("\n}\n").expect("it closes")])
@@ -475,8 +484,10 @@ fn the_console_says_what_a_repeat_found() {
     let keep = function("keepInstead");
     assert!(keep.contains("state: o.body.state || \"open\""), "Keep assumes what it opened");
     assert!(keep.contains("waits under Needs you, but a check holds it back."));
-    assert!(function("openSameMerge")
-        .contains("\"A merge of these two already waits under Needs you.\""));
+    assert!(says(
+        function("openSameMerge"),
+        "A merge of these two already waits under Needs you."
+    ));
     // Section 29.27: the band says what it held back, apart from absence.
     let band = function("bandEmptyReason");
     for part in [

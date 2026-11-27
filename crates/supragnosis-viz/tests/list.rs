@@ -1,6 +1,9 @@
 //! docs/design-system.md Section 6 and U24: the map's window offers List, a table of the entities the
 //! map draws, so a screen reader and anyone who cannot tell sixteen colors apart can read the map.
 
+mod support;
+use support::says;
+
 const HTML: &str = include_str!("../assets/viewer.html");
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
@@ -58,18 +61,11 @@ fn the_map_has_a_list() {
         "List does not start by type and name"
     );
     let render = function("renderList");
-    for part in [
-        "Name",
-        "Type",
-        "Trust",
-        "Relations",
-        "Workspace",
-        "tierName(n.trust_tier)",
-        "n.degree",
-        "listHead(",
-        "aria-label=\"Two sources disagree\"",
-    ] {
+    for part in ["tierName(n.trust_tier)", "n.degree", "listHead("] {
         assert!(render.contains(part), "List does not show {part}");
+    }
+    for en in ["Name", "Type", "Trust", "Relations", "Workspace", "Two sources disagree"] {
+        assert!(says(render, en), "List does not show {en}");
     }
     assert!(
         function("listHead").contains("scope=\"col\"")
@@ -91,7 +87,7 @@ fn the_map_has_a_list() {
         "List does not follow the filters"
     );
     assert!(
-        function("showStats").contains("List shows them as a table."),
+        says(function("showStats"), "Map of {counts}. List shows them as a table."),
         "the canvas does not say what it draws and where else it is"
     );
 }

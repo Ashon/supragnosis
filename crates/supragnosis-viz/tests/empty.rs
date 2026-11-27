@@ -2,6 +2,9 @@
 //! idle controls, a store with no entry leads back to Setup in the app, and the default is called by
 //! its name. Source tripwires over the viewer's script, markup and stylesheet.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const CSS: &str = include_str!("../assets/viewer.css");
@@ -62,7 +65,8 @@ fn an_empty_scope_keeps_no_idle_controls() {
     assert!(function("refreshEmpty").contains("kids[0].id = \"emptyTitle\""));
     let stats = function("showStats");
     assert!(
-        stats.contains("\": nothing here yet.\"") && stats.contains("the Log holds its entries.")
+        says(stats, "Map of {scope}: nothing here yet.")
+            && says(stats, "Map of {scope}: nothing on the map yet; the Log holds its entries.")
     );
 }
 
@@ -77,8 +81,11 @@ fn the_empty_map_speaks_in_one_voice() {
     );
     assert!(function("renderStrip").contains("<span class=\"t\">Nothing here yet.</span>"));
     let empty = function("refreshEmpty");
-    assert!(empty.contains("line(\"Nothing here yet.\""));
-    assert!(empty.contains("\"Nothing on the map yet.\"") && empty.contains("the Log holds them."));
+    assert!(says(empty, "Nothing here yet."));
+    assert!(
+        says(empty, "Nothing on the map yet.")
+            && says(empty, "The entries here name no entity - the Log holds them.")
+    );
     assert!(
         empty.contains("scopeEntries = await anyEntry(scopeNow)"),
         "the scope's entries are read"
@@ -95,7 +102,7 @@ fn an_empty_store_leads_back_to_setup_in_the_app() {
         empty.contains("window.supragnosisSetup + \"?from=\""),
         "Open Setup carries the way back"
     );
-    assert!(empty.contains("\"Open Setup\""));
+    assert!(says(empty, "Open Setup"));
     assert!(
         empty.contains("catch (_) { scopeEntries = false; storeEntries = true; }"),
         "unknown is not empty (P5): a failed read offers no Setup"
@@ -109,7 +116,8 @@ fn the_default_is_called_by_its_name() {
     assert!(function("loadSurface").contains("defaultWs = String(s.default_workspace)"));
     assert!(SCRIPT.contains("function defaultName() { return defaultWs || \"default\"; }"));
     assert!(function("statsScope").contains("cur || defaultName()"));
-    assert!(function("syncSearchScope").contains("\"Search \" + defaultName()"));
+    let scope = function("syncSearchScope");
+    assert!(says(scope, "Search {ws}") && scope.contains("cur || defaultName()"));
     let chips = function("loadWorkspaces");
     assert!(chips.contains("mk(defaultName(), \"\")"));
 }

@@ -1,6 +1,9 @@
 //! docs/design-system.md Section 29.12 (step 50a): the map's keys and its View. Source tripwires over
 //! the viewer's script, markup and stylesheet.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const CSS: &str = include_str!("../assets/viewer.css");
@@ -36,8 +39,8 @@ fn the_map_has_keys_that_name_themselves() {
     let names = function("renderKeyNames");
     assert!(names.contains("const k = key => singleKeys ? key : null;"));
     assert!(
-        names.contains("name(\"zin\", \"Zoom in\", \"=\")")
-            && names.contains("name(\"listBtn\", \"List\", \"l\")")
+        names.contains("name(\"zin\", word(\"zoomIn\"), \"=\")")
+            && names.contains("name(\"listBtn\", word(\"list\"), \"l\")")
     );
     assert!(
         names.contains(".slashkey, #viewpop .keyhint"),
@@ -97,7 +100,7 @@ fn view_holds_what_changes_the_picture() {
     assert!(!view.contains(">Layout</span>"), "View still has a Layout group");
     let deps = function("renderShowDeps");
     assert!(deps.contains("[\"arrowsBtn\", \"histBtn\"]") && deps.contains("\"dShownWithRel\""));
-    assert!(deps.contains("\"More - \" + off.join(\" and \") + \" off\""));
+    assert!(says(deps, "More - {off} off"));
     assert!(PAGE.contains(">Shown with relations.</p>"));
 }
 
@@ -116,7 +119,7 @@ fn boundaries_only_draw() {
     );
     assert!(function("outlines").contains("boundaryGroups(mode).size >= 2"));
     let cycle = function("cycleBoundaries");
-    assert!(cycle.contains("\"Boundaries: nothing to outline here\""));
+    assert!(says(cycle, "Boundaries: nothing to outline here"));
     assert!(
         cycle.contains("if (boundaryNote) dismiss(boundaryNote);")
             && cycle.contains("toast(\"ok\", said)")
@@ -145,10 +148,7 @@ fn retry_follows_a_stale_line() {
         )
     );
     let late = function("sayLate");
-    assert!(
-        late.contains("line + \" (tried \" + retryAsked + \")\"")
-            && late.contains("r.hidden = false")
-    );
+    assert!(says(late, "{line} (tried {at})") && late.contains("r.hidden = false"));
     assert!(SCRIPT.contains("retryAsked = null;\n  { const r = document.getElementById(\"retry\"); if (r) r.hidden = true; }"));
 }
 

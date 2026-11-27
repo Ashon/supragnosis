@@ -6,7 +6,7 @@
 let surfaceNode = null;     // this node's host id, from /api/surface; null until it answers
 // The page's own machine, in words (design-system.md Section 9, D2): "this machine", or the word the
 // app's shell gives - "this Mac" - since the viewer stays browser-neutral.
-function here() { return window.supragnosisHere || "this machine"; }
+function here() { return window.supragnosisHere || word("thisMachine"); }
 function hereTitle() { const w = here(); return w.charAt(0).toUpperCase() + w.slice(1); }
 let layoutScope = null;     // the storage key the current positions belong to
 let storedLayout = null;    // {id: [x, y]} read for the scope being loaded
@@ -47,7 +47,7 @@ addEventListener("pagehide", saveLayout);
 
 // Status bar stats line: one plain sentence, scope first. `regions` is a count or null.
 function statsScope(cur) {
-  return cur === "*" || cur === "all" ? "All workspaces" : cur || defaultName();
+  return cur === "*" || cur === "all" ? word("allWorkspaces") : cur || defaultName();
 }
 // The scope addressed as "" by its name: the workspace an omitted one resolves to, the node's default
 // as /api/surface says, and "default" until it has said (design-system.md Section 29.10).
@@ -79,13 +79,13 @@ function drawnCounts() {
 }
 function statsLine(cur, c) {
   const scope = statsScope(cur);
-  let e = c.shown === c.all ? (c.all === 1 ? "1 entity" : c.all + " entities") : c.shown + " of " + c.all + " entities";
-  if (c.hiddenTypes) e += " (" + (c.hiddenTypes === 1 ? "1 type" : c.hiddenTypes + " types") + " hidden)";
-  const r = c.rel === 1 ? "1 relation" : c.rel + " relations";
+  let e = c.shown === c.all ? word(c.all === 1 ? "oneEntity" : "entitiesN", { n: c.all }) : word("shownOfEntities", { shown: c.shown, n: c.all });
+  if (c.hiddenTypes) e += " " + word(c.hiddenTypes === 1 ? "oneTypeHidden" : "typesHidden", { n: c.hiddenTypes });
+  const r = word(c.rel === 1 ? "oneRelation" : "relationsN", { n: c.rel });
   let line = scope + " - " + e + ", " + r;
-  if (c.reg !== null) line += ", " + (c.reg === 1 ? "1 region" : c.reg + " regions");
-  if (c.dimmed.length) line += ", " + c.dimmed.map(tierName).join(" and ") + " dimmed";
-  if (saidWin !== "any" && saidSince() !== null) line += ", said before " + SAID_BEFORE[saidWin] + " dimmed";
+  if (c.reg !== null) line += ", " + word(c.reg === 1 ? "oneRegion" : "regionsN", { n: c.reg });
+  if (c.dimmed.length) line += ", " + word("tiersDimmed", { tiers: c.dimmed.map(tierName).join(word("joinAnd")) });
+  if (saidWin !== "any" && saidSince() !== null) line += ", " + word("saidBeforeDimmed", { when: SAID_BEFORE[saidWin] });
   // A pinned working set is said after the counts, as a dimmed tier is (Section 29.11).
   if (workSet) line += ", " + workSetSaid();
   return line;
@@ -97,23 +97,23 @@ function renderStats() { showStats(currentWs()); }
 function keptDrawn() {
   return workSet ? nodes.filter(n => !typeOff.has(n.type) && workSet.ids.has(n.id)) : [];
 }
-function partSaid(p) { return p.kind === "search" ? p.n + " for \"" + p.q + "\"" : p.n + " related to " + p.name; }
+function partSaid(p) { return p.kind === "search" ? word("partSearch", { n: p.n, q: p.q }) : word("partRelated", { n: p.n, name: p.name }); }
 function workSetSaid() {
   if (!workSet) return "";
   const k = keptDrawn().length, [one] = workSet.parts;
   if (workSet.parts.length === 1 && one.kind === "search")
-    return k + " kept for \"" + one.q + "\"" + (one.first ? " (the search stopped at " + SEARCH_LIMIT + ")" : "");
-  return k + " kept - " + workSet.parts.map(partSaid).join(", ");
+    return word(one.first ? "keptForSearchStopped" : "keptForSearch", { n: k, q: one.q, limit: SEARCH_LIMIT });
+  return word("keptParts", { n: k, parts: workSet.parts.map(partSaid).join(", ") });
 }
 // The pill a narrow status bar keeps, and Fit's name, follow the set (Section 29.11).
 function renderKept() {
   const pill = document.getElementById("kept"), fit = document.getElementById("fit");
   if (pill) {
     pill.hidden = !workSet;
-    if (workSet) pill.querySelector(".kn").textContent = keptDrawn().length + " kept";
+    if (workSet) pill.querySelector(".kn").textContent = word("nKept", { n: keptDrawn().length });
   }
   if (fit) {
-    const name = workSet ? "Fit to kept entities" : "Fit to view";
+    const name = word(workSet ? "fitToKept" : "fitToView");
     fit.title = tipText(name, typeof singleKeys === "undefined" || singleKeys ? "0" : null); fit.setAttribute("aria-label", name);
   }
 }
@@ -162,14 +162,14 @@ function renderMarks() {
     rows.push(r);
   };
   if (nodes.length) {
-    if (contestedCount) row("mk-badge", "Two sources disagree - select to decide");
-    row("mk-size", "Larger: more relations");
-    if (hyperMode && allRegions && drawnCounts().reg) row("mk-cloud", "Soft cloud: a region - entities said together");
+    if (contestedCount) row("mk-badge", word("markContested"));
+    row("mk-size", word("markSize"));
+    if (hyperMode && allRegions && drawnCounts().reg) row("mk-cloud", word("markCloud"));
     // Only while two or more outlines are drawn (Section 29.12).
-    if (boundaryMode === "workspace" && outlines("workspace")) row("mk-outline", "Outline: a workspace");
-    else if (boundaryMode === "origin" && outlines("origin")) row("mk-outline", "Outline: the machine that signed");
-    if (showFootprint && footprint.size) row("mk-glow", "Glow: what agents used");
-    if (pulsedAny && showPulses && !REDUCED_MOTION) row("mk-pulse", "Ring that grows and fades: just touched");
+    if (boundaryMode === "workspace" && outlines("workspace")) row("mk-outline", word("markWorkspace"));
+    else if (boundaryMode === "origin" && outlines("origin")) row("mk-outline", word("markOrigin"));
+    if (showFootprint && footprint.size) row("mk-glow", word("markGlow"));
+    if (pulsedAny && showPulses && !REDUCED_MOTION) row("mk-pulse", word("markPulse"));
   }
   host.replaceChildren(...rows);
   if (head) head.hidden = !rows.length;
@@ -188,8 +188,8 @@ function showStats(cur) {
   // With nothing drawn it says the scope holds nothing, and no List (Section 29.10); with a working
   // set, that List holds the kept ones (Section 29.11).
   renderKept();
-  canvas.setAttribute("aria-label", c.all ? "Map of " + line.slice(scope.length + 3) + (workSet ? ". List shows the kept ones as a table." : ". List shows them as a table.")
-    : "Map of " + scope + (scopeEntries ? ": nothing on the map yet; the Log holds its entries." : ": nothing here yet."));
+  canvas.setAttribute("aria-label", c.all ? word(workSet ? "mapOfKept" : "mapOf", { counts: line.slice(scope.length + 3) })
+    : word(scopeEntries ? "mapEmptyLog" : "mapEmpty", { scope }));
   // While anything is hidden or dimmed the status bar says so and offers Show all, which clears both.
   const all = document.getElementById("showAll");
   if (all) all.hidden = !(c.hiddenTypes || c.hiddenKinds || c.dimmed.length || workSet);
@@ -212,10 +212,10 @@ addEventListener("resize", fitStats);
 function sayLate(reason) {
   // The reason is poll's: the HTTP status, the server's own error, or that it did not answer.
   const line = lastOkAt
-    ? "Not updated since " + lastOkAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " - " + reason
-    : "Not loaded - " + reason;
+    ? word("notUpdatedSince", { time: lastOkAt.toLocaleTimeString(LANG, { hour: "numeric", minute: "2-digit" }), reason })
+    : word("notLoaded", { reason });
   // A Retry that failed keeps the poll's reason and says when it tried (P24, P5).
-  statusEl.textContent = retryAsked ? line + " (tried " + retryAsked + ")" : line;
+  statusEl.textContent = retryAsked ? word("triedAt", { line, at: retryAsked }) : line;
   // Retry follows the line, as its own button, so the line's rewrite never takes its focus.
   const r = document.getElementById("retry");
   if (r) r.hidden = false;
@@ -333,7 +333,7 @@ async function refreshSyncPill() {
   } catch (_) { f = null; }
   let text, tone;
   if (f && f.node_id) ownNode = String(f.node_id);
-  if (!f) { text = "Sync unavailable"; tone = "bad"; }
+  if (!f) { text = word("syncUnavailable"); tone = "bad"; }
   else if (f.configured === false) { pill.hidden = true; return; }
   else {
     const hubs = f.servers || [];
@@ -341,11 +341,11 @@ async function refreshSyncPill() {
     const unknown = hubs.filter(s => !s.negotiated_at).length;
     let mine = 0, theirs = 0;
     for (const s of hubs) for (const w of (s.workspaces || [])) { mine += w.local_ahead | 0; theirs += w.hub_ahead | 0; }
-    if (down) { text = down === hubs.length ? "Hub unreachable" : `${down} of ${hubs.length} hubs unreachable`; tone = "bad"; }
-    else if (unknown) { text = "Sync: no answer yet"; tone = "warn"; }
-    else if (mine || theirs) { text = `Syncing: ${here()} +${mine}, hub +${theirs}`; tone = "warn"; }
-    else if (hubs.length) { text = "In sync"; tone = "ok"; }
-    else { const k = (f.known_peers || []).length; text = `Hub: ${k} peer${k === 1 ? "" : "s"}`; tone = "ok"; }
+    if (down) { text = down === hubs.length ? word("hubUnreachable") : word("hubsUnreachable", { down, n: hubs.length }); tone = "bad"; }
+    else if (unknown) { text = word("syncNoAnswer"); tone = "warn"; }
+    else if (mine || theirs) { text = word("syncing", { here: here(), mine, theirs }); tone = "warn"; }
+    else if (hubs.length) { text = word("inSync"); tone = "ok"; }
+    else { const k = (f.known_peers || []).length; text = word(k === 1 ? "hubOnePeer" : "hubPeers", { n: k }); tone = "ok"; }
   }
   pill.hidden = false;
   pill.className = "spill " + tone;
@@ -372,8 +372,8 @@ let fedCfgArmed = null;   // "<node_id>\u0000<workspace>" of the chip awaiting i
 // The tabs, in order. One list: the strip, the routing and the default all read from it, so adding a
 // topic is adding an entry rather than markup here plus styling there plus a branch somewhere else.
 const SETTINGS_TABS = [
-  { id: "about", label: "About", render: renderAboutSection },
-  { id: "sync", label: "Sync", render: renderFedSection },
+  { id: "about", label: word("about"), render: renderAboutSection },
+  { id: "sync", label: word("sync"), render: renderFedSection },
 ];
 let settingsTab = "about";
 

@@ -90,19 +90,17 @@ async function renderAboutSection(host) {
   try {
     a = await (await fetch("/api/about", { cache: "no-store" })).json();
   } catch (e) {
-    host.innerHTML = '<div class="empty">version information unavailable</div>';
+    host.innerHTML = html`<div class="empty">${word("aboutUnavailable")}</div>`;
     return;
   }
   const repo = String(a.repository || "");
   const row = (k, v) => html`<dt>${k}</dt><dd>${v}</dd>`;
   host.innerHTML = html`<dl class="kv">${[
-    row("Package", String(a.name || "supragnosis")),
-    row("Version", String(a.version || "")),
-    row("License", String(a.license || "")),
-    repo ? row("Source", html`<a href="${repo}" target="_blank" rel="noreferrer noopener">${repo}</a>`) : "",
-  ]}</dl><div class="note">Dependency licenses are not restated here - a hand-kept list is one that \
-rots without saying so. They are in the manifest and lockfile at the source above, which \
-cannot disagree with this build.</div>`;
+    row(word("package"), String(a.name || "supragnosis")),
+    row(word("version"), String(a.version || "")),
+    row(word("license"), String(a.license || "")),
+    repo ? row(word("sourceCode"), html`<a href="${repo}" target="_blank" rel="noreferrer noopener">${repo}</a>`) : "",
+  ]}</dl><div class="note">${word("depsNote")}</div>`;
 }
 
 async function renderFedSection(host) {
@@ -110,84 +108,82 @@ async function renderFedSection(host) {
   try {
     f = await (await fetch("/api/federation", { cache: "no-store" })).json();
   } catch (e) {
-    host.innerHTML = '<div class="empty">federation status unavailable</div>';
+    host.innerHTML = html`<div class="empty">${word("syncStatusUnavailable")}</div>`;
     return;
   }
   if (!f || f.configured === false) {
-    host.innerHTML = html`<div class="empty">Sync is not set up on ${here()} - create ~/.supragnosis/supragnosis.toml to join or host</div>`;
+    host.innerHTML = html`<div class="empty">${word("syncNotSetUp", { here: here() })}</div>`;
     return;
   }
 
   const parts = [html`<div class="fsec">${hereTitle()}</div>`,
     html`<div class="prow"><span class="pid">${String(f.node_id || "")}</span>`,
-    html`<span class="hint"> ${f.role === "hub" ? "Hub" : "Spoke"}</span></div>`];
+    html`<span class="hint"> ${word(f.role === "hub" ? "hub" : "spoke")}</span></div>`];
 
   const hubs = f.servers || [];
   if (hubs.length) {
-    parts.push(html`<div class="fsec">Hubs ${here()} syncs to</div>`);
+    parts.push(html`<div class="fsec">${word("hubsOf", { here: here() })}</div>`);
     for (const s of hubs) {
       const dot = s.healthy ? TEAL : BAD;
       parts.push(html`<div class="prow"><span class="dot" style="background:${dot}"></span> `,
         html`<span class="pid">${String(s.url || "").replace(/^https?:\/\//, "")}</span>`,
         s.version ? html`<span class="hint"> v${s.version}</span>` : "",
-        s.healthy ? "" : html`<span class="hint"> unreachable</span>`);
+        s.healthy ? "" : html`<span class="hint"> ${word("unreachable")}</span>`);
       for (const w of (s.workspaces || [])) {
         const insync = !(w.local_ahead | 0) && !(w.hub_ahead | 0);
         parts.push(html`<div class="hint">${w.workspace}: ${insync
-          ? "in sync"
-          : `${here()} +${w.local_ahead | 0}, hub +${w.hub_ahead | 0}`}</div>`);
+          ? word("wsInSync")
+          : word("wsAhead", { here: here(), mine: w.local_ahead | 0, theirs: w.hub_ahead | 0 })}</div>`);
       }
       // The two buckets only this section names, moved from the dock's Peers tab. Listed here but
       // not admitted there is a setup error that would otherwise just vanish; admitted there but not
       // shared here is knowledge left on the table. Intersecting the two lists would hide both.
-      for (const w of (s.local_only || [])) parts.push(html`<div class="hint">${w}: <span class="bad">not admitted by the hub</span></div>`);
-      for (const w of (s.peer_only || [])) parts.push(html`<div class="hint">${w}: admitted, not shared from ${here()}</div>`);
+      for (const w of (s.local_only || [])) parts.push(html`<div class="hint">${w}: <span class="bad">${word("notAdmitted")}</span></div>`);
+      for (const w of (s.peer_only || [])) parts.push(html`<div class="hint">${word("admittedNotShared", { ws: w, here: here() })}</div>`);
       // Unknown is not an empty grant set: a hub that has not answered must not read as one that
       // revoked everything.
-      if (!s.negotiated_at) parts.push(html`<div class="hint">what it shares: unknown - no answer yet</div>`);
+      if (!s.negotiated_at) parts.push(html`<div class="hint">${word("sharesUnknown")}</div>`);
       else if (f.updated_ms) {
         const age = Math.max(0, Math.round((f.updated_ms - s.negotiated_at) / 1000));
-        parts.push(html`<div class="hint">what it shares: agreed ${age}s ago</div>`);
+        parts.push(html`<div class="hint">${word("sharesAgreed", { age })}</div>`);
       }
       parts.push(html`</div>`);
     }
   }
   const known = f.known_peers || [];
   if (known.length || f.role === "hub") {
-    parts.push(html`<div class="fsec">Peers that have checked in</div>`);
-    if (!known.length) parts.push(html`<div class="prow none">no peer has checked in yet</div>`);
+    parts.push(html`<div class="fsec">${word("peersCheckedIn")}</div>`);
+    if (!known.length) parts.push(html`<div class="prow none">${word("noPeerCheckedIn")}</div>`);
     for (const p of known) {
       const ago = f.updated_ms && p.last_seen_ms ? Math.max(0, Math.round((f.updated_ms - p.last_seen_ms) / 1000)) : null;
       parts.push(html`<div class="prow"><span class="pid">${String(p.node_id || "").slice(0, 16)}</span>`,
-        html`<span class="hint"> ${p.last_action}${ago !== null ? " " + ago + "s ago" : ""} (${p.hits | 0}) - `,
-        html`${p.release ? "v" + p.release : "release not known"}, sync ${p.protocol | 0}</span></div>`);
+        html`<span class="hint"> ${p.last_action}${ago !== null ? " " + word("secondsAgo", { n: ago }) : ""} (${p.hits | 0}) - `,
+        html`${p.release ? "v" + p.release : word("releaseUnknown")}, ${word("syncProtocol", { n: p.protocol | 0 })}</span></div>`);
     }
   }
 
   const admitted = f.admitted || [];
   if (f.role === "hub") {
-    parts.push(html`<div class="fsec">Peers admitted here, and what each may read</div>`);
+    parts.push(html`<div class="fsec">${word("peersAdmitted")}</div>`);
     if (!admitted.length) {
-      parts.push(html`<div class="prow none">no peer is admitted - add one in supragnosis.toml</div>`);
+      parts.push(html`<div class="prow none">${word("noPeerAdmitted")}</div>`);
     }
     for (const a of admitted) {
       const ws = a.shared_workspaces || [];
       parts.push(html`<div class="prow"><span class="pid">${String(a.node_id || "")}</span><div class="wschips">`);
       if (!ws.length) {
-        parts.push(html`<span class="none">admitted, may read nothing</span>`);
+        parts.push(html`<span class="none">${word("mayReadNothing")}</span>`);
       } else {
         for (const w of ws) {
           const armed = fedCfgArmed === a.node_id + "\u0000" + w;
           parts.push(html`<button type="button" class="wsc${armed ? " armed" : ""}" data-node="${a.node_id}" `,
-            html`data-ws="${w}" title="${tipText(armed ? "Press again to stop" : "Stop sharing")}">`,
-            html`${w}<span class="x">${armed ? "confirm" : html`<span class="i i-x" aria-hidden="true"></span>`}</span></button>`);
+            html`data-ws="${w}" title="${tipText(word(armed ? "pressAgainToStop" : "stopSharing"))}">`,
+            html`${w}<span class="x">${armed ? word("confirm") : html`<span class="i i-x" aria-hidden="true"></span>`}</span></button>`);
         }
       }
       parts.push(html`</div></div>`);
     }
-    parts.push(html`<div class="note">Removing a grant takes effect at once and is written to `,
-      html`supragnosis.toml. It stops FUTURE reads - it does not take back what has already synced. `,
-      html`Granting a workspace, and adding or removing a peer, stay in the file.</div>`);
+    parts.push(html`<div class="note">${word("grantNote")}</div>`);
   }
 
   host.innerHTML = html`${parts}`;
@@ -207,7 +203,7 @@ async function renderFedSection(host) {
           const body = await r.json().catch(() => ({}));
           const err = document.createElement("div");
           err.className = "err";
-          err.textContent = body.error || `refused (${r.status})`;
+          err.textContent = body.error || word("refused", { status: r.status });
           host.appendChild(err);
         }
       } catch (e) { /* the re-render below shows the unchanged state */ }
@@ -255,9 +251,9 @@ function sectionHidden(ctEl, keys, offSet) {
   if (!hidden) { if (note) note.remove(); return; }
   if (!note) { note = document.createElement("span"); note.className = "rhid"; head.appendChild(note); }
   const all = document.createElement("button");
-  all.type = "button"; all.className = "linkish"; all.textContent = "Show all";
+  all.type = "button"; all.className = "linkish"; all.textContent = word("showAll");
   all.onclick = () => { for (const t of keys) offSet.delete(t); renderLegend(); renderStats(); };
-  note.replaceChildren(document.createTextNode(" - " + hidden + " hidden "), all);
+  note.replaceChildren(document.createTextNode(" - " + word("nHidden", { n: hidden }) + " "), all);
 }
 function renderLegend() {
   // Node-type and edge-kind legends, each in its own dock section. Clicking a chip toggles that kind's
@@ -268,7 +264,7 @@ function renderLegend() {
   const { nodeCount, edgeCount } = legendCounts();
   const fill = (host, keys, colorOf, offSet, isEdge) => {
     host.innerHTML = "";
-    if (!keys.length) { host.innerHTML = '<span class="lbl">none</span>'; return; }
+    if (!keys.length) { host.innerHTML = html`<span class="lbl">${word("none")}</span>`; return; }
     const counts = isEdge ? edgeCount : nodeCount;
     const only = t => { offSet.clear(); for (const k of keys) if (k !== t) offSet.add(k); renderLegend(); renderStats(); };
     for (const t of keys) {
@@ -298,8 +294,8 @@ function renderLegend() {
         tip.style.display = "none";
       };
       const o = document.createElement("button");
-      o.type = "button"; o.className = "lgonly"; o.textContent = "Only";
-      o.setAttribute("aria-label", "Only " + (t || "(none)"));
+      o.type = "button"; o.className = "lgonly"; o.textContent = word("only");
+      o.setAttribute("aria-label", word("onlyType", { type: t || word("noType") }));
       o.onclick = () => only(t);
       wrap.append(el, o);
       host.appendChild(wrap);
@@ -327,9 +323,9 @@ function showTypeTip(el, t, isEdge) {
   tip.style.display = "block";
   tip.style.left = Math.min(r.right + 10, innerWidth - 330) + "px";
   tip.style.top = Math.max(6, r.top - 4) + "px";
-  tip.innerHTML = html`<b>${t || "(none)"}</b> <span class="k">${target} type</span>${def
-    ? html`<div class="tdef">${def.description}</div><span class="k">${plural(def.sources | 0, "source")}</span>`
-    : html`<div class="tdef none">no definition recorded - give this type a meaning with define_type</div>`}`;
+  tip.innerHTML = html`<b>${t || word("noType")}</b> <span class="k">${word(isEdge ? "relationType" : "entityType")}</span>${def
+    ? html`<div class="tdef">${def.description}</div><span class="k">${word((def.sources | 0) === 1 ? "oneSource" : "sources", { n: def.sources | 0 })}</span>`
+    : html`<div class="tdef none">${word("noDefinition")}</div>`}`;
 }
 
 // What a hover lights without dimming the rest (Section 29.9): the entity, its relations and its

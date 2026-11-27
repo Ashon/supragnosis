@@ -1,6 +1,9 @@
 //! docs/design-system.md Section 14 steps 13 and 14: the screens the second pass changes, held by
 //! source tripwires over the viewer's script and stylesheet. Each test names the rule it holds.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const CSS: &str = include_str!("../assets/viewer.css");
 
@@ -26,16 +29,16 @@ fn rule(selector: &str) -> &'static str {
 #[test]
 fn the_status_bar_says_the_scope_once() {
     let stats = format!("{}{}", function("statsScope"), function("statsLine"));
-    for word in ["All workspaces", "entities", "relations", "regions"] {
-        assert!(stats.contains(word), "the stats line does not say {word}");
+    for word in ["All workspaces", "{n} entities", "{n} relations", "{n} regions"] {
+        assert!(says(&stats, word), "the stats line does not say {word}");
     }
     assert!(
-        function("sayLate").contains("Not updated since"),
+        says(function("sayLate"), "Not updated since {time} - {reason}"),
         "a failed poll does not say since when"
     );
     let poll = function("poll");
     assert!(
-        poll.contains("sayLate(\"the server is not answering\")"),
+        poll.contains("sayLate(word(\"serverSilent\"))"),
         "a failed poll does not say why"
     );
     assert!(
@@ -143,9 +146,10 @@ fn search_chooses_nothing_until_the_person_moves() {
         "a choice does not clear the field (Section 29.11)"
     );
     let scope = function("syncSearchScope");
-    for word in ["Search all workspaces", "\"Search \" + defaultName()", "\"Search \" + "] {
-        assert!(scope.contains(word), "the field does not name its scope: {word}");
+    for word in ["Search all workspaces", "Search {ws}"] {
+        assert!(says(scope, word), "the field does not name its scope: {word}");
     }
+    assert!(scope.contains("cur || defaultName()"), "the default is not called by its name");
     assert!(
         function("renderChipsActive").contains("syncSearchScope()"),
         "the scope's name is not kept current"
@@ -190,17 +194,18 @@ fn the_small_controls_say_what_they_are() {
 #[test]
 fn search_groups_hits_by_how_they_were_reached() {
     let render = function("renderSearch");
-    for part in [
-        "h.reached === \"words\"",
-        "\"Contains \\\"\"",
-        ">Related</div>",
-        "\"near in meaning\"",
-        "\"related to a match\"",
-        "\"No entity in \"",
-        "\"Search all workspaces (\"",
-        "\"20+\"",
-    ] {
+    for part in ["h.reached === \"words\"", "\"20+\""] {
         assert!(render.contains(part), "the search list does not say {part}");
+    }
+    for en in [
+        "Contains \"{q}\"",
+        "Related",
+        "near in meaning",
+        "related to a match",
+        "No entity in {scope} contains \"{q}\".",
+        "Search all workspaces ({n} found)",
+    ] {
+        assert!(says(render, en), "the search list does not say {en:?}");
     }
     assert!(
         !render.contains("\"Entities\"") && !render.contains("Observations</div>"),
@@ -242,7 +247,7 @@ fn the_third_pass_defects_on_the_viewer() {
     let off = rule(".tlg.off");
     assert!(!off.contains("opacity"), "an entry the scope does not hold is dimmed, not said");
     let legend = function("renderTrustLegend");
-    assert!(legend.contains("none here"), "an entry the scope does not hold does not say so");
+    assert!(says(legend, "none here"), "an entry the scope does not hold does not say so");
     let kbd = rule(".rv-detail kbd, .rv-acts kbd");
     assert!(
         !kbd.contains("opacity") && kbd.contains("color:var(--ink2)"),

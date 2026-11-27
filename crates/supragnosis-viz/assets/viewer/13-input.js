@@ -224,8 +224,8 @@ addEventListener("resize", placeFoot);
 const searchWrap = searchEl.closest(".searchwrap");
 const searchPop = document.getElementById("searchPop");
 const SEARCH_MODE = {
-  hybrid: ["keyword + meaning", "Searched the words and what they mean."],
-  keyword: ["keyword only", "Searched the words only: there is no meaning index here, so a miss may be one the words did not catch."],
+  hybrid: [word("modeHybrid"), word("modeHybridWhy")],
+  keyword: [word("modeKeyword"), word("modeKeywordWhy")],
 };
 let searchAns = null;    // { q, ws, mode, hits, note } or { q, ws, error }
 const SEARCH_LIMIT = 20;  // the path's default limit: an answer this long may have been cut (P5)
@@ -269,9 +269,9 @@ async function runSearch() {
     const r = await fetch("/api/search?q=" + encodeURIComponent(q) + (ws ? "&workspace=" + encodeURIComponent(ws) : ""), { cache: "no-store" });
     const body = await r.json().catch(() => ({}));
     ans = r.ok ? { q, ws, mode: body.mode, hits: body.hits || [], note: body.note }
-      : { q, ws, error: "search failed (" + r.status + ")" + (body.error ? " - " + body.error : "") };
+      : { q, ws, error: body.error ? word("searchFailedWhy", { status: r.status, error: body.error }) : word("searchFailed", { status: r.status }) };
   } catch (e) {
-    ans = { q, ws, error: "search failed - the daemon did not answer" };
+    ans = { q, ws, error: word("searchNoDaemon") };
   }
   if (seq !== searchSeq) return;   // a newer query is on its way; this answer is for text no longer there
   searchAns = ans;
@@ -305,7 +305,7 @@ function renderSearch() {
     // An empty field: the queries this page ran, newest first; choosing one asks it again.
     searchRows = recentQueries.map(q => ({ kind: "recent", q }));
     searchSel = -1;
-    searchPop.innerHTML = html`<div class="sp-sec">Recent</div>${recentQueries.map((q, i) =>
+    searchPop.innerHTML = html`<div class="sp-sec">${word("recent")}</div>${recentQueries.map((q, i) =>
       html`<button type="button" class="sp-row" role="option" id="sp${i}" data-i="${i}" aria-selected="false"><span class="sp-name">${q}</span></button>`)}`;
     searchPop.querySelectorAll(".sp-row").forEach(b => {
       b.onmousedown = ev => ev.preventDefault();
@@ -334,7 +334,7 @@ function renderSearch() {
     : null;
   const off = keep ? 1 : 0;
   searchRows = [...(keep ? [keep] : []), ...words, ...related];
-  const why = h => h.reached === "meaning" ? "near in meaning" : h.reached === "neighbor" ? "related to a match" : "";
+  const why = h => h.reached === "meaning" ? word("nearInMeaning") : h.reached === "neighbor" ? word("relatedToMatch") : "";
   // Where the scope holds more than one workspace, an entity's row names its own in the hover card's
   // words, "Service in infra" (Section 29.11).
   const manyWs = new Set(nodes.map(n => n.workspace)).size > 1;
@@ -349,26 +349,27 @@ function renderSearch() {
     // graph predates it) stays listed - it is part of the answer - and says why it cannot be focused.
     return html`<button type="button" class="sp-row${on}${n ? "" : " off"}" role="option" id="sp${i}" data-i="${i}" aria-selected="${!!on}">${
       n ? html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>` : ""}<span class="sp-name">${n ? n.name : h.snippet}</span>${
-      n ? html`<span class="sp-k">${manyWs && n.workspace ? n.type + " in " + n.workspace : n.type}</span>` : html`<span class="sp-k">not on the map in this view</span>`}${reason}</button>`;
+      n ? html`<span class="sp-k">${manyWs && n.workspace ? word("typeIn", { type: n.type, ws: n.workspace }) : n.type}</span>` : html`<span class="sp-k">${word("notOnMap")}</span>`}${reason}</button>`;
   };
   const count = searchAns.hits.length;
   const cur = currentWs();
   const all = cur === "*" || cur === "all";
-  const scope = all ? "any workspace" : cur || defaultName();
+  const scope = all ? word("anyWorkspace") : cur || defaultName();
   // Nothing in the scope contains the words: say so, and offer the wider scope with what it found.
+  const wider = searchAns.widerCapped ? "20+" : searchAns.wider;
   const widen = !all && searchAns.wider > 0
-    ? html`<button type="button" class="sp-row sp-widen" data-widen="1">${"Search all workspaces (" + (searchAns.widerCapped ? "20+" : searchAns.wider) + " found)"}</button>`
+    ? html`<button type="button" class="sp-row sp-widen" data-widen="1">${word("searchAllFound", { n: wider })}</button>`
     : "";
   const keepRow = keep ? html`<button type="button" class="sp-row sp-keep${searchSel === 0 ? " on" : ""}" role="option" id="sp0" data-i="0" aria-selected="${searchSel === 0}" aria-keyshortcuts="Meta+Enter"><span class="sp-name">${
-    "Show these " + keep.ids.length + " on the map" + (keep.first ? " - the search stopped at " + SEARCH_LIMIT : "")}</span>${
-    keep.apart ? html`<span class="sp-why">${keep.apart + (keep.apart === 1 ? " is" : " are") + " not drawn in this view"}</span>` : ""}<kbd class="sp-key">Cmd+Enter</kbd></button>` : "";
+    word(keep.first ? "showTheseStopped" : "showThese", { n: keep.ids.length, limit: SEARCH_LIMIT })}</span>${
+    keep.apart ? html`<span class="sp-why">${word(keep.apart === 1 ? "oneNotDrawn" : "notDrawnN", { n: keep.apart })}</span>` : ""}<kbd class="sp-key">Cmd+Enter</kbd></button>` : "";
   const first = words.length
-    ? [html`<div class="sp-sec">${"Contains \"" + searchAns.q + "\""}</div>`, words.map((h, i) => row(h, off + i))]
-    : [html`<div class="sp-note">${"No entity in " + scope + " contains \"" + searchAns.q + "\"."}</div>`, widen];
-  searchPop.innerHTML = html`<div class="sp-head"><span>${count} ${count === 1 ? "hit" : "hits"}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${keepRow}${
+    ? [html`<div class="sp-sec">${word("containsQ", { q: searchAns.q })}</div>`, words.map((h, i) => row(h, off + i))]
+    : [html`<div class="sp-note">${word("noEntityContains", { scope, q: searchAns.q })}</div>`, widen];
+  searchPop.innerHTML = html`<div class="sp-head"><span>${word(count === 1 ? "oneHit" : "hitsN", { n: count })}</span><span class="sp-mode">${modeWord}</span></div><div class="sp-modewhy">${modeWhy}</div>${keepRow}${
     count || widen ? first : ""}${
-    related.length ? [html`<div class="sp-sec">Related</div>`, related.map((h, i) => row(h, off + words.length + i))] : ""}${
-    count ? "" : html`<div class="sp-note">${searchAns.note || "no hits - absence is unknown, not a negation"}</div>`}`;
+    related.length ? [html`<div class="sp-sec">${word("related")}</div>`, related.map((h, i) => row(h, off + words.length + i))] : ""}${
+    count ? "" : html`<div class="sp-note">${searchAns.note || word("noHits")}</div>`}`;
   searchPop.querySelectorAll("[data-widen]").forEach(b => {
     b.onmousedown = ev => ev.preventDefault();
     b.onclick = () => { wsInput.value = "*"; beginWorkspaceTransition(); renderChipsActive(); poll(); runSearch(); };
@@ -423,7 +424,7 @@ async function chooseSearch(i) {
   // An observation opens its card - from the Log's rows when they hold it, else read once - and the
   // canvas frames the entities it asserts.
   const o = await observationById(h.id);
-  if (!o) { toast("bad", "Could not open the observation", "the log of this scope did not hold " + h.id.slice(0, 10)); return; }
+  if (!o) { toast("bad", word("couldNotOpenObs"), word("logDidNotHold", { id: h.id.slice(0, 10) })); return; }
   searchEl.value = ""; searchWrap?.classList.toggle("filled", false);
   closeSearch();
   if (reviewOpen()) location.hash = "";
@@ -477,7 +478,7 @@ searchEl.addEventListener("keydown", ev => {
 let retryAsked = null;   // when Retry was last pressed, until a read succeeds
 const retryBtn = document.getElementById("retry");
 retryBtn.onclick = () => {
-  retryAsked = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  retryAsked = new Date().toLocaleTimeString(LANG, { hour: "numeric", minute: "2-digit" });
   loadWorkspaces(); poll();
 };
 // The zoom buttons zoom about the map window's centre, which is not the canvas's when a panel is open.
@@ -522,14 +523,14 @@ function setRegions(v) {
 }
 // What each choice of regions draws, said under the choice rather than in a tooltip (Section 4, U25).
 const REGION_WHY = {
-  all: "Every region faint, and the active entity's at full strength.",
-  selected: "Only the regions of the entity you point at or select.",
-  off: "No regions.",
+  all: word("regionsAllWhy"),
+  selected: word("regionsSelectedWhy"),
+  off: word("regionsOffWhy"),
 };
 function renderRegionsSeg() {
   renderMarks();
   for (const b of regionsSeg.querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === regionsValue());
-  radioGroup(regionsSeg, "Regions");
+  radioGroup(regionsSeg, word("regions"));
   const desc = document.getElementById("regionsDesc");
   if (desc) desc.textContent = REGION_WHY[regionsValue()] || "";
 }
@@ -547,8 +548,8 @@ const sameListEl = document.getElementById("sameList"), sameActsEl = document.ge
 let sameFor = null, sameRows = [], sameSel = -1, sameChosen = null, sameSeq = 0, sameAsked = false;
 function openSameAs(node) {
   sameFor = node; sameRows = []; sameSel = -1; sameChosen = null; sameAsked = false;
-  document.getElementById("sameTitle").textContent = node.name + " is the same as...";
-  const ph = "Search " + node.workspace;
+  document.getElementById("sameTitle").textContent = word("sameAsTitle", { name: node.name });
+  const ph = word("searchIn", { ws: node.workspace });
   sameQ.value = ""; sameQ.placeholder = ph; sameQ.setAttribute("aria-label", ph);
   renderSame();
   if (!sameDlg.open) sameDlg.showModal();
@@ -562,15 +563,15 @@ function renderSame() {
   const row = (h, i) => html`<button type="button" class="sr${i === sameSel ? " on" : ""}" role="option" id="sr${i}" data-i="${i}" aria-selected="${i === sameSel}"><span>${h.name}</span><span class="k">${h.type}</span></button>`;
   const words = sameRows.filter(h => h.reached === "words"), near = sameRows.filter(h => h.reached !== "words");
   const at = h => sameRows.indexOf(h);
-  sameListEl.innerHTML = html`${alone ? html`<div class="none">Nothing else is in ${ws} yet.</div>`
-    : sameAsked && !sameRows.length ? html`<div class="none">No entity in ${ws} matches.</div>`
-    : html`${words.length ? html`<div class="sg">Contains "${sameQ.value.trim()}"</div>${words.map(h => row(h, at(h)))}` : ""}${
-        near.length ? html`<div class="sg">Related</div>${near.map(h => row(h, at(h)))}` : ""}`}`;
+  sameListEl.innerHTML = html`${alone ? html`<div class="none">${word("nothingElseIn", { ws })}</div>`
+    : sameAsked && !sameRows.length ? html`<div class="none">${word("noEntityMatches", { ws })}</div>`
+    : html`${words.length ? html`<div class="sg">${word("containsQ", { q: sameQ.value.trim() })}</div>${words.map(h => row(h, at(h)))}` : ""}${
+        near.length ? html`<div class="sg">${word("related")}</div>${near.map(h => row(h, at(h)))}` : ""}`}`;
   sameQ.setAttribute("aria-expanded", String(sameRows.length > 0));
   if (sameSel >= 0) sameQ.setAttribute("aria-activedescendant", "sr" + sameSel); else sameQ.removeAttribute("aria-activedescendant");
   sameListEl.querySelectorAll(".sr").forEach(b => { b.onclick = () => chooseSame(+b.dataset.i); });
   const c = sameChosen;
-  sameActsEl.innerHTML = html`${c ? html`<button type="button" class="btn" data-a="${sameFor.id}" data-b="${c.id}">Merge ${sameFor.name} into ${c.name}</button><button type="button" class="btn" data-a="${c.id}" data-b="${sameFor.id}">Merge ${c.name} into ${sameFor.name}</button>` : ""}`;
+  sameActsEl.innerHTML = html`${c ? html`<button type="button" class="btn" data-a="${sameFor.id}" data-b="${c.id}">${word("mergeInto", { a: sameFor.name, b: c.name })}</button><button type="button" class="btn" data-a="${c.id}" data-b="${sameFor.id}">${word("mergeInto", { a: c.name, b: sameFor.name })}</button>` : ""}`;
   sameActsEl.querySelectorAll("[data-a]").forEach(b => { b.onclick = () => openSameMerge(b.dataset.a, b.dataset.b); });
 }
 async function searchSame() {
@@ -594,11 +595,11 @@ async function openSameMerge(a, b) {
   const want = [a, b].sort().join("|");
   const open = proposals.find(q => q.kind === "entity_merge" && (q.state === "open" || q.state === "blocked")
     && [...new Set(q.targets || [])].sort().join("|") === want);
-  if (open) { sameDlg.close(); toast("info", "A merge of these two already waits under Needs you."); openReviewItem(open.id); return; }
+  if (open) { sameDlg.close(); toast("info", word("mergeWaits")); openReviewItem(open.id); return; }
   const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(a) + "&b=" + encodeURIComponent(b) + "&src=picked&workspace=" + encodeURIComponent(sameFor.workspace), null, null, null, true);
-  if (!o.ok) { toast("bad", "Not opened", o.why); return; }
+  if (!o.ok) { toast("bad", word("notOpened"), o.why); return; }
   sameDlg.close();
-  toast("ok", foundSaid(o.body, "merge") || "Merge proposed - it waits under Needs you for a verdict");
+  toast("ok", foundSaid(o.body, "merge") || word("mergeProposed"));
   await refreshProposals();
   openReviewItem(o.body.proposal_id);
 }
@@ -618,9 +619,9 @@ function dialogOpen() { return !!document.querySelector("dialog[open]"); }
 function renderKeyNames() {
   const k = key => singleKeys ? key : null;
   const name = (id, label, key) => { const b = document.getElementById(id); if (b) b.title = tipText(label, k(key)); };
-  name("zin", "Zoom in", "="); name("zout", "Zoom out", "-");
-  name("mapTab", "Map", "l"); name("listBtn", "List", "l");
-  name("panelL", "Filters panel", "["); name("panelR", "Log panel", "]");
+  name("zin", word("zoomIn"), "="); name("zout", word("zoomOut"), "-");
+  name("mapTab", word("map"), "l"); name("listBtn", word("list"), "l");
+  name("panelL", word("filtersPanel"), "["); name("panelR", word("logPanel"), "]");
   renderKept();   // Fit's name and key follow the working set
   for (const el of document.querySelectorAll(".slashkey, #viewpop .keyhint")) el.hidden = !singleKeys;
 }
@@ -633,8 +634,8 @@ function renderShowDeps() {
     else { b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "dShownWithRel"); }
   }
   // More's summary names a switch under it that is off.
-  const off = [["footBtn", "Footprint"], ["pulseBtn", "Pulses"]].filter(([id]) => !document.getElementById(id).classList.contains("on")).map(([, w]) => w);
-  document.getElementById("moreSum").textContent = off.length ? "More - " + off.join(" and ") + " off" : "More";
+  const off = [["footBtn", word("footprint")], ["pulseBtn", word("pulses")]].filter(([id]) => !document.getElementById(id).classList.contains("on")).map(([, w]) => w);
+  document.getElementById("moreSum").textContent = off.length ? word("moreOff", { off: off.join(word("joinAnd")) }) : word("more");
 }
 // The panels and their title-bar toggles (docs/design-system.md Section 6): each panel opens and
 // closes on its own, with its toggle or [ and ], and the choice persists across reloads. A panel is

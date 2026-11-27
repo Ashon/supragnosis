@@ -512,14 +512,14 @@ function drawWsHulls(ctx, hullLabels) {
 // it drew was "why is it grouping by workspace", which is what a control with no affordance earns.
 // "b" still cycles, for whoever finds it.
 const BOUNDARY_MODES = [
-  ["workspace", "A workspace outline around each workspace: a sharing unit. The same name in two workspaces is two entities", "Workspace"],
-  ["origin", "Who signed for each entity; outlines overlap where two machines both did", "Origin"],
-  ["off", "The workspaces keep together, without outlines", "None"],
+  ["workspace", word("boundaryWorkspaceWhy"), word("workspace")],
+  ["origin", word("boundaryOriginWhy"), word("boundaryOrigin")],
+  ["off", word("boundaryNoneWhy"), word("boundaryNone")],
 ];
 // Why a choice outlines nothing here (Section 29.12, P5: what is counted, not what is assumed).
 const BOUNDARY_NOTHING = {
-  workspace: "One workspace here - nothing to outline",
-  origin: "Fewer than two machines are recorded here - nothing to outline",
+  workspace: word("boundaryOneWorkspace"),
+  origin: word("boundaryOneMachine"),
 };
 function renderBoundaryChips() {
   renderMarks();
@@ -543,7 +543,7 @@ function renderBoundaryChips() {
     el.onclick = () => { if (el.getAttribute("aria-disabled") === "true" && boundaryMode !== mode) return; boundaryMode = mode; renderBoundaryChips(); saveViewPrefs(); requestFrame(); };
     legendBoundaryEl.appendChild(el);
   }
-  radioGroup(legendBoundaryEl, "Boundaries");   // one choice of three (Section 4)
+  radioGroup(legendBoundaryEl, word("boundaries"));   // one choice of three (Section 4)
   // What the chosen boundaries draw, said under the choice (Section 4, U25).
   const desc = document.getElementById("boundaryDesc");
   const chosen = BOUNDARY_MODES.find(([mode]) => mode === boundaryMode);
@@ -556,14 +556,14 @@ function cycleBoundaries() {
   const order = ["workspace", "origin", "off"];
   const usable = order.filter(m => m === "off" || outlines(m));
   let said;
-  if (usable.length === 1) said = "Boundaries: nothing to outline here";
+  if (usable.length === 1) said = word("boundariesNothing");
   else {
     const at = order.indexOf(boundaryMode);
     for (let k = 1; k <= order.length; k++) {
       const m = order[(at + k) % order.length];
       if (usable.includes(m)) { boundaryMode = m; break; }
     }
-    said = "Boundaries: " + BOUNDARY_MODES.find(([m]) => m === boundaryMode)[2];
+    said = word("boundariesAre", { mode: BOUNDARY_MODES.find(([m]) => m === boundaryMode)[2] });
     renderBoundaryChips(); saveViewPrefs(); requestFrame();
   }
   if (boundaryNote) dismiss(boundaryNote);

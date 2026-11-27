@@ -156,7 +156,7 @@ mod tests {
         );
         assert!(
             html.contains(r#"aria-pressed="true" title="Filters panel ([)""#)
-                || js.contains("name(\"panelL\", \"Filters panel\", \"[\")")
+                || js.contains("name(\"panelL\", word(\"filtersPanel\"), \"[\")")
         );
     }
 }

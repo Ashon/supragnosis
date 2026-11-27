@@ -2,6 +2,9 @@
 //! source tripwires over the viewer's script: a tier reaches the screen through `tierName`, never as
 //! its identifier, and a proposal row the page cannot phrase says so in words.
 
+mod support;
+use support::keys_of;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -85,7 +88,11 @@ fn a_tier_is_named_never_spelled() {
         ("host_signed", "Host signed"),
         ("human_confirmed", "Human confirmed"),
     ] {
-        assert!(SCRIPT.contains(&format!("{id}: \"{name}\"")), "TIER_NAME names {id} {name}");
+        let key = &keys_of(name)[0];
+        assert!(
+            SCRIPT.contains(&format!("{id}: word(\"{key}\")")),
+            "TIER_NAME names {id} {name}"
+        );
     }
 }
 

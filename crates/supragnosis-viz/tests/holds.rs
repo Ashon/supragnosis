@@ -1,6 +1,9 @@
 //! docs/design-system.md Section 29.11 (step 49, D8): search goes somewhere, and its answer can be
 //! kept on the map as the working set. Source tripwires over the viewer's script and markup.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
@@ -24,10 +27,10 @@ fn a_choice_clears_the_field_and_recent_searches_wait() {
         !note.contains("localStorage") && !note.contains("sessionStorage"),
         "recent queries are stored"
     );
-    assert!(function("renderSearch").contains("<div class=\"sp-sec\">Recent</div>"));
+    assert!(says(function("renderSearch"), "Recent"));
     assert!(function("runSearch").contains("if (!ans.error) noteRecent(q);"));
     assert!(
-        function("renderSearch").contains("n.type + \" in \" + n.workspace"),
+        says(function("renderSearch"), "{type} in {ws}"),
         "a hit does not name its workspace as the hover card does"
     );
 }
@@ -43,13 +46,17 @@ fn the_answer_can_be_kept_as_a_working_set() {
     for part in [
         "drawn.length >= 2",
         "first: searchAns.hits.length >= SEARCH_LIMIT",
-        "\"Show these \" + keep.ids.length + \" on the map\"",
-        "\" - the search stopped at \" + SEARCH_LIMIT",
-        "\" not drawn in this view\"",
         "aria-keyshortcuts=\"Meta+Enter\"",
         "searchRows = [...(keep ? [keep] : []), ...words, ...related];",
     ] {
         assert!(render.contains(part), "the set row lacks {part}");
+    }
+    for en in [
+        "Show these {n} on the map",
+        "Show these {n} on the map - the search stopped at {limit}",
+        "{n} are not drawn in this view",
+    ] {
+        assert!(says(render, en), "the set row does not say {en:?}");
     }
     assert!(SCRIPT.contains("const SEARCH_LIMIT = 20;"));
     assert!(SCRIPT.contains("ev.key === \"Enter\" && (ev.metaKey || ev.ctrlKey)"));
@@ -74,10 +81,11 @@ fn the_answer_can_be_kept_as_a_working_set() {
         "set members are made active and never fade"
     );
     assert!(function("statsLine").contains("if (workSet) line += \", \" + workSetSaid();"));
-    assert!(function("workSetSaid").contains("\" kept for \\\"\""));
-    assert!(function("workSetSaid").contains("\" (the search stopped at \" + SEARCH_LIMIT"));
+    let said = function("workSetSaid");
+    assert!(says(said, "{n} kept for \"{q}\""));
+    assert!(says(said, "{n} kept for \"{q}\" (the search stopped at {limit})"));
     let kept = function("renderKept");
-    assert!(kept.contains("\" kept\"") && kept.contains("\"Fit to kept entities\""));
+    assert!(says(kept, "{n} kept") && says(kept, "Fit to kept entities"));
     assert!(SCRIPT.contains("document.querySelector(\"#kept .kx\").onclick = clearWorkSet;"));
     assert!(PAGE.contains("<span id=\"kept\" class=\"spill\" hidden>"));
     assert!(function("followKept").contains("mergedInto(id)"), "a merged member is dropped");
@@ -103,7 +111,7 @@ fn show_related_adds_what_the_relations_reach() {
         detail.contains("<button type=\"button\" class=\"linkish shrel\">Show related</button>")
     );
     assert!(detail.contains("keepInView([node.id, ...relatedDrawn(node).map(n => n.id)], { kind: \"related\", name: node.name })"));
-    assert!(function("partSaid").contains("\" related to \""));
+    assert!(says(function("partSaid"), "{n} related to {name}"));
 }
 
 /// While List shows, zoom and Fit are idle in place, described by List's sentence; the List tab is
@@ -122,8 +130,11 @@ fn list_leaves_the_camera_idle_in_place() {
     ));
     let list = function("renderList");
     assert!(
-        list.contains("class=\"linkish lclear\">Clear</button>"),
+        list.contains("class=\"linkish lclear\">${word(\"clear\")}</button>"),
         "List's set line has no Clear"
     );
-    assert!(list.contains("rows.length + \" of \" + c.shown + \" entities kept - \""));
+    assert!(
+        says(list, "{kept} of {n} entities kept - {parts}")
+            && list.contains("kept: rows.length, n: c.shown")
+    );
 }

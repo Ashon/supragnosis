@@ -114,11 +114,11 @@ function renderList() {
   const many = new Set(rows.map(n => n.workspace)).size > 1;
   // Redrawing keeps the person's place (Section 10): the focused row keeps focus.
   const had = listWin.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-  listWin.innerHTML = html`<p class="lhead"></p>${workSet ? html`<p class="lset"><span></span> <button type="button" class="linkish lclear">Clear</button></p>` : ""}<table class="ltable"><thead><tr>${listHead("name", "Name")}${listHead("type", "Type")}${
-    listHead("trust", "Trust")}${listHead("relations", "Relations", "n")}${listHead("said", "Last said")}${many ? listHead("workspace", "Workspace") : ""}</tr></thead><tbody>${
+  listWin.innerHTML = html`<p class="lhead"></p>${workSet ? html`<p class="lset"><span></span> <button type="button" class="linkish lclear">${word("clear")}</button></p>` : ""}<table class="ltable"><thead><tr>${listHead("name", word("colName"))}${listHead("type", word("colType"))}${
+    listHead("trust", word("trust"))}${listHead("relations", word("relations"), "n")}${listHead("said", word("colLastSaid"))}${many ? listHead("workspace", word("workspace")) : ""}</tr></thead><tbody>${
     rows.map(n => html`<tr${n === focus ? html` class="on"` : ""}><td><button type="button" class="lrow" data-id="${n.id}">${
       // A contested entity carries the map's badge here too, in words for a screen reader (U3).
-      n.contested ? html`<span class="i i-circle-alert lbad" role="img" aria-label="Two sources disagree"></span>` : ""}${
+      n.contested ? html`<span class="i i-circle-alert lbad" role="img" aria-label="${word("twoSourcesDisagree")}"></span>` : ""}${
       html`<span class="dot" style="background:${typeColor[n.type] || OTHER}"></span>${n.name}</button></td>`}${
       html`<td>${n.type}</td><td>${tierName(n.trust_tier)}</td><td class="n">${n.degree}</td><td>${n.last_said ? obsWhen(n.last_said) : ""}</td>`}${
       many ? html`<td>${n.workspace}</td>` : ""}</tr>`)}</tbody></table>`;
@@ -128,7 +128,7 @@ function renderList() {
   const lset = listWin.querySelector(".lset");
   if (lset) {
     const c = drawnCounts();
-    lset.firstChild.textContent = rows.length + " of " + c.shown + " entities kept - " + workSet.parts.map(partSaid).join(", ");
+    lset.firstChild.textContent = word("listKept", { kept: rows.length, n: c.shown, parts: workSet.parts.map(partSaid).join(", ") });
     lset.querySelector(".lclear").onclick = clearWorkSet;
   }
   listWin.querySelectorAll(".lsort").forEach(b => {

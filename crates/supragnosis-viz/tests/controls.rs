@@ -4,6 +4,9 @@
 //! and the map's canvas is named. The rest of U19 - dialogs, keys, targets, reflow - is owed until
 //! Section 14 steps 13-16 meet it, and its registry row says so.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 
@@ -51,7 +54,7 @@ fn the_viewers_controls_say_what_they_are() {
         "a legend chip does not say it is pressed"
     );
     assert!(
-        SCRIPT.matches("radioGroup(chipBar, \"Workspace\")").count() >= 2,
+        SCRIPT.matches("radioGroup(chipBar, word(\"workspace\"))").count() >= 2,
         "the workspace chips are not one radio group"
     );
     let radios = &SCRIPT[SCRIPT.find("function radioGroup(").expect("radioGroup")..];
@@ -84,15 +87,15 @@ fn view_holds_two_choices_with_one_name_each() {
         assert!(PAGE.contains(v), "Regions has no {v}");
     }
     assert!(
-        SCRIPT.contains("radioGroup(regionsSeg, \"Regions\")"),
+        SCRIPT.contains("radioGroup(regionsSeg, word(\"regions\"))"),
         "Regions is not a radio group"
     );
     assert!(
-        SCRIPT.contains("radioGroup(legendBoundaryEl, \"Boundaries\")"),
+        SCRIPT.contains("radioGroup(legendBoundaryEl, word(\"boundaries\"))"),
         "Boundaries is not a radio group"
     );
-    for label in ["\"Workspace\"", "\"Origin\"", "\"None\""] {
-        assert!(SCRIPT.contains(label), "a boundary mode is not named {label}");
+    for label in ["Workspace", "Origin", "None"] {
+        assert!(says(SCRIPT, label), "a boundary mode is not named {label}");
     }
     assert!(
         PAGE.contains("id=\"keysBtn\" class=\"tog on\""),

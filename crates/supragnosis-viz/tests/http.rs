@@ -2,6 +2,9 @@
 //! hashing embedder) in-process, binds a real unix socket under a per-test temp path, and fires
 //! raw HTTP/1.1 GETs over `UnixStream` (no TCP anywhere - the surface under test is the socket).
 
+mod support;
+use support::says;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -877,7 +880,7 @@ fn a_pill_is_absent_only_for_a_known_zero_or_nothing_set_up() {
         "it hides where sync is not set up"
     );
     assert!(
-        body.contains(r#"text = "Sync unavailable""#),
+        says(body, "Sync unavailable"),
         "a daemon that does not answer is a state the pill draws"
     );
 }

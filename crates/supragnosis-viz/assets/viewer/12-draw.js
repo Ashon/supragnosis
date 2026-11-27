@@ -93,7 +93,7 @@ function draw() {
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
     if (gpu) gpu.clear();
     // Section 9's words: what the layout settles, counted (design-system.md Section 29.6).
-    if (loaderSayEl) loaderSayEl.textContent = "Arranging " + plural(nodes.length, "entity", "entities");
+    if (loaderSayEl) loaderSayEl.textContent = word(nodes.length === 1 ? "arrangingOne" : "arrangingN", { n: nodes.length });
     loaderEl.classList.add("on");
     requestFrame(); return;
   }
@@ -635,11 +635,11 @@ function showTip(n, cx, cy) {
   const first = String(n.description || "").split("\n")[0];
   tip.innerHTML = html`${[
     html`<b>${n.name}</b><br>`,
-    html`<span class="k">${many && n.workspace ? n.type + " in " + n.workspace : n.type}</span><br>`,
-    html`${plural(n.degree || 0, "relation")} - ${plural(n.sources || 0, "source")} - ${tierName(n.trust_tier)}`,
-    n.last_said ? html`<br><span class="k">Last said ${obsWhen(n.last_said)}</span>` : "",
+    html`<span class="k">${many && n.workspace ? word("typeIn", { type: n.type, ws: n.workspace }) : n.type}</span><br>`,
+    html`${word((n.degree || 0) === 1 ? "oneRelation" : "relationsN", { n: n.degree || 0 })} - ${word((n.sources || 0) === 1 ? "oneSource" : "sources", { n: n.sources || 0 })} - ${tierName(n.trust_tier)}`,
+    n.last_said ? html`<br><span class="k">${word("lastSaid", { when: obsWhen(n.last_said) })}</span>` : "",
     first ? html`<div class="tdesc">${first.length > 120 ? first.slice(0, 120).trimEnd() + "..." : first}</div>` : "",
-    n.contested ? html`<div class="tcontest">Two sources disagree</div>` : ""]}`;
+    n.contested ? html`<div class="tcontest">${word("twoSourcesDisagree")}</div>` : ""]}`;
 }
 
 

@@ -2,6 +2,9 @@
 //! with one count, and nothing but the person moves what they are reading. Source tripwires over the
 //! viewer's script.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 
 fn function(name: &str) -> &'static str {
@@ -70,7 +73,9 @@ fn the_first_view_opens_where_the_knowledge_is() {
     let load = function("loadWorkspaces");
     // The default by its name (design-system.md Section 29.10).
     assert!(
-        load.contains("\"Showing all workspaces - \" + defaultName() + (openedHeld ? \" holds \" + openedHeld.d + \" of \" + openedHeld.t : \" is empty\")"),
+        says(load, "Showing all workspaces - {ws} holds {d} of {t}")
+            && says(load, "Showing all workspaces - {ws} is empty")
+            && load.contains("ws: defaultName()"),
         "the page does not say why it opened on All"
     );
     assert!(load.contains("mk(defaultName(), \"\")"), "an empty default has no chip");
