@@ -56,7 +56,7 @@ fn the_viewer_title_bar_is_a_mac_toolbar() {
     for part in [
         "placeTitle",
         "statsScope(currentWs())",
-        "\"Review\"",
+        "word(\"review\")",
         "backGraph",
         "panelL",
         "panelR",

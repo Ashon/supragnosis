@@ -18,11 +18,16 @@ fn function(name: &str) -> &'static str {
 fn review_is_always_in_the_status_bar_with_one_count() {
     let pill = function("updateReviewPill");
     assert!(
-        pill.contains(": \"Review\";"),
+        pill.contains(": word(\"review\");"),
         "with nothing waiting the entry does not read Review"
     );
     assert!(
-        pill.contains("(n === 1 ? \"1 needs you\" : n + \" need you\") + (contested ? \" (\" + contested + \" contested)\" : \"\")"),
+        pill.contains("word(n === 1 ? \"needsYouOne\" : \"needsYouN\", { n })")
+            && pill.contains(
+                "(contested ? word(\"needsContested\", { needs, n: contested }) : needs)"
+            )
+            && says(pill, "{n} needs you")
+            && says(pill, "{needs} ({n} contested)"),
         "the contested beliefs are not counted inside the one count"
     );
     // Needs you lists only the beliefs that tie on trust, so a confirmation takes its item away.

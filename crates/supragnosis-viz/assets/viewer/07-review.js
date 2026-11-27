@@ -19,7 +19,7 @@ function renderPlace() {
     const scope = document.createElement("span");
     scope.className = "tscope";
     scope.textContent = statsScope(currentWs());
-    title.replaceChildren("Review", scope);
+    title.replaceChildren(word("review"), scope);
   } else title.textContent = statsScope(currentWs());
   document.getElementById("backGraph").hidden = !onReview;
   document.getElementById("panelL").hidden = onReview;
@@ -29,14 +29,15 @@ function renderPlace() {
 addEventListener("keydown", e => {
   if (e.key === "[" && (e.metaKey || e.ctrlKey) && reviewOpen()) { e.preventDefault(); location.hash = ""; }
 });
-const KIND_WORDS = {
-  entity_merge: "Merge", entity_split: "Un-merge", claim_promotion: "Confirm a claim",
-  claim_demotion: "Demote a claim", tbox_change: "Change a type", recall: "Recall",
-};
+// A proposal's kind as its title says it, by the kind's id.
+const KINDS = { entity_merge: "nounMerge", entity_split: "nounUnmerge", claim_promotion: "titleConfirm", claim_demotion: "titleDemote", tbox_change: "titleTypeChange", recall: "nounRecall" };
 // A kind with no commit effect yet, in the screen's words (Section 29.22): the server marks the
-// proposal no_effect_yet, and it cannot be accepted until its kind has an effect.
-const NO_EFFECT_SAID = { tbox_change: ["a type change", "type changes"], recall: ["a recall", "recalls"] };
-function noEffectSaid(p) { return NO_EFFECT_SAID[p.kind] || ["this kind of proposal", "proposals of its kind"]; }
+// proposal no_effect_yet, and it cannot be accepted until its kind has an effect. One and many.
+const NOEFFECT = { tbox_change: ["noEffectType", "noEffectTypes"], recall: ["noEffectRecall", "noEffectRecalls"], other: ["noEffectKind", "noEffectKinds"] };
+function noEffectSaid(p) {
+  const k = Object.hasOwn(NOEFFECT, p.kind) ? p.kind : "other";
+  return [word(NOEFFECT[k][0]), word(NOEFFECT[k][1])];
+}
 // A proposal's state said as its outcome (Section 29.3, U17); the ids stay the fold's.
 const OUTCOME = { merged: word("stateAccepted"), rejected: word("stateRejected"), withdrawn: word("stateWithdrawn"), blocked: word("stateBlocked") };
 // How a proposal's target is said: the server's label (it names a merged-away entity, and a gate
@@ -58,18 +59,20 @@ function proposalTitle(p) {
   const said = (p.targets || []).map((_, i) => targetSaid(p, i));
   if (p.kind === "entity_merge" && p.into) {
     const gone = said.filter((s, i) => s && p.targets[i] !== p.into), into = intoSaid(p);
-    if (gone.length && into) return "Merge " + gone.join(", ") + " into " + into;
+    if (gone.length && into) return word("mergeInto", { a: gone.join(", "), b: into });
   }
-  if (p.kind === "entity_split" && said[0]) return "Un-merge " + said[0];
+  if (p.kind === "entity_split" && said[0]) return word("unmergeName", { name: said[0] });
   const named = said.filter(Boolean);
-  return (KIND_WORDS[p.kind] || p.kind) + (named.length ? ": " + named.join(", ") : "");
+  const kind = Object.hasOwn(KINDS, p.kind) ? word(KINDS[p.kind]) : p.kind;
+  return named.length ? word("saidOn", { said: kind, what: named.join(", ") }) : kind;
 }
 // A contested row says what it asks: "Ledger's type: Table or Concept?", two values at most.
 function contestedTitle(c) {
-  if (c.field === "definition") return c.name + "'s definition: which meaning?";
+  if (c.field === "definition") return word("whichMeaning", { name: c.name });
   const values = [c.current, ...(c.competitors || []).map(x => x.value)];
-  const shown = values.length > 2 ? values.slice(0, 2).join(", ") + " or " + (values.length - 2) + " more" : values.join(" or ");
-  return c.name + "'s type: " + shown + "?";
+  const two = { a: values[0], b: values[1], n: values.length - 2 };
+  const shown = values.length > 2 ? word("valuesOrMore", two) : values.length === 2 ? word("valuesOr", two) : values[0];
+  return word("whichType", { name: c.name, values: shown });
 }
 function needsItems() {
   const items = [];
@@ -121,18 +124,18 @@ function reviewCount() {
   return needsItems().length + (curation ? 0 : contestedCount);
 }
 function itemTitle(it) {
-  if (it.kind === "secret") return "A credential may be in the log";
+  if (it.kind === "secret") return word("credentialInLog");
   if (it.kind === "contested") return contestedTitle(it.c);
   if (it.kind === "signal") return it.title;
   return proposalTitle(it.p);
 }
 function itemTag(it) {
-  if (it.kind === "secret") return html`<span class="rv-k bad">Secret</span>`;
-  if (it.kind === "contested") return html`<span class="rv-k bad">Contested</span>`;
+  if (it.kind === "secret") return html`<span class="rv-k bad">${word("secretTag")}</span>`;
+  if (it.kind === "contested") return html`<span class="rv-k bad">${word("contestedItemTag")}</span>`;
   if (it.kind === "signal") return "";
   // Only what the title does not say: under Needs you that it is blocked, under Decided its outcome.
   const st = it.p.state;
-  if (st === "open") return it.p.no_effect_yet ? html`<span class="rv-st">No effect yet</span>` : "";
+  if (st === "open") return it.p.no_effect_yet ? html`<span class="rv-st">${word("noEffectYetTag")}</span>` : "";
   return html`<span class="rv-st ${st}">${OUTCOME[st] || st}</span>`;
 }
 function updateReviewPill() {
@@ -146,8 +149,9 @@ function updateReviewPill() {
   const away = n ? 0 : waitElsewhere();
   pill.className = "spill" + (n || away ? " warn" : "");
   // One count, the scope's; with nothing here, what waits elsewhere (Section 29.21).
-  pill.textContent = n ? (n === 1 ? "1 needs you" : n + " need you") + (contested ? " (" + contested + " contested)" : "")
-    : away ? away + " wait elsewhere" : "Review";
+  const needs = word(n === 1 ? "needsYouOne" : "needsYouN", { n });
+  pill.textContent = n ? (contested ? word("needsContested", { needs, n: contested }) : needs)
+    : away ? word("waitElsewhere", { n: away }) : word("review");
 }
 let reviewSig = "";   // what the page last drew - a poll that changes nothing must not redraw it
 let reviewIndex = 0;  // where the selected item stood: when it leaves, the next one takes its place
@@ -177,7 +181,7 @@ function renderReview() {
   setReviewInert(reviewOpen());
   document.body.classList.toggle("reviewing", reviewOpen());
   // The window's document title names the page as the title bar does (Section 29.6, U26).
-  document.title = (reviewOpen() ? "Review" : "Graph") + " - Supragnosis";
+  document.title = word(reviewOpen() ? "reviewTitle" : "pageTitle");
   if (!reviewOpen()) { reviewSig = ""; return; }
   const items = segItems();
   // Redraw only when what is shown changed: a redraw replaces the buttons under the pointer and the
@@ -191,7 +195,7 @@ function renderReview() {
   if (sig === reviewSig) return;
   reviewSig = sig;
   // The segments' counts: only Needs you's asks; the others are drawn muted (Section 29.3).
-  const segs = [["needs", "Needs you"], ["decided", "Decided"], ["suggestions", "Suggestions"], ["health", "Health"]];
+  const segs = [["needs", word("segNeeds")], ["decided", word("segDecided")], ["suggestions", word("segSuggestions")], ["health", word("segHealth")]];
   const segEl = document.getElementById("rvSeg");
   segEl.textContent = "";
   let segSel = null;
@@ -218,21 +222,22 @@ function renderReview() {
     && document.activeElement.closest("#rvList, #rvDetail [data-decide], #rvDetail [data-skip], #rvDetail [data-settle], #rvDetail [data-undo]"));
   const all = currentWs() === "*" || currentWs() === "all";
   const away = all || reviewSeg !== "needs" ? 0 : waitElsewhere();
-  const empty = { needs: all ? "Nothing waits for you in any workspace." : "Nothing waits for you in this workspace." + (away ? " " + away + " wait in other workspaces." : ""),
-    decided: "Nothing decided here yet.", suggestions: "No suggestions here.", health: "Nothing to report here." }[reviewSeg];
+  const nothingHere = word("nothingWaitsHere"), awaySaid = away ? word("waitInOthers", { n: away }) : "";
+  const empty = { needs: all ? word("nothingWaitsAny") : (away ? nothingHere + " " + awaySaid : nothingHere),
+    decided: word("nothingDecided"), suggestions: word("noSuggestions"), health: word("nothingToReport") }[reviewSeg];
   const blocked = reviewSeg === "needs" ? blockedItems() : [];
-  const head = html`${away && items.length ? html`<div class="rv-else">${away} more wait in other workspaces. <button type="button" class="linkish" data-allws="1">Show all workspaces</button></div>` : ""}${
-    blocked.length >= 2 ? html`<div class="rv-else">${blocked.length} were accepted, but a check holds each back. <button type="button" class="linkish" data-blocked="1">Reject all blocked</button></div>` : ""}`;
+  const head = html`${away && items.length ? html`<div class="rv-else">${word("moreWaitInOthers", { n: away })} <button type="button" class="linkish" data-allws="1">${word("showAllWorkspaces")}</button></div>` : ""}${
+    blocked.length >= 2 ? html`<div class="rv-else">${word("acceptedButHeld", { n: blocked.length })} <button type="button" class="linkish" data-blocked="1">${word("rejectAllBlocked")}</button></div>` : ""}`;
   list.innerHTML = html`${signalHint(reviewSeg)}${head}${items.length
     ? items.map(it => html`<button type="button" class="rv-item${it.key === reviewSel ? " on" : ""}" data-key="${it.key}">${itemTag(it)}<span class="rv-t">${itemTitle(it)}</span></button>`)
-    : html`<div class="empty">${empty}${away ? html` <button type="button" class="linkish" data-allws="1">Show all workspaces</button>` : ""}</div>`}`;
+    : html`<div class="empty">${empty}${away ? html` <button type="button" class="linkish" data-allws="1">${word("showAllWorkspaces")}</button>` : ""}</div>`}`;
   list.querySelectorAll(".rv-item").forEach(b => { b.onclick = () => { reviewSel = b.dataset.key; renderReview(); }; });
   list.querySelectorAll("[data-allws]").forEach(b => { b.onclick = () => showAllForReview(); });
   list.querySelectorAll("[data-blocked]").forEach(b => { b.onclick = () => openBlocked(); });
   // Kept until a row takes it: the first draw can come before the proposals have been read.
   if (hadFocus) { const on = list.querySelector(".rv-item.on"); if (on) { on.focus(); reviewFocus = false; } }
   const it = items.find(x => x.key === reviewSel);
-  detail.innerHTML = html`${it ? itemDetail(it) : html`<div class="empty">${items.length ? "Select an item." : empty}</div>`}`;
+  detail.innerHTML = html`${it ? itemDetail(it) : html`<div class="empty">${items.length ? word("selectItem") : empty}</div>`}`;
   if (it && it.kind === "proposal" && (!reviewView || reviewView.id !== it.p.id)) fetchReviewView(it.p.id);
   if (it && it.kind === "proposal" && undoable(it.p) && (!undoView || undoView.id !== it.p.id)) fetchUndoView(it.p.id);
   // A contested item's values confirm as 1 to 9, in the order shown (U19: only while focus is here).
@@ -251,24 +256,25 @@ function renderReview() {
 }
 // Skip, as a button and as J, wherever an item is decided one at a time (Section 7).
 function skipButton() {
-  return html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">Skip <kbd aria-hidden="true">J</kbd></button>`;
+  return html`<button type="button" class="btn" data-skip="1" aria-keyshortcuts="J">${word("skip")} <kbd aria-hidden="true">J</kbd></button>`;
 }
 function itemDetail(it) {
   if (it.kind === "secret") {
     const f = it.f;
-    return [html`<h3>A credential may be in the log</h3>`,
-      html`<p class="why">A ${f.pattern} pattern matched in an observation's ${f.field}, at byte ${f.at | 0}. It is not shown here on purpose.</p>`,
-      html`<p class="why">The log is append-only, so it cannot be removed yet. Stop it spreading by narrowing what this workspace shares, and rotate the credential.</p>`,
-      html`<div class="rv-acts"><button type="button" class="btn" data-obs="${f.observation}">Open the observation</button>${skipButton()}</div>`];
+    // The pattern and the field are the scanner's names, said as it names them.
+    return [html`<h3>${word("credentialInLog")}</h3>`,
+      html`<p class="why">${word("secretWhere", { pattern: f.pattern, field: f.field, at: f.at | 0 })}</p>`,
+      html`<p class="why">${word("secretWhat")}</p>`,
+      html`<div class="rv-acts"><button type="button" class="btn" data-obs="${f.observation}">${word("openObservation")}</button>${skipButton()}</div>`];
   }
   if (it.kind === "contested") {
     const c = it.c, def = c.field === "definition";
     return [html`<h3>${contestedTitle(c)}</h3>`,
-      html`<p class="why">Two ${def ? "definitions" : "values"} tie on trust, so Supragnosis does not pick one for you. The other stays in the log and can be chosen again.</p>`,
+      html`<p class="why">${word(def ? "tieDefinitions" : "tieValues")}</p>`,
       html`<div class="contested hot">${contestedRows({ name: c.name, field: def ? "definition" : (c.field === "kind" ? "type" : c.field), entity: def ? "" : c.id,
         current: c.current, curObs: c.kind_source, tier: "", competitors: c.competitors || [], contested: c.contested, ws: c.workspace || (nodeById(c.id) || {}).workspace || "" })}</div>`,
-      html`<div class="rv-acts">${def ? "" : html`<button type="button" class="btn" data-map="1">Show on the map</button>`}${skipButton()}</div>`,
-      html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> confirm a value. <kbd>J</kbd> <kbd>K</kbd> move between items.</p>`];
+      html`<div class="rv-acts">${def ? "" : html`<button type="button" class="btn" data-map="1">${word("showOnMap")}</button>`}${skipButton()}</div>`,
+      html`<p class="hint"><kbd>1</kbd> <kbd>2</kbd> ${word("confirmAValue")} <kbd>J</kbd> <kbd>K</kbd> ${word("moveBetween")}</p>`];
   }
   if (it.kind === "signal") return signalDetail(it);
   const p = it.p, v = reviewView && reviewView.id === p.id ? reviewView : null;
@@ -280,22 +286,23 @@ function itemDetail(it) {
   // A decided item's diff is worked out against today's beliefs, so it says so (Section 29.3); a
   // merge's leads with what happens to identity (Section 29.7).
   const none = p.no_effect_yet ? noEffectSaid(p) : null;   // no Accept until its kind has an effect (Section 29.22)
-  parts.push(html`<div class="sec">${decided ? "What it would change now" : "What changes"}</div>`, none
-    ? html`<div class="dnote">Nothing yet: ${none[0]} has no effect in this version, so it cannot be accepted until it has one.</div>`
+  parts.push(html`<div class="sec">${word(decided ? "wouldChangeNow" : "whatChanges")}</div>`, none
+    ? html`<div class="dnote">${word("noEffectYet", { what: none[0] })}</div>`
     : [identityHtml(p, ev), diffHtml(v ? v.diff : null)]);
-  parts.push(html`<div class="sec">Checks</div>`);
-  if (!v) parts.push(html`<div class="dnote">reading the checks...</div>`);
+  parts.push(html`<div class="sec">${word("checks")}</div>`);
+  if (!v) parts.push(html`<div class="dnote">${word("readingChecks")}</div>`);
   else {
-    if (failing.length) parts.push(html`<div class="rv-block"><b>Blocked.</b> ${failing.map(c => html`<div>${checkSaid(p, c)}: ${c.detail}</div>`)}<div>The merge cannot reach canon while this holds. Reject it here, or fix the proposal and open it again.</div></div>`);
+    // A failing check's detail is the server's sentence, shown as it wrote it (docs/i18n.md Section 5).
+    if (failing.length) parts.push(html`<div class="rv-block"><b>${word("blockedHead")}</b> ${failing.map(c => html`<div>${checkSaid(p, c)}: ${c.detail}</div>`)}<div>${word("blockedWhat")}</div></div>`);
     parts.push(checkListHtml(p, v.checks));
   }
-  parts.push(html`<div class="sec">Evidence</div>`, evidenceHtml(p, ev));
+  parts.push(html`<div class="sec">${word("evidence")}</div>`, evidenceHtml(p, ev));
   // Who asked: the opening event in the who-line grammar, opening its card; "self-attested", which
   // every opened proposal carries, is not drawn (Section 29.7).
   const opened = ev && ev.opened;
-  parts.push(html`<div class="sec">Who asked</div>`, opened
+  parts.push(html`<div class="sec">${word("whoAsked")}</div>`, opened
     ? html`<div class="hint"><button type="button" class="linkish" data-obs="${opened.id}">${whoLine(opened.effective_tier, authorOf(opened))}</button></div>`
-    : html`<div class="hint">${p.opened_at ? new Date(p.opened_at).toLocaleString() : ""}</div>`);
+    : html`<div class="hint">${p.opened_at ? new Date(p.opened_at).toLocaleString(LANG) : ""}</div>`);
   const acts = [];
   const ready = !!v;   // the diff and checks are on screen
   const pair = keepPair(p), rev = pair ? reverseOf(p, pair.id) : null;
@@ -303,33 +310,33 @@ function itemDetail(it) {
   const accept = (p.state === "open" || p.state === "rejected") && !revAccepted && !none;
   if (accept) {
     const armed = recallArmed === p.id;
-    const label = p.kind === "recall" && armed ? "Confirm the recall" : p.state === "rejected" ? "Accept after all" : "Accept";
+    const label = p.kind === "recall" && armed ? word("confirmRecall") : word(p.state === "rejected" ? "acceptAfterAll" : "accept");
     const off = !ready || failing.length;
     acts.push(html`<button type="button" class="btn p" data-decide="merge" aria-keyshortcuts="A"${off ? html` disabled` : ""}>${label} <kbd aria-hidden="true">A</kbd></button>`);
   }
-  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject" aria-keyshortcuts="R"${ready ? "" : html` disabled`}>Reject <kbd aria-hidden="true">R</kbd></button>`);
+  if (p.state === "open" || p.state === "blocked") acts.push(html`<button type="button" class="btn" data-decide="reject" aria-keyshortcuts="R"${ready ? "" : html` disabled`}>${word("reject")} <kbd aria-hidden="true">R</kbd></button>`);
   // Keep the other name (Section 29.17): an open merge of two, once its diff and checks show.
-  if (pair && p.state === "open" && !revAccepted) acts.push(html`<button type="button" class="btn" data-keep="1"${ready ? "" : html` disabled aria-describedby="keepWait"`}>Keep ${pair.name} instead</button>`,
-    ready ? "" : html`<span class="dnote" id="keepWait">Waiting for the checks</span>`);
+  if (pair && p.state === "open" && !revAccepted) acts.push(html`<button type="button" class="btn" data-keep="1"${ready ? "" : html` disabled aria-describedby="keepWait"`}>${word("keepInstead", { name: pair.name })}</button>`,
+    ready ? "" : html`<span class="dnote" id="keepWait">${word("waitingChecks")}</span>`);
   if (p.state === "open" || p.state === "blocked") acts.push(skipButton());
   const reversed = proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(p.id));
-  if (p.kind === "entity_merge" && p.state === "merged" && !reversed) acts.push(html`<button type="button" class="btn" data-unmerge="1">Un-merge</button>`);
+  if (p.kind === "entity_merge" && p.state === "merged" && !reversed) acts.push(html`<button type="button" class="btn" data-unmerge="1">${word("nounUnmerge")}</button>`);
   const u = undoable(p) ? undoParts(p) : null;
   if (u) acts.push(u.button);
-  acts.push(html`<button type="button" class="btn" data-map="1">Show on the map</button>`);
+  acts.push(html`<button type="button" class="btn" data-map="1">${word("showOnMap")}</button>`);
   parts.push(html`<div class="rv-acts">${acts}</div>`);
-  if (pair && p.state === "open" && !revAccepted) parts.push(html`<p class="hint">Keep ${pair.name} instead rejects this merge and makes ${pair.name} the one kept; the merge into it then waits for your verdict.</p>`);
-  if (revAccepted && (p.state === "open" || p.state === "rejected")) parts.push(html`<p class="hint">Its reverse is accepted.</p>`);
+  if (pair && p.state === "open" && !revAccepted) parts.push(html`<p class="hint">${word("keepInsteadWhy", { name: pair.name })}</p>`);
+  if (revAccepted && (p.state === "open" || p.state === "rejected")) parts.push(html`<p class="hint">${word("reverseAccepted")}</p>`);
   if (u) parts.push(u.note);
-  if (none && p.state === "open") parts.push(html`<p class="hint">Reject sets it aside, and the log keeps it. It can still be accepted once ${none[1]} have an effect.</p>`);
-  else if (none && p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: it can still be accepted once ${none[1]} have an effect.</p>`);
-  else if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">If its check passes later, the accept it carries still merges it.</p>`);
-  else if (p.state === "rejected") parts.push(html`<p class="hint">A reject is provisional: accepting it later still merges it.</p>`);
-  if (p.kind === "entity_merge" && p.state === "merged" && !reversed) parts.push(html`<p class="hint">Un-merge opens a proposal to separate them again. The pair is then never suggested again, and merging them later takes a proposal distinguishable from this one.</p>`);
+  if (none && p.state === "open") parts.push(html`<p class="hint">${word("rejectSetsAside", { what: none[1] })}</p>`);
+  else if (none && p.state === "rejected") parts.push(html`<p class="hint">${word("rejectUntilEffect", { what: none[1] })}</p>`);
+  else if (p.state === "rejected" && p.merge_verdict) parts.push(html`<p class="hint">${word("ifCheckPasses")}</p>`);
+  else if (p.state === "rejected") parts.push(html`<p class="hint">${word("rejectProvisional")}</p>`);
+  if (p.kind === "entity_merge" && p.state === "merged" && !reversed) parts.push(html`<p class="hint">${word("unmergeWhy")}</p>`);
   if (p.state === "merged" && !undoable(p) && !(p.kind === "entity_merge" && !reversed)) {
-    parts.push(html`<p class="hint">${p.kind === "entity_split" ? "Merging them again takes a new proposal." : "Undoing this takes a new proposal."}</p>`);
+    parts.push(html`<p class="hint">${word(p.kind === "entity_split" ? "mergeAgainNew" : "undoNew")}</p>`);
   }
-  parts.push(html`<p class="hint">${accept ? "Accept casts your verdict; nothing is deleted. " : ""}<kbd>J</kbd> <kbd>K</kbd> move between items.</p>`);
+  parts.push(html`<p class="hint">${accept ? word("acceptCasts") + " " : ""}<kbd>J</kbd> <kbd>K</kbd> ${word("moveBetween")}</p>`);
   return parts;
 }
 async function fetchReviewView(id) {
@@ -388,27 +395,29 @@ function identityHtml(p, ev) {
   const rows = [];
   for (const t of (p.targets || []).filter(t => t !== p.into)) {
     const n = nodeById(t), name = n ? n.name : labelOf(p, t);
-    rows.push(html`<div class="drow ident">${name} leaves the map; its name becomes an alias of ${keptName}</div>`);
+    rows.push(html`<div class="drow ident">${word("leavesMap", { name, kept: keptName })}</div>`);
     const col = ev && ev.cols.find(c => c.id === t);
-    if (col && col.list.length) rows.push(html`<div class="drow ident">${plural(col.list.length, "observation")} ${col.list.length === 1 ? "counts" : "count"} for ${keptName} from then on</div>`);
+    const count = col ? { n: col.list.length, kept: keptName } : null;
+    if (count && count.n) rows.push(html`<div class="drow ident">${word(count.n === 1 ? "countsForOne" : "countsForN", count)}</div>`);
   }
   const still = ((curation && curation.contradictions) || []).find(c => c.id === p.into && c.contested);
-  if (still) rows.push(html`<div class="drow ident">${keptName}'s ${still.field === "kind" ? "type" : still.field} stays contested - <button type="button" class="linkish" data-review="${"c:" + still.id}">also under Needs you</button></div>`);
+  const stays = still ? { kept: keptName, field: fieldSaid(still.field).toLowerCase() } : null;
+  if (still) rows.push(html`<div class="drow ident">${word("staysContested", stays)} <button type="button" class="linkish" data-review="${"c:" + still.id}">${word("alsoUnderNeeds")}</button></div>`);
   return html`<div class="ddiff">${rows}</div>`;
 }
 // Every check, in words keyed by the proposal's kind, the check's name and whether it passed
 // (Sections 29.7 and 29.15), so a failed check never reads as its passing words; one the page has
 // no words for as the engine names it, with the engine's detail when it fails.
 const CHECK_SAID = {
-  "entity_merge|referential integrity": (p, ok) => ok ? "All " + ((p.targets || []).length + (p.into && !(p.targets || []).includes(p.into) ? 1 : 0)) + " entities are in its workspace" : "Not every entity it names is in its workspace",
-  "entity_merge|distinct targets": (p, ok) => ok ? "The targets are at least two entities" : "It names fewer than two entities",
-  "entity_merge|canonical target named": (p, ok) => ok ? "It names the entity to keep" : "The entity to keep is not among the ones it names",
-  "tbox_change|t-box axis consistency": (p, ok) => ok ? "Types are consistent" : "A name is defined as both an entity type and a relation type",
-  "entity_split|reversible target": (p, ok) => ok ? "It names a merge to undo" : "The merge it names is not in its workspace, or was never accepted",
-  "claim_promotion|referential integrity": (p, ok) => ok ? "Its observations are in its workspace" : "Not every observation it names is in its workspace",
-  "claim_demotion|referential integrity": (p, ok) => ok ? "Its observations are in its workspace" : "Not every observation it names is in its workspace",
-  "claim_promotion|tier stated": (p, ok) => ok ? "It says the tier it asks for" : "It does not say the tier it asks for",
-  "claim_demotion|tier stated": (p, ok) => ok ? "It says the tier it asks for" : "It does not say the tier it asks for",
+  "entity_merge|referential integrity": (p, ok) => ok ? word("ckAllInWs", { n: (p.targets || []).length + (p.into && !(p.targets || []).includes(p.into) ? 1 : 0) }) : word("ckNotAllInWs"),
+  "entity_merge|distinct targets": (p, ok) => word(ok ? "ckTwoTargets" : "ckFewerTargets"),
+  "entity_merge|canonical target named": (p, ok) => word(ok ? "ckNamesKept" : "ckKeptMissing"),
+  "tbox_change|t-box axis consistency": (p, ok) => word(ok ? "ckTypesConsistent" : "ckBothAxes"),
+  "entity_split|reversible target": (p, ok) => word(ok ? "ckNamesMerge" : "ckMergeMissing"),
+  "claim_promotion|referential integrity": (p, ok) => word(ok ? "ckObsInWs" : "ckObsNotInWs"),
+  "claim_demotion|referential integrity": (p, ok) => word(ok ? "ckObsInWs" : "ckObsNotInWs"),
+  "claim_promotion|tier stated": (p, ok) => word(ok ? "ckTierStated" : "ckTierUnstated"),
+  "claim_demotion|tier stated": (p, ok) => word(ok ? "ckTierStated" : "ckTierUnstated"),
 };
 function checkSaid(p, c) {
   const f = CHECK_SAID[p.kind + "|" + c.name];
@@ -418,23 +427,24 @@ function checkListHtml(p, cs) {
   const rows = (cs || []).map(c => {
     if (c.name === "trust profile") {
       const said = String(c.detail || "").split(", ").filter(Boolean).map(x => { const [n, t] = x.split(" "); return n + " " + tierName(t); }).join(", ");
-      return html`<div class="ckrow"><span class="i i-info" aria-hidden="true"></span><span>Sources: ${said || "none"}</span></div>`;
+      return html`<div class="ckrow"><span class="i i-info" aria-hidden="true"></span><span>${word("sourcesAre", { said: said || word("none") })}</span></div>`;
     }
-    return html`<div class="ckrow ${c.passed ? "ok" : "bad"}"><span class="i ${c.passed ? "i-circle-check" : "i-circle-alert"}" role="img" aria-label="${c.passed ? "Passed" : "Failed"}"></span><span>${checkSaid(p, c)}</span></div>`;
+    return html`<div class="ckrow ${c.passed ? "ok" : "bad"}"><span class="i ${c.passed ? "i-circle-check" : "i-circle-alert"}" role="img" aria-label="${word(c.passed ? "passed" : "failed")}"></span><span>${checkSaid(p, c)}</span></div>`;
   });
   return html`<div class="cklist">${rows}</div>`;
 }
 // The evidence in the Log's row anatomy, each row opening its card: one column per entity for a merge.
 function evidenceHtml(p, ev) {
-  if (!ev) return html`<div class="dnote">reading the evidence...</div>`;
-  if (!ev.cols.length) return html`<div class="dnote">This proposal rests on no observation of its own.</div>`;
+  if (!ev) return html`<div class="dnote">${word("readingEvidence")}</div>`;
+  if (!ev.cols.length) return html`<div class="dnote">${word("noOwnEvidence")}</div>`;
   return html`<div class="evcols">${ev.cols.map(c => html`<div class="evcol">${c.name ? html`<div class="evh">${c.name} <span class="ct">${c.list.length}</span></div>` : ""}${
     c.list.map((o, i, l) => obsRowHtml(o, i, l))}</div>`)}</div>`;
 }
 // A merged gate act has a reverse on its Decided item (Section 29.3).
 function undoable(p) { return p.state === "merged" && (p.kind === "claim_promotion" || p.kind === "claim_demotion"); }
 function undoLabel(p) {
-  return p.kind === "claim_demotion" ? "Undo demotion" : String(p.tier) === "human_confirmed" ? "Undo confirmation" : "Undo promotion";
+  if (p.kind === "claim_demotion") return word("undoDemotion");
+  return word(String(p.tier) === "human_confirmed" ? "undoConfirmation" : "undoPromotion");
 }
 // The acts that reverse it, with their diff and checks, read when the item is selected (U4).
 async function fetchUndoView(id) {
@@ -453,17 +463,16 @@ function undoParts(p) {
   const u = undoView && undoView.id === p.id ? undoView : null;
   const label = undoLabel(p);
   const off = html` disabled`;
-  if (!u || u.state === "reading") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">Reading what undoing this moves back...</p>` };
-  if (u.state === "failed") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${label} is not offered: what it would move back could not be read.</p>` };
-  if (!u.acts.length) return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">Nothing to undo: another decision holds this source where it is.</p>` };
+  if (!u || u.state === "reading") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${word("readingUndo")}</p>` };
+  if (u.state === "failed") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${word("undoNotOffered", { label })}</p>` };
+  if (!u.acts.length) return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${word("nothingToUndo")}</p>` };
   const failing = (u.checks || []).filter(c => c.blocking && !c.passed);
-  const lines = u.acts.map(a => a.kind === "claim_demotion"
-    ? "Undo returns this source to " + tierName(a.tier) + " and keeps it there until someone confirms it again."
-    : "Undo returns this source to " + tierName(a.tier) + ".");
+  const lines = u.acts.map(a => word(a.kind === "claim_demotion" ? "undoReturnsKeeps" : "undoReturns", { tier: tierName(a.tier) }));
   const moves = ringMoves(u.diff, null);
-  const by = p.kind === "claim_demotion" && p.proposer ? " This demotion was cast by " + p.proposer + "." : "";
-  const note = [...new Set(lines)].join(" ") + (moves.length ? " " + moves.join(". ") + "." : "") + by
-    + (failing.length ? " It cannot be cast while this check fails: " + failing.map(c => c.name + ": " + c.detail).join("; ") + "." : "");
+  const by = p.kind === "claim_demotion" && p.proposer ? word("demotionBy", { who: p.proposer }) : "";
+  // A check's name and detail are the server's (docs/i18n.md Section 5).
+  const fails = failing.length ? word("cannotCastWhile", { checks: failing.map(c => c.name + ": " + c.detail).join("; ") }) : "";
+  const note = [[...new Set(lines)].join(" "), moves.length ? moves.join(". ") + "." : "", by, fails].filter(Boolean).join(" ");
   return { button: html`<button type="button" class="btn" data-undo="1"${failing.length ? off : ""}>${label}</button>`, note: html`<p class="hint">${note}</p>` };
 }
 // Casts the reverse, one act per target, one after the other; the notice says which targets went
@@ -471,15 +480,15 @@ function undoParts(p) {
 async function undoDecided(p) {
   const u = undoView && undoView.id === p.id ? undoView : null;
   if (!u || u.state !== "ok" || !u.acts.length || (u.checks || []).some(c => c.blocking && !c.passed)) return;
-  const rationale = "Undid " + proposalTitle(p);
-  const said = a => targetSaid(p, (p.targets || []).indexOf(a.observation)) || "a source";
+  const rationale = word("undid", { said: proposalTitle(p) });
+  const said = a => targetSaid(p, (p.targets || []).indexOf(a.observation)) || word("aSource");
   const back = [];
   for (const a of u.acts) {
     const ok = await consoleWrite("/api/resolve", settleQuery(a.observation, a.tier, a.kind, rationale),
-      "Undone - " + said(a) + " is " + tierName(a.tier) + " again", { decided: true });
+      word("undoneAgain", { who: said(a), tier: tierName(a.tier) }), { decided: true });
     if (!ok) {
-      if (back.length) toast("bad", "Undo stopped partway", "Returned: " + back.join(", ") + ". Not returned: "
-        + u.acts.filter(x => !back.includes(said(x))).map(said).join(", ") + ".");
+      const not = u.acts.filter(x => !back.includes(said(x))).map(said).join(", ");
+      if (back.length) toast("bad", word("undoPartway"), word("returnedNot", { back: back.join(", "), not }));
       break;
     }
     back.push(said(a));
@@ -492,7 +501,7 @@ async function undoDecided(p) {
 async function proposeSplit(p) {
   const ws = wsInput.value.trim();
   const sq = "?merge=" + encodeURIComponent(p.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
-  const o = await consoleWrite("/api/propose_split", sq, b => foundSaid(b, "un-merge") || "Un-merge proposed - it waits under Needs you for a verdict");
+  const o = await consoleWrite("/api/propose_split", sq, b => foundSaid(b, "un-merge") || word("unmergeProposed"));
   await refreshProposals();
   // Opened or found, the split opens under Needs you, as Same as... and Keep ... instead open theirs
   // (Section 29.25); accepting it is the person's next act.
@@ -515,8 +524,8 @@ async function openBlocked() {
   blockedListed = blockedItems().map(p => ({ p, why: null, ok: false }));
   const ul = document.getElementById("blockedList");
   const draw = () => {
-    ul.innerHTML = html`${blockedListed.map(b => html`<li>${proposalTitle(b.p)}<span class="why">${b.why === null ? "reading its checks..." : b.why}</span></li>`)}`;
-    document.getElementById("blockedGo").textContent = "Reject all " + blockedListed.filter(b => b.ok).length;
+    ul.innerHTML = html`${blockedListed.map(b => html`<li>${proposalTitle(b.p)}<span class="why">${b.why === null ? word("readingItsChecks") : b.why}</span></li>`)}`;
+    document.getElementById("blockedGo").textContent = word("rejectAllN", { n: blockedListed.filter(b => b.ok).length });
   };
   draw();
   if (!blockedDlg.open) blockedDlg.showModal();
@@ -527,8 +536,8 @@ async function openBlocked() {
       const v = r.ok ? await r.json() : null;
       const failing = v && v.checks ? v.checks.filter(c => c.blocking && !c.passed) : null;
       if (failing && failing.length) { b.why = failing.map(c => checkSaid(b.p, c)).join("; "); b.ok = true; }
-      else b.why = "its checks could not be read - left out";
-    } catch (_) { b.why = "its checks could not be read - left out"; }
+      else b.why = word("checksUnread");
+    } catch (_) { b.why = word("checksUnread"); }
     draw();
   }
 }
@@ -546,8 +555,9 @@ document.getElementById("blockedGo").onclick = async () => {
     if (r.ok) done++; else failed.push(r.why);
   }
   blockedDlg.close();
-  if (failed.length) toast("bad", "Rejected " + done + " of " + (done + failed.length) + ". " + failed.length + (failed.length === 1 ? " was" : " were") + " not:", failed[0]);
-  else toast("ok", "Rejected " + done + " blocked " + (done === 1 ? "item." : "items."));
+  const tally = { done, of: done + failed.length, n: failed.length };
+  if (failed.length) toast("bad", word(failed.length === 1 ? "rejectedOfOne" : "rejectedOfN", tally), failed[0]);
+  else toast("ok", word(done === 1 ? "rejectedBlockedOne" : "rejectedBlockedN", { n: done }));
   reviewFocus = true;
   await refreshProposals();
   refreshElsewhere(true);
@@ -558,7 +568,7 @@ function keepPair(p) {
   const ts = [...new Set(p.targets || [])];
   if (ts.length !== 2 || !ts.includes(p.into)) return null;
   const id = ts.find(t => t !== p.into), i = (p.targets || []).indexOf(id);
-  return { id, name: targetSaid(p, i) || "the other one" };
+  return { id, name: targetSaid(p, i) || word("theOtherOne") };
 }
 // The reverse of a merge: any merge of the same workspace, the same entities and `kept` kept, whatever
 // its reason; a withdrawn one counts as none.
@@ -580,16 +590,16 @@ async function keepInstead(item) {
   if (rev && rev.state === "merged" && proposals.some(q => q.kind === "entity_split" && q.state === "merged" && (q.targets || []).includes(rev.id))) rev = null;
   if (!rev) {
     const o = await consoleWrite("/api/propose_merge", "?a=" + encodeURIComponent(p.into) + "&b=" + encodeURIComponent(pair.id) + "&src=reverse" + wq, null, null, null, true);
-    if (!o.ok) { toast("bad", "Not changed: the merge into " + kept + " could not be opened", o.why); return; }
+    if (!o.ok) { toast("bad", word("keepNotOpened", { kept }), o.why); return; }
     rev = { id: o.body.proposal_id, state: o.body.state || "open" };
   }
   const r = await consoleWrite("/api/review", "?proposal=" + encodeURIComponent(p.id) + "&decision=reject" + wq, null, null, null, true);
   await refreshProposals();
-  if (!r.ok) { toast("bad", "Opened the merge into " + kept + "; this one was not rejected", r.why); openReviewItem(rev.id); return; }
-  if (rev.state === "merged") { toast("ok", "Kept " + kept + ": it was already merged into it."); reviewFocus = true; renderReview(); return; }
-  if (rev.state === "rejected") toast("info", "Rejected. The merge into " + kept + " was rejected before; accept it after all there.");
-  else if (rev.state === "blocked") toast("info", "Rejected. The merge into " + kept + " waits under Needs you, but a check holds it back.");
-  else toast("ok", "Kept " + kept + ": the merge into it waits for your verdict.");
+  if (!r.ok) { toast("bad", word("keepNotRejected", { kept }), r.why); openReviewItem(rev.id); return; }
+  if (rev.state === "merged") { toast("ok", word("keptAlready", { kept })); reviewFocus = true; renderReview(); return; }
+  if (rev.state === "rejected") toast("info", word("keepRejectedBefore", { kept }));
+  else if (rev.state === "blocked") toast("info", word("keepHeld", { kept }));
+  else toast("ok", word("keptWaits", { kept }));
   openReviewItem(rev.id);
 }
 async function reviewDecide(item, decision) {
@@ -612,10 +622,10 @@ async function reviewDecide(item, decision) {
   // the desktop shell, is the only one on the surface - so there is no attacker origin for a forged
   // request to come from. The transport itself is the write gate.
   const title = proposalTitle(p);
-  const action = decision === "merge" && p.kind === "entity_merge" ? { label: "Un-merge", decided: true, run: () => proposeSplit(p) } : null;
+  const action = decision === "merge" && p.kind === "entity_merge" ? { label: word("nounUnmerge"), decided: true, run: () => proposeSplit(p) } : null;
   const done = decision === "merge"
-    ? await consoleWrite("/api/review", q, "Accepted: " + title, action)
-    : await consoleWrite("/api/review", q, "Rejected: " + title, null, p.no_effect_yet ? null : "Accept after all is under Decided.");
+    ? await consoleWrite("/api/review", q, word("acceptedTitle", { title }), action)
+    : await consoleWrite("/api/review", q, word("rejectedTitle", { title }), null, p.no_effect_yet ? null : word("acceptLater"));
   if (done) { reviewFocus = true; stepReview(1); }
   refreshProposals();
 }
@@ -690,7 +700,8 @@ function previewOnMap(it, only) {
   if (!it) return;
   const ns = only ? [only] : itemNodes(it);
   // The map shows what a kind with no effect yet names, not a change (Section 29.22).
-  reviewPreview = { seg: reviewSeg, key: it.key, title: itemTitle(it) + (it.kind === "proposal" && it.p.no_effect_yet ? " (no effect yet)" : "") };
+  const noEffect = it.kind === "proposal" && it.p.no_effect_yet;
+  reviewPreview = { seg: reviewSeg, key: it.key, title: noEffect ? word("titleNoEffect", { title: itemTitle(it) }) : itemTitle(it) };
   location.hash = "";
   if (it.kind === "proposal") { proposalSel = null; selectProposal(it.p); }
   if (ns.length > 1) { fitView(ns); userMoved = true; }
@@ -703,7 +714,7 @@ function showPreviewBar() {
   bar.hidden = !reviewPreview;
   document.body.classList.toggle("previewing", !!reviewPreview);
   if (!reviewPreview) return;
-  bar.querySelector(".pv-t").textContent = "Preview: " + reviewPreview.title;
+  bar.querySelector(".pv-t").textContent = word("previewOf", { title: reviewPreview.title });
   bar.querySelector("[data-pv=back]").focus();
 }
 function endPreview() {
@@ -786,20 +797,21 @@ async function fetchProposalDiff(id) {
 const FIELD_SAID = { canonical_name: word("colName"), kind: word("fieldType"), type: word("fieldType"), edge: word("fieldRelation"), tier: word("trust"), definition: word("fieldDefinition"), description: word("fieldDescription") };
 function fieldSaid(f) { return FIELD_SAID[f] || String(f || ""); }
 function diffHtml(d) {
-  if (!d) return html`<div class="dnote">computing the diff...</div>`;
-  if (!d.computable) return html`<div class="dnote">no diff - ${d.note || "not computable for this kind"}</div>`;
+  if (!d) return html`<div class="dnote">${word("computingDiff")}</div>`;
+  // The note is the server's sentence (docs/i18n.md Section 5).
+  if (!d.computable) return html`<div class="dnote">${word("noDiff", { note: d.note || word("notComputable") })}</div>`;
   const tiers = (d.tier_changes || []).map(t => [
     html`<div class="drow"><span class="dk">${fieldSaid("tier")}</span><code>${t.observation.slice(0, 10)}</code>`,
     html`<span class="dfrom">${tierName(t.from)}</span><span class="darr">-&gt;</span><span class="dto">${tierName(t.to)}</span></div>`]);
   const beliefs = (d.overturned || []).map(b => {
     const settled = b.contested_before && !b.contested_after;
     const created = !b.contested_before && b.contested_after;
-    const flag = settled ? html`<span class="dsettled">settles a contradiction</span>`
-               : created ? html`<span class="dcreated">creates a contradiction</span>` : "";
+    const flag = settled ? html`<span class="dsettled">${word("settlesContradiction")}</span>`
+               : created ? html`<span class="dcreated">${word("createsContradiction")}</span>` : "";
     return [html`<div class="drow"><span class="dk">${fieldSaid(b.field)}</span>`,
-      html`<button type="button" class="nchip" data-id="${b.entity}" title="${tipText("Focus " + b.name)}">${b.name}</button>`,
-      html`<span class="dfrom">${b.from || "(none)"}</span><span class="darr">-&gt;</span>`,
-      html`<span class="dto">${b.to || "(none)"}</span>${flag}</div>`];
+      html`<button type="button" class="nchip" data-id="${b.entity}" title="${tipText(word("focusName", { name: b.name }))}">${b.name}</button>`,
+      html`<span class="dfrom">${b.from || word("noneParen")}</span><span class="darr">-&gt;</span>`,
+      html`<span class="dto">${b.to || word("noneParen")}</span>${flag}</div>`];
   });
   // entity_merge: which references move onto the canonical id, and which edges stop existing.
   // A self-loop is dropped by graph(), so that edge vanishes on accept - not readable from the
@@ -809,9 +821,9 @@ function diffHtml(d) {
     html`<span class="dfrom">${r.from_name}</span><span class="darr">-&gt;</span>`,
     html`<span class="dto">${r.to_name}</span>`,
     html`<span class="dother">(${r.other_name})</span>`,
-    r.becomes_self_loop ? html`<span class="dcreated">becomes a loop, so the relation goes</span>` : "",
+    r.becomes_self_loop ? html`<span class="dcreated">${word("becomesLoop")}</span>` : "",
     html`</div>`]);
-  if (!tiers.length && !beliefs.length && !rewires.length) return html`<div class="dnote">computed: this proposal overturns no current belief</div>`;
+  if (!tiers.length && !beliefs.length && !rewires.length) return html`<div class="dnote">${word("overturnsNothing")}</div>`;
   return html`<div class="ddiff">${tiers}${beliefs}${rewires}</div>`;
 }
 
@@ -820,9 +832,9 @@ function diffHtml(d) {
 function checksHtml(cs) {
   if (!cs || !cs.length) return html``;
   const bad = cs.filter(c => c.blocking && !c.passed);
-  if (!bad.length) return html`<div class="dnote">checks pass</div>`;
+  if (!bad.length) return html`<div class="dnote">${word("checksPassLower")}</div>`;
   return html`<div class="cblock">${bad.map(c => [
-    html`<div class="crow"><span class="cbad">blocked</span><span class="ck">${c.name}</span>`,
+    html`<div class="crow"><span class="cbad">${word("blockedLower")}</span><span class="ck">${c.name}</span>`,
     html`<span class="cd">${c.detail}</span></div>`])}</div>`;
 }
 

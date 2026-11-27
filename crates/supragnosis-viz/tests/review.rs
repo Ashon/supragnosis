@@ -50,10 +50,7 @@ fn a_decision_leaves_needs_you_at_once() {
 #[test]
 fn every_reverse_is_on_its_decided_item() {
     let detail = function("itemDetail");
-    assert!(
-        detail.contains("\"Accept after all\""),
-        "a rejected item offers no way to accept it"
-    );
+    assert!(says(detail, "Accept after all"), "a rejected item offers no way to accept it");
     assert!(detail.contains("data-unmerge=\"1\""), "an accepted merge offers no Un-merge");
     assert!(
         detail.contains("undoable(p) ? undoParts(p) : null"),
@@ -65,14 +62,17 @@ fn every_reverse_is_on_its_decided_item() {
         "the wrong acts are undoable"
     );
     let label = function("undoLabel");
-    for word in ["\"Undo demotion\"", "\"Undo confirmation\"", "\"Undo promotion\""] {
-        assert!(label.contains(word), "{word} is missing");
+    for en in ["Undo demotion", "Undo confirmation", "Undo promotion"] {
+        assert!(says(label, en), "{en} is missing");
     }
     // The reverse is read with its diff before it acts (U4), and a missing read is said.
     assert!(function("fetchUndoView").contains("/api/resolve/undo?proposal="));
     let parts = function("undoParts");
-    assert!(parts.contains("is not offered: what it would move back could not be read."));
-    assert!(parts.contains("Nothing to undo: another decision holds this source where it is."));
+    assert!(says(
+        parts,
+        "{label} is not offered: what it would move back could not be read."
+    ));
+    assert!(says(parts, "Nothing to undo: another decision holds this source where it is."));
     // One act per target, each a console write that says what it did (U1).
     let undo = function("undoDecided");
     assert!(undo.contains(
@@ -80,11 +80,13 @@ fn every_reverse_is_on_its_decided_item() {
     ));
     // The notices name the item; a reject's offers nothing, since Accept after all decides.
     let decide = function("reviewDecide");
-    assert!(decide.contains("\"Accepted: \" + title"));
-    assert!(decide.contains("{ label: \"Un-merge\", decided: true, run: () => proposeSplit(p) }"));
+    assert!(says(decide, "Accepted: {title}") && says(decide, "Rejected: {title}"));
+    assert!(decide
+        .contains("{ label: word(\"nounUnmerge\"), decided: true, run: () => proposeSplit(p) }"));
     assert!(decide.contains(
-        "\"Rejected: \" + title, null, p.no_effect_yet ? null : \"Accept after all is under Decided.\""
+        "word(\"rejectedTitle\", { title }), null, p.no_effect_yet ? null : word(\"acceptLater\")"
     ));
+    assert!(says(decide, "Accept after all is under Decided."));
     // A confirmation's Undo is on its Decided item, except after Confirm instead.
     assert!(function("settleValue").contains("decided: !a.instead,"));
     // The console's acts keep the sentence their notice says as their rationale.
@@ -111,12 +113,13 @@ fn decided_says_what_was_decided() {
     );
     assert!(function("itemTag").contains("OUTCOME[st] || st"), "a tag shows a state id");
     let detail = function("itemDetail");
-    assert!(detail.contains("\"What it would change now\""));
+    assert!(says(detail, "What it would change now"));
     assert!(
-        detail.contains("${accept ? \"Accept casts your verdict; nothing is deleted. \" : \"\"}")
+        detail.contains("${accept ? word(\"acceptCasts\") + \" \" : \"\"}")
+            && says(detail, "Accept casts your verdict; nothing is deleted.")
     );
     assert!(
-        detail.contains("If its check passes later, the accept it carries still merges it."),
+        says(detail, "If its check passes later, the accept it carries still merges it."),
         "a rejected blocked merge does not say its reject is provisional"
     );
     let line = function("proposalLine");
@@ -128,10 +131,13 @@ fn decided_says_what_was_decided() {
 fn one_count_covers_all_of_needs_you() {
     let title = function("contestedTitle");
     assert!(
-        title.contains("\"'s definition: which meaning?\""),
+        says(title, "{name}'s definition: which meaning?"),
         "a contested definition has no row"
     );
-    assert!(title.contains("\"'s type: \""), "a contested type does not say its values");
+    assert!(
+        says(title, "{name}'s type: {values}?"),
+        "a contested type does not say its values"
+    );
     assert!(
         function("needsItems")
             .contains("(curation && curation.contradictions) || []).filter(c => c.contested)"),
@@ -208,26 +214,33 @@ fn the_review_page_shows_its_evidence() {
     for part in [
         "identityHtml(p, ev)",
         "checkListHtml(p, v.checks)",
-        "html`<div class=\"sec\">Evidence</div>`, evidenceHtml(p, ev)",
+        "html`<div class=\"sec\">${word(\"evidence\")}</div>`, evidenceHtml(p, ev)",
         "whoLine(opened.effective_tier, authorOf(opened))",
-        "data-map=\"1\">Show on the map</button>`}${skipButton()}",
+        "data-map=\"1\">${word(\"showOnMap\")}</button>`}${skipButton()}",
     ] {
         assert!(detail.contains(part), "the detail does not hold {part}");
     }
     let identity = function("identityHtml");
-    assert!(identity.contains(" leaves the map; its name becomes an alias of "));
-    assert!(identity.contains(" for ${keptName} from then on"));
-    assert!(identity.contains("stays contested - "));
+    for en in [
+        "{name} leaves the map; its name becomes an alias of {kept}",
+        "{n} observations count for {kept} from then on",
+        "{kept}'s {field} stays contested -",
+    ] {
+        assert!(says(identity, en), "identity does not say {en:?}");
+    }
     let checks = function("checkListHtml");
-    for part in ["i-circle-check", "i-circle-alert", "c.name === \"trust profile\"", "Sources: "] {
+    for part in ["i-circle-check", "i-circle-alert", "c.name === \"trust profile\""] {
         assert!(checks.contains(part), "the checks do not hold {part}");
     }
+    assert!(says(checks, "Sources: {said}"));
     // A check reads its own words whether it passed or failed (Section 29.15).
-    assert!(SCRIPT.contains("\"entity_merge|referential integrity\": (p, ok) => ok ? \"All \""));
-    assert!(SCRIPT.contains("\"Not every entity it names is in its workspace\""));
+    assert!(SCRIPT
+        .contains("\"entity_merge|referential integrity\": (p, ok) => ok ? word(\"ckAllInWs\""));
+    assert!(says(SCRIPT, "Not every entity it names is in its workspace"));
     assert!(SCRIPT.contains(
-        "\"claim_promotion|referential integrity\": (p, ok) => ok ? \"Its observations are in its workspace\""
+        "\"claim_promotion|referential integrity\": (p, ok) => word(ok ? \"ckObsInWs\" : \"ckObsNotInWs\")"
     ));
+    assert_eq!(keys_of("Its observations are in its workspace"), ["ckObsInWs"]);
     assert!(
         !checks.contains("checkSaid(p, c) + \": \" + c.detail"),
         "a failed check reads its passing words and then the engine's detail"
@@ -383,12 +396,13 @@ fn same_as_and_keep_instead_hold_their_order() {
     let rejected = keep.find("decision=reject").expect("Keep rejects this one");
     assert!(read < opened && opened < rejected, "Keep rejects before the reverse is there");
     assert!(
-        keep.contains("could not be opened\", o.why); return;"),
+        keep.contains("word(\"keepNotOpened\", { kept }), o.why); return;")
+            && says(keep, "Not changed: the merge into {kept} could not be opened"),
         "a failed open still rejects"
     );
     let detail = function("itemDetail");
     assert!(
-        detail.contains("&& !revAccepted") && detail.contains("Its reverse is accepted."),
+        detail.contains("&& !revAccepted") && says(detail, "Its reverse is accepted."),
         "an Accept is offered while the reverse is accepted"
     );
     assert!(
@@ -419,13 +433,13 @@ fn the_person_finds_what_waits() {
     }
     let pill = function("updateReviewPill");
     assert!(
-        pill.contains("away + \" wait elsewhere\""),
+        pill.contains("away ? word(\"waitElsewhere\", { n: away })")
+            && says(pill, "{n} wait elsewhere"),
         "the pill does not say what waits elsewhere"
     );
     let render = function("renderReview");
     assert!(
-        render.contains(" more wait in other workspaces. ")
-            && render.contains("Show all workspaces")
+        says(render, "{n} more wait in other workspaces.") && says(render, "Show all workspaces")
     );
     assert!(function("blockedItems").contains("p.state === \"blocked\" && p.kind !== \"recall\""));
     let go = &SCRIPT[SCRIPT
@@ -437,7 +451,8 @@ fn the_person_finds_what_waits() {
         "an item no longer blocked is rejected"
     );
     assert!(
-        go.contains("\" was\" : \" were\") + \" not:\""),
+        go.contains("word(failed.length === 1 ? \"rejectedOfOne\" : \"rejectedOfN\", tally)")
+            && says(go, "Rejected {done} of {of}. {n} were not:"),
         "a partial failure is not said"
     );
     assert!(PAGE.contains("<dialog id=\"blockedDlg\" aria-labelledby=\"blockedTitle\">"));
@@ -454,20 +469,29 @@ fn the_console_says_what_has_no_effect() {
     let detail = function("itemDetail");
     let body = format!("{render}{detail}");
     for part in [
-        "Nothing yet: ${none[0]} has no effect in this version, so it cannot be accepted until it has one.",
+        "word(\"noEffectYet\", { what: none[0] })",
         "&& !revAccepted && !none;",
-        "Reject sets it aside, and the log keeps it. It can still be accepted once ${none[1]} have an effect.",
-        "A reject is provisional: it can still be accepted once ${none[1]} have an effect.",
+        "word(\"rejectSetsAside\", { what: none[1] })",
+        "word(\"rejectUntilEffect\", { what: none[1] })",
     ] {
-        assert!(body.contains(part), "the item does not say it: {part}");
+        assert!(body.contains(part), "the item does not hold {part}");
     }
-    assert!(function("itemTag").contains("<span class=\"rv-st\">No effect yet</span>"));
+    for en in [
+        "Nothing yet: {what} has no effect in this version, so it cannot be accepted until it has one.",
+        "Reject sets it aside, and the log keeps it. It can still be accepted once {what} have an effect.",
+        "A reject is provisional: it can still be accepted once {what} have an effect.",
+    ] {
+        assert!(says(&body, en), "the item does not say it: {en}");
+    }
+    let tag = function("itemTag");
+    assert!(tag.contains("<span class=\"rv-st\">${word(\"noEffectYetTag\")}</span>"));
+    assert!(says(tag, "No effect yet"));
     let decide = function("reviewDecide");
     assert!(
         decide.contains("if (p.no_effect_yet) return;"),
         "A would cast a merge the fold reads as a comment"
     );
-    assert!(function("previewOnMap").contains("\" (no effect yet)\""));
+    assert!(says(function("previewOnMap"), "{title} (no effect yet)"));
 }
 
 /// design-system.md Section 29.23: an act that opens a proposal says what it found - a merge or an
@@ -500,7 +524,10 @@ fn the_console_says_what_a_repeat_found() {
     );
     let keep = function("keepInstead");
     assert!(keep.contains("state: o.body.state || \"open\""), "Keep assumes what it opened");
-    assert!(keep.contains("waits under Needs you, but a check holds it back."));
+    assert!(says(
+        keep,
+        "Rejected. The merge into {kept} waits under Needs you, but a check holds it back."
+    ));
     assert!(says(
         function("openSameMerge"),
         "A merge of these two already waits under Needs you."
