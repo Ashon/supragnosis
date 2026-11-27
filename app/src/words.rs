@@ -74,6 +74,17 @@ pub(crate) fn word(key: &str) -> String {
     word_with(key, &[])
 }
 
+/// A sentence that counts `n`, in the app's language: English takes its `one` form for 1 and its
+/// `other` form otherwise, and `{n}` is the count.
+pub(crate) fn word_count(key: &str, n: usize) -> String {
+    let e = entry(key, lang());
+    let form = if n == 1 { "one" } else { "other" };
+    e.as_str()
+        .or_else(|| e[form].as_str())
+        .unwrap_or_default()
+        .replace("{n}", &n.to_string())
+}
+
 /// What the shell hands a page (shell-init.js): the app's language and every entry's words in it.
 pub(crate) fn page_words() -> String {
     let lang = lang();

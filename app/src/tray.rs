@@ -63,9 +63,9 @@ pub(crate) fn quit_stops(daemon: &Daemon) -> bool {
 /// Quit's words, the tray's and the app menu's (D15): they say it stops the memory when it does.
 pub(crate) fn quit_label(stops: bool, name: &str) -> String {
     if stops {
-        "Quit and Stop Memory".to_string()
+        word("menu.quitStops")
     } else {
-        format!("Quit {name}")
+        word_with("menu.quit", &[("name", name)])
     }
 }
 
@@ -128,10 +128,8 @@ pub(crate) fn curation_count(report: &serde_json::Value) -> Option<usize> {
 pub(crate) fn review_item_text(w: &Waiting) -> Option<String> {
     match (w.needs, w.proposals) {
         (Some(0), _) | (None, 0) => None,
-        (Some(1), _) => Some("Review - 1 needs you...".into()),
-        (Some(n), _) => Some(format!("Review - {n} need you...")),
-        (None, 1) => Some("Review - 1 proposal waits...".into()),
-        (None, n) => Some(format!("Review - {n} proposals wait...")),
+        (Some(n), _) => Some(word_count("tray.needsYou", n)),
+        (None, n) => Some(word_count("tray.proposalsWait", n)),
     }
 }
 
@@ -166,16 +164,16 @@ pub(crate) fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>) -> St
         (Daemon::Starting | Daemon::Failed(_), _) | (_, None) => daemon.status_line(),
         // The app's child, alive and not answering yet (an exited one is settled to Failed first).
         (Daemon::Spawned(_), Some(st)) if st["answering"].as_bool() == Some(false) => {
-            "Starting...".to_string()
+            word("daemon.starting")
         }
         (_, Some(st)) => {
             let situation = st["situation"].as_str().unwrap_or("");
             let running = st["version"]["running"].as_str();
             let here = st["version"]["here"].as_str().unwrap_or("?");
             if situation == "conflict" {
-                "Two managers run Supragnosis".to_string()
+                word("daemon.conflict")
             } else if conflict_of(st).is_some() {
-                "The search index needs rebuilding".to_string()
+                word("daemon.indexConflict")
             } else {
                 let who = who_runs(daemon, st);
                 match running {
@@ -184,11 +182,11 @@ pub(crate) fn status_text(daemon: &Daemon, st: Option<&serde_json::Value>) -> St
                     // The state word, then both versions (design-system.md Section 29.13); the act
                     // is the tray's next line.
                     Some(r) if r != here => {
-                        format!("Update ready - restart: {r} running, {here} installed")
+                        word_with("daemon.driftBoth", &[("running", r), ("installed", here)])
                     }
-                    Some(r) => format!("Running {r} - {who}"),
-                    None if st["answering"].as_bool() == Some(false) => "Stopped".to_string(),
-                    None => format!("Running - {who}"),
+                    Some(r) => word_with("daemon.runningAt", &[("running", r), ("who", &who)]),
+                    None if st["answering"].as_bool() == Some(false) => word("daemon.stopped"),
+                    None => word_with("daemon.runningWho", &[("who", &who)]),
                 }
             }
         }
@@ -216,12 +214,20 @@ pub(crate) fn daemon_trouble(daemon: &Daemon, st: Option<&serde_json::Value>) ->
 /// Setup... and the review item; and whether Quit stops the memory.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct TrayState {
-    line: String,
-    act: Option<(&'static str, &'static str)>,
-    trouble: bool,
-    finish: bool,
-    review: Option<String>,
-    quit_stops: bool,
+    pub(crate) line: String,
+    /// The act's words, by their key, and the section it opens.
+    pub(crate) act: Option<(&'static str, &'static str)>,
+    pub(crate) trouble: bool,
+    pub(crate) finish: bool,
+    pub(crate) review: Option<String>,
+    pub(crate) quit_stops: bool,
+}
+
+impl TrayState {
+    /// The tray before the first refresh: Starting..., and the items that always show.
+    pub(crate) fn starting() -> Self {
+        TrayState { line: word("daemon.starting"), ..TrayState::default() }
+    }
 }
 
 /// The section the tray's Settings... opens: the first whose dot shows, in the sidebar's order - AI
@@ -249,16 +255,13 @@ pub(crate) fn tray_act(
     finish: bool,
 ) -> Option<(&'static str, &'static str)> {
     if trouble || drift {
-        Some(("Open This Mac...", "daemon"))
+        Some(("tray.openThisMac", "daemon"))
     } else if no_app && !finish {
-        Some(("Connect an AI App...", "apps"))
+        Some(("tray.connectApp", "apps"))
     } else {
         None
     }
 }
-
-/// The tray's line when the CLI answers in a schema this app does not read.
-const CLI_NEWER_LINE: &str = "supragnosis-server is newer than this app - update the app";
 
 /// Re-reads the CLI's view and republishes the tray's one line (docs/settings-page.md Section 5).
 pub(crate) async fn refresh_status(app: &tauri::AppHandle<Rt>) {
@@ -280,7 +283,7 @@ pub(crate) async fn refresh_status(app: &tauri::AppHandle<Rt>) {
     let st = on_cli(app, cli_status).await.ok().flatten();
     if CLI_NEWER.load(std::sync::atomic::Ordering::Relaxed) {
         // Said on the state line, with no act (design-system.md Section 29.13).
-        tray.line = CLI_NEWER_LINE.to_string();
+        tray.line = word("daemon.cliNewer");
     } else {
         let drift = st.as_ref().is_some_and(|v| {
             let running = v["version"]["running"].as_str();
@@ -323,31 +326,7 @@ fn apply_tray(app: &tauri::AppHandle<Rt>, t: &TrayState) {
     }
     let name = app.package_info().name.clone();
     let quit = quit_label(t.quit_stops, &name);
-    let built = (|| -> tauri::Result<Menu<Rt>> {
-        let menu = Menu::new(app)?;
-        menu.append(&MenuItem::with_id(app, "tray-status", &t.line, false, None::<&str>)?)?;
-        if let Some((words, _)) = t.act {
-            menu.append(&MenuItem::with_id(app, "tray-act", words, true, None::<&str>)?)?;
-        }
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-        if t.finish {
-            menu.append(&MenuItem::with_id(
-                app,
-                "tray-finish-setup",
-                "Finish Setup...",
-                true,
-                None::<&str>,
-            )?)?;
-        }
-        if let Some(r) = &t.review {
-            menu.append(&MenuItem::with_id(app, "tray-review", r, true, None::<&str>)?)?;
-        }
-        menu.append(&MenuItem::with_id(app, "tray-open", "Open Graph", true, None::<&str>)?)?;
-        menu.append(&MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?)?;
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-        menu.append(&MenuItem::with_id(app, "tray-quit", &quit, true, None::<&str>)?)?;
-        Ok(menu)
-    })();
+    let built = tray_menu(app, t);
     if let (Ok(menu), Some(tray)) = (built, app.tray_by_id("supragnosis")) {
         let _ = tray.set_menu(Some(menu));
         // The state as shape, not color (D14): the mark, or the mark with a dot cut beside it.
@@ -367,4 +346,40 @@ fn apply_tray(app: &tauri::AppHandle<Rt>, t: &TrayState) {
     if let Some(q) = app.try_state::<AppQuit>() {
         let _ = q.0.set_text(&quit);
     }
+}
+
+/// The tray's menu in its one fixed order (design-system.md Section 29.13): the state line, the act,
+/// a separator, Finish Setup..., the review item, Open Graph, Settings..., a separator, Quit. Each
+/// item is its id, its words and whether it acts; `None` is a separator.
+pub(crate) fn tray_items(t: &TrayState, name: &str) -> Vec<Option<(&'static str, String, bool)>> {
+    let mut items = vec![Some(("tray-status", t.line.clone(), false))];
+    if let Some((key, _)) = t.act {
+        items.push(Some(("tray-act", word(key), true)));
+    }
+    items.push(None);
+    if t.finish {
+        items.push(Some(("tray-finish-setup", word("tray.finishSetup"), true)));
+    }
+    if let Some(r) = &t.review {
+        items.push(Some(("tray-review", r.clone(), true)));
+    }
+    items.push(Some(("tray-open", word("tray.openGraph"), true)));
+    items.push(Some(("tray-settings", word("menu.settings"), true)));
+    items.push(None);
+    items.push(Some(("tray-quit", quit_label(t.quit_stops, name), true)));
+    items
+}
+
+/// The tray's menu, built from [`tray_items`].
+pub(crate) fn tray_menu(app: &tauri::AppHandle<Rt>, t: &TrayState) -> tauri::Result<Menu<Rt>> {
+    let menu = Menu::new(app)?;
+    for item in tray_items(t, &app.package_info().name) {
+        match item {
+            Some((id, words, acts)) => {
+                menu.append(&MenuItem::with_id(app, id, words, acts, None::<&str>)?)?
+            }
+            None => menu.append(&PredefinedMenuItem::separator(app)?)?,
+        }
+    }
+    Ok(menu)
 }

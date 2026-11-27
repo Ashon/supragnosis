@@ -1191,8 +1191,8 @@ mod window_tests {
 mod tray_tests {
     use super::{
         daemon_trouble, key_js, map_items_enabled, menu_item, press_js, quit_label, quit_stops,
-        shell_init_script, tray_act, tray_press, Daemon, MenuPress, TrayPress, MAP_CONTROLS,
-        MENU_ITEMS, TRAY_IDS,
+        shell_init_script, tray_act, tray_items, tray_press, word, Daemon, Entry, MenuPress,
+        TrayPress, TrayState, MAP_CONTROLS, MENU_BAR, MENU_ITEMS, TRAY_IDS,
     };
 
     /// design-system.md Section 29.13 (D14, the author's list): the trouble shape shows while the
@@ -1222,10 +1222,114 @@ mod tray_tests {
     /// connected unless Finish Setup... shows.
     #[test]
     fn the_tray_has_one_act_in_order() {
-        assert_eq!(tray_act(true, true, true, false), Some(("Open This Mac...", "daemon")));
-        assert_eq!(tray_act(false, true, true, false), Some(("Open This Mac...", "daemon")));
-        assert_eq!(tray_act(false, false, true, false), Some(("Connect an AI App...", "apps")));
-        assert_eq!(tray_act(false, false, true, true), None, "Finish Setup... covers it");
+        let act = |t, d, n, f| tray_act(t, d, n, f).map(|(key, section)| (word(key), section));
+        assert_eq!(act(true, true, true, false), Some(("Open This Mac...".into(), "daemon")));
+        assert_eq!(act(false, true, true, false), Some(("Open This Mac...".into(), "daemon")));
+        assert_eq!(act(false, false, true, false), Some(("Connect an AI App...".into(), "apps")));
+        assert_eq!(act(false, false, true, true), None, "Finish Setup... covers it");
+    }
+
+    /// The tray's menu in its one fixed order (design-system.md Section 29.13), in the app's words:
+    /// the state line that does nothing, the act, Finish Setup..., the review item, Open Graph,
+    /// Settings... and Quit, with a separator after the act and before Quit.
+    #[test]
+    fn the_tray_menu_is_in_its_order() {
+        let all = TrayState {
+            line: "Running 0.11.0 - starts at login".into(),
+            act: tray_act(false, false, true, false),
+            finish: true,
+            review: Some("Review - 2 need you...".into()),
+            quit_stops: true,
+            ..TrayState::starting()
+        };
+        let items: Vec<Option<(&str, String, bool)>> = tray_items(&all, "Supragnosis");
+        let shown = |id, words: &str, acts| Some((id, words.to_string(), acts));
+        assert_eq!(
+            items,
+            vec![
+                shown("tray-status", "Running 0.11.0 - starts at login", false),
+                shown("tray-act", "Connect an AI App...", true),
+                None,
+                shown("tray-finish-setup", "Finish Setup...", true),
+                shown("tray-review", "Review - 2 need you...", true),
+                shown("tray-open", "Open Graph", true),
+                shown("tray-settings", "Settings...", true),
+                None,
+                shown("tray-quit", "Quit and Stop Memory", true),
+            ]
+        );
+        assert_eq!(
+            tray_items(&TrayState::starting(), "Supragnosis"),
+            vec![
+                shown("tray-status", "Starting...", false),
+                None,
+                shown("tray-open", "Open Graph", true),
+                shown("tray-settings", "Settings...", true),
+                None,
+                shown("tray-quit", "Quit Supragnosis", true),
+            ],
+            "the first tray is not Starting... and the items that always show"
+        );
+        for item in items.iter().flatten().filter(|(_, _, acts)| *acts) {
+            assert!(tray_press(item.0).is_some(), "{} does nothing", item.0);
+        }
+    }
+
+    /// The menu bar is built from the words (docs/i18n.md Section 8 step 3): every item of the app's
+    /// sits in it once, every title and platform item has words, the app menu holds About,
+    /// Settings..., Setup... and Quit, and the Window and Help menus keep the ids macOS lists
+    /// windows in and puts its help search in.
+    #[test]
+    fn the_menu_bar_is_built_from_the_words() {
+        let placed: Vec<&str> = MENU_BAR
+            .iter()
+            .flat_map(|(_, _, places)| places.iter())
+            .filter_map(|p| if let Entry::Item(id) = p { Some(*id) } else { None })
+            .collect();
+        for (id, ..) in MENU_ITEMS {
+            assert_eq!(placed.iter().filter(|p| *p == id).count(), 1, "{id} is not placed once");
+        }
+        let menus: Vec<(&str, String)> = MENU_BAR
+            .iter()
+            .map(|(id, title, _)| (*id, if title.is_empty() { "".into() } else { word(title) }))
+            .collect();
+        assert_eq!(
+            menus,
+            vec![
+                ("menu-app", "".into()),
+                ("menu-file", "File".into()),
+                ("menu-edit", "Edit".into()),
+                ("menu-view", "View".into()),
+                (tauri::menu::WINDOW_SUBMENU_ID, "Window".into()),
+                (tauri::menu::HELP_SUBMENU_ID, "Help".into()),
+            ]
+        );
+        let app_menu: Vec<String> = MENU_BAR[0]
+            .2
+            .iter()
+            .filter_map(|p| match p {
+                Entry::Item(id) => menu_item(id).map(|m| word(m.1)),
+                Entry::Platform(_, key) => Some(crate::word_with(key, &[("name", "Supragnosis")])),
+                Entry::Separator => None,
+            })
+            .collect();
+        assert_eq!(
+            app_menu,
+            [
+                "About Supragnosis",
+                "Settings...",
+                "Setup...",
+                "Services",
+                "Hide Supragnosis",
+                "Hide Others",
+                "Quit Supragnosis",
+            ]
+        );
+        assert_eq!(
+            quit_label(false, "Supragnosis"),
+            app_menu[6],
+            "the app menu's Quit does not start as the tray's"
+        );
     }
 
     /// The map commands act where their control is, open the Graph from another page, and Back and
@@ -1311,7 +1415,11 @@ mod tray_tests {
             ("help-diagnostics", "Diagnostics..."),
             ("help-issue", "Report an Issue..."),
         ] {
-            assert_eq!(menu_item(id).map(|m| m.1), Some(words), "the menu bar lacks {id}");
+            assert_eq!(
+                menu_item(id).map(|m| word(m.1)),
+                Some(words.to_string()),
+                "the menu bar lacks {id}"
+            );
         }
         // What each item does, so two items that trade acts fail here.
         for (id, press) in [

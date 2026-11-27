@@ -895,8 +895,8 @@ mod settings_tests {
             ("text-actual", "Actual Size", "CmdOrCtrl+0", 0),
         ] {
             assert_eq!(
-                menu_item(id),
-                Some((id, words, Some(key), MenuPress::Text(step))),
+                menu_item(id).map(|(id, w, key, press)| (id, crate::word(w), key, press)),
+                Some((id, words.to_string(), Some(key), MenuPress::Text(step))),
                 "View's {words} is not the step it names"
             );
         }
@@ -913,7 +913,6 @@ mod settings_tests {
         let html = include_str!("../assets/welcome.html");
         let js = include_str!("../assets/welcome.js");
         let settings = include_str!("../assets/settings.js");
-        let main = super::SRC;
         assert!(
             html.contains("<h1 id=\"pageTitle\" data-t=\"about.setup\">Setup</h1>")
                 && crate::says(html, "Setup"),
@@ -934,8 +933,13 @@ mod settings_tests {
             "the page does not name the way back"
         );
         assert!(crate::says(settings, "Open Setup"), "About does not say Open Setup");
+        let finish = super::TrayState { finish: true, ..super::TrayState::starting() };
         assert!(
-            main.contains("\"tray-finish-setup\",\n                \"Finish Setup...\","),
+            super::tray_items(&finish, "Supragnosis").contains(&Some((
+                "tray-finish-setup",
+                "Finish Setup...".to_string(),
+                true
+            ))),
             "the tray does not say Finish Setup..."
         );
         for part in ["role: \"progressbar\"", "\"aria-valuenow\"", "function announce("] {

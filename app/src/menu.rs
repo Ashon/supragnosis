@@ -24,30 +24,214 @@ pub(crate) enum MenuPress {
     Map,
 }
 
-/// The menu bar's own items - id, words, key and press - which the menu is built from and its
-/// presses are read through. None of the ids is the tray's, so a press does only its own act.
+/// The menu bar's own items - id, the key of its words in app/assets/words.json, key and press -
+/// which the menu is built from and its presses are read through. None of the ids is the tray's, so a
+/// press does only its own act.
 pub(crate) const MENU_ITEMS: &[(&str, &str, Option<&str>, MenuPress)] = &[
-    ("settings", "Settings...", Some("CmdOrCtrl+,"), MenuPress::Settings),
-    ("setup", "Setup...", None, MenuPress::Setup),
-    ("graph", "Graph", Some("CmdOrCtrl+1"), MenuPress::Graph),
-    ("review", "Review", Some("CmdOrCtrl+2"), MenuPress::Review),
-    ("view-filters", "Filters Panel", Some("Ctrl+CmdOrCtrl+S"), MenuPress::Map),
-    ("view-log", "Log Panel", Some("Ctrl+CmdOrCtrl+L"), MenuPress::Map),
-    ("view-map", "as Map", None, MenuPress::Map),
-    ("view-list", "as List", None, MenuPress::Map),
-    ("view-fit", "Fit to View", None, MenuPress::Map),
-    ("view-keys", "Keys...", None, MenuPress::Map),
-    ("view-back", "Back", Some("CmdOrCtrl+["), MenuPress::Map),
-    ("view-forward", "Forward", Some("CmdOrCtrl+]"), MenuPress::Map),
-    ("text-bigger", "Make Text Bigger", Some("CmdOrCtrl+="), MenuPress::Text(1)),
-    ("text-smaller", "Make Text Smaller", Some("CmdOrCtrl+-"), MenuPress::Text(-1)),
-    ("text-actual", "Actual Size", Some("CmdOrCtrl+0"), MenuPress::Text(0)),
-    ("edit-find", "Find", Some("CmdOrCtrl+F"), MenuPress::Map),
-    ("help-docs", "Supragnosis Documentation", None, MenuPress::Docs),
-    ("help-diagnostics", "Diagnostics...", None, MenuPress::Diagnostics),
-    ("help-log", "Show Log in Finder", None, MenuPress::ShowLog),
-    ("help-issue", "Report an Issue...", None, MenuPress::Issue),
+    ("settings", "menu.settings", Some("CmdOrCtrl+,"), MenuPress::Settings),
+    ("setup", "menu.setup", None, MenuPress::Setup),
+    ("graph", "page.graph", Some("CmdOrCtrl+1"), MenuPress::Graph),
+    ("review", "menu.review", Some("CmdOrCtrl+2"), MenuPress::Review),
+    ("view-filters", "menu.filtersPanel", Some("Ctrl+CmdOrCtrl+S"), MenuPress::Map),
+    ("view-log", "menu.logPanel", Some("Ctrl+CmdOrCtrl+L"), MenuPress::Map),
+    ("view-map", "menu.asMap", None, MenuPress::Map),
+    ("view-list", "menu.asList", None, MenuPress::Map),
+    ("view-fit", "menu.fit", None, MenuPress::Map),
+    ("view-keys", "menu.keys", None, MenuPress::Map),
+    ("view-back", "menu.back", Some("CmdOrCtrl+["), MenuPress::Map),
+    ("view-forward", "menu.forward", Some("CmdOrCtrl+]"), MenuPress::Map),
+    ("text-bigger", "menu.bigger", Some("CmdOrCtrl+="), MenuPress::Text(1)),
+    ("text-smaller", "menu.smaller", Some("CmdOrCtrl+-"), MenuPress::Text(-1)),
+    ("text-actual", "menu.actualSize", Some("CmdOrCtrl+0"), MenuPress::Text(0)),
+    ("edit-find", "menu.find", Some("CmdOrCtrl+F"), MenuPress::Map),
+    ("help-docs", "menu.docs", None, MenuPress::Docs),
+    ("help-diagnostics", "menu.diagnostics", None, MenuPress::Diagnostics),
+    ("help-log", "menu.showLog", None, MenuPress::ShowLog),
+    ("help-issue", "menu.issue", None, MenuPress::Issue),
 ];
+
+/// One place in the menu bar: one of [`MENU_ITEMS`] by id, one of the platform's items macOS acts
+/// on with the key of its words, or a separator.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Entry {
+    Item(&'static str),
+    Platform(Platform, &'static str),
+    Separator,
+}
+
+/// The platform's items the menu bar holds, which macOS acts on itself.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Platform {
+    About,
+    Services,
+    Hide,
+    HideOthers,
+    Quit,
+    CloseWindow,
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+    FullScreen,
+    Minimize,
+    Zoom,
+}
+
+use Entry::{Item, Separator};
+use Platform as P;
+
+/// The menu bar, menu by menu: its id, the key of its title (none for the app menu, which macOS
+/// titles with the app's name) and its places (design-system.md Section 29.13). It is built from the
+/// words rather than from `Menu::default`, whose titles and items are English, so the bar speaks the
+/// app's language (docs/i18n.md Section 8 step 3); the Window and Help menus keep the ids that make
+/// them the menus macOS lists windows in and puts its help search in.
+pub(crate) const MENU_BAR: &[(&str, &str, &[Entry])] = &[
+    (
+        "menu-app",
+        "",
+        &[
+            Entry::Platform(P::About, "menu.about"),
+            Separator,
+            Item("settings"),
+            Item("setup"),
+            Separator,
+            Entry::Platform(P::Services, "menu.services"),
+            Separator,
+            Entry::Platform(P::Hide, "menu.hide"),
+            Entry::Platform(P::HideOthers, "menu.hideOthers"),
+            Separator,
+            // Its words follow the tray's Quit (D15); apply_tray sets them again.
+            Entry::Platform(P::Quit, "menu.quit"),
+        ],
+    ),
+    ("menu-file", "menu.file", &[Entry::Platform(P::CloseWindow, "menu.closeWindow")]),
+    (
+        "menu-edit",
+        "menu.edit",
+        &[
+            Entry::Platform(P::Undo, "menu.undo"),
+            Entry::Platform(P::Redo, "menu.redo"),
+            Separator,
+            Entry::Platform(P::Cut, "menu.cut"),
+            Entry::Platform(P::Copy, "menu.copy"),
+            Entry::Platform(P::Paste, "menu.paste"),
+            Entry::Platform(P::SelectAll, "menu.selectAll"),
+            Separator,
+            Item("edit-find"),
+        ],
+    ),
+    (
+        "menu-view",
+        "menu.view",
+        &[
+            Item("graph"),
+            Item("review"),
+            Separator,
+            Item("view-filters"),
+            Item("view-log"),
+            Item("view-map"),
+            Item("view-list"),
+            Item("view-fit"),
+            Item("view-keys"),
+            Separator,
+            Item("view-back"),
+            Item("view-forward"),
+            Separator,
+            // Text that can grow (design-system.md Section 10, U21): the root's size, not the
+            // webview's zoom, so the title bar and its traffic lights stay put.
+            Item("text-bigger"),
+            Item("text-smaller"),
+            Item("text-actual"),
+            Separator,
+            Entry::Platform(P::FullScreen, "menu.fullScreen"),
+        ],
+    ),
+    (
+        tauri::menu::WINDOW_SUBMENU_ID,
+        "menu.window",
+        &[
+            Entry::Platform(P::Minimize, "menu.minimize"),
+            Entry::Platform(P::Zoom, "menu.zoom"),
+            Separator,
+            Entry::Platform(P::CloseWindow, "menu.closeWindow"),
+        ],
+    ),
+    (
+        tauri::menu::HELP_SUBMENU_ID,
+        "menu.help",
+        &[
+            Item("help-docs"),
+            Separator,
+            Item("help-diagnostics"),
+            Item("help-log"),
+            Separator,
+            Item("help-issue"),
+        ],
+    ),
+];
+
+/// The menu bar built from [`MENU_BAR`] in the app's words, the map's commands kept so each page's
+/// load report can say which of them act there, and the app menu's Quit, whose words follow the
+/// tray's (D15).
+pub(crate) fn menu_bar(app: &tauri::AppHandle<Rt>) -> tauri::Result<(Menu<Rt>, MapItems, AppQuit)> {
+    let info = app.package_info();
+    let name = info.name.clone();
+    let about = tauri::menu::AboutMetadata {
+        name: Some(name.clone()),
+        version: Some(info.version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        authors: app.config().bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+    let bar = Menu::new(app)?;
+    let (mut map, mut quit) = (Vec::new(), None);
+    for (id, title, places) in MENU_BAR {
+        let title = if title.is_empty() { name.clone() } else { word(title) };
+        let sub = tauri::menu::Submenu::with_id(app, *id, title, true)?;
+        for place in *places {
+            match *place {
+                Separator => sub.append(&PredefinedMenuItem::separator(app)?)?,
+                Item(id) => {
+                    let (id, key, accel, press) = menu_item(id).expect("an item of MENU_ITEMS");
+                    let it = MenuItem::with_id(app, id, word(key), true, accel)?;
+                    sub.append(&it)?;
+                    if press == MenuPress::Map {
+                        map.push((id, it));
+                    }
+                }
+                Entry::Platform(p, key) => {
+                    let words = word_with(key, &[("name", &name)]);
+                    let t = Some(words.as_str());
+                    let it = match p {
+                        P::About => PredefinedMenuItem::about(app, t, Some(about.clone()))?,
+                        P::Services => PredefinedMenuItem::services(app, t)?,
+                        P::Hide => PredefinedMenuItem::hide(app, t)?,
+                        P::HideOthers => PredefinedMenuItem::hide_others(app, t)?,
+                        P::Quit => PredefinedMenuItem::quit(app, t)?,
+                        P::CloseWindow => PredefinedMenuItem::close_window(app, t)?,
+                        P::Undo => PredefinedMenuItem::undo(app, t)?,
+                        P::Redo => PredefinedMenuItem::redo(app, t)?,
+                        P::Cut => PredefinedMenuItem::cut(app, t)?,
+                        P::Copy => PredefinedMenuItem::copy(app, t)?,
+                        P::Paste => PredefinedMenuItem::paste(app, t)?,
+                        P::SelectAll => PredefinedMenuItem::select_all(app, t)?,
+                        P::FullScreen => PredefinedMenuItem::fullscreen(app, t)?,
+                        P::Minimize => PredefinedMenuItem::minimize(app, t)?,
+                        P::Zoom => PredefinedMenuItem::maximize(app, t)?,
+                    };
+                    if p == P::Quit {
+                        quit = Some(it.clone());
+                    }
+                    sub.append(&it)?;
+                }
+            }
+        }
+        bar.append(&sub)?;
+    }
+    Ok((bar, MapItems(map), AppQuit(quit.expect("the app menu holds Quit"))))
+}
 
 /// What a press of the menu bar's item `id` does; any other id, the tray's or a platform item, does
 /// nothing here. `open` opens one of the project's addresses in the browser.

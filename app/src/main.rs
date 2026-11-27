@@ -230,21 +230,7 @@ fn main() {
             // (docs/settings-page.md Section 5, design-system.md Section 29.13). The first menu
             // says Starting...; refresh_status builds it again in its fixed order.
             let name = app.package_info().name.clone();
-            let status = MenuItem::with_id(app, "tray-status", "Starting...", false, None::<&str>)?;
-            let open = MenuItem::with_id(app, "tray-open", "Open Graph", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "tray-settings", "Settings...", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "tray-quit", format!("Quit {name}"), true, None::<&str>)?;
-            let menu = Menu::with_items(
-                app,
-                &[
-                    &status,
-                    &PredefinedMenuItem::separator(app)?,
-                    &open,
-                    &settings,
-                    &PredefinedMenuItem::separator(app)?,
-                    &quit,
-                ],
-            )?;
+            let menu = tray_menu(app.handle(), &TrayState::starting())?;
             app.manage(TrayKept(Mutex::new(None)));
             app.manage(FrameNow(Mutex::new(None)));
             app.manage(AppsHint(Mutex::new((false, false))));
@@ -253,88 +239,12 @@ fn main() {
             app.manage(TextScale(Mutex::new(read_text_scale(app.handle()))));
 
             // The menu bar (design-system.md Section 29.13): the platform's menus, and in them the
-            // app's pages, the map's commands and its help. Each item has its own id, apart from the
-            // tray's, so an item does only its own act.
-            let app_menu = Menu::default(app.handle())?;
-            let item = |id: &str| {
-                let (id, words, key, _) = menu_item(id).expect("an item of MENU_ITEMS");
-                MenuItem::with_id(app, id, words, true, key)
-            };
-            let mut map_items: Vec<(&'static str, MenuItem<Rt>)> = Vec::new();
-            for sub in app_menu.items()?.iter().filter_map(|i| i.as_submenu().cloned()) {
-                let text = sub.text()?;
-                if text == "View" {
-                    // The map's commands (design-system.md Section 29.13), kept so each page's load
-                    // report can say which of them act there.
-                    let mapped = [
-                        "view-filters",
-                        "view-log",
-                        "view-map",
-                        "view-list",
-                        "view-fit",
-                        "view-keys",
-                        "view-back",
-                        "view-forward",
-                    ];
-                    let mut kept = Vec::new();
-                    for id in mapped {
-                        kept.push((id, item(id)?));
-                    }
-                    let at = |id: &str| kept.iter().find(|(k, _)| *k == id).map(|(_, m)| m.clone()).unwrap();
-                    // Text that can grow (design-system.md Section 10, U21): the root's size, not the
-                    // webview's zoom, so the title bar and its traffic lights stay put.
-                    let items: Vec<Box<dyn tauri::menu::IsMenuItem<Rt>>> = vec![
-                        Box::new(item("graph")?),
-                        Box::new(item("review")?),
-                        Box::new(PredefinedMenuItem::separator(app)?),
-                        Box::new(at("view-filters")),
-                        Box::new(at("view-log")),
-                        Box::new(at("view-map")),
-                        Box::new(at("view-list")),
-                        Box::new(at("view-fit")),
-                        Box::new(at("view-keys")),
-                        Box::new(PredefinedMenuItem::separator(app)?),
-                        Box::new(at("view-back")),
-                        Box::new(at("view-forward")),
-                        Box::new(PredefinedMenuItem::separator(app)?),
-                        Box::new(item("text-bigger")?),
-                        Box::new(item("text-smaller")?),
-                        Box::new(item("text-actual")?),
-                        Box::new(PredefinedMenuItem::separator(app)?),
-                    ];
-                    for (i, it) in items.iter().enumerate() {
-                        sub.insert(it.as_ref(), i)?;
-                    }
-                    map_items.extend(kept);
-                } else if text == "Edit" {
-                    let find = item("edit-find")?;
-                    sub.append(&PredefinedMenuItem::separator(app)?)?;
-                    sub.append(&find)?;
-                    map_items.push(("edit-find", find));
-                } else if text == "Help" {
-                    sub.append(&item("help-docs")?)?;
-                    sub.append(&PredefinedMenuItem::separator(app)?)?;
-                    sub.append(&item("help-diagnostics")?)?;
-                    sub.append(&item("help-log")?)?;
-                    sub.append(&PredefinedMenuItem::separator(app)?)?;
-                    sub.append(&item("help-issue")?)?;
-                } else if text == name {
-                    // About, a separator, Settings... and Setup..., a separator, then the
-                    // platform's own items; its Quit takes the tray's words (D15).
-                    sub.insert(&PredefinedMenuItem::separator(app)?, 1)?;
-                    sub.insert(&item("settings")?, 2)?;
-                    sub.insert(&item("setup")?, 3)?;
-                    for it in sub.items()? {
-                        if let Some(p) = it.as_predefined_menuitem() {
-                            if p.text().is_ok_and(|t| t.starts_with("Quit")) {
-                                app.manage(AppQuit(p.clone()));
-                            }
-                        }
-                    }
-                }
-            }
+            // app's pages, the map's commands and its help, in the app's words. Each item has its
+            // own id, apart from the tray's, so an item does only its own act.
+            let (app_menu, map_items, app_quit) = menu_bar(app.handle())?;
+            app.manage(app_quit);
             app.set_menu(app_menu)?;
-            app.manage(MapItems(map_items));
+            app.manage(map_items);
             app.on_menu_event(|app, event| menu_pressed(app, event.id().as_ref(), open_url));
 
             TrayIconBuilder::with_id("supragnosis")

@@ -39,10 +39,12 @@ impl Daemon {
     /// (docs/design-system.md Section 9, step 45).
     pub(crate) fn status_line(&self) -> String {
         match self {
-            Daemon::Starting => "Starting...".to_string(),
-            Daemon::External => "Running - started outside this app".to_string(),
-            Daemon::Spawned(_) => "Running while this app is open".to_string(),
-            Daemon::Failed(e) => format!("Could not start: {}", cause_of(e)),
+            Daemon::Starting => word("daemon.starting"),
+            Daemon::External => {
+                word_with("daemon.runningWho", &[("who", &word("daemon.whoOutside"))])
+            }
+            Daemon::Spawned(_) => word("daemon.runningHere"),
+            Daemon::Failed(e) => word_with("daemon.couldNotStartWhy", &[("cause", &cause_of(e))]),
         }
     }
 }
