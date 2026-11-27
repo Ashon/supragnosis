@@ -1491,9 +1491,11 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
          page's language, from its surface's words, except a sentence written for one case; every entry \
          holds both languages with the same placeholders and no Korean particle right after one",
         Evidence::Deferred(
-            "the site's scripts and the principles page's regions have their words and tests that read \
-             them (landing.rs, this file), the app and the viewer not yet. Revisit when i18n.md Section 8 \
-             steps 3 and 4 give those surfaces their words",
+            "every surface has its words, and a test reads each table: the site's scripts and the viewer's \
+             (landing.rs), the principles page's regions (this file) and the app's (page_tests.rs); a \
+             string written outside them is a review question (i18n.md Section 4), and Review still \
+             shows an engine check's name in English where its words lack one. Revisit when the page \
+             says every check's name from its words",
         ),
     )]),
     (2, &[c(
@@ -1502,16 +1504,17 @@ const I18N_REGISTRY: &[(u8, &[Clause])] = &[
         Evidence::Deferred(
             "the site's pages declare their language and link their Korean twins as alternates, and the \
              Korean principles page marks the registry's clauses as English (landing.rs, this file); the \
-             app's pages and the viewer set no language yet. Revisit when i18n.md Section 8 steps 3 and 4 \
-             set it",
+             app's shell and the viewer's words set a product page's language, which no test reads beyond \
+             the app pages' `en` default. Revisit when a product page is found declaring the wrong one",
         ),
     )]),
     (3, &[c(
         "the MCP instructions, tool descriptions, prompts, the hook's text and the store's content, names \
          and types are never translated",
         Evidence::Deferred(
-            "holds today only because nothing is translated. Revisit when i18n.md Section 8 steps 3 and 4 \
-             add the words the app and the daemon serve",
+            "holds because only the pages' words hold Korean, and nothing the MCP server, the hook or \
+             the store answers reads them; no test checks it. Revisit when an agent's text or a record's \
+             display is given a translation",
         ),
     )]),
     (4, &[c(
