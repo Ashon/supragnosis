@@ -107,9 +107,7 @@ fn show_related_adds_what_the_relations_reach() {
     assert!(related
         .contains("edgeTypeOff.has(e.type) || typeOff.has(e.a.type) || typeOff.has(e.b.type)"));
     let detail = function("renderDetail");
-    assert!(
-        detail.contains("<button type=\"button\" class=\"linkish shrel\">Show related</button>")
-    );
+    assert!(says(detail, "Show related") && detail.contains("class=\"linkish shrel\">"));
     assert!(detail.contains("keepInView([node.id, ...relatedDrawn(node).map(n => n.id)], { kind: \"related\", name: node.name })"));
     assert!(says(function("partSaid"), "{n} related to {name}"));
 }

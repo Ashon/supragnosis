@@ -207,10 +207,7 @@ fn the_map_says_when_each_entity_was_said() {
         SCRIPT.contains("saidOut(e.a) || saidOut(e.b)"),
         "a dimmed entity's relations stay lit"
     );
-    assert!(
-        SCRIPT.contains("Last said ${obsWhen(node.last_said)}"),
-        "the sheet does not say it"
-    );
+    assert!(says(function("renderDetail"), "Last said {when}"), "the sheet does not say it");
     assert!(says(function("showTip"), "Last said {when}"), "the hover card does not say it");
     assert!(
         SCRIPT.contains("listHead(\"said\", word(\"colLastSaid\"))"),

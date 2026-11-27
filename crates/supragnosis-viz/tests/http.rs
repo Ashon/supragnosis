@@ -756,7 +756,7 @@ fn a_silenced_field_is_said_for_the_scope() {
         assert!(body.contains(said), "and is said for the scope when it does not: {said}");
     }
     assert!(
-        body.contains("scopeSaid.length ? html`<span class=\"scopeline\">All here: ${scopeSaid.join(\", \")}</span>`"),
+        body.contains("scopeSaid.length ? html`<span class=\"scopeline\">${word(\"allHere\", { tier: scopeSaid.join(\", \") })}</span>`"),
         "the scope line prints whatever was silenced"
     );
     assert!(body.contains("const workspace = base.workspace === null"), "the workspace row");

@@ -76,10 +76,11 @@ fn an_empty_scope_keeps_no_idle_controls() {
 fn the_empty_map_speaks_in_one_voice() {
     let log = function("renderLog");
     assert!(
-        log.contains("\"Nothing here yet. What an AI app remembers\""),
+        says(log, "Nothing here yet. What an AI app remembers shows up here.")
+            && says(log, "Nothing here yet. What an AI app remembers in {scope} shows up here."),
         "the Log's empty line"
     );
-    assert!(function("renderStrip").contains("<span class=\"t\">Nothing here yet.</span>"));
+    assert!(says(function("renderStrip"), "Nothing here yet."));
     let empty = function("refreshEmpty");
     assert!(says(empty, "Nothing here yet."));
     assert!(

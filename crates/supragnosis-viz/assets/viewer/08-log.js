@@ -31,17 +31,17 @@ function obsWhen(ms) {
   const d = new Date(ms);
   if (!Number.isFinite(d.getTime())) return "";
   const now = new Date();
-  const hm = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const hm = d.toLocaleTimeString(LANG, { hour: "numeric", minute: "2-digit" });
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   // The year too when it is not this one, so last October does not read as two days ago (Section 29.19).
-  if (d.getFullYear() !== now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${hm}`;
-  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  if (d.getFullYear() !== now.getFullYear()) return d.toLocaleDateString(LANG, { year: "numeric", month: "numeric", day: "numeric" }) + " " + hm;
+  return sameDay ? hm : d.toLocaleDateString(LANG, { month: "numeric", day: "numeric" }) + " " + hm;
 }
 function obsWhenSec(ms) {
   const d = new Date(ms);
-  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString(LANG, { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
 }
-function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString() : ""; }
+function obsWhenFull(ms) { const d = new Date(ms); return Number.isFinite(d.getTime()) ? d.toLocaleString(LANG) : ""; }
 // Trust tier as a colored dot (the edge columns' dot idiom) - a quiet ramp from dim (unverified) to
 // gold (human-confirmed). The full tier text lives in the expanded provenance.
 // A tier's mark wherever a row or card shows one: the ring the map draws for that tier, as the Trust
@@ -109,7 +109,7 @@ function obsRowHtml(o, i, list) {
     .filter(Boolean).join(" - ");
   return html`${[
     html`<div class="obs" data-id="${o.id}">`,
-    html`<button type="button" class="ohead" title="${tipText("Open the observation")}">`,
+    html`<button type="button" class="ohead" title="${tipText(word("openObservation"))}">`,
       html`<span class="ometa">${tierDot(o.effective_tier)}`,
         html`<span class="owhen">${who}</span></span>`,
       html`<span class="${cls}">${text}</span>`,
@@ -126,10 +126,10 @@ function obsCardHtml(o) {
   // the writer wrote it (P18) - and never a `surface:` marker, which the who-line says (Section 29.7).
   const cited = (o.attestations || []).map(a => a.source_ref).find(r => r && !/^surface:/.test(r));
   const citedHtml = !cited ? "" : /^https?:\/\//.test(cited)
-    ? html`<div class="oc-cited">Cited: <a href="${cited}" target="_blank" rel="noreferrer noopener">${cited}</a></div>`
-    : html`<div class="oc-cited">Cited: <span class="selectable">${cited}</span></div>`;
+    ? html`<div class="oc-cited">${word("cited")} <a href="${cited}" target="_blank" rel="noreferrer noopener">${cited}</a></div>`
+    : html`<div class="oc-cited">${word("cited")} <span class="selectable">${cited}</span></div>`;
   const parts = [html`<div class="card">`,
-    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>`,
+    html`<button class="close" title="${tipText(word("close"), "Esc")}" aria-label="${word("close")}"><span class="i i-x" aria-hidden="true"></span></button>`,
     html`<div class="oc-meta">${tierDot(o.effective_tier)}<span class="octier">${tierName(o.effective_tier)}</span>`,
       html`<span class="ocwhen">${obsWhenFull(a0.observed_at)}</span></div>`,
     citedHtml,
@@ -137,30 +137,31 @@ function obsCardHtml(o) {
   // The act that set the tier it reads at, said beside what its writer wrote.
   const g = o.gated_by;
   if (g) {
-    const by = (g.surface === "surface:console" ? " from " : " by ") + writerOf({ source_ref: g.surface, origin_node: g.origin_node });
-    const what = g.promotion ? tierName(o.effective_tier) + by : "Lowered to " + tierName(o.effective_tier) + by;
-    parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">Open in Review</button></div>`);
+    const said = { tier: tierName(o.effective_tier), writer: writerOf({ source_ref: g.surface, origin_node: g.origin_node }) };
+    const from = g.surface === "surface:console";
+    const what = g.promotion ? word(from ? "gateFrom" : "gateBy", said) : word(from ? "loweredFrom" : "loweredBy", said);
+    parts.push(html`<div class="oc-gate"><span>${what}, ${obsWhenFull(g.at)}</span><button type="button" class="linkish" data-open-review="${g.proposal}">${word("openInReview")}</button></div>`);
   }
   // A person can demote a claim (Section 29.26): knowledge that reads above Unverified. It asks first, with what the act does, and casts only then.
   if (!o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {
     parts.push(demoteAsk && demoteAsk.id === o.id ? demoteHtml(o)
-      : html`<div class="oc-act"><button type="button" class="linkish" data-demote="open">Demote this claim</button></div>`);
+      : html`<div class="oc-act"><button type="button" class="linkish" data-demote="open">${word("demoteClaim")}</button></div>`);
   }
-  parts.push(html`<div class="osec">Provenance <span class="ct">${(o.attestations || []).length}</span></div>`);
+  parts.push(html`<div class="osec">${word("provenance")} <span class="ct">${(o.attestations || []).length}</span></div>`);
   for (const a of o.attestations || []) {
     parts.push(html`<div class="prow"><span class="pwho">${whoLine(a.trust_tier, a)}</span>`,
-      a.evaluated_tier !== a.trust_tier ? html`<span class="ptier">counted as ${tierName(a.evaluated_tier)}</span>` : "",
-      a.confidence != null ? html`<span class="pconf">the agent's confidence: ${String(a.confidence)}</span>` : "",
-      a.origin_node ? html`<span class="poid">machine ${String(a.origin_node).slice(0, 8)}</span>` : "",
+      a.evaluated_tier !== a.trust_tier ? html`<span class="ptier">${word("countedAs", { tier: tierName(a.evaluated_tier) })}</span>` : "",
+      a.confidence != null ? html`<span class="pconf">${word("agentConfidence", { n: String(a.confidence) })}</span>` : "",
+      a.origin_node ? html`<span class="poid">${word("machineId", { id: String(a.origin_node).slice(0, 8) })}</span>` : "",
       html`</div>`);
   }
   if (o.derived_from && o.derived_from.length)
-    parts.push(html`<div class="osec">Derived from</div><div class="oids">${
+    parts.push(html`<div class="osec">${word("derivedFrom")}</div><div class="oids">${
       o.derived_from.map(id => html`<button type="button" class="oid linkish" data-open-obs="${id}">${String(id).slice(0, 10)}</button>`)}</div>`);
   if (o.proposal) {
     const p = o.proposal;
     const full = proposals.find(q => q.id === p.proposal);
-    parts.push(html`<div class="osec">Proposal</div>`,
+    parts.push(html`<div class="osec">${word("proposal")}</div>`,
       html`<div class="ocprop">${p.noun || "Proposal"} - ${(OUTCOME[p.state] || (p.state === "open" ? "Open" : p.state || "")).toLowerCase()}</div>`,
       full && full.rationale ? html`<div class="ocwhy">"${full.rationale}"</div>` : "",
       html`<div><button type="button" class="linkish" data-open-review="${p.proposal}">Open in Review</button></div>`);
@@ -171,24 +172,24 @@ function obsCardHtml(o) {
       const chip = t => {
         const live = !!nodeById(t.id);
         const into = p.into && t.id === p.into.id;
-        const label = html`${t.name || String(t.id).slice(0, 8)}${into ? html` <span class="rk">kept</span>` : ""}`;
+        const label = html`${t.name || String(t.id).slice(0, 8)}${into ? html` <span class="rk">${word("keptInMerge")}</span>` : ""}`;
         return live
-          ? html`<button type="button" class="echip" data-id="${t.id}" title="${tipText("Focus " + (t.name || t.id))}">${label}</button>`
-          : html`<span class="echip off" title="${tipText("Folded away by this merge")}">${label}</span>`;
+          ? html`<button type="button" class="echip" data-id="${t.id}" title="${tipText(word("focusName", { name: t.name || t.id }))}">${label}</button>`
+          : html`<span class="echip off" title="${tipText(word("foldedAway"))}">${label}</span>`;
       };
-      parts.push(html`<div class="osec">Targets</div><div class="echips">${ts.map(chip)}</div>`);
+      parts.push(html`<div class="osec">${word("targets")}</div><div class="echips">${ts.map(chip)}</div>`);
     }
   }
   if (o.entities && o.entities.length)
-    parts.push(html`<div class="osec">Entities</div><div class="echips">${
-      o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="${tipText("Focus " + e.name)}">${e.name}</button>`)}</div>`);
+    parts.push(html`<div class="osec">${word("entities")}</div><div class="echips">${
+      o.entities.map(e => html`<button type="button" class="echip" data-id="${e.id}" title="${tipText(word("focusName", { name: e.name }))}">${e.name}</button>`)}</div>`);
   if (o.relations && o.relations.length)
-    parts.push(html`<div class="osec">Relations</div>`,
+    parts.push(html`<div class="osec">${word("relations")}</div>`,
       o.relations.map(r => html`<div class="ocrel">${r.from} <span class="rk">${r.type}</span> ${r.to}</div>`));
   // A proposal event's stored text stays inspectable, folded at the foot: this card is where an id
   // resolves (P2/P14), and what is literally in the log is part of that.
-  if (o.proposal) parts.push(html`<details class="ocraw-fold"><summary><span class="i i-chevron-right" aria-hidden="true"></span>As stored</summary><div class="ocraw">${o.content}</div></details>`);
-  parts.push(html`<div class="ocid">obs ${String(o.id).slice(0, 16)}</div></div>`);
+  if (o.proposal) parts.push(html`<details class="ocraw-fold"><summary><span class="i i-chevron-right" aria-hidden="true"></span>${word("asStored")}</summary><div class="ocraw">${o.content}</div></details>`);
+  parts.push(html`<div class="ocid">${word("obsId", { id: String(o.id).slice(0, 16) })}</div></div>`);
   return html`${parts}`;
 }
 // Opens a proposal's Review item, in its own segment, from a card (Section 29.7).
@@ -212,37 +213,37 @@ function claimWords(o) {
 // The question, in step 41's form: what flips, whose ring drops, what else the claim states, what
 // Unverified means and the ceiling it leaves, then the checks - and Demote waits for all of it (U18).
 function demoteHtml(o) {
-  const v = demoteAsk, q = "Demote this claim to Unverified?";
+  const v = demoteAsk, q = word("demoteAsk", { tier: tierName("unverified") });
   const parts = [html`<div class="cq">${q}</div>`];
-  let can = false, state = "Reading what this demotes...";
-  if (v.state === "err") state = v.why || "What this act changes could not be read.";
+  let can = false, state = word("readingDemote");
+  if (v.state === "err") state = v.why || word("actUnread");
   if (v.state === "ok") {
     const d = v.preview.belief_diff, mine = (d.reach || []).find(r => r.observation === o.id);
     const flips = (d.overturned || []).map(b => {
-      const what = b.name + "'s " + fieldSaid(b.field).toLowerCase();
-      if (!b.contested_before && b.contested_after) return what + " becomes contested and waits under Needs you.";
-      if (b.contested_before && !b.contested_after) return what + (b.to ? " becomes " + b.to + " and" : "") + " is no longer contested.";
-      return what + " becomes " + (b.to || "nothing") + ".";
+      const what = word("nameField", { name: b.name, field: fieldSaid(b.field).toLowerCase() });
+      if (!b.contested_before && b.contested_after) return word("flipContested", { what });
+      if (b.contested_before && !b.contested_after) return word(b.to ? "flipSettledTo" : "flipSettled", { what, to: b.to });
+      return word(b.to ? "flipTo" : "flipNothing", { what, to: b.to });
     });
-    for (const t of flips.length ? flips : ["Every value it states stays; it is trusted less."]) parts.push(html`<div class="creach">${t}</div>`);
+    for (const t of flips.length ? flips : [word("valuesStay")]) parts.push(html`<div class="creach">${t}</div>`);
     const rings = ringMoves(d, null, true);
-    for (const t of rings.length ? rings.map(l => "With it, " + l + ".") : ["No entity's ring moves."]) parts.push(html`<div class="creach">${t}</div>`);
+    for (const t of rings.length ? rings.map(line => word("withIt", { line })) : [word("noRingMoves")]) parts.push(html`<div class="creach">${t}</div>`);
     const rel = mine ? (mine.relations || []).length : 0, defs = (mine && mine.type_defs) || [];
-    if (rel) parts.push(html`<div class="creach">It also states ${rel} relation${rel === 1 ? "" : "s"}.</div>`);
-    if (defs.length) parts.push(html`<div class="creach">It also defines ${defs.length} type${defs.length === 1 ? "" : "s"}: ${nameList(defs)}.</div>`);
+    if (rel) parts.push(html`<div class="creach">${word(rel === 1 ? "alsoOneRelation" : "alsoRelations", { n: rel })}</div>`);
+    if (defs.length) parts.push(html`<div class="creach">${word(defs.length === 1 ? "alsoOneType" : "alsoTypes", { n: defs.length, names: nameList(defs) })}</div>`);
     parts.push(html`<div class="cdef">${tierName("unverified")}: ${TIER_MEANS.unverified}</div>`,
-      html`<div class="cdef">Later claims do not raise it; a review that raises it does.</div>`);
+      html`<div class="cdef">${word("laterClaims")}</div>`);
     const words = c => CHECK_WORDS[c.name] || c.name;
     const fails = (v.preview.checks || []).filter(c => !c.passed);
-    if (fails.length) state = "Blocked: " + fails.map(c => words(c) + " - " + c.detail).join("; ");
+    if (fails.length) state = word("blockedBy", { checks: fails.map(c => words(c) + " - " + c.detail).join("; ") });
     else {
-      parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>Checks pass: ${[...new Set((v.preview.checks || []).map(words))].join(", ")}</div>`);
+      parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>${word("checksPass", { checks: [...new Set((v.preview.checks || []).map(words))].join(", ") })}</div>`);
       can = true;
     }
   }
   const sid = "dst-" + String(o.id).slice(0, 12);
   return html`<div class="cask" role="group" aria-label="${q}">${parts}${
-    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-demote="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>Demote</button><button type="button" class="quiet" data-demote="no">Cancel</button></span></div>`;
+    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-demote="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>${word("demote")}</button><button type="button" class="quiet" data-demote="no">${word("cancel")}</button></span></div>`;
 }
 async function openDemote(o) {
   demoteAsk = { id: o.id, state: "reading" };
@@ -265,7 +266,7 @@ function closeDemote(o) {
 // undo is read - the read Decided's Undo demotion makes - with that diff as its note (Section 29.26).
 async function castDemote(o) {
   if (!demoteAsk || demoteAsk.id !== o.id || demoteAsk.state !== "ok") return;
-  const said = "Demoted to Unverified: " + claimWords(o);
+  const said = word("demotedTo", { tier: tierName("unverified"), claim: claimWords(o) });
   const ws = currentWs(), away = o.workspace && ws && ws !== o.workspace && ws !== "*" && ws !== "all";
   const undo = async body => {
     if (!body.proposal_id) return null;
@@ -274,25 +275,25 @@ async function castDemote(o) {
       const r = await fetch("/api/resolve/undo?proposal=" + encodeURIComponent(body.proposal_id), { cache: "no-store" });
       if (r.ok) u = await r.json();
     } catch (_) { /* said below */ }
-    if (!u) return { note: "Undo is not offered: what it would move back could not be read." };
+    if (!u) return { note: word("undoUnread") };
     const acts = u.acts || [];
-    if (!acts.length) return { note: "Nothing to undo: another decision holds this claim where it is." };
-    if ((u.checks || []).some(c => c.blocking && !c.passed)) return { note: "Undo is not offered: a check holds it back." };
+    if (!acts.length) return { note: word("undoNothingClaim") };
+    if ((u.checks || []).some(c => c.blocking && !c.passed)) return { note: word("undoChecked") };
     const moves = ringMoves(u.belief_diff, null);
     return {
-      label: "Undo",
-      note: "Undo returns this claim to " + tierName(acts[0].tier) + " and keeps it there until a review moves it again."
+      label: word("undo"),
+      note: word("undoClaimNote", { tier: tierName(acts[0].tier) })
         + (moves.length ? " " + moves.join(". ") + "." : ""),
       run: async () => {
         for (const a of acts) {
-          if (!await consoleWrite("/api/resolve", settleQuery(a.observation, a.tier, a.kind, "Undid " + said), "Undone - the claim is " + tierName(a.tier) + " again")) break;
+          if (!await consoleWrite("/api/resolve", settleQuery(a.observation, a.tier, a.kind, word("undid", { said })), word("undoneClaim", { tier: tierName(a.tier) }))) break;
         }
         await poll();
       },
     };
   };
   demoteAsk = null;
-  const body = await consoleWrite("/api/resolve", settleQuery(o.id, "unverified", "claim_demotion", said), said, undo, away ? "In " + o.workspace + "." : null);
+  const body = await consoleWrite("/api/resolve", settleQuery(o.id, "unverified", "claim_demotion", said), said, undo, away ? word("inWs", { ws: o.workspace }) : null);
   if (!body) { showObsCard(o); return; }
   await poll();
   // Read again by its id: the Log's kept row still has the tier it had.
@@ -320,7 +321,7 @@ function showObsCard(o) {
   });
   // Every id leads somewhere: a parent observation opens its card, a proposal its Review item.
   obscardEl.querySelectorAll("[data-open-obs]").forEach(b => {
-    b.onclick = async ev => { ev.stopPropagation(); const p = await observationById(b.dataset.openObs); if (p) showObsCard(p); else toast("bad", "That observation is not here", "It may be in a workspace this view cannot read."); };
+    b.onclick = async ev => { ev.stopPropagation(); const p = await observationById(b.dataset.openObs); if (p) showObsCard(p); else toast("bad", word("obsNotHere"), word("obsNotHereWhy")); };
   });
   obscardEl.querySelectorAll("[data-open-review]").forEach(b => {
     b.onclick = ev => { ev.stopPropagation(); openReviewItem(b.dataset.openReview, o.workspace); };
@@ -339,7 +340,7 @@ function showObsCard(o) {
 // Renders a list of observation summaries into a container (a scannable list) and wires each row to
 // open the observation detail card. Used by the workspace Log tab and the node inspector's log column.
 function wireObsList(container, list) {
-  container.innerHTML = html`${list.length ? list.map(obsRowHtml) : html`<div class="empty">no observations</div>`}`;
+  container.innerHTML = html`${list.length ? list.map(obsRowHtml) : html`<div class="empty">${word("noObservations")}</div>`}`;
   // The rows are the list's, in its order, so each is wired by its place rather than found again.
   container.querySelectorAll(".obs").forEach((row, i) => {
     const o = list[i];
@@ -355,7 +356,7 @@ function renderLog() {
     // The canvas's words, and where what an AI app remembers shows (design-system.md Section 29.10).
     const ws = currentWs(), all = ws === "*" || ws === "all";
     obsLogSig = "";
-    logBodyEl.innerHTML = html`<div class="empty">${"Nothing here yet. What an AI app remembers" + (all ? "" : " in " + statsScope(ws)) + " shows up here."}</div>`;
+    logBodyEl.innerHTML = html`<div class="empty">${all ? word("logEmpty") : word("logEmptyIn", { scope: statsScope(ws) })}</div>`;
     return;
   }
   // Re-render only when the observation set actually changed, so a poll refresh does not collapse a
@@ -366,7 +367,7 @@ function renderLog() {
   wireObsList(logBodyEl, shown);
   if (more) {
     const b = document.createElement("button");
-    b.type = "button"; b.className = "obsmore"; b.textContent = "Show " + LOG_ROWS + " more";
+    b.type = "button"; b.className = "obsmore"; b.textContent = word("showNMore", { n: LOG_ROWS });
     b.onclick = () => { logLimit += LOG_ROWS; refreshLog(); };
     logBodyEl.appendChild(b);
   }
@@ -393,11 +394,11 @@ function writerOf(a) {
   if (!a) return "";
   const mine = writtenHere(a);
   const machine = mine ? here() : String(a.origin_node).slice(0, 8);
-  if (a.source_ref === "surface:console") return mine ? "this console" : "the console at " + machine;
+  if (a.source_ref === "surface:console") return mine ? word("thisConsole") : word("consoleAt", { machine });
   // The app this node recorded for it (Section 29.8): "Claude Code on this Mac".
-  return a.app && mine ? a.app + " on " + machine : machine;
+  return a.app && mine ? word("appOn", { app: a.app, machine }) : machine;
 }
-function writerFor(a) { return a ? writerOf(a) + (a.on_behalf_of ? ", for " + a.on_behalf_of : "") : ""; }
+function writerFor(a) { return a ? writerOf(a) + (a.on_behalf_of ? word("forWho", { who: a.on_behalf_of }) : "") : ""; }
 // The attestation that wrote it - the engine's `author`, not the first by host.
 function authorOf(o) { const as = (o && o.attestations) || []; return as[o && o.author | 0] || as[0] || null; }
 // "11:27 AM", or "11:27:41 AM" where a neighbor shares the minute.
@@ -426,9 +427,9 @@ function renderStrip() {
     const first = String(o.content || "").split("\n")[0];
     stripEl.innerHTML = html`${tierDot(o.effective_tier)}<span class="w">${writerFor(a)} ${obsWhen(a.observed_at)}</span><span class="t">${o.proposal ? proposalLine(o.proposal) : first}</span>`;
   } else if (stripState.empty) {
-    stripEl.innerHTML = html`<span class="t">Nothing here yet.</span>`;
+    stripEl.innerHTML = html`<span class="t">${word("emptyTitle")}</span>`;
   } else {
-    stripEl.innerHTML = html`<span class="t bad">The Log is unavailable - the server did not answer</span>`;
+    stripEl.innerHTML = html`<span class="t bad">${word("logUnavailable")}</span>`;
   }
 }
 if (stripEl) stripEl.onclick = () => applyDock(false, true);
@@ -455,10 +456,10 @@ async function fillNodeLog(node, colEl, secEl) {
   // host adds the first without the second. Equal is the common case, so the second number appears
   // only when they part - which is when it says something (docs/inspector.md Section 5).
   const setCount = n => {
-    if (secEl) secEl.innerHTML = html`Evidence <span class="ct">${n}${node.sources !== n ? " / " + node.sources + " attestations" : ""}</span>`;
+    if (secEl) secEl.innerHTML = html`${word("evidence")} <span class="ct">${n}${node.sources !== n ? word("attestationsN", { n: node.sources }) : ""}</span>`;
   };
   if (sameNode && nodeLogCache.list.length) { wireObsList(colEl, nodeLogCache.list); setCount(nodeLogCache.list.length); }
-  else colEl.textContent = "loading...";
+  else colEl.textContent = word("loading");
   const ws = wsInput.value.trim();
   try {
     const q = "?entity=" + encodeURIComponent(node.id) + (ws ? "&workspace=" + encodeURIComponent(ws) : "");
@@ -484,7 +485,7 @@ function logRow(body, tip) {
   const row = document.createElement("div");
   row.className = "row";
   if (tip) row.title = tipText(tip);
-  row.innerHTML = html`<span class="t">${new Date().toLocaleTimeString()}</span>${body}`;
+  row.innerHTML = html`<span class="t">${new Date().toLocaleTimeString(LANG)}</span>${body}`;
   logEl.prepend(row);
   while (logEl.children.length > 8) logEl.lastChild.remove();
   setTimeout(() => row.remove(), 8000);
@@ -503,10 +504,10 @@ function noteElsewhere(ws) {
   const was = elsewhere.get(ws);
   if (was && was.el && was.el.isConnected && !was.el.classList.contains("out")) {
     was.n += 1;
-    was.el.querySelector(".tt").textContent = was.n + " new writes in " + ws;
+    was.el.querySelector(".tt").textContent = word("newWritesIn", { n: was.n, ws });
     return;
   }
-  const el = toast("info", "New in " + ws, null, { label: "Show", note: "", run: () => {
+  const el = toast("info", word("newIn", { ws }), null, { label: word("show"), note: "", run: () => {
     elsewhere.delete(ws);
     wsInput.value = ws; beginWorkspaceTransition(); renderChipsActive(); poll();
   } });
@@ -515,13 +516,14 @@ function noteElsewhere(ws) {
 // The map's activity, in sentences (design-system.md Section 29.6, U17): no tool name, abbreviation
 // or mode id. Who acted is the app the local event names (Section 29.8), else "An agent".
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
-function actorOf(ev) { return ev.app || "An agent"; }
+function actorOf(ev) { return ev.app || word("anAgent"); }
 function wroteSaid(ev) {
   const parts = [];
   const ne = (ev.entities || []).length, nr = ev.relations || 0;
-  if (ne) parts.push(plural(ne, "entity", "entities"));
-  if (nr) parts.push(plural(nr, "relation"));
-  return actorOf(ev) + " wrote " + (parts.length ? parts.join(" and ") : "an observation") + " in " + ev.workspace;
+  if (ne) parts.push(word(ne === 1 ? "oneEntity" : "entitiesN", { n: ne }));
+  if (nr) parts.push(word(nr === 1 ? "oneRelation" : "relationsN", { n: nr }));
+  const what = parts.length ? parts.join(word("joinAnd")) : word("anObservation");
+  return word("wrote", { actor: actorOf(ev), what, ws: ev.workspace });
 }
 // A peer as a row names it: a node id's first eight characters, or a server's host.
 function peerSaid(peer) {
@@ -532,10 +534,11 @@ function peerSaid(peer) {
 function syncSaid(ev) {
   const n = ev.count, who = peerSaid(ev.peer), ws = ev.workspace;
   if (!n) return null;   // a check-in that moved nothing writes no row
-  return ev.direction === "push" ? "Sent " + n + " in " + ws + " to " + who
-    : ev.direction === "pull" ? "Received " + n + " in " + ws + " from " + who
-    : ev.direction === "push-received" ? who + " sent " + n + " to " + ws
-    : ev.direction === "pull-served" ? who + " read " + n + " from " + ws
+  const said = { n, ws, who };
+  return ev.direction === "push" ? word("sentTo", said)
+    : ev.direction === "pull" ? word("receivedFrom", said)
+    : ev.direction === "push-received" ? word("peerSent", said)
+    : ev.direction === "pull-served" ? word("peerRead", said)
     : null;
 }
 // One sentence for an event, written once for the passing row and for Follow's notice (Section 29.6
@@ -543,14 +546,14 @@ function syncSaid(ev) {
 function activitySaid(ev) {
   const nameOf = id => { const n = nodeById(id); return n ? n.name : null; };
   if (ev.kind === "observe") return wroteSaid(ev);
-  if (ev.kind === "search") return actorOf(ev) + " searched \"" + ev.query + "\" - " + (ev.hits | 0) + " found";
+  if (ev.kind === "search") return word("searched", { actor: actorOf(ev), q: ev.query, n: ev.hits | 0 });
   if (ev.kind === "get_entity") {
-    const n = ev.name || nameOf(ev.id) || "an entity";
-    return ev.found ? actorOf(ev) + " looked up " + n : actorOf(ev) + " looked for " + n + " - not found";
+    const name = ev.name || nameOf(ev.id) || word("anEntity");
+    return word(ev.found ? "lookedUp" : "lookedFor", { actor: actorOf(ev), name });
   }
   if (ev.kind === "traverse") {
-    const n = nameOf(ev.start);
-    return actorOf(ev) + " followed " + (n ? n + "'s" : "an entity's") + " relations - " + (ev.reached || []).length + " reached";
+    const name = nameOf(ev.start);
+    return word(name ? "followedOf" : "followedAny", { actor: actorOf(ev), name, n: (ev.reached || []).length });
   }
   if (ev.kind === "sync") return syncSaid(ev);
   return null;
@@ -625,8 +628,8 @@ async function handleEvent(ev) {
   // The footprint in words (Section 29.6). The session is the daemon's run, not one conversation:
   // every agent since it started, so the line says agents, and the tooltip since when.
   if (sEl) {
-    sEl.textContent = footprintSession ? "Agents used " + plural(footprint.size, "entity", "entities") : "";
-    sEl.title = tipText(footprintSession ? "Since " + new Date(footprintSince).toLocaleTimeString() + ", session " + footprintSession : "");
+    sEl.textContent = footprintSession ? word(footprint.size === 1 ? "agentsUsedOne" : "agentsUsedN", { n: footprint.size }) : "";
+    sEl.title = tipText(footprintSession ? word("sinceSession", { time: new Date(footprintSince).toLocaleTimeString(LANG), id: footprintSession }) : "");
   }
 }
 // --- Peer markers (server mode) -----------------------------------------------------
@@ -762,10 +765,10 @@ function showPeerTip(m, id, cx, cy) {
   tip.style.top = (cy + 14) + "px";
   const ago = m.seen ? Math.max(0, Math.round((Date.now() - m.seen) / 1000)) : null;
   tip.innerHTML = html`${[
-    html`<b>peer ${id.slice(0, 6)}</b><br>`,
-    html`<span class="k">machine</span> ${id.slice(0, 16)}<br>`,
-    html`<span class="k">last</span> ${m.action || "-"}${ago !== null ? " " + ago + "s ago" : ""} `,
-    html`&nbsp; <span class="k">hits</span> ${m.count | 0}`]}`;
+    html`<b>${word("peerId", { id: id.slice(0, 6) })}</b><br>`,
+    html`<span class="k">${word("machine")}</span> ${id.slice(0, 16)}<br>`,
+    html`<span class="k">${word("last")}</span> ${m.action || "-"}${ago !== null ? " " + word("secondsAgo", { n: ago }) : ""} `,
+    html`&nbsp; <span class="k">${word("hits")}</span> ${m.count | 0}`]}`;
 }
 // Seed/refresh markers from the peer roster so idle peers (that only advertise, which is not a live
 // event) still appear and stay lit. Only metadata + `seen` are touched - a marker's glide target/flare

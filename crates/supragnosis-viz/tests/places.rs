@@ -56,7 +56,7 @@ fn follow_frames_what_is_in_scope_and_notes_the_rest() {
         "an agent's activity moves the reader"
     );
     let note = function("noteElsewhere");
-    assert!(note.contains("label: \"Show\""), "the notice has no Show");
+    assert!(note.contains("label: word(\"show\")"), "the notice has no Show");
 }
 
 /// The first view is where the knowledge is (design-system.md Section 29.21): an empty default with

@@ -3,7 +3,7 @@
 //! its identifier, and a proposal row the page cannot phrase says so in words.
 
 mod support;
-use support::keys_of;
+use support::{keys_of, says};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -278,22 +278,22 @@ fn the_maps_activity_speaks_in_sentences() {
     let all =
         [body("wroteSaid"), body("syncSaid"), body("activitySaid"), handle.to_string()].concat();
     for said in [
-        "actorOf(ev) + \" wrote \"",
-        "actorOf(ev) + \" searched \\\"\"",
-        "actorOf(ev) + \" looked up \"",
-        "actorOf(ev) + \" followed \"",
-        "\" sent \"",
-        "\" read \"",
+        "{actor} wrote {what} in {ws}",
+        "{actor} searched \"{q}\" - {n} found",
+        "{actor} looked up {name}",
+        "{actor} followed {name}'s relations - {n} reached",
+        "{who} sent {n} to {ws}",
+        "{who} read {n} from {ws}",
     ] {
-        assert!(all.contains(said), "the activity does not say {said}");
+        assert!(says(&all, said), "the activity does not say {said}");
     }
     // Who acted is the app the local event names, else "An agent" (design-system.md Section 29.8).
-    assert!(SCRIPT.contains("function actorOf(ev) { return ev.app || \"An agent\"; }"));
+    assert!(SCRIPT.contains("function actorOf(ev) { return ev.app || word(\"anAgent\"); }"));
     assert!(
-        SCRIPT.contains("return a.app && mine ? a.app + \" on \" + machine : machine;"),
+        SCRIPT.contains("return a.app && mine ? word(\"appOn\", { app: a.app, machine }) : machine;"),
         "the who-line does not name the app"
     );
-    assert!(handle.contains("\"Agents used \" + plural(footprint.size, \"entity\", \"entities\")"));
+    assert!(says(handle, "Agents used {n} entities") && handle.contains("footprint.size === 1"));
     assert!(!handle.contains("`session ${"), "the status bar names the session by its id");
 }
 
@@ -308,17 +308,15 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
         f[..f.find("\n}\n").unwrap_or_else(|| f.find("}\n").expect("it closes"))].to_string()
     };
     let writer = body("writerOf");
-    for part in [
-        "writtenHere(a)",
-        "\"this console\"",
-        "\"the console at \"",
-        "String(a.origin_node).slice(0, 8)",
-    ] {
-        assert!(writer.contains(part), "writerOf does not say {part}");
+    for part in ["writtenHere(a)", "String(a.origin_node).slice(0, 8)"] {
+        assert!(writer.contains(part), "writerOf does not hold {part}");
+    }
+    for en in ["this console", "the console at {machine}"] {
+        assert!(says(&writer, en), "writerOf does not say {en}");
     }
     assert!(!writer.contains("a.host"), "a host name decides here");
     assert!(SCRIPT.contains("function writtenHere(a) { return !a.origin_node || (!!ownNode && a.origin_node === ownNode); }"));
-    assert!(SCRIPT.contains("(a.on_behalf_of ? \", for \" + a.on_behalf_of : \"\")"));
+    assert!(SCRIPT.contains("(a.on_behalf_of ? word(\"forWho\", { who: a.on_behalf_of }) : \"\")"));
     assert!(
         SCRIPT.contains("return as[o && o.author | 0] || as[0] || null;"),
         "the row names the first by host"
@@ -328,15 +326,19 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
     for part in [
         "!/^surface:/.test(r)",
         "/^https?:\\/\\//.test(cited)",
-        "Cited: ",
         "o.gated_by",
-        "\"Lowered to \"",
-        "the agent's confidence: ",
         "data-open-obs=",
         "data-open-review=",
-        "As stored",
     ] {
         assert!(card.contains(part), "the card does not hold {part}");
+    }
+    for en in [
+        "Cited:",
+        "Lowered to {tier} by {writer}",
+        "the agent's confidence: {n}",
+        "As stored",
+    ] {
+        assert!(says(&card, en), "the card does not say {en}");
     }
     let settle = body("fillSettleWho");
     assert!(
@@ -349,7 +351,7 @@ fn a_who_line_names_the_writer_apart_from_whom_it_wrote_for() {
         body("relationGroupHtml").contains("chipTier(e.trust_tier)"),
         "a relation draws no trust"
     );
-    assert!(body("waitsHtml").contains("Waits for you: "));
+    assert!(says(&body("waitsHtml"), "Waits for you: {title}"));
 }
 
 /// design-system.md Section 29.8: one table of the AI apps' names. The core crate holds it; the app's

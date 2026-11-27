@@ -3,6 +3,9 @@
 //! carried in `?from=` and followed only to the viewer - is `the_way_back_goes_only_to_the_viewer` in
 //! the app's tests.
 
+mod support;
+use support::says;
+
 const SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));
 const PAGE: &str = include_str!("../assets/viewer.html");
 const KIT: &str = include_str!("../../../app/assets/kit.js");
@@ -42,14 +45,14 @@ fn follow_waits_while_the_map_is_in_use() {
     let note = function(SCRIPT, "noteActivity");
     // The notice says what the passing row says (design-system.md Section 29.6).
     assert!(note.contains("activitySaid(ev)"), "the notice has words of its own");
-    assert!(note.contains("label: \"Show\""), "the notice has no Show");
+    assert!(note.contains("label: word(\"show\")"), "the notice has no Show");
     assert!(!note.contains("\"New in \""), "the notice reads like a write elsewhere");
     let hud = &PAGE[PAGE.find("<div id=\"hud\">").expect("the toolbar")..];
     assert!(hud.contains("<button id=\"followBtn\""), "Follow is not on the camera toolbar");
     assert!(hud.contains("i-locate"));
     let look = function(SCRIPT, "renderFollow");
     assert!(
-        look.contains("\"Follow paused\"")
+        says(look, "Follow paused")
             && look.contains("\"i-locate-off\"")
             && look.contains("aria-pressed")
     );
@@ -65,7 +68,10 @@ fn the_address_holds_the_place() {
         "the selection is not in the address"
     );
     let linked = function(SCRIPT, "selectLinked");
-    assert!(linked.contains("\"The linked entity is not in \" + statsScope(currentWs())"));
+    assert!(
+        says(linked, "The linked entity is not in {scope}")
+            && linked.contains("scope: statsScope(currentWs())")
+    );
     assert!(
         SCRIPT.contains("let linkedEntity = new URLSearchParams(location.search).get(\"entity\");")
     );
@@ -137,8 +143,11 @@ fn a_selection_has_a_history_and_esc_gives_the_camera_back() {
 #[test]
 fn a_selection_that_leaves_is_followed_or_named() {
     let keep = function(SCRIPT, "keepSelection");
-    assert!(keep.contains("was.name + \" is now \" + now.name"));
-    assert!(keep.contains("was.name + \" is no longer in \" + statsScope(currentWs())"));
+    assert!(says(keep, "{was} is now {now}") && keep.contains("was: was.name, now: now.name"));
+    assert!(
+        says(keep, "{name} is no longer in {scope}")
+            && keep.contains("scope: statsScope(currentWs())")
+    );
     assert!(function(SCRIPT, "mergedInto").contains("(n.aliases || []).includes(name)"));
     assert!(SCRIPT.contains(
         "if (focus) { if (nodes.includes(focus)) renderDetail(focus); else keepSelection(); }"

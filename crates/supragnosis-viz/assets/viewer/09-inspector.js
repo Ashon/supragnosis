@@ -20,7 +20,7 @@ let settleNeither = null;   // the block whose "Neither is right" is open; survi
 let graphGen = 0;           // bumped when a graph arrives: an open question reads its diff again when the log moves
 const TIER_ORDER = ["unverified", "agent_extracted", "host_signed", "human_confirmed"];
 // The checks a settle runs (proposal-workflow.md Section 6), in words (U17).
-const CHECK_WORDS = { "referential integrity": "the source is in this log", "tier stated": "the tier is stated" };
+const CHECK_WORDS = { "referential integrity": word("checkSourceInLog"), "tier stated": word("checkTierStated") };
 // `said` is the sentence the act's notice says, kept as the proposal's rationale, so the act's
 // Decided item says it too (Section 29.3).
 function settleQuery(obs, tier, kind, said) {
@@ -42,10 +42,10 @@ async function readPreview(acts) {
   try {
     const r = await fetch("/api/resolve/preview" + previewQuery(acts), { cache: "no-store" });
     const body = await r.json().catch(() => null);
-    if (!r.ok || !body) return { why: (body && body.error) || "What this act changes could not be read." };
-    if (!body.belief_diff || !body.belief_diff.computable) return { why: (body.belief_diff && body.belief_diff.note) || "What this act changes could not be computed." };
+    if (!r.ok || !body) return { why: (body && body.error) || word("actUnread") };
+    if (!body.belief_diff || !body.belief_diff.computable) return { why: (body.belief_diff && body.belief_diff.note) || word("actUncomputable") };
     return { preview: body };
-  } catch (_) { return { why: "What this act changes could not be read - is the daemon running?" }; }
+  } catch (_) { return { why: word("actUnreadDaemon") }; }
 }
 // The entities whose ring an act moves, the belief's own entity aside, each once - grouped by where
 // they land: "With it, Nightly export and Warehouse become Human confirmed."
@@ -57,18 +57,17 @@ function ringMoves(diff, skip, down) {
   const byTo = new Map();
   for (const e of moved.values()) { if (!byTo.has(e.to)) byTo.set(e.to, []); byTo.get(e.to).push(e.name); }
   return [...byTo.entries()].map(([to, names]) => {
-    const shown = nameList(names);
-    const many = names.length > 1;
-    const verb = down ? (many ? " drop to " : " drops to ")
-      : TIER_ORDER.indexOf(to) === 3 ? (many ? " become " : " becomes ") : (many ? " go back to " : " goes back to ");
-    return shown + verb + tierName(to);
+    const said = { names: nameList(names), tier: tierName(to) }, many = names.length > 1;
+    return down ? word(many ? "ringDropMany" : "ringDropOne", said)
+      : TIER_ORDER.indexOf(to) === 3 ? word(many ? "ringBecomeMany" : "ringBecomeOne", said)
+      : word(many ? "ringBackMany" : "ringBackOne", said);
   });
 }
 // "Nightly export and Warehouse", "A, B and C", "A, B, C, D and 3 more".
 function nameList(names) {
   const shown = names.slice(0, 4), more = names.length - shown.length;
-  if (more > 0) return shown.join(", ") + " and " + more + " more";
-  return shown.length > 1 ? shown.slice(0, -1).join(", ") + " and " + shown[shown.length - 1] : shown.join("");
+  if (more > 0) return word("namesAndMore", { names: shown.join(", "), n: more });
+  return shown.length > 1 ? shown.slice(0, -1).join(", ") + word("joinAnd") + shown[shown.length - 1] : shown.join("");
 }
 // The question's sources and its diff. Reads /api/explain for the value's sources (and the shown
 // value's tier before any verdict, which "Confirm instead" demotes its source to), then the preview.
@@ -95,7 +94,7 @@ async function readSettle() {
     } catch (_) { /* the preview below still answers, and says when it cannot */ }
   }
   let preview = null;
-  if (ctx.instead && !curBase) why = "Could not read the tier " + ctx.curValue + " had before any verdict, so nothing would be changed.";
+  if (ctx.instead && !curBase) why = word("tierBeforeUnread", { value: ctx.curValue });
   else {
     const acts = ctx.instead
       ? [{ obs: ctx.curObs, tier: curBase, kind: "claim_demotion" }, { obs: from, tier: "human_confirmed" }]
@@ -123,38 +122,39 @@ function firstWords(v, obs) {
 // of that has been read (U18, U19: a waiting or refused Confirm says why beside it).
 function askHtml(ctx) {
   const v = settleView && settleView.key === ctx.key ? settleView : null;
-  const q = ctx.instead ? "Confirm " + ctx.value + " instead?" : "Confirm " + ctx.value + " as " + ctx.name + "'s " + ctx.field + "?";
+  const said = { value: ctx.value, name: ctx.name, field: fieldSaid(ctx.field).toLowerCase() };
+  const q = word(ctx.instead ? "confirmInsteadAsk" : "confirmAsk", said);
   const sid = "cst-" + String(ctx.key).slice(0, 12);
   const parts = [html`<div class="cq">${q}</div>`];
   if (v && v.sources && v.sources.length > 1) {
-    parts.push(html`<div class="cfrom" role="radiogroup" aria-label="Confirm from"><span class="cfl">Confirm from</span>${v.sources.map(src => html`<label class="cfr"><input type="radio" name="${"cfrom-" + ctx.key}" value="${src.observation}" data-settle="from"${src.observation === settleFrom ? html` checked` : ""}><span>${[sourceWho(v, src.observation) || tierName(src.trust_tier), firstWords(v, src.observation) ? "\"" + firstWords(v, src.observation) + "\"" : ""].filter(Boolean).join(" - ")}</span></label>`)}</div>`);
+    parts.push(html`<div class="cfrom" role="radiogroup" aria-label="${word("confirmFrom")}"><span class="cfl">${word("confirmFrom")}</span>${v.sources.map(src => html`<label class="cfr"><input type="radio" name="${"cfrom-" + ctx.key}" value="${src.observation}" data-settle="from"${src.observation === settleFrom ? html` checked` : ""}><span>${[sourceWho(v, src.observation) || tierName(src.trust_tier), firstWords(v, src.observation) ? "\"" + firstWords(v, src.observation) + "\"" : ""].filter(Boolean).join(" - ")}</span></label>`)}</div>`);
   }
-  let can = false, state = "Reading what this confirms...";
-  if (v && v.state === "err") state = v.why || "What this act changes could not be read.";
+  let can = false, state = word("readingConfirm");
+  if (v && v.state === "err") state = v.why || word("actUnread");
   if (v && v.state === "ok") {
     const d = v.preview.belief_diff, rows = d.reach || [];
     const mine = rows.find(r => r.observation === v.from);
     const theirs = ctx.instead ? rows.find(r => r.observation === ctx.curObs) : null;
     const fails = (v.preview.checks || []).filter(c => !c.passed);
-    if (!mine) state = "This source is already " + tierName("human_confirmed") + ", so confirming it changes nothing.";
+    if (!mine) state = word("alreadyConfirmed", { tier: tierName("human_confirmed") });
     else {
-      parts.push(html`<div class="csrc">This confirms one source: <q>${mine.said.trimEnd()}${mine.cut ? "..." : ""}</q>${mine.cut ? html`<span class="sr-only"> (shortened)</span>` : ""} <span class="cby">${sourceWho(v, v.from)}</span></div>`);
-      if (theirs) parts.push(html`<div class="creach">${ctx.curValue}'s source goes back to ${tierName(theirs.to)}.</div>`);
-      for (const line of ringMoves(d, ctx.entity)) parts.push(html`<div class="creach">With it, ${line}.</div>`);
+      parts.push(html`<div class="csrc">${word("confirmsOneSource")} <q>${mine.said.trimEnd()}${mine.cut ? "..." : ""}</q>${mine.cut ? html`<span class="sr-only"> ${word("shortened")}</span>` : ""} <span class="cby">${sourceWho(v, v.from)}</span></div>`);
+      if (theirs) parts.push(html`<div class="creach">${word("sourceGoesBack", { value: ctx.curValue, tier: tierName(theirs.to) })}.</div>`);
+      for (const line of ringMoves(d, ctx.entity)) parts.push(html`<div class="creach">${word("withIt", { line })}</div>`);
       const rel = (mine.relations || []).length, defs = mine.type_defs || [];
-      if (rel) parts.push(html`<div class="creach">It also states ${rel} relation${rel === 1 ? "" : "s"}.</div>`);
-      if (defs.length) parts.push(html`<div class="creach">It also defines ${defs.length} type${defs.length === 1 ? "" : "s"}: ${nameList(defs)}.</div>`);
+      if (rel) parts.push(html`<div class="creach">${word(rel === 1 ? "alsoOneRelation" : "alsoRelations", { n: rel })}</div>`);
+      if (defs.length) parts.push(html`<div class="creach">${word(defs.length === 1 ? "alsoOneType" : "alsoTypes", { n: defs.length, names: nameList(defs) })}</div>`);
       parts.push(html`<div class="cdef">${tierName("human_confirmed")}: ${TIER_MEANS.human_confirmed}</div>`);
       const words = c => CHECK_WORDS[c.name] || c.name;
-      if (fails.length) state = "Blocked: " + fails.map(c => words(c) + " - " + c.detail).join("; ");
+      if (fails.length) state = word("blockedBy", { checks: fails.map(c => words(c) + " - " + c.detail).join("; ") });
       else {
-        parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>Checks pass: ${[...new Set((v.preview.checks || []).map(words))].join(", ")}</div>`);
+        parts.push(html`<div class="cchk"><span class="i i-check" aria-hidden="true"></span>${word("checksPass", { checks: [...new Set((v.preview.checks || []).map(words))].join(", ") })}</div>`);
         can = true;
       }
     }
   }
   return html`<div class="cask" role="group" aria-label="${q}">${parts}${
-    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-settle="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>Confirm</button><button type="button" class="quiet" data-settle="no">Cancel</button></span></div>`;
+    can ? "" : html`<div class="cstate" id="${sid}">${state}</div>`}<span class="cacts"><button type="button" class="confirm" data-settle="yes"${can ? "" : html` disabled aria-describedby="${sid}"`}>${word("confirmAct")}</button><button type="button" class="quiet" data-settle="no">${word("cancel")}</button></span></div>`;
 }
 // Casts what the question previewed: for "Confirm instead" the shown value's source goes back to its
 // tier before any verdict first, then the chosen source is confirmed. Undo is built from the reverse
@@ -165,33 +165,33 @@ async function settleValue(a) {
   const fromWas = before(a.from) || "agent_extracted";
   const curWas = a.instead ? before(a.curObs) : null;
   if (a.instead) {
-    const back = a.curValue + "'s source goes back to " + tierName(v.curBase);
-    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, v.curBase, "claim_demotion", back + " (Confirm instead)"), back)) return;
+    const back = word("sourceGoesBack", { value: a.curValue, tier: tierName(v.curBase) });
+    if (!await consoleWrite("/api/resolve", settleQuery(a.curObs, v.curBase, "claim_demotion", word("viaConfirmInstead", { said: back })), back)) return;
   }
   const reverse = a.instead && curWas
     ? [{ obs: a.from, tier: fromWas, kind: "claim_demotion" }, { obs: a.curObs, tier: curWas, kind: "claim_promotion" }]
     : [{ obs: a.from, tier: fromWas, kind: "claim_demotion" }];
   const undo = async () => {
     const got = await readPreview(reverse);
-    if (!got.preview) return { note: "Undo is not offered: what it would move back could not be read." };
+    if (!got.preview) return { note: word("undoUnread") };
     const moves = ringMoves(got.preview.belief_diff, a.entity);
     return {
-      label: "Undo",
+      label: word("undo"),
       // After "Confirm instead" the Undo reverses both acts, which no one Decided item holds, so that
       // notice stays; otherwise the same Undo is on the confirmation's Decided item (Section 29.3).
       decided: !a.instead,
-      note: "Undo returns this source to " + tierName(fromWas) + " and keeps it there until someone confirms it again."
+      note: word("undoSourceNote", { tier: tierName(fromWas) })
         + (moves.length ? " " + moves.join(". ") + "." : ""),
       run: async () => {
-        if (!await consoleWrite("/api/resolve", settleQuery(a.from, fromWas, "claim_demotion", "Undid " + confirmed),
-          "Undone - the source is " + tierName(fromWas) + " again")) return;
-        if (a.instead && curWas) await consoleWrite("/api/resolve", settleQuery(a.curObs, curWas, null, "Undid " + confirmed),
-          a.curValue + " is " + tierName(curWas) + " again");
+        if (!await consoleWrite("/api/resolve", settleQuery(a.from, fromWas, "claim_demotion", word("undid", { said: confirmed })),
+          word("undoneSource", { tier: tierName(fromWas) }))) return;
+        if (a.instead && curWas) await consoleWrite("/api/resolve", settleQuery(a.curObs, curWas, null, word("undid", { said: confirmed })),
+          word("valueAgain", { value: a.curValue, tier: tierName(curWas) }));
         await poll();
       },
     };
   };
-  const confirmed = "Confirmed " + a.value + " as " + a.name + "'s " + a.field;
+  const confirmed = word("confirmedAs", { value: a.value, name: a.name, field: fieldSaid(a.field).toLowerCase() });
   await consoleWrite("/api/resolve", settleQuery(a.from, "human_confirmed", null, confirmed), confirmed, undo);
   await poll();   // re-fold: the ring drops, the panel updates, the proposal shows as merged
   // On the Review page the item leaves Needs you at once and the next one takes focus (Section 29.3).
@@ -222,7 +222,7 @@ async function fillSettleWho(host, entity) {
       const shared = minutes[i] && minutes.filter(m => m === minutes[i]).length > 1;
       const q = document.createElement("button");
       q.type = "button"; q.className = "cq"; q.textContent = `"${firstSentence(o.content)}"`;
-      q.title = tipText("Open the observation");
+      q.title = tipText(word("openObservation"));
       q.onclick = (ev) => { ev.stopPropagation(); showObsCard(o); };
       const who = document.createElement("span");
       who.className = "cwho"; who.textContent = whoLine("", authorOf(o), shared);
@@ -245,17 +245,18 @@ function contestedRows(o) {
   const committed = String(o.tier) === "human_confirmed";
   const tied = o.contested && comps.length ? comps[0].trust_tier : "";
   const curTier = committed ? "human_confirmed" : (tied || o.tier || "");
+  const field = fieldSaid(o.field).toLowerCase(), confirmedTier = tierName("human_confirmed");
   const head = o.contested && committed
-    ? "These values are all Human confirmed, so the newer one is shown until you decide."
+    ? word("allConfirmedNewer", { tier: confirmedTier })
     : o.contested
-      ? "Two sources disagree on " + o.name + "'s " + o.field + ". Both are " + tierName(tied) + " claims, so the newer one is shown until you decide."
-      : committed ? "The Human confirmed value is shown." : "The value with the higher trust is shown.";
+      ? word("twoDisagreeOn", { name: o.name, field, tier: tierName(tied) })
+      : committed ? word("confirmedShown", { tier: confirmedTier }) : word("higherTrustShown");
   const row = (value, tier, obs, shown) => {
     const instead = committed && !shown;
     const ctx = { key: obs, obs, value, name: o.name, field: o.field, entity: o.entity || "",
       instead, curObs: o.curObs, curValue: o.current };
     const act = obs && !(committed && shown) && !(instead && !o.entity)
-      ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}" data-ctx="${JSON.stringify(ctx)}">${instead ? "Confirm instead" : "Confirm"}</button>`
+      ? html`<button type="button" class="confirm" data-settle="ask" data-obs="${obs}" data-ctx="${JSON.stringify(ctx)}">${word(instead ? "confirmInstead" : "confirmAct")}</button>`
       : "";
     const asking = settleAsk === obs && act;
     // An open question whose diff was read before the log last moved reads it again (I7/I12 are owed,
@@ -266,7 +267,7 @@ function contestedRows(o) {
     }
     return html`${[
       html`<div class="crow${shown ? " cur" : ""}"><span class="cv">${value}</span>`,
-      shown ? html`<span class="curtag">shown</span>` : "",
+      shown ? html`<span class="curtag">${word("shownTag")}</span>` : "",
       tier ? html`<span class="ctier">${tierName(tier)}</span>` : "",
       act, html`</div>`,
       obs ? html`<div class="csrc" data-src="${obs}"></div>` : "",
@@ -282,7 +283,7 @@ function contestedRows(o) {
   const key = o.name + "|" + o.field;
   return html`<div class="chead">${head}</div>${row(o.current, curTier, o.curObs, true)}${
     comps.map(c => row(c.value, c.trust_tier, c.observation, false))}${
-    html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary><span class="i i-chevron-right" aria-hidden="true"></span>Neither is right</summary><div class="nhelp">Ask an agent to record the right value, then confirm it here.</div><div class="copyline"><code>${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">Copy</button></div></details>`}`;
+    html`<details class="neither" data-key="${key}"${settleNeither === key ? html` open` : ""}><summary><span class="i i-chevron-right" aria-hidden="true"></span>${word("neitherRight")}</summary><div class="nhelp">${word("askAgentRecord")}</div><div class="copyline"><code lang="en">${say}</code><button type="button" class="quiet" data-settle="copy" data-text="${say}">${word("copy")}</button></div></details>`}`;
 }
 // The block's acts, wired after each draw; `redraw` draws the block's surface again.
 function wireSettle(host, redraw) {
@@ -310,8 +311,8 @@ function wireSettle(host, redraw) {
         await settleValue(a);
       }
       else if (k === "copy") {
-        try { await window.navigator.clipboard.writeText(b.dataset.text); toast("ok", "Copied - give it to an agent"); }
-        catch (_) { toast("bad", "Could not copy", b.dataset.text); }
+        try { await window.navigator.clipboard.writeText(b.dataset.text); toast("ok", word("copiedForAgent")); }
+        catch (_) { toast("bad", word("couldNotCopy"), b.dataset.text); }
       }
     };
   });
@@ -352,27 +353,29 @@ function contestedBlock(node) {
   if (node.contested) return html`<div class="contested hot">${contestedRows(nodeBelief(node))}</div>`;
   const cmp = node.competitors || [];
   if (!cmp.length) return html``;
-  const settled = String(node.trust_tier) === "human_confirmed" ? "Human confirmed" : "Settled by trust";
+  const settled = String(node.trust_tier) === "human_confirmed" ? tierName("human_confirmed") : word("settledByTrust");
   return html`${[
     html`<div class="contested folded${foldOpen === node.id ? " open" : ""}">`,
-    html`<button class="cfold" type="button">${settled} - ${cmp.length} other type${cmp.length > 1 ? "s" : ""} asserted</button>`,
+    html`<button class="cfold" type="button">${word(cmp.length > 1 ? "otherTypesAsserted" : "otherTypeAsserted", { settled, n: cmp.length })}</button>`,
     html`<div class="cbody">${contestedRows(nodeBelief(node))}</div></div>`]}`;
 }
 
 // The inspector "why (evidence & decision)" body from /api/explain: per-field belief resolution
 // (each single-valued field's ranked candidates - winner / alias / competitor) plus the supporting
 // observation log. An explanation OF the projection - the winner IS what the graph shows.
+// A candidate's role in a field's decision, in words.
+const ROLE_SAID = { winner: word("roleWinner"), alias: word("roleAlias"), competitor: word("roleCompetitor") };
 function candRowHtml(c) {
   return html`${[
     html`<div class="cand ${c.role}"><span class="cv">${c.value}</span>`,
-    html`<span class="crole">${c.role}</span>`,
+    html`<span class="crole">${ROLE_SAID[c.role] || c.role}</span>`,
     html`<span class="ctier">${tierName(c.trust_tier)}</span>`,
-    html`<span class="cobs" title="${tipText("Observation " + c.observation)}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
+    html`<span class="cobs" title="${tipText(word("observationId", { id: c.observation }))}">${String(c.observation).slice(0, 8)}</span></div>`]}`;
 }
 function fieldHtml(f) {
   return html`${[
     html`<div class="wfield${f.contested ? " hot" : ""}">`,
-    html`<div class="wfhead">${f.field}${f.contested ? html` <span class="wtag">contested</span>` : ""}</div>`,
+    html`<div class="wfhead">${f.field}${f.contested ? html` <span class="wtag">${word("contestedTag")}</span>` : ""}</div>`,
     (f.candidates || []).map(candRowHtml),
     html`</div>`]}`;
 }
@@ -388,7 +391,7 @@ function fillWhy(whyBody, ex) {
   if (ex && ex.fields) {
     whyBody.innerHTML = html`${renderExplain(ex)}`;
   } else {
-    whyBody.textContent = "no explanation available";
+    whyBody.textContent = word("noExplanation");
   }
 }
 
@@ -427,14 +430,14 @@ function relationGroupHtml(g, open) {
   // screen rather than one hover away (Section 4, U25).
   const chip = ({ other, e }) => html`${[
     html`<button type="button" class="rchip${e.valid_to ? " past" : ""}" data-id="${other.id}" `,
-    html`title="${tipText((e.valid_to ? "Superseded, focus " : "Focus ") + other.name)}">`,
+    html`title="${tipText(word(e.valid_to ? "supersededFocus" : "focusName", { name: other.name }))}">`,
     // The relation's own trust, the map's ring for its tier (Section 29.7).
     html`<span class="dot" style="background:${typeColor[other.type] || OTHER}"></span>${other.name}${chipTier(e.trust_tier)}</button>`]}`;
   return html`${[
-    html`<div class="rgroup"><div class="rghead"><span class="i ${g.out ? "i-arrow-right" : "i-arrow-left"}" role="img" aria-label="${g.out ? "Outgoing" : "Incoming"}"></span>`,
+    html`<div class="rgroup"><div class="rghead"><span class="i ${g.out ? "i-arrow-right" : "i-arrow-left"}" role="img" aria-label="${word(g.out ? "outgoing" : "incoming")}"></span>`,
     html`<span class="rkind">${g.kind}</span><span class="rct">${g.items.length}</span></div>`,
     html`<div class="rchips">${shown.map(chip)}`,
-    rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="${tipText("Show " + rest + " more")}">+${rest}</button>` : "",
+    rest > 0 ? html`<button class="rmore" type="button" data-key="${g.key}" title="${tipText(word("showNMore", { n: rest }))}">+${rest}</button>` : "",
     html`</div>`,
     shown.filter(x => x.e.description).map(x => html`<p class="rdesc"><b>${x.other.name}</b> ${x.e.description}</p>`),
     html`</div>`]}`;
@@ -510,8 +513,8 @@ let namesakes = null;   // { id, tag, list } or { id, tag, why }
 function alsoNamedHtml(node) {
   if (!node.workspace) return "";
   if (!namesakes || namesakes.id !== node.id || namesakes.tag !== heldGraph.tag) { readNamesakes(node); return ""; }
-  if (namesakes.why) return html`<div class="meta">Not compared with other workspaces: ${namesakes.why}</div>`;
-  return namesakes.list.map(m => html`<div class="meta also">Also named in ${m.workspace}: ${m.name} (${m.type}) <button type="button" class="linkish nsshow" data-id="${m.id}" aria-label="${"Show " + m.name + " in " + m.workspace}">Show</button></div>`);
+  if (namesakes.why) return html`<div class="meta">${word("notCompared", { why: namesakes.why })}</div>`;
+  return namesakes.list.map(m => html`<div class="meta also">${word("alsoNamedIn", { ws: m.workspace, name: m.name, type: m.type })} <button type="button" class="linkish nsshow" data-id="${m.id}" aria-label="${word("showNameIn", { name: m.name, ws: m.workspace })}">${word("show")}</button></div>`);
 }
 let namesakesFor = null;
 async function readNamesakes(node) {
@@ -519,14 +522,14 @@ async function readNamesakes(node) {
   namesakesFor = node.id;
   const id = node.id, tag = heldGraph.tag;
   let answer;
-  if (!wsListed) answer = { id, tag, why: "the workspace list did not load" };
+  if (!wsListed) answer = { id, tag, why: word("wsListUnloaded") };
   else {
     try {
       const q = "?entity=" + encodeURIComponent(id) + wsListed.map(w => "&in=" + encodeURIComponent(w)).join("");
       const r = await fetch("/api/namesakes" + q, { cache: "no-store" });
       const j = await r.json();
-      answer = r.ok ? { id, tag, list: j.namesakes || [] } : { id, tag, why: j.error || "the server answered " + r.status };
-    } catch (e) { answer = { id, tag, why: "the server is not answering" }; }
+      answer = r.ok ? { id, tag, list: j.namesakes || [] } : { id, tag, why: j.error || word("serverAnsweredStatus", { status: r.status }) };
+    } catch (e) { answer = { id, tag, why: word("serverSilent") }; }
   }
   namesakesFor = null;
   if (!focus || focus.id !== id) return;   // the selection moved on
@@ -549,7 +552,7 @@ function selectLinked() {
   const n = nodeById(linkedEntity) || mergedInto(linkedEntity);
   linkedEntity = null;
   if (n) select(n);
-  else toast("info", "The linked entity is not in " + statsScope(currentWs()));
+  else toast("info", word("linkedNotIn", { scope: statsScope(currentWs()) }));
 }
 // A selected entity the graph no longer holds: followed to what a merge made of it, or said gone.
 function keepSelection() {
@@ -558,11 +561,11 @@ function keepSelection() {
   const now = mergedInto(was.id, was.name);
   if (now) {
     focus = now; renderDetail(now); syncUrlWorkspace();
-    toast("info", was.name + " is now " + now.name);
+    toast("info", word("isNow", { was: was.name, now: now.name }));
   } else {
     selHist.last = null;
     focus = null; renderDetail(null); syncUrlWorkspace();
-    toast("info", was.name + " is no longer in " + statsScope(currentWs()));
+    toast("info", word("noLongerIn", { name: was.name, scope: statsScope(currentWs()) }));
   }
 }
 // Whether the person is using the map, which follow waits out (D6): a selection, the List, a popover,
@@ -582,11 +585,11 @@ function noteActivity(ev, ids) {
   const was = activityNote;
   if (was && was.el && was.el.isConnected && !was.el.classList.contains("out")) {
     was.n += 1; was.ids = ids;
-    was.el.querySelector(".tt").textContent = said + " (and " + (was.n - 1) + " more)";
+    was.el.querySelector(".tt").textContent = word("andNMore", { said, n: was.n - 1 });
     return;
   }
   const note = { n: 1, ids, el: null };
-  note.el = toast("info", said, null, { label: "Show", note: "", run: () => {
+  note.el = toast("info", said, null, { label: word("show"), note: "", run: () => {
     activityNote = null;
     const hit = note.ids.map(nodeById).filter(Boolean);
     if (hit.length > 1) fitView(hit, 130); else if (hit[0]) centerOn(hit[0]);
@@ -600,7 +603,7 @@ function renderFollow() {
   followBtn.setAttribute("aria-pressed", follow ? "true" : "false");
   followBtn.classList.toggle("on", follow && !paused);
   followBtn.classList.toggle("paused", paused);
-  const label = !follow ? "Follow" : paused ? "Follow paused" : "Follow";
+  const label = word(follow && paused ? "followPaused" : "follow");
   followBtn.setAttribute("aria-label", label);
   followBtn.title = tipText(label);
   followBtn.querySelector(".i").className = "i " + (follow ? "i-locate" : "i-locate-off");
@@ -621,7 +624,7 @@ function waitsHtml(node) {
   const items = needsItems().filter(it =>
     (it.kind === "proposal" && ((it.p.targets || []).includes(node.id) || it.p.into === node.id))
     || (it.kind === "contested" && it.c.id === node.id));
-  return html`${items.map(it => html`<div class="waits"><span class="wt">Waits for you: ${itemTitle(it)}</span><button type="button" class="linkish" data-waits="${it.key}">Open in Review</button></div>`)}`;
+  return html`${items.map(it => html`<div class="waits"><span class="wt">${word("waitsForYou", { title: itemTitle(it) })}</span><button type="button" class="linkish" data-waits="${it.key}">${word("openInReview")}</button></div>`)}`;
 }
 function renderDetail(node) {
   // The inspector is a sheet on the right; the Log and the corner controls step aside (viewer.css).
@@ -640,51 +643,51 @@ function renderDetail(node) {
   const tier = String(node.trust_tier);
   const scopeSaid = [];
   if (base.tier !== null) scopeSaid.push(tierName(base.tier));
-  if (base.origin) scopeSaid.push("from " + (surfaceNode && base.origin === surfaceNode ? here() : base.origin));
+  if (base.origin) scopeSaid.push(word("fromOrigin", { origin: surfaceNode && base.origin === surfaceNode ? here() : base.origin }));
   const origin = base.origin === null && node.origins && node.origins.length
-    ? html`<div class="meta">from: ${node.origins.join(", ")}</div>` : "";
+    ? html`<div class="meta">${word("fromOrigins", { origins: node.origins.join(", ") })}</div>` : "";
   // An empty workspace is an entity a merge carried across a workspace boundary - said, not left blank.
   const workspace = base.workspace === null
-    ? html`<div class="meta">workspace: ${node.workspace || "more than one (merged across workspaces)"}</div>` : "";
+    ? html`<div class="meta">${word("workspaceIs", { ws: node.workspace || word("mergedAcross") })}</div>` : "";
   const also = alsoNamedHtml(node);
   // With a single candidate per field the disclosure can only answer "nobody said otherwise", and the
   // asserting observation is already a row of the evidence column - so it appears only when some
   // field has a second candidate: an alias spelling or a competing kind (Section 5).
   const disputed = (node.aliases || []).length > 0 || (node.competitors || []).length > 0;
   detailEl.innerHTML = html`${[
-    html`<button class="close" title="${tipText("Close", "Esc")}" aria-label="Close"><span class="i i-x" aria-hidden="true"></span></button>`,
+    html`<button class="close" title="${tipText(word("close"), "Esc")}" aria-label="${word("close")}"><span class="i i-x" aria-hidden="true"></span></button>`,
     // Taller / shorter: the height cap keeps the graph visible by default; this trades it for room.
-    html`<button class="grow" title="${tipText(detailTall ? "Shorter panel" : "Taller panel")}" aria-label="${detailTall ? "Shorter panel" : "Taller panel"}">`,
+    html`<button class="grow" title="${tipText(word(detailTall ? "shorterPanel" : "tallerPanel"))}" aria-label="${word(detailTall ? "shorterPanel" : "tallerPanel")}">`,
       html`<span class="i ${detailTall ? "i-chevron-down" : "i-chevron-up"}" aria-hidden="true"></span></button>`,
     // Back and Forward through the selections, once there is somewhere to go (Section 29.4).
     selHist.back.length || selHist.fwd.length ? html`<div class="hnav">${[
-      html`<button type="button" class="hback" title="${tipText("Back", "Cmd+[")}" aria-label="Back" aria-keyshortcuts="Meta+["${selHist.back.length ? "" : html` disabled`}><span class="i i-chevron-left" aria-hidden="true"></span></button>`,
-      html`<button type="button" class="hfwd" title="${tipText("Forward", "Cmd+]")}" aria-label="Forward" aria-keyshortcuts="Meta+]"${selHist.fwd.length ? "" : html` disabled`}><span class="i i-chevron-right" aria-hidden="true"></span></button>`]}</div>` : "",
+      html`<button type="button" class="hback" title="${tipText(word("back"), "Cmd+[")}" aria-label="${word("back")}" aria-keyshortcuts="Meta+["${selHist.back.length ? "" : html` disabled`}><span class="i i-chevron-left" aria-hidden="true"></span></button>`,
+      html`<button type="button" class="hfwd" title="${tipText(word("forward"), "Cmd+]")}" aria-label="${word("forward")}" aria-keyshortcuts="Meta+]"${selHist.fwd.length ? "" : html` disabled`}><span class="i i-chevron-right" aria-hidden="true"></span></button>`]}</div>` : "",
     html`<h2>${node.name}</h2>`,
     html`<div class="meta"><span class="dot" style="background:${typeColor[node.type] || OTHER}"></span>`,
       html`<span>${node.type}</span>${tierDot(tier)}${base.tier === null ? html`<span>${tierName(tier)}</span>` : ""}`,
-      scopeSaid.length ? html`<span class="scopeline">All here: ${scopeSaid.join(", ")}</span>` : "",
+      scopeSaid.length ? html`<span class="scopeline">${word("allHere", { tier: scopeSaid.join(", ") })}</span>` : "",
     html`</div>`,
-    node.last_said ? html`<div class="meta">Last said ${obsWhen(node.last_said)}</div>` : "",
-    node.aliases && node.aliases.length ? html`<div class="meta">aliases: ${node.aliases.join(", ")}</div>` : "",
+    node.last_said ? html`<div class="meta">${word("lastSaid", { when: obsWhen(node.last_said) })}</div>` : "",
+    node.aliases && node.aliases.length ? html`<div class="meta">${word("aliases", { names: node.aliases.join(", ") })}</div>` : "",
     origin, workspace, also,
     node.description ? html`<div class="desc">${node.description}</div>` : "",
     waitsHtml(node),
     contestedBlock(node),
     // Why this value won: a lazy-loaded disclosure (the per-field decision comes from /api/explain
     // only when opened - the graph poll stays light). The evidence itself is the column below.
-    disputed ? html`<div class="why"><button class="whytoggle" type="button">Why this value</button><div class="whybody"></div></div>` : "",
+    disputed ? html`<div class="why"><button class="whytoggle" type="button">${word("whyThisValue")}</button><div class="whybody"></div></div>` : "",
     // Two regions: the node's relations, grouped by kind, and its observation log (the evidence
     // behind its belief), side by side.
     html`<div class="rels">`,
-      html`<div class="relcol"><div class="sec">Relations <span class="ct">${nrel}</span>${
+      html`<div class="relcol"><div class="sec">${word("relations")} <span class="ct">${nrel}</span>${
         // Keep this entity and what its drawn relations reach in view (Section 29.11).
-        relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">Show related</button>` : ""}${
+        relatedDrawn(node).length ? html`<button type="button" class="linkish shrel">${word("showRelated")}</button>` : ""}${
         // Say two entities of one workspace are one (Section 29.17).
-        node.workspace ? html`<button type="button" class="linkish sameas">Same as...</button>` : ""}</div>`,
-        groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">none</div>`,
+        node.workspace ? html`<button type="button" class="linkish sameas">${word("sameAs")}</button>` : ""}</div>`,
+        groups.length ? groups.map(g => relationGroupHtml(g, relOpen.keys.has(g.key))) : html`<div class="empty">${word("none")}</div>`,
       html`</div>`,
-      html`<div class="relcol"><div class="sec">Evidence</div><div class="logcol"></div></div>`,
+      html`<div class="relcol"><div class="sec">${word("evidence")}</div><div class="logcol"></div></div>`,
     html`</div>`]}`;
   detailEl.className = "on" + (detailTall ? " tall" : "");
   detailEl.querySelector(".close").onclick = () => clearSelection(true);
@@ -734,14 +737,14 @@ function renderDetail(node) {
     else whyCache.open = open;
     if (!open) return;
     if (whyCache.ex) { fillWhy(whyBody, whyCache.ex); return; }
-    whyBody.textContent = "loading...";
+    whyBody.textContent = word("loading");
     try {
       const r = await fetch("/api/explain?entity=" + encodeURIComponent(node.id), { cache: "no-store" });
       const ex = await r.json();
       whyCache = { id: node.id, open: true, ex };
       fillWhy(whyBody, ex);
     } catch (e) {
-      whyBody.textContent = "explain failed - is the server up?";
+      whyBody.textContent = word("explainFailed");
     }
   };
 }

@@ -275,16 +275,14 @@ fn under_all_the_console_files_where_items_live() {
 #[test]
 fn the_same_name_is_said_on_the_local_console() {
     let also = function("alsoNamedHtml");
-    for part in [
-        "namesakes.tag !== heldGraph.tag",
-        "Not compared with other workspaces: ",
-        "Also named in ",
-        "nsshow",
-    ] {
+    for part in ["namesakes.tag !== heldGraph.tag", "nsshow"] {
         assert!(also.contains(part), "the sheet's line does not hold {part}");
     }
+    for en in ["Not compared with other workspaces: {why}", "Also named in {ws}: {name} ({type})"] {
+        assert!(says(also, en), "the sheet's line does not say {en}");
+    }
     let read = function("readNamesakes");
-    assert!(read.contains("the workspace list did not load"), "a missing list is not said");
+    assert!(says(read, "the workspace list did not load"), "a missing list is not said");
     assert!(
         read.contains("\"&in=\" + encodeURIComponent(w)"),
         "the workspaces are not sent one by one"

@@ -19,17 +19,19 @@ fn function(name: &str) -> &'static str {
 fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
     let rows = function("contestedRows");
     // Why the shown value is shown, in the policy's terms.
-    assert!(
-        rows.contains("so the newer one is shown until you decide"),
-        "the block does not say why"
-    );
-    assert!(rows.contains("The Human confirmed value is shown."));
+    for en in [
+        "These values are all {tier}, so the newer one is shown until you decide.",
+        "Two sources disagree on {name}'s {field}. Both are {tier} claims, so the newer one is shown until you decide.",
+        "The {tier} value is shown.",
+    ] {
+        assert!(says(rows, en), "the block does not say why: {en}");
+    }
     // One act per value, at one weight; the shown value is marked as shown, not as preferred.
     assert!(
-        rows.contains("\"Confirm instead\" : \"Confirm\""),
+        rows.contains("word(instead ? \"confirmInstead\" : \"confirmAct\")"),
         "the values do not share one act"
     );
-    assert!(rows.contains("<span class=\"curtag\">shown</span>"));
+    assert!(says(rows, "shown") && rows.contains("<span class=\"curtag\">"));
     // The act asks once, in place, and says what it will do (Section 29.2: the source and its reach).
     let ask = function("askHtml");
     assert!(
@@ -41,11 +43,13 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         "the question has no Confirm and Cancel"
     );
     assert!(
-        ask.contains("This confirms one source:") && ask.contains("ringMoves(d, ctx.entity)"),
+        says(ask, "This confirms one source:") && ask.contains("ringMoves(d, ctx.entity)"),
         "the question does not say what happens"
     );
-    // The console asserts nothing of its own: "Neither is right" hands an agent a sentence.
-    assert!(rows.contains("Neither is right") && rows.contains("\" wrong. Record the correct \""));
+    // The console asserts nothing of its own: "Neither is right" hands an agent a sentence, in the
+    // agents' English whatever the page's language (docs/i18n.md Section 2).
+    assert!(says(rows, "Neither is right") && rows.contains("\" wrong. Record the correct \""));
+    assert!(rows.contains("<code lang=\"en\">${say}</code>"));
     // Undo is the reverse gated event, and the notice says what it costs, in words.
     let settle = function("settleValue");
     // Each act keeps the sentence its notice says as its rationale (Section 29.3).
@@ -53,7 +57,7 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         "consoleWrite(\"/api/resolve\", settleQuery(a.from, \"human_confirmed\", null, confirmed)"
     ));
     assert!(
-        settle.contains("settleQuery(a.from, fromWas, \"claim_demotion\", \"Undid \" + confirmed)"),
+        settle.contains("settleQuery(a.from, fromWas, \"claim_demotion\", word(\"undid\", { said: confirmed }))"),
         "Undo is not the demotion"
     );
     assert!(
@@ -61,7 +65,7 @@ fn settling_a_contested_value_says_why_asks_once_and_can_be_undone() {
         "Confirm instead does not demote the shown value"
     );
     assert!(
-        settle.contains("until someone confirms it again"),
+        says(settle, "Undo returns this source to {tier} and keeps it there until someone confirms it again."),
         "the notice does not name the ceiling"
     );
 }
@@ -97,7 +101,7 @@ fn a_confirmation_says_what_it_confirms() {
 
     let ask = function("askHtml");
     assert!(
-        ask.contains("role=\"radiogroup\" aria-label=\"Confirm from\""),
+        ask.contains("role=\"radiogroup\" aria-label=\"${word(\"confirmFrom\")}\"") && says(ask, "Confirm from"),
         "the source cannot be chosen"
     );
     assert!(ask.contains("v.sources.length > 1"), "a single source asks to be chosen");
@@ -105,10 +109,10 @@ fn a_confirmation_says_what_it_confirms() {
         ask.contains("can ? \"\" : html` disabled aria-describedby="),
         "Confirm acts before its diff is read, or does not say why it waits"
     );
-    assert!(ask.contains("Reading what this confirms..."));
+    assert!(says(ask, "Reading what this confirms..."));
     assert!(ask.contains("mine.cut ? \"...\""), "a cut quote does not say so");
     assert!(
-        ask.contains("It also states") && ask.contains("It also defines"),
+        says(ask, "It also states {n} relations.") && says(ask, "It also defines {n} types: {names}."),
         "the rest of the bundle is unsaid"
     );
     assert!(
@@ -116,7 +120,7 @@ fn a_confirmation_says_what_it_confirms() {
         "the ask does not say what Human confirmed means"
     );
     assert!(
-        ask.contains("Checks pass:") && ask.contains("Blocked: "),
+        says(ask, "Checks pass: {checks}") && says(ask, "Blocked: {checks}"),
         "the checks are not shown"
     );
     assert!(
@@ -133,7 +137,10 @@ fn a_confirmation_says_what_it_confirms() {
         settle.contains("const got = await readPreview(reverse);"),
         "Undo is offered before its diff is read"
     );
-    assert!(settle.contains("Undo is not offered"), "an unreadable Undo is not said");
+    assert!(
+        says(settle, "Undo is not offered: what it would move back could not be read."),
+        "an unreadable Undo is not said"
+    );
 
     let legend = function("renderTrustLegend");
     assert!(
@@ -158,30 +165,27 @@ fn a_confirmation_says_what_it_confirms() {
 fn a_person_can_demote_a_claim() {
     let card = function("obsCardHtml");
     assert!(card.contains("if (!o.proposal && TIER_ORDER.indexOf(o.effective_tier) > 0) {"));
-    assert!(card.contains(">Demote this claim</button>"));
+    assert!(says(card, "Demote this claim"));
     let ask = function("demoteHtml");
-    for part in [
-        "\"Demote this claim to Unverified?\"",
-        " becomes contested and waits under Needs you.",
-        " and\" : \"\") + \" is no longer contested.\"",
+    for part in ["ringMoves(d, null, true)", "can ? \"\" : html` disabled aria-describedby="] {
+        assert!(ask.contains(part), "the question does not hold {part}");
+    }
+    for en in [
+        "Demote this claim to {tier}?",
+        "{what} becomes contested and waits under Needs you.",
+        "{what} becomes {to} and is no longer contested.",
         "Every value it states stays; it is trusted less.",
-        "ringMoves(d, null, true)",
         "No entity's ring moves.",
         "Later claims do not raise it; a review that raises it does.",
-        "can ? \"\" : html` disabled aria-describedby=",
     ] {
-        assert!(ask.contains(part), "the question does not say it: {part}");
+        assert!(says(ask, en), "the question does not say it: {en}");
     }
     assert!(function("openDemote").contains("kind: \"claim_demotion\""));
     let cast = function("castDemote");
-    for part in [
-        "\"Demoted to Unverified: \"",
-        "/api/resolve/undo?proposal=",
-        "\"Undid \" + said",
-        "/api/observations?id=",
-    ] {
+    for part in ["/api/resolve/undo?proposal=", "word(\"undid\", { said })", "/api/observations?id="] {
         assert!(cast.contains(part), "the act does not: {part}");
     }
-    assert!(function("ringMoves").contains("\" drops to \""));
+    assert!(says(cast, "Demoted to {tier}: {claim}"));
+    assert!(says(function("ringMoves"), "{names} drops to {tier}"));
     assert!(SCRIPT.contains("if (demoteAsk && cardObs) closeDemote(cardObs); else hideObsCard();"));
 }
