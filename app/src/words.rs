@@ -75,12 +75,13 @@ pub(crate) fn word(key: &str) -> String {
 }
 
 /// A sentence that counts `n`, in the app's language: English takes its `one` form for 1 and its
-/// `other` form otherwise, and `{n}` is the count.
+/// `other` form otherwise (and for 1 when it has no `one`), and `{n}` is the count.
 pub(crate) fn word_count(key: &str, n: usize) -> String {
     let e = entry(key, lang());
     let form = if n == 1 { "one" } else { "other" };
     e.as_str()
         .or_else(|| e[form].as_str())
+        .or_else(|| e["other"].as_str())
         .unwrap_or_default()
         .replace("{n}", &n.to_string())
 }

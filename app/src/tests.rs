@@ -1192,7 +1192,7 @@ mod tray_tests {
     use super::{
         daemon_trouble, key_js, map_items_enabled, menu_item, press_js, quit_label, quit_stops,
         shell_init_script, tray_act, tray_items, tray_press, word, Daemon, Entry, MenuPress,
-        TrayPress, TrayState, MAP_CONTROLS, MENU_BAR, MENU_ITEMS, TRAY_IDS,
+        Platform, TrayPress, TrayState, MAP_CONTROLS, MENU_BAR, MENU_ITEMS, TRAY_IDS,
     };
 
     /// design-system.md Section 29.13 (D14, the author's list): the trouble shape shows while the
@@ -1330,6 +1330,18 @@ mod tray_tests {
             app_menu[6],
             "the app menu's Quit does not start as the tray's"
         );
+        // Each platform item is the kind its words name, and the app menu holds one Quit, which
+        // the tray's words follow (D15).
+        let kinds: Vec<(Platform, &str)> = MENU_BAR
+            .iter()
+            .flat_map(|(_, _, places)| places.iter())
+            .filter_map(|p| if let Entry::Platform(k, key) = p { Some((*k, *key)) } else { None })
+            .collect();
+        for (kind, key) in &kinds {
+            let named = key.trim_start_matches("menu.").to_lowercase();
+            assert_eq!(named, format!("{kind:?}").to_lowercase(), "{kind:?} carries {key}'s words");
+        }
+        assert_eq!(kinds.iter().filter(|(k, _)| *k == Platform::Quit).count(), 1);
     }
 
     /// The map commands act where their control is, open the Graph from another page, and Back and
