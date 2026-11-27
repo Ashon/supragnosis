@@ -46,7 +46,7 @@ pub(crate) fn start_page(d: &mut Daemon, since: Option<Duration>) -> StartPage {
         Daemon::Starting => StartPage::Starting,
         Daemon::Spawned(child) => match child.try_wait() {
             Ok(None) => StartPage::StillStarting,
-            _ => StartPage::Failed("The daemon exited.".to_string()),
+            _ => StartPage::Failed(word("splash.exited")),
         },
         Daemon::External => StartPage::Stopped,
     }
@@ -73,6 +73,7 @@ pub(crate) fn starting_html(
         to.set_fragment(Some("daemon"));
         esc(to.as_str())
     };
+    let w = |key: &str| esc(&word(key));
     let primary = |href: String, label: &str| {
         format!(
             r#"<a href="{href}" autofocus style="{BUTTON};background:#d9a544;color:#16181e">{label}</a>"#
@@ -86,57 +87,56 @@ pub(crate) fn starting_html(
     // The log's path in a read-only field: selectable and copyable inside a page that is a drag
     // region, since a field is not dragged.
     let log_field = format!(
-        r#"<div style="margin-top:16px"><input class="lf" readonly value="{}" aria-label="The daemon's log" style="width:min(36em,90vw);font:12px/1.4 'IBM Plex Mono',ui-monospace,monospace;background:transparent;color:inherit;border:1px solid #3a3f4a;border-radius:6px;padding:5px 8px"></div>"#,
-        esc(&tilde(log))
+        r#"<div style="margin-top:16px"><input class="lf" readonly value="{}" aria-label="{}" style="width:min(36em,90vw);font:12px/1.4 'IBM Plex Mono',ui-monospace,monospace;background:transparent;color:inherit;border:1px solid #3a3f4a;border-radius:6px;padding:5px 8px"></div>"#,
+        esc(&tilde(log)),
+        w("daemon.log"),
     );
+    let spin = format!(r#"<span class="spin" aria-hidden="true"></span>{}"#, w("splash.starting"));
+    let lang = lang().code();
     let (head, detail, action, foot) = match (conflict, page) {
         // The daemon cannot open its store for its model (semantic-retrieval.md Section 13): the
         // reason, and Rebuild index, which opens Settings to start it.
         (Some((recorded, daemon)), _) => (
-            "The search index needs rebuilding".to_string(),
-            format!(
-                "Indexed by {}, and the daemon runs {} - it cannot start until the index is rebuilt.",
-                esc(recorded),
-                esc(daemon)
-            ),
-            primary(link(Some("rebuild")), "Rebuild index"),
-            "or in a terminal: supragnosis embed rebuild".to_string(),
+            w("daemon.indexConflict"),
+            esc(&word_with(
+                "daemon.indexConflictDetail",
+                &[("recorded", recorded.as_str()), ("daemon", daemon.as_str())],
+            )),
+            primary(link(Some("rebuild")), &w("daemon.rebuild")),
+            w("splash.orTerminal"),
         ),
-        (None, StartPage::Starting) => (
-            r#"<span class="spin" aria-hidden="true"></span>Starting Supragnosis..."#.to_string(),
-            String::new(),
-            String::new(),
-            String::new(),
-        ),
+        (None, StartPage::Starting) => (spin.clone(), String::new(), String::new(), String::new()),
         (None, StartPage::StillStarting) => (
-            r#"<span class="spin" aria-hidden="true"></span>Starting Supragnosis..."#.to_string(),
-            "Still starting.".to_string(),
-            log_field.clone() + &plain(link(None), "Open This Mac"),
+            spin,
+            w("splash.still"),
+            log_field.clone() + &plain(link(None), &w("splash.openThisMac")),
             String::new(),
         ),
         (None, page @ (StartPage::Failed(_) | StartPage::Stopped)) => (
             match page {
-                StartPage::Stopped => "Supragnosis stopped".to_string(),
-                _ => "Supragnosis could not start".to_string(),
+                StartPage::Stopped => w("splash.stopped"),
+                _ => w("splash.couldNotStart"),
             },
             match page {
                 StartPage::Failed(cause) => esc(cause),
-                _ => "It stopped answering, and nothing is starting it.".to_string(),
+                _ => w("splash.stoppedDetail"),
             },
             [
-                primary(link(Some("restart")), "Restart"),
-                plain(link(Some("diagnostics")), "Diagnostics"),
-                plain(link(None), "Open This Mac"),
+                primary(link(Some("restart")), &w("daemon.restart")),
+                plain(link(Some("diagnostics")), &w("daemon.diagnostics")),
+                plain(link(None), &w("splash.openThisMac")),
             ]
             .concat(),
-            log_field.clone() + &format!(
-                r#"<a class="m" href="{}" style="display:inline-block;margin-top:6px;color:#b0b8c7">Show in Finder</a>"#,
-                link(Some("reveal-log"))
-            ),
+            log_field.clone()
+                + &format!(
+                    r#"<a class="m" href="{}" style="display:inline-block;margin-top:6px;color:#b0b8c7">{}</a>"#,
+                    link(Some("reveal-log")),
+                    w("splash.showInFinder")
+                ),
         ),
     };
     format!(
-        r#"<!doctype html><meta charset="utf-8"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2, .lf {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
+        r#"<!doctype html><html lang="{lang}"><meta charset="utf-8"><title>Supragnosis</title><style>@media (prefers-color-scheme: light) {{ body {{ background:#fcfbf8 !important; color:#16181e !important }} .m {{ color:#5c6370 !important }} .b2, .lf {{ color:#16181e !important; border-color:#c9ccd3 !important }} }} .spin {{ display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid #b0b8c7;border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite }} @keyframes s {{ to {{ transform:rotate(360deg) }} }} @media (prefers-reduced-motion: reduce) {{ .spin {{ animation:none }} }}</style><body data-tauri-drag-region="deep" style="background:#08090d;color:#e9e4d6;font:13px/1.5 'Pretendard Variable',Pretendard,system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center;max-width:80%"><div>{head}</div><div class="m" style="color:#b0b8c7;margin-top:10px;font-size:12px;word-break:break-word">{detail}</div>{action}<div class="m" style="color:#b0b8c7;margin-top:14px;font-size:12px">{foot}</div></div></body>"#
     )
 }
 

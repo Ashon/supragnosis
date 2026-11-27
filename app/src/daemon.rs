@@ -231,7 +231,7 @@ pub(crate) fn cause_of(why: &str) -> String {
     let mut c = line.chars();
     match c.next() {
         Some(f) => format!("{}{}.", f.to_uppercase(), c.as_str()),
-        None => "The daemon did not start.".to_string(),
+        None => word("daemon.didNotStart"),
     }
 }
 

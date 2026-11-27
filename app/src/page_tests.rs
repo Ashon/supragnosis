@@ -300,6 +300,8 @@ mod settings_tests {
             assert!(page.contains(part), "the starting page does not offer the rebuild: {part}");
         }
         assert!(!page.contains("<script"), "the starting page holds a script");
+        // It declares the language its words are in (docs/i18n.md Section 3).
+        assert!(page.starts_with("<!doctype html><html lang=\"en\">"), "no lang: {page:.60}");
         let failed =
             starting_html(&failed_with("Port in use."), None, &settings_url(), Path::new(LOG));
         assert!(

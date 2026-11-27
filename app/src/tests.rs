@@ -965,7 +965,7 @@ mod status_text_tests {
 mod welcome_tests {
     use super::{
         essentials, finish_setup_offered, setup_events, welcome_at_launch, WelcomePrefs,
-        APP_COMMANDS, SETUP_TOO_OLD,
+        APP_COMMANDS,
     };
 
     fn output(stdout: &str, stderr: &str, code: i32) -> std::process::Output {
@@ -1031,7 +1031,7 @@ mod welcome_tests {
     fn setup_events_say_why_there_are_none() {
         assert_eq!(
             setup_events(&output("", "error: unrecognized subcommand 'setup'", 2)),
-            Err(SETUP_TOO_OLD.to_string())
+            Err(super::setup_too_old())
         );
         let newer = setup_events(&output("{\"schema\": 2}\n{\"step\":\"server\"}\n", "", 0));
         assert!(newer.is_err_and(|e| e.contains("newer than the app")));

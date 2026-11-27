@@ -8,9 +8,10 @@ use super::*;
 // each line on as it arrives, and keeps three things of its own: stopping the daemon it spawned
 // before the server step, the two helpers that restart or open an AI app, and what the person chose.
 
-/// What the CLI says when it does not know `setup`: it predates this app's Welcome page.
-pub(crate) const SETUP_TOO_OLD: &str =
-    "This supragnosis-server predates setup. Update it: brew upgrade supragnosis-server";
+/// What the app says when the CLI does not know `setup`: it predates this app's Welcome page.
+pub(crate) fn setup_too_old() -> String {
+    word("setup.tooOld")
+}
 
 /// What the app remembers about the Welcome page, and nothing else (Section 6): that it was shown,
 /// that the person chose "Finish later", and that they turned Start at Login off.
@@ -89,12 +90,10 @@ pub(crate) fn setup_events(out: &std::process::Output) -> Result<Vec<serde_json:
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
     let head = lines.next().and_then(|l| serde_json::from_str::<serde_json::Value>(l).ok());
     match head.as_ref().and_then(|h| h["schema"].as_u64()) {
-        Some(s) if s > CLI_SCHEMA => {
-            Err("This supragnosis-server is newer than the app. Update the app: brew upgrade --cask supragnosis".into())
-        }
+        Some(s) if s > CLI_SCHEMA => Err(word("setup.cliNewer")),
         Some(_) => Ok(lines.filter_map(|l| serde_json::from_str(l).ok()).collect()),
         None if String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand") => {
-            Err(SETUP_TOO_OLD.into())
+            Err(setup_too_old())
         }
         None => Err(cli_outcome(out).1),
     }
@@ -140,10 +139,12 @@ pub(crate) fn cli_missing() -> String {
         .iter()
         .any(|p| Path::new(p).exists());
     if cask {
-        "The supragnosis CLI was not found. Install it: brew install ashon/tap/supragnosis-server"
-            .into()
+        word_with("setup.cliMissing", &[("command", "brew install ashon/tap/supragnosis-server")])
     } else {
-        "The supragnosis CLI was not found. Install it: curl -fsSL https://supragnosis.dev/install.sh | sh".into()
+        word_with(
+            "setup.cliMissing",
+            &[("command", "curl -fsSL https://supragnosis.dev/install.sh | sh")],
+        )
     }
 }
 
@@ -261,7 +262,7 @@ pub(crate) async fn setup_run(
         }
     };
     if app.state::<RunningSteps>().0.lock().unwrap().contains_key(&step) {
-        return Err(format!("{step} is already running"));
+        return Err(word_with("setup.alreadyRunning", &[("step", &step)]));
     }
     if installs {
         let prev =
@@ -314,7 +315,7 @@ pub(crate) async fn setup_stop(
 ) -> Result<String, String> {
     own_page_caller(&webview)?;
     let Some(pid) = app.state::<RunningSteps>().0.lock().unwrap().get(&step).copied() else {
-        return Ok(format!("{step} is not running"));
+        return Ok(word_with("setup.notRunning", &[("step", &step)]));
     };
     let ok = Command::new("kill")
         .args(["-s", "TERM", "--", &format!("-{pid}")])
@@ -322,9 +323,9 @@ pub(crate) async fn setup_stop(
         .status()
         .is_ok_and(|s| s.success());
     if ok {
-        Ok(format!("stopped {step}"))
+        Ok(word_with("setup.stoppedStep", &[("step", &step)]))
     } else {
-        Err(format!("{step} could not be stopped"))
+        Err(word_with("setup.notStopped", &[("step", &step)]))
     }
 }
 

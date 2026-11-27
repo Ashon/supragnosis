@@ -155,7 +155,7 @@ pub(crate) async fn peer_narrow(
         tokio::time::timeout(Duration::from_secs(15), uds_request(&sock, "POST", &target, None))
             .await
             .map_err(|_| "the daemon did not answer within 15 seconds".to_string())?
-            .map_err(|e| format!("the daemon could not be reached: {e}"))?;
+            .map_err(|e| word_with("daemon.unreachable", &[("why", &e.to_string())]))?;
     let body: serde_json::Value = serde_json::from_slice(&answer.body).unwrap_or_default();
     if answer.status != 200 {
         return Err(body["error"].as_str().unwrap_or("the daemon refused the change").to_string());
@@ -202,7 +202,7 @@ pub(crate) async fn clipboard_copy(
     let mut child = Command::new("pbcopy")
         .stdin(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("the clipboard is not reachable: {e}"))?;
+        .map_err(|e| word_with("page.clipboard", &[("why", &e.to_string())]))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
     }
@@ -237,11 +237,8 @@ pub(crate) async fn usage_read(
     }
     match cli_json(&out.stdout) {
         Ok(Some(v)) => Ok(v),
-        Ok(None) => Err("The supragnosis CLI's usage summary was not JSON.".to_string()),
-        Err(s) => Err(format!(
-            "This supragnosis-server answers in schema {s}, newer than the app. Update the app \
-             (brew upgrade --cask supragnosis)."
-        )),
+        Ok(None) => Err(word("usage.notJson")),
+        Err(s) => Err(word_with("usage.cliNewer", &[("schema", &s.to_string())])),
     }
 }
 
@@ -350,7 +347,7 @@ pub(crate) async fn reveal(webview: tauri::Webview<Rt>, what: String) -> Result<
     own_page_caller(&webview)?;
     let path = reveal_target(&what)?;
     if !path.exists() {
-        return Err(format!("{} does not exist yet", tilde(&path)));
+        return Err(word_with("page.notYet", &[("path", &tilde(&path))]));
     }
     #[cfg(target_os = "macos")]
     let shown = Command::new("open").arg("-R").arg(&path).status();
@@ -358,7 +355,7 @@ pub(crate) async fn reveal(webview: tauri::Webview<Rt>, what: String) -> Result<
     let shown = Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).status();
     match shown {
         Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("the file manager did not open ({s})")),
+        Ok(s) => Err(word_with("page.finderNotOpen", &[("status", &s.to_string())])),
         Err(e) => Err(e.to_string()),
     }
 }

@@ -37,7 +37,7 @@ impl Cli for FoundCli {
             .stderr(Stdio::piped());
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         with_login_env(&mut cmd);
-        cmd.spawn().map_err(|e| format!("could not run the supragnosis CLI: {e}"))
+        cmd.spawn().map_err(|e| word_with("cli.notRun", &[("why", &e.to_string())]))
     }
 
     fn serve(&self, sock: &Path) -> anyhow::Result<(Child, PathBuf)> {
@@ -224,10 +224,8 @@ pub(crate) fn cli_change(
 ) -> Result<String, String> {
     match out.map(|o| (o, cli_outcome(o))) {
         Some((o, (true, _))) => Ok(done(o)),
-        Some((_, (false, why))) if why.is_empty() => {
-            Err("the supragnosis command failed".to_string())
-        }
+        Some((_, (false, why))) if why.is_empty() => Err(word("cli.failed")),
         Some((_, (false, why))) => Err(why),
-        None => Err("the supragnosis command was not found".to_string()),
+        None => Err(word("cli.notFound")),
     }
 }
