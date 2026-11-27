@@ -598,9 +598,7 @@ fn own_text(html: &str) -> Option<&str> {
     let (mut depth, mut at) = (0usize, 0);
     while at < html.len() {
         let rest = &html[at..];
-        let Some(lt) = rest.find('<') else {
-            return None;
-        };
+        let lt = rest.find('<')?;
         let text = rest[..lt].trim();
         if depth == 0 && !text.is_empty() {
             return Some(text);
