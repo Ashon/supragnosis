@@ -53,15 +53,25 @@ function intoSaid(p) {
   const n = p.into && nodeById(p.into);
   return n ? n.name : (p.into && !HASH_ID.test(p.into) ? p.into : null);
 }
+// A merge's names, what goes and what it goes into; null when either cannot be named.
+function mergeNames(p) {
+  if (p.kind !== "entity_merge" || !p.into) return null;
+  const gone = (p.targets || []).map((_, i) => targetSaid(p, i)).filter((s, i) => s && p.targets[i] !== p.into), b = intoSaid(p);
+  return gone.length && b ? { a: gone.join(", "), b } : null;
+}
 // One title per proposal, the same under Needs you and Decided: "Merge PostgreSQL into Postgres",
 // Confirm a claim: "The ledger is..." (Ledger).
 function proposalTitle(p) {
   const said = (p.targets || []).map((_, i) => targetSaid(p, i));
-  if (p.kind === "entity_merge" && p.into) {
-    const gone = said.filter((s, i) => s && p.targets[i] !== p.into), into = intoSaid(p);
-    if (gone.length && into) return word("mergeInto", { a: gone.join(", "), b: into });
+  const merge = mergeNames(p);
+  if (merge) return word("mergeInto", merge);
+  if (p.kind === "entity_split") {
+    // The merge it undoes in the page's words; the server's label, which is English, when the page
+    // does not hold that merge.
+    const m = mergeNames(proposals.find(q => q.id === (p.targets || [])[0]) || {});
+    if (m) return word("unmergeInto", m);
+    if (said[0]) return word("unmergeName", { name: said[0] });
   }
-  if (p.kind === "entity_split" && said[0]) return word("unmergeName", { name: said[0] });
   const named = said.filter(Boolean);
   const kind = Object.hasOwn(KINDS, p.kind) ? word(KINDS[p.kind]) : p.kind;
   return named.length ? word("saidOn", { said: kind, what: named.join(", ") }) : kind;
@@ -263,7 +273,7 @@ function itemDetail(it) {
     const f = it.f;
     // The pattern and the field are the scanner's names, said as it names them.
     return [html`<h3>${word("credentialInLog")}</h3>`,
-      html`<p class="why">${word("secretWhere", { pattern: f.pattern, field: f.field, at: f.at | 0 })}</p>`,
+      html`<p class="why">${word("secretWhere", { pattern: f.pattern, field: f.field, at: String(f.at | 0) })}</p>`,
       html`<p class="why">${word("secretWhat")}</p>`,
       html`<div class="rv-acts"><button type="button" class="btn" data-obs="${f.observation}">${word("openObservation")}</button>${skipButton()}</div>`];
   }
@@ -467,7 +477,7 @@ function undoParts(p) {
   if (u.state === "failed") return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${word("undoNotOffered", { label })}</p>` };
   if (!u.acts.length) return { button: html`<button type="button" class="btn" data-undo="1"${off}>${label}</button>`, note: html`<p class="hint">${word("nothingToUndo")}</p>` };
   const failing = (u.checks || []).filter(c => c.blocking && !c.passed);
-  const lines = u.acts.map(a => word(a.kind === "claim_demotion" ? "undoReturnsKeeps" : "undoReturns", { tier: tierName(a.tier) }));
+  const lines = u.acts.map(a => word(a.kind === "claim_demotion" ? "undoSourceNote" : "undoReturns", { tier: tierName(a.tier) }));
   const moves = ringMoves(u.diff, null);
   const by = p.kind === "claim_demotion" && p.proposer ? word("demotionBy", { who: p.proposer }) : "";
   // A check's name and detail are the server's (docs/i18n.md Section 5).
@@ -795,7 +805,7 @@ async function fetchProposalDiff(id) {
 // A diff row's field, in the screen's words (design-system.md Section 29.6): the engine's ids
 // `kind` and `edge` are a type and a relation.
 const FIELD_SAID = { canonical_name: word("colName"), kind: word("fieldType"), type: word("fieldType"), edge: word("fieldRelation"), tier: word("trust"), definition: word("fieldDefinition"), description: word("fieldDescription") };
-function fieldSaid(f) { return FIELD_SAID[f] || String(f || ""); }
+function fieldSaid(f) { return Object.hasOwn(FIELD_SAID, f) ? FIELD_SAID[f] : String(f || ""); }
 function diffHtml(d) {
   if (!d) return html`<div class="dnote">${word("computingDiff")}</div>`;
   // The note is the server's sentence (docs/i18n.md Section 5).
@@ -810,8 +820,8 @@ function diffHtml(d) {
                : created ? html`<span class="dcreated">${word("createsContradiction")}</span>` : "";
     return [html`<div class="drow"><span class="dk">${fieldSaid(b.field)}</span>`,
       html`<button type="button" class="nchip" data-id="${b.entity}" title="${tipText(word("focusName", { name: b.name }))}">${b.name}</button>`,
-      html`<span class="dfrom">${b.from || word("noneParen")}</span><span class="darr">-&gt;</span>`,
-      html`<span class="dto">${b.to || word("noneParen")}</span>${flag}</div>`];
+      html`<span class="dfrom">${b.from || word("noType")}</span><span class="darr">-&gt;</span>`,
+      html`<span class="dto">${b.to || word("noType")}</span>${flag}</div>`];
   });
   // entity_merge: which references move onto the canonical id, and which edges stop existing.
   // A self-loop is dropped by graph(), so that edge vanishes on accept - not readable from the

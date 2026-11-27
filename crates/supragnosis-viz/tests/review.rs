@@ -124,6 +124,14 @@ fn decided_says_what_was_decided() {
     );
     let line = function("proposalLine");
     assert!(says(line, "{line}. A check blocked it, and it was rejected"));
+    // An un-merge names the merge it undoes in the page's words, from the page's own proposals.
+    let title = function("proposalTitle");
+    assert!(
+        says(title, "Un-merge {a} into {b}")
+            && title
+                .contains("mergeNames(proposals.find(q => q.id === (p.targets || [])[0]) || {})"),
+        "an un-merge's title is the server's English label"
+    );
 }
 
 /// One count, Needs you's, with contested type definitions in it; the queue says what it asks.
