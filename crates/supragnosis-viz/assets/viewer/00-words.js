@@ -115,13 +115,14 @@ const LANG = (() => {
   return "en";
 })();
 document.documentElement.lang = LANG;
-const PLURAL = new Intl.PluralRules(LANG), NUMBER = new Intl.NumberFormat(LANG);
+// A sentence in the page's language, its {name} placeholders filled, a number in the language's
+// form. A count picks its entry as the site's pages do, `word(n === 1 ? "oneThing" : "things", {n})`:
+// an entry is one string in each language, and Korean says both alike.
+const NUMBER = new Intl.NumberFormat(LANG);
 function word(key, values) {
   const e = WORDS[key];
   if (!e) return key;   // a key the words lack, which the words test rules out
-  let s = e[LANG];
-  if (typeof s === "object") s = s[PLURAL.select(values && values.n)] || s.other;
-  return s.replace(/\{(\w+)\}/g, (m, k) => {
+  return e[LANG].replace(/\{(\w+)\}/g, (m, k) => {
     if (!values || !(k in values)) return m;
     return String(typeof values[k] === "number" ? NUMBER.format(values[k]) : values[k]);
   });
