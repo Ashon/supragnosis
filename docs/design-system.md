@@ -1821,9 +1821,9 @@ page's copies are held to the viewer's by `the_stage_draws_the_viewers_marks` an
 
 U17's first half is guarded by `a_tier_is_named_never_spelled` in
 `crates/supragnosis-viz/tests/words.rs` - no interpolation in the viewer's script draws a tier but
-through `tierName` - and by `every_proposal_event_has_a_sentence` in the engine's unit tests: the
-engine sends each Log row's noun and verb from one table, which covers every kind in
-`PROPOSAL_KINDS`, every `ProposalEventKind` and every decision in `VERDICT_DECISIONS`, the ones
+through `tierName` - and by `every_proposal_event_has_a_sentence` in the same file: the viewer says
+each Log row's kind and event from its words (docs/i18n.md Section 5), whose maps cover every kind
+in `PROPOSAL_KINDS`, every `ProposalEventKind` and every decision in `VERDICT_DECISIONS`, the ones
 `review_proposal` casts as a verdict. Its second half is guarded by
 `every_log_row_says_who_and_when` in the same file - the tier by name, the writer and the time once a
 minute, marked with the legend's ring - and by `the_setup_page_says_what_is_true_and_how_far_it_is` in
