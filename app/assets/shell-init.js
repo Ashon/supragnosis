@@ -29,7 +29,8 @@
   window.supragnosisWords = /*WORDS*/{ lang: "en", words: {} };
   var root = document.documentElement;
   if (root && root.hasAttribute("data-words")) root.lang = window.supragnosisWords.lang;
-  if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = "this Mac";
+  var words = window.supragnosisWords.words;
+  if (/Mac/.test(navigator.platform || "")) window.supragnosisHere = words["shell.thisMac"] || "this Mac";
 
   // The two pages' addresses, on the app's own schemes.
   var SETTINGS = "tauri://localhost/settings.html";
@@ -48,8 +49,9 @@
       console.warn("shell: the viewer has no #settingsBtn - Settings opens from the menu (Cmd+,) only");
       return;
     }
-    gear.title = "Settings (\u2318,)";
-    gear.setAttribute("aria-label", "Settings");
+    var name = words["shell.settings"] || "Settings";
+    gear.title = name + " (\u2318,)";
+    gear.setAttribute("aria-label", name);
     document.addEventListener("click", function (e) {
       if (!e.target.closest) return;
       // The status bar's sync pill opens the same page at its Sync section - the place sync lives in

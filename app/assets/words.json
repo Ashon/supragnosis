@@ -68,6 +68,8 @@
   "sec.connectedCount": { "en": "{n} connected", "ko": "{n}개 연결됨" },
   "sec.hasProblem": { "en": "has a problem", "ko": "문제 있음" },
   "sec.needsAttention": { "en": "needs attention", "ko": "확인 필요" },
+  "shell.thisMac": { "en": "this Mac", "ko": "이 Mac" },
+  "shell.settings": { "en": "Settings", "ko": "설정" },
 
   "daemon.conflict": { "en": "Two managers run Supragnosis", "ko": "두 관리자가 Supragnosis를 실행하고 있습니다" },
   "daemon.conflictDetail": { "en": "supragnosis status names them; stop the one you did not choose.", "ko": "supragnosis status가 둘을 알려 줍니다. 고르지 않은 쪽을 멈추십시오." },

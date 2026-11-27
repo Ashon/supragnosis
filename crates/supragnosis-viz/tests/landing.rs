@@ -557,33 +557,62 @@ fn the_viewers_words_hold_both_languages() {
     both_languages("viewer.js", &table);
     let en = |key: &str| table.iter().find(|(k, ..)| k == key).map(|(_, en, _)| en.as_str());
     let (mut keys, _) = lookups(after, &["word("]);
+    for key in &keys {
+        assert!(en(key).is_some(), "viewer.js looks up {key:?}, which the words lack");
+    }
     for attr in [" data-t=\"", " data-t-label=\"", " data-t-ph=\""] {
         for (i, _) in HTML.match_indices(attr) {
             let rest = &HTML[i + attr.len()..];
             let key = &rest[..rest.find('"').expect("a closed attribute")];
             assert!(en(key).is_some(), "viewer.html marks {key:?}, which the words lack");
             // the English the markup holds is its entry's, so a page that runs no script says it
-            let tag = &HTML[HTML[..i].rfind('<').unwrap()..];
-            let tag = &tag[..tag.find('>').unwrap()];
+            let open = HTML[..i].rfind('<').unwrap();
+            let tag = &HTML[open..open + HTML[open..].find('>').unwrap()];
+            let value = |name: &str| {
+                let (_, v) = tag.split_once(&format!(" {name}=\""))?;
+                Some(&v[..v.find('"')?])
+            };
             let said = match attr {
-                " data-t=\"" => HTML[i..].split_once('>').map(|(_, t)| t),
-                " data-t-ph=\"" => tag.split_once(" placeholder=\"").map(|(_, t)| t),
-                _ => {
-                    tag.split_once(" aria-label=\"").or(tag.split_once(" title=\"")).map(|(_, t)| t)
-                }
-            }
-            .expect("the marked string");
-            let said = said.trim_start_matches(|c| c != '"' && c != '<' && !char::is_alphabetic(c));
-            let said = said.split_once('<').map_or(said, |(t, _)| t);
-            let said = said.split_once('"').map_or(said, |(t, _)| t).trim();
-            let said = said.split_once(" (").map_or(said, |(t, _)| t);
-            if !said.is_empty() {
-                assert_eq!(Some(said), en(key), "viewer.html's {key} holds other English");
-            }
+                // the element's own first text, which the words fill, its children kept
+                " data-t=\"" => own_text(&HTML[open + tag.len() + 1..]),
+                " data-t-ph=\"" => value("placeholder"),
+                // a title keeps the key it names, " (Esc)"
+                _ => value("aria-label")
+                    .or(value("title").map(|t| t.rsplit_once(" (").map_or(t, |(t, _)| t))),
+            };
+            let said =
+                said.unwrap_or_else(|| panic!("viewer.html marks {key:?} on nothing to fill"));
+            assert_eq!(Some(said), en(key), "viewer.html's {key} holds other English");
             keys.push(key.to_string());
         }
     }
     for (key, ..) in &table {
         assert!(keys.contains(key), "viewer.js: {key} is never used");
     }
+}
+
+/// The first text an element holds directly, trimmed, before its closing tag: what the viewer's words
+/// fill, its child elements kept (viewer/00-words.js). `html` starts after the element's opening tag.
+fn own_text(html: &str) -> Option<&str> {
+    const VOID: &[&str] = &["<br", "<input", "<img", "<hr", "<meta", "<link"];
+    let (mut depth, mut at) = (0usize, 0);
+    while at < html.len() {
+        let rest = &html[at..];
+        let Some(lt) = rest.find('<') else {
+            return None;
+        };
+        let text = rest[..lt].trim();
+        if depth == 0 && !text.is_empty() {
+            return Some(text);
+        }
+        let tag = &rest[lt..];
+        let end = tag.find('>')? + 1;
+        if tag.starts_with("</") {
+            depth = depth.checked_sub(1)?;
+        } else if !VOID.iter().any(|v| tag.starts_with(v)) && !tag[..end].ends_with("/>") {
+            depth += 1;
+        }
+        at += lt + end;
+    }
+    None
 }

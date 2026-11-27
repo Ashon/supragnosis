@@ -27,7 +27,7 @@ const WORDS = {
   definitions: { en: "Definitions", ko: "정의" },
   trust: { en: "Trust", ko: "신뢰" },
   said: { en: "Said", ko: "언급" },
-  onTheMap: { en: "On the map", ko: "지도의 표시" },
+  onTheMap: { en: "On the map", ko: "지도 범례" },
   log: { en: "Log", ko: "로그" },
   review: { en: "Review", ko: "검토" },
   backToReview: { en: "Back to Review", ko: "검토로 돌아가기" },
@@ -43,7 +43,7 @@ const WORDS = {
   view: { en: "View", ko: "보기" },
   regions: { en: "Regions", ko: "영역" },
   regionsAll: { en: "All", ko: "전체" },
-  regionsSelected: { en: "Selected", ko: "선택한 것" },
+  regionsSelected: { en: "Selected", ko: "선택 항목" },
   regionsOff: { en: "Off", ko: "끔" },
   boundaries: { en: "Boundaries", ko: "경계" },
   show: { en: "Show", ko: "표시" },
@@ -88,7 +88,7 @@ const WORDS = {
   arrowKeys: { en: "Arrow keys", ko: "화살표 키" },
   move: { en: "Move", ko: "이동" },
   choose: { en: "Choose", ko: "고르기" },
-  singleKeys: { en: "Single-key shortcuts", ko: "한 키 단축키" },
+  singleKeys: { en: "Single-key shortcuts", ko: "단일 키 단축키" },
   singleKeysSub: { en: "Letters and symbols act on the Graph page, outside a text field, while no dialog or card is open.", ko: "글자와 기호 키는 그래프 페이지에서, 텍스트 필드 밖에서, 대화상자나 카드가 열려 있지 않을 때 동작합니다." },
   sameAs: { en: "Same as...", ko: "같은 개체..." },
   rejectAllBlocked: { en: "Reject all blocked", ko: "막힌 제안 모두 거절" },
@@ -116,8 +116,8 @@ const LANG = (() => {
 })();
 document.documentElement.lang = LANG;
 // A sentence in the page's language, its {name} placeholders filled, a number in the language's
-// form. A count picks its entry as the site's pages do, `word(n === 1 ? "oneThing" : "things", {n})`:
-// an entry is one string in each language, and Korean says both alike.
+// form. A count picks between two entries, one for one and one for more, as the site's pages do: an
+// entry is one string in each language, and Korean says both alike.
 const NUMBER = new Intl.NumberFormat(LANG);
 function word(key, values) {
   const e = WORDS[key];
