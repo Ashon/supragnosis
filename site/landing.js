@@ -60,8 +60,9 @@
         next.focus(); select(next);
       });
     });
-    // A visitor on Linux sees the Linux tab first.
-    if (!/Mac/i.test(navigator.platform || navigator.userAgent)) {
+    // A visitor on desktop Linux sees the Linux tab first; a phone, a tablet and Windows keep the first tab.
+    var where = (navigator.platform || "") + " " + (navigator.userAgent || "");
+    if (/Linux/i.test(where) && !/Android/i.test(where)) {
       var linux = list.querySelector("#tab-linux, #hero-tab-script");
       if (linux) select(linux);
     }
@@ -160,9 +161,9 @@
   });
   function say(text) { said.textContent = ""; setTimeout(function () { said.textContent = text; }, 50); }
   function byId(id) { return document.getElementById(id); }
-  // en-GB, since the site writes no comma before "and"
-  var list = new Intl.ListFormat(LANG === "ko" ? "ko" : "en-GB", { type: "conjunction" });
-  function and(items) { return list.format(items.map(String)); }
+  // en-GB, since the site writes no comma before "and"; Korean lists with commas alone ("3, 4").
+  var list = new Intl.ListFormat("en-GB", { type: "conjunction" });
+  function and(items) { return LANG === "ko" ? items.map(String).join(", ") : list.format(items.map(String)); }
   // An entry with its {tier} drawn as the trust word, in gold when a person confirmed it.
   function tier(el, gold, key) {
     var parts = WORDS[key][LANG].split("{tier}");

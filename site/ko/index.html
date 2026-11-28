@@ -138,7 +138,7 @@
             <canvas class="frame" aria-hidden="true"></canvas>
             <button type="button" class="replay">다시 보기</button>
             <div class="snip review">
-              <p class="h">검토 대기 <i id="needs">3</i></p>
+              <p class="h">확인할 항목 <i id="needs">3</i></p>
               <span id="row-merge">pg를 postgres로 병합</span><span class="act noctl">수락</span><button type="button" class="act ctl" data-act="merge" aria-describedby="row-merge">수락</button>
               <span id="row-confirm">주장 확인: webhooks need an idempotency key</span><span class="act noctl">수락</span><button type="button" class="act ctl" data-act="confirm" aria-describedby="row-confirm">수락</button>
               <span>이견 있음: retry-policy의 타입</span><span class="wait">대기 중</span>
@@ -158,7 +158,7 @@
               <span class="k">결과</span><span class="noctl">idempotency, webhooks, incident-912</span><span class="ctl pick" role="radiogroup" aria-label="결과 하나 읽기"><label><input type="radio" name="hit" value="idem" checked><span>idempotency</span></label><label><input type="radio" name="hit" value="hook"><span>webhooks</span></label><label><input type="radio" name="hit" value="inc"><span>incident-912</span></label></span>
               <p class="h"><span>get_entity <span id="hit-name">idempotency</span></span></p>
               <span class="k">말한 곳</span><span>laptop, 나를 위해</span>
-              <span class="k">항목</span><span id="hit-entries">3 및 4</span>
+              <span class="k">항목</span><span id="hit-entries">3, 4</span>
               <span class="k">신뢰</span><span id="hit-trust" class="confirmed">사람이 확인</span>
             </div>
           </article>
@@ -173,7 +173,7 @@
               <p class="h ctl">링 뒤에 있는 것 <span class="pick" role="radiogroup" aria-label="링 뒤에 있는 것"><label><input type="radio" name="claim" value="verdict" checked><span>판정</span></label><label><input type="radio" name="claim" value="bare"><span>에이전트의 말</span></label></span></p>
               <span class="k">laptop</span><span id="claim-laptop"><span class="confirmed">사람이 확인</span>, 그 기기의 검토에서</span>
               <span class="k">desktop</span><span id="claim-desktop"><span class="confirmed">사람이 확인</span>, 같은 판정</span>
-              <span class="k">주장만 있는 항목</span><span>최대 호스트 서명</span>
+              <span class="k">주장만 있는 항목</span><span>많아야 호스트 서명</span>
               <span class="k">공유</span><span>허락한 워크스페이스만</span>
             </div>
             <p class="answers">답하는 질문: <b>다른 기기도 아나?</b></p>
@@ -208,7 +208,7 @@
              alt="뷰어: 두 워크스페이스 payments-api와 infra가 영역으로 그려져 있습니다.
                   webhooks와 idempotency에는 검토에서 확인된 금색 링이, 타입에 이견이 있는
                   retry-policy에는 표시가 있습니다. 왼쪽에는 개체와 관계의 타입, 오른쪽에는
-                  로그가 있고, 상태 표시줄은 판정을 기다리는 것 둘과 이견 있음 하나를 셉니다.">
+                  로그가 있고, 상태 표시줄은 확인할 항목 둘, 그중 이견 있음 하나를 셉니다.">
         <figcaption>데스크톱 앱 속의 지어낸 프로젝트. 뷰어는 네트워크 포트가 아니라 소유자만 여는 소켓으로 제공됩니다.</figcaption>
       </figure>
     </section>
@@ -216,7 +216,7 @@
     <section class="section wrap" id="check" aria-labelledby="check-title">
       <h2 id="check-title">1분이면 직접 확인할 수 있습니다.</h2>
       <p class="lead">supragnosis와 <code>jq</code>를 설치한 뒤 이것을 터미널에 붙여 넣습니다. 메모리에만 있는 저장소로 서버를 띄우므로 어떤 항목도 저장되지 않고, 항목 세 개를 보냅니다. <code>retry-policy</code>에 서로 다른 타입을 주는 두 항목과, AWS가 공개한 예제 액세스 키를 담은 항목 하나입니다.</p>
-      <pre class="code" tabindex="0"><code id="check-cmd">{ printf '%s\n' \
+      <pre class="code" tabindex="0" role="region" aria-label="직접 확인하는 명령"><code id="check-cmd">{ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"observe","arguments":{"workspace":"check","content":"retry-policy is a pattern","entities":[{"name":"retry-policy","type":"Pattern"}]}}}' \
@@ -231,9 +231,9 @@
   else empty end'</code></pre>
       <p class="check-copy"><button type="button" class="copy quiet" data-copy="#check-cmd">복사</button></p>
       <p>출력은 이렇습니다.</p>
-      <pre class="code" tabindex="0"><code>refusing to store this: the content contains something shaped like a credential (aws-access-key-id, at byte 11)
+      <pre class="code" tabindex="0" role="region" aria-label="명령의 출력"><code>refusing to store this: the content contains something shaped like a credential (aws-access-key-id, at byte 11)
 retry-policy: Config or Pattern, contested: true</code></pre>
-      <p class="note">두 타입은 검토에서 하나를 고를 때까지 나란히 남고, 키는 로그에 닿지 않습니다. 로그는 추가만 되므로, 한번 들어간 키는 되돌려 줄 수 없기 때문입니다.</p>
+      <p class="note">두 타입은 검토에서 하나를 고를 때까지 나란히 남고, 키는 로그에 닿지 않습니다. 로그는 추가만 되므로, 한번 들어간 키는 지울 수 없기 때문입니다.</p>
     </section>
 
     <section class="section wrap" id="connect" aria-labelledby="connect-title">
@@ -241,7 +241,7 @@ retry-policy: Config or Pattern, contested: true</code></pre>
       <div class="split">
         <div>
           <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, OpenCode는 복사할 토큰 없이 명령 하나로, 또는 앱 설정(Settings)의 연결(Connect)로 이어집니다.</p>
-          <pre class="code" tabindex="0"><code>supragnosis connect claude-code
+          <pre class="code" tabindex="0" role="region" aria-label="AI 앱을 연결하는 명령"><code>supragnosis connect claude-code
 <span class="c"># 또는 claude-desktop, cursor, vscode, codex, gemini, opencode</span></code></pre>
           <p class="note">Claude Code에서는 <code>connect</code>가 훅도 추가합니다. 에이전트가 만든 커밋 뒤에 그 변경의 바탕이 된 결정을 에이전트에게 묻고, 각 세션은 프로젝트의 워크스페이스에 무엇이 있는지 알고 시작합니다. 훅 자체는 아무것도 쓰지 않습니다.</p>
           <p class="note">모든 검색 결과는 자기가 나온 항목을 <code>supragnosis://observation/{id}</code>로 가리킵니다.</p>
@@ -300,17 +300,17 @@ retry-policy: Config or Pattern, contested: true</code></pre>
           <ul>
             <li>Windows나 Intel Mac이 필요할 때</li>
             <li>한 허브에서 여러 사람이 판정을 내릴 때</li>
-            <li>Mac이 로컬 네트워크의 허브와 동기화해야 할 때. macOS가 데몬이 거기 닿지 못하게 막습니다</li>
+            <li>Mac이 로컬 네트워크의 허브와 동기화해야 할 때. macOS가 데몬의 로컬 네트워크 접근을 막기 때문입니다</li>
           </ul>
         </div>
       </div>
-      <p class="note">무엇이 출시되고 무엇이 미뤄졌는지는 로드맵이 <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> 12절과 14절에 기록하고, <a href="principles/#how-held">모든 원칙이 조항마다</a> 어떤 요구를 테스트가 지키는지 밝힙니다.</p>
+      <p class="note">출시된 것과 미룬 것은 <a href="https://github.com/Ashon/supragnosis/blob/main/docs/architecture.md">architecture.md</a> 12절과 14절의 로드맵에 적혀 있고, 원칙마다 어떤 요구를 테스트가 지키는지는 <a href="principles/#how-held">조항별로</a> 밝혀 둡니다.</p>
 
       <h3 class="faq-title">자주 묻는 질문</h3>
       <dl class="faq">
         <div><dt>내 기기 밖으로 나가는 것이 있습니까?</dt><dd>공유한 것만 나갑니다. 이 기기가 허브에 합류하기 전까지 동기화는 꺼져 있고, 합류한 뒤에도 허락한 워크스페이스만 오갑니다.</dd></div>
         <div><dt>API 키나 모델이 필요합니까?</dt><dd>아니요. 검색은 한 번 내려받는 로컬 임베딩 모델(224 MB)을 씁니다. 그 전까지는 키워드 검색이 작동하고, 그렇다고 알려 줍니다.</dd></div>
-        <div><dt>그만 쓰게 되면 어떻게 됩니까?</dt><dd>지식은 디렉터리 하나이고, 그 로그는 어느 노드에서든 같은 그래프로 재생됩니다.</dd></div>
+        <div><dt>그만 쓰게 되면 어떻게 됩니까?</dt><dd>지식은 디렉터리 하나이고, 그 로그는 어느 기기에서든 같은 그래프로 재생됩니다.</dd></div>
         <div><dt>메모 파일과 무엇이 다릅니까?</dt><dd>메모 파일은 누군가 쓴 것을 담습니다. supragnosis는 각 내용을 어느 기기와 사람이 말했는지, 검토에서 확인되었는지를 담고, 쓰는 모든 에이전트, 모든 기기와 공유합니다.</dd></div>
       </dl>
     </section>
@@ -352,7 +352,7 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
           <p>에이전트에게 결정 하나와 그 이유를 기억해 달라고 해 보십시오. 들어오면 시작하기(Setup)가 알려 주고, 그래프(Graph)에 나타납니다.</p>
         </li>
       </ol>
-      <p class="note">데몬은 <code>127.0.0.1:7373</code>에서 MCP를, 유닉스 소켓에서 뷰어를 제공합니다. 임베딩 모델(224 MB)은 시작하기, <code>service install</code> 또는 <code>supragnosis embed fetch</code>가 한 번 내려받습니다. 그 전까지 검색은 키워드로만 이뤄지고, <code>supragnosis status</code>가 그렇다고 알려 줍니다.</p>
+      <p class="note">데몬은 <code>127.0.0.1:7373</code>에서 MCP를, 유닉스 소켓에서 뷰어를 제공합니다. 임베딩 모델(224 MB)은 앱의 시작하기(Setup), <code>service install</code> 또는 <code>supragnosis embed fetch</code>가 한 번 내려받습니다. 그 전까지 검색은 키워드로만 이뤄지고, <code>supragnosis status</code>가 그렇다고 알려 줍니다.</p>
     </section>
 
   </main>

@@ -243,7 +243,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font: var(--fs-label) var(--sans);
   color: var(--muted);
 }
-.facts li + li::before { content: "/"; margin: 0 10px; color: var(--muted); }
+/* The second `content` gives the separator an empty spoken text; a browser without it keeps the first. */
+.facts li + li::before { content: "/"; content: "/" / ""; margin: 0 10px; color: var(--muted); }
 .facts #version-badge { color: var(--ink); }
 
 /* ---- how it works: the steps scroll past the stage ---- */
