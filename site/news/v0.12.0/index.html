@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>v0.12.0 - supragnosis news</title>
+  <meta name="description" content="Upgrade, then restart once; the app and the viewer speak Korean, and an agent opens a record.">
+  <link rel="canonical" href="https://supragnosis.dev/news/v0.12.0/">
+  <meta name="theme-color" content="#08090d">
+  <meta property="og:title" content="v0.12.0 - supragnosis news">
+  <meta property="og:description" content="Upgrade, then restart once; the app and the viewer speak Korean, and an agent opens a record.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://supragnosis.dev/news/v0.12.0/">
+  <meta property="og:site_name" content="supragnosis">
+  <meta property="og:image" content="https://supragnosis.dev/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="alternate" type="application/rss+xml" title="supragnosis news" href="https://supragnosis.dev/news/feed.xml">
+  <link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+  <link rel="preload" href="../../fonts/fraunces-5.3.0/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../fonts/pretendard-1.3.9/pretendard-latin.css">
+  <link rel="stylesheet" href="../../style.css">
+  <!-- Visits are counted, as the Privacy page says; on supragnosis.dev only. -->
+  <script src="../../analytics.js" async></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-head wrap">
+    <a class="wordmark" href="../../">supragnosis</a>
+    <nav aria-label="Sections">
+      <a href="../../#how">How it works</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../#status">Status</a>
+      <a href="../../news/" aria-current="page">News</a>
+      <a href="https://github.com/Ashon/supragnosis#readme">Docs</a>
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+    </nav>
+  </header>
+
+  <!-- Written by e2e/tests/news_page.rs from docs/news, docs/releases and CHANGELOG.md
+       (docs/design-system.md Section 11b); edit those, not this page. -->
+  <main id="main">
+    <div class="wrap n-page">
+      <aside class="n-recent" aria-label="Recent news">
+        <p class="eyebrow">Recent</p>
+        <ol>
+          <li><a href="../v0.12.0/" aria-current="page">supragnosis v0.12.0<time datetime="2026-11-28">Nov 28, 2026</time></a></li>
+          <li><a href="../what-the-agents-remember/">What the agents remember, four days in<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.11.0/">supragnosis v0.11.0<time datetime="2026-10-28">Oct 28, 2026</time></a></li>
+          <li><a href="../v0.10.3/">supragnosis v0.10.3<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.2/">supragnosis v0.10.2<time datetime="2026-10-24">Oct 24, 2026</time></a></li>
+          <li><a href="../v0.10.1/">supragnosis v0.10.1<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.10.0/">supragnosis v0.10.0<time datetime="2026-10-23">Oct 23, 2026</time></a></li>
+          <li><a href="../v0.9.0/">supragnosis v0.9.0<time datetime="2026-10-22">Oct 22, 2026</time></a></li>
+        </ol>
+        <p><a href="../feed.xml">Follow with RSS</a></p>
+      </aside>
+      <article class="n-article">
+        <p class="n-crumb"><a href="../">News</a></p>
+        <p class="n-meta"><span class="n-kind">Release</span><time datetime="2026-11-28">Nov 28, 2026</time></p>
+        <h1>supragnosis v0.12.0</h1>
+        <p class="n-lede">Upgrade, then restart once; the app and the viewer speak Korean, and an agent opens a record.</p>
+        <div class="n-body">
+<p>Changes since v0.11.0.</p>
+<p><strong>Upgrade the server and the app, then restart once; the app and the viewer speak Korean, and an
+agent can open a record it found.</strong>
+<code>brew upgrade</code>, then <code>supragnosis restart</code>. The store format and the sync protocol are unchanged, so
+a 0.11 node and a 0.12 node still sync, and nothing needs a reproject. Two answers of the MCP tools
+changed in a way a script could notice; they open the next section.</p>
+<h2>Read before upgrading</h2>
+<ul>
+<li><strong>On macOS 14 Homebrew asks for up-to-date Command Line Tools.</strong> GitHub stopped running the
+macos-14 runner on 2026-11-06, so the Homebrew bottle is built on macOS 15 and pours on macOS 15
+or later (<code>arm64_sequoia</code>). On macOS 14 the formula installs the same prebuilt binary without a
+bottle, which Homebrew does only with an up-to-date Xcode or Command Line Tools, though nothing
+is compiled; releases through 0.11.0 poured there. The app is unchanged in what it runs on.</li>
+<li><strong><code>search_knowledge</code> refuses a <code>scope</code> it does not know.</strong> Any word but <code>local</code>, <code>remote</code> or
+<code>both</code> was read as <code>local</code>, so a call that passed one searched this node without saying so. It now
+answers an error that names the three.</li>
+<li><strong>The sync tools with no workspace act on what the node shares.</strong> <code>sync_pull</code>, <code>sync_push</code> and
+<code>sync_status</code> used to fall back to the node's default workspace, which a node whose workspaces are
+named after projects never wrote. With no workspace named, a pull takes every workspace the node
+shares or receives, a push every shared one, and each answers <code>{workspaces: [...]}</code>, one entry a
+workspace; <code>sync_status</code> answers <code>version_vectors</code>, a map by workspace, in place of <code>workspace</code>
+and <code>version_vector</code>. A named workspace answers as before. A remote search with no workspace asks
+no host and says to name one.</li>
+<li><strong><code>resources/list</code> lists <code>supragnosis://workspaces</code> alone.</strong> It also listed the default
+workspace's graph, hypergraph and types; the templates still read those for any workspace by name.</li>
+<li><strong>Building from source needs Rust 1.90</strong>, down from 1.96 (see "A smaller build").</li>
+</ul>
+<h2>The app and the viewer in Korean</h2>
+<p>The app, its menu bar and tray, Setup, Settings and the viewer - the map, the Log, Review, notices
+and the sheet - show Korean when macOS gives the app Korean, and English otherwise (i18n.md). The
+site has had its Korean pages since November; the Korean landing now names the app's pages as the
+app does.</p>
+<ul>
+<li><strong>The app follows macOS.</strong> It reads the language macOS picks for it - your preferred languages, or
+the one set for this app under System Settings &gt; General &gt; Language &amp; Region &gt; Applications - and
+has no language setting of its own. The viewer opened in a browser follows the browser.</li>
+<li><strong>What stays as written.</strong> A record's content, an entity's name, a type and a workspace's name are
+shown as they were written. What agents read - the MCP instructions, tool descriptions, prompts and
+the hook's text - stays English, as does the command line.</li>
+<li><strong>Still English inside Korean pages:</strong> a refusal's reason and a check's detail, which the server
+writes for one case, and the names of the engine's checks in Review.</li>
+<li><strong><code>supragnosis setup --events</code></strong> carries a <code>code</code> and its values beside each <code>say</code>, so the app
+words a step in its own language instead of parsing the sentence.</li>
+</ul>
+<h2>An agent can open what it found</h2>
+<p>v0.11.0 gave each session its project's newest records. A look at what an agent could do next found
+that a search hit shows a record's first 160 characters and the whole record opened only as an MCP
+resource, which a client may not give its agent: a subagent surveyed on 2026-11-28 had no resource
+tool at all.</p>
+<ul>
+<li><strong><code>get_entity</code> opens a record.</strong> Given an observation hit's id, or an index line's link, it
+answers the record in full, as the resource does. The usage log counts it as an opened record.</li>
+<li><strong><code>search_knowledge</code> says how to search:</strong> two or three topic words, the project's workspace, then
+without one before concluding nothing is recorded, and how to open a hit. A record's hit carries
+its <code>workspace</code> and the day it was <code>recorded</code>.</li>
+<li><strong>A record opens with its finding.</strong> <code>observe</code> and the question after a commit ask for the finding
+in the first sentence, since the index and a hit show only the start.</li>
+<li><strong>Smaller:</strong> <code>get_proposal</code> and <code>review</code> take the id as <code>proposal_id</code>, the name <code>propose</code> answers
+it under; the index says its days are UTC; a refusal no longer cites a principle or a document an
+agent cannot read; a store failure and a missing sync setup name the command that helps
+(<code>supragnosis status</code>, <code>supragnosis invite</code> and <code>join</code>); <code>supragnosis --help</code> lists each command
+on one line.</li>
+</ul>
+<h2>Two spellings of one type are one type</h2>
+<p>On the author's node 138 of the 139 items under Needs you were contested types, and 30 of those
+differed only in case or separators: <code>Component</code> and <code>component</code>, <code>Session</code> and <code>session</code>. A person
+asked to choose between two spellings is asked nothing about what is true.</p>
+<ul>
+<li>An entity's type is compared by the fold a relation's type already takes, so two spellings do not
+contest each other and are not listed as a conflict. The spelling the policy picks is the one
+shown, and every spelling stays in the log (resolution.md Section 4.1).</li>
+<li>Types that differ in meaning - <code>Component</code> and <code>Feature</code> - contest as before. On the same store
+108 remain.</li>
+<li>Nothing stored changes, so there is nothing to rebuild.</li>
+</ul>
+<h2>The site</h2>
+<ul>
+<li>The news list orders releases of one day by version, newest first; a release's tab reads
+"v0.12.0 - supragnosis news".</li>
+<li>The landing shows the Linux install tab first only on desktop Linux, not on a phone or Windows.</li>
+<li>The Privacy pages carry a share preview. Korean copy was tightened in several places, and Review's
+queue is "확인할 항목" wherever it is named.</li>
+</ul>
+<h2>A smaller build</h2>
+<p>The viewer's page, styles and scripts are served as they are written. The three build-time
+minifiers are gone: measured on an Apple silicon Mac, one clean release build each, the lock file
+went from 502 packages to 376, a build of the CLI compiles 239 packages instead of 390 and took 46 s
+instead of 56 s, and the binary grew by 277 KB. The advisory exception the CSS minifier needed is
+removed, and the lowest Rust that builds the workspace is 1.90.</p>
+<h2>Smaller changes</h2>
+<ul>
+<li><strong>Dependencies.</strong> rmcp 3.11.0, url 2.5.9 and cookie 0.18.3 close five RustSec advisories.</li>
+<li><strong>Docs.</strong> architecture.md, i18n.md and the principle registry say what is built as of this
+release; two functions and one branch left by what 0.11.0 removed are deleted.</li>
+</ul>
+        </div>
+        <nav class="n-steps" aria-label="Newer and older"><a href="../what-the-agents-remember/"><span>Older</span>What the agents remember, four days in</a></nav>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-foot wrap">
+    <p class="eyebrow">supra <span>(above)</span> + gnosis <span>(knowing)</span> = meta-knowledge</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/Ashon/supragnosis">GitHub</a>
+      <a href="../../news/">News</a>
+      <a href="../../principles/">Principles</a>
+      <a href="../../privacy/">Privacy</a>
+      <a href="https://github.com/Ashon/supragnosis/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+    <p class="fine">MIT or Apache-2.0. Plain HTML and CSS with a few scripts, no build step. This page lives in <code>site/news/</code>.</p>
+  </footer>
+</body>
+</html>

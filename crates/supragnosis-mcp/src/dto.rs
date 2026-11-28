@@ -41,7 +41,9 @@ pub struct ObserveRequest {
 pub struct EntityInput {
     /// Canonical name of the entity.
     pub name: String,
-    /// Entity type (e.g. Concept, Person, Project, Tool). Defaults to Concept when omitted.
+    /// Entity type (e.g. Concept, Person, Project, Tool). Use the type the workspace already gives
+    /// this kind of thing - an entity hit's `type`, or supragnosis://workspace/{ws}/types - so one
+    /// thing does not get two types. Defaults to Concept when omitted.
     #[serde(rename = "type", default)]
     pub kind: Option<String>,
     /// (Optional) Human-readable explanation of this entity - what it is, so the ontology captures the

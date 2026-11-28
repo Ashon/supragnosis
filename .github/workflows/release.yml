@@ -71,7 +71,7 @@ jobs:
         include:
           # Apple silicon only. Intel Macs have no release binary: they build from source
           # (deploy/homebrew/README.md).
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
           # 24.04, which sets the Linux floor at its glibc, 2.39 (docs/semantic-retrieval.md Section
           # 4): the static ONNX Runtime ort downloads references glibc 2.38 symbols and GCC 13's
@@ -207,8 +207,8 @@ jobs:
   #
   # Built the standard way - install from a local tap with --build-bottle, then `brew bottle` - and
   # proven by reinstalling from it and requiring that Homebrew poured it (deploy/homebrew/bottle.sh,
-  # which homebrew.yml also runs on pull requests). macos-14 gives arm64_sonoma, which Homebrew also
-  # pours on every later macOS;
+  # which homebrew.yml also runs on pull requests). macos-15 gives arm64_sequoia, which Homebrew also
+  # pours on every later macOS (GitHub stopped running the macos-14 image on 2026-11-06);
   # ubuntu gives x86_64_linux. arm64 Linux, which this matrix does not bottle, keeps the
   # source-build path. A bottle that fails to build is left out of the tap, not a reason to hold the
   # release back.
@@ -223,7 +223,7 @@ jobs:
       matrix:
         # 24.04 for Linux: the bottle installs and runs the release binary, whose floor is glibc
         # 2.39 (the build matrix above).
-        os: [macos-14, ubuntu-24.04]
+        os: [macos-15, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -154,7 +154,7 @@
               },
               "type": {
                 "default": null,
-                "description": "Entity type (e.g. Concept, Person, Project, Tool). Defaults to Concept when omitted.",
+                "description": "Entity type (e.g. Concept, Person, Project, Tool). Use the type the workspace already gives\nthis kind of thing - an entity hit's `type`, or supragnosis://workspace/{ws}/types - so one\nthing does not get two types. Defaults to Concept when omitted.",
                 "type": [
                   "string",
                   "null"
