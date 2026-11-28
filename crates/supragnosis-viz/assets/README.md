@@ -15,10 +15,9 @@ single self-contained binary that works offline (no CDN, no external fetch), and
 pure cargo - Node is not required to build or release** (the minifiers are Rust build-dependencies).
 
 Minification happens at build time, **release builds only** (debug serves the files verbatim, so they
-stay debuggable):
+stay debuggable). `viewer.html` is served as written in both:
 
 - CSS - `lightningcss`
-- HTML - `minify-html` (markup whitespace; the external css/js links are untouched)
 - JS - `oxc` code generator in minify mode: whitespace + comments removed, but **no identifier
   mangling and no dead-code elimination** (semantics-preserving printing). Parsing also fails the
   build on malformed JS, a free correctness check.

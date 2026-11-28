@@ -21,9 +21,9 @@ ignore = [
     # `serve` in the foreground already, which is the direction that removes this dependency
     # entirely).
     "RUSTSEC-2025-0069",
-    # `rkyv` 0.7.46, reached only as lightningcss -> parcel_sourcemap -> rkyv. lightningcss and
-    # minify-html are build-dependencies of supragnosis-viz: they minify this repository's own CSS
-    # and HTML at compile time, so neither they nor rkyv appear in a shipped binary. The advisory is
+    # `rkyv` 0.7.46, reached only as lightningcss -> parcel_sourcemap -> rkyv. lightningcss is a
+    # build-dependency of supragnosis-viz: it minifies this repository's own CSS at compile time,
+    # so neither it nor rkyv appears in a shipped binary. The advisory is
     # a validation bypass when reading an archive and names the affected users as those who process
     # untrusted archives; the only archives here are the ones the build makes from assets sitting
     # beside it. Upstream fixed this in rkyv 0.8.17 and no longer supports the 0.7 series, so it

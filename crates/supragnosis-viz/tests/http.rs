@@ -492,8 +492,6 @@ async fn viz_serves_graph_index_and_404() {
     assert!(idx.contains("Content-Type: text/html; charset=utf-8"), "index content-type");
     let html = body_of(&idx, "200");
     assert!(html.contains("<canvas"), "the viewer HTML must contain a canvas");
-    // Path substrings (not full attribute text) so the assertion survives release HTML minification,
-    // which may drop the attribute quotes.
     assert!(html.contains("/viewer.css"), "the index must link the stylesheet asset");
     assert!(html.contains("/viewer.js"), "the index must link the script asset");
 
