@@ -228,7 +228,8 @@ function openSettings() {
 let legendOrder = { scope: null, nodes: [], edges: [] };
 function legendCounts() {
   const nodeCount = {}, edgeCount = {};
-  for (const n of nodes) nodeCount[n.type] = (nodeCount[n.type] || 0) + 1;
+  // An entity type is counted under its group's spelling (resolution.md Section 4.1).
+  for (const n of nodes) { const t = typeLabel[n.type] || n.type; nodeCount[t] = (nodeCount[t] || 0) + 1; }
   for (const e of edges) edgeCount[e.type] = (edgeCount[e.type] || 0) + 1;
   const byCount = c => Object.keys(c).sort((a, b) => c[b] - c[a] || (a < b ? -1 : a > b ? 1 : 0));
   const scope = currentWs();
@@ -243,7 +244,7 @@ function legendCounts() {
   return { nodeCount, edgeCount };
 }
 // A section's head says how many of its types are hidden, with Show all (Section 29.9).
-function sectionHidden(ctEl, keys, offSet) {
+function sectionHidden(ctEl, keys, offSet, members = t => [t]) {
   const head = ctEl && ctEl.parentElement;
   if (!head) return;
   let note = head.querySelector(".rhid");
@@ -252,7 +253,7 @@ function sectionHidden(ctEl, keys, offSet) {
   if (!note) { note = document.createElement("span"); note.className = "rhid"; head.appendChild(note); }
   const all = document.createElement("button");
   all.type = "button"; all.className = "linkish"; all.textContent = word("showAll");
-  all.onclick = () => { for (const t of keys) offSet.delete(t); renderLegend(); renderStats(); };
+  all.onclick = () => { for (const t of keys) for (const m of members(t)) offSet.delete(m); renderLegend(); renderStats(); };
   note.replaceChildren(document.createTextNode(" - " + word("nHidden", { n: hidden }) + " "), all);
 }
 function renderLegend() {
@@ -262,11 +263,15 @@ function renderLegend() {
   // neither can stick to a dead chip that will never fire mouseleave.
   typeHl = null; edgeTypeHl = null; tip.style.display = "none";
   const { nodeCount, edgeCount } = legendCounts();
+  // Every spelling of a listed entity type: its switch moves them together.
+  const spellings = t => { const ms = Object.keys(typeLabel).filter(k => typeLabel[k] === t); return ms.length ? ms : [t]; };
+  for (const t of legendOrder.nodes) if (typeOff.has(t)) for (const m of spellings(t)) typeOff.add(m);
   const fill = (host, keys, colorOf, offSet, isEdge) => {
+    const members = isEdge ? t => [t] : spellings;
     host.innerHTML = "";
     if (!keys.length) { host.innerHTML = html`<span class="lbl">${word("none")}</span>`; return; }
     const counts = isEdge ? edgeCount : nodeCount;
-    const only = t => { offSet.clear(); for (const k of keys) if (k !== t) offSet.add(k); renderLegend(); renderStats(); };
+    const only = t => { offSet.clear(); for (const k of keys) if (k !== t) for (const m of members(k)) offSet.add(m); renderLegend(); renderStats(); };
     for (const t of keys) {
       const wrap = document.createElement("span");
       wrap.className = "lgw";
@@ -281,7 +286,8 @@ function renderLegend() {
       if (offSet.has(t)) el.appendChild(icon("eye-off"));
       el.onclick = (e) => {
         if (e.altKey) { only(t); return; }
-        if (offSet.has(t)) offSet.delete(t); else offSet.add(t);
+        const off = offSet.has(t);
+        for (const m of members(t)) { if (off) offSet.delete(m); else offSet.add(m); }
         renderLegend(); renderStats();
       };
       // Hovering a chip highlights its nodes/edges on the graph (render-only - no sim wake) and
@@ -306,7 +312,7 @@ function renderLegend() {
   fill(legendEdgesEl, edgeKeys, () => EDGE_NEUTRAL, edgeTypeOff, true);
   nodeCtEl.textContent = nodeKeys.length || "";
   edgeCtEl.textContent = edgeKeys.length || "";
-  sectionHidden(nodeCtEl, nodeKeys, typeOff);
+  sectionHidden(nodeCtEl, nodeKeys, typeOff, spellings);
   sectionHidden(edgeCtEl, edgeKeys, edgeTypeOff);
   renderBoundaryChips();
   renderList();

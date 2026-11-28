@@ -229,12 +229,35 @@ const commonTypesRead = fetch("/api/common_types", { cache: "no-store" })
   .then(j => { commonTypes = (j && Array.isArray(j.types)) ? j.types : []; })
   .catch(() => { commonTypes = []; });
 const typeColorKept = {};
+// A type's name as the engine compares it (normalize_relation_kind): trimmed, separators and a
+// camelCase boundary as one `_`, lowercase.
+function typeFold(t) {
+  return String(t || "").trim()
+    .replace(/[-_\s]+/g, "_")
+    .replace(/([\p{Ll}\p{Nd}])(\p{Lu})/gu, "$1_$2")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
 function assignColors() {
   const common = stableColors(new Set(commonTypes || []));
   typeColor = {};
+  // Two spellings of one type are one type (resolution.md Section 4.1): they share a row of the
+  // legend, its switch and its colour, under the spelling that sorts first.
+  typeLabel = {};
+  const spelled = {};
   for (const t of new Set(nodes.map(n => n.type))) {
-    if (!typeColorKept[t]) typeColorKept[t] = common[t] || TYPE_BAND[nameSlot(t)];
-    typeColor[t] = typeColorKept[t];
+    const k = typeFold(t);
+    if (!Object.hasOwn(spelled, k)) spelled[k] = [];
+    spelled[k].push(t);
+  }
+  for (const ts of Object.values(spelled)) {
+    ts.sort();
+    for (const t of ts) typeLabel[t] = ts[0];
+  }
+  for (const t of Object.keys(typeLabel)) {
+    const l = typeLabel[t];
+    if (!typeColorKept[l]) typeColorKept[l] = common[l] || TYPE_BAND[nameSlot(l)];
+    typeColor[t] = typeColorKept[l];
   }
   if (FORCED_COLORS.matches) for (const t of Object.keys(typeColor)) typeColor[t] = INK;
   edgeKinds = [...new Set(edges.map(e => e.type))].sort();
