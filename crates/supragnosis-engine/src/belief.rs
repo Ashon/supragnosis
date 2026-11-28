@@ -290,6 +290,11 @@ impl Engine {
     /// entry per distinct value at that value's highest effective tier, ordered (tier desc, value
     /// asc) - deterministic (P16). The winner's observation id is the mediation handle: confirming
     /// the current value means promoting that observation (resolution.md Section 4.2).
+    ///
+    /// Two spellings of one type are one value (resolution.md Section 4.1): `Component` and
+    /// `component`, or `CodeUnit` and `code_unit`, by the fold relation types already take. The
+    /// policy still picks the winner and its spelling; a spelling of the winner is no competitor
+    /// and makes nothing contested.
     pub(crate) fn resolve_kind(
         &self,
         candidates: Option<&Vec<BeliefCandidate>>,
@@ -301,20 +306,26 @@ impl Engine {
             return (None, false, Vec::new());
         };
         let winner = &cands[choice.index];
-        let mut best: BTreeMap<&str, (TrustTier, &str)> = BTreeMap::new();
+        let fold = |v: &str| supragnosis_core::normalize_relation_kind(v);
+        let won = fold(&winner.value);
+        // Per value: its highest tier, tie-broken by the smallest observation id (stable, P16),
+        // shown in that observation's spelling.
+        let mut best: BTreeMap<String, (TrustTier, &str, &str)> = BTreeMap::new();
+        let mut tied = false;
         for c in cands {
-            if c.value == winner.value {
+            let value = fold(&c.value);
+            if value == won {
                 continue;
             }
-            let e = best.entry(c.value.as_str()).or_insert((c.tier, c.observation.as_str()));
-            // Highest tier per value; tie-break by smallest observation id (stable, P16).
+            tied |= c.tier == winner.tier;
+            let e = best.entry(value).or_insert((c.tier, c.observation.as_str(), c.value.as_str()));
             if (c.tier, std::cmp::Reverse(c.observation.as_str())) > (e.0, std::cmp::Reverse(e.1)) {
-                *e = (c.tier, c.observation.as_str());
+                *e = (c.tier, c.observation.as_str(), c.value.as_str());
             }
         }
         let mut competitors: Vec<Competitor> = best
-            .into_iter()
-            .map(|(value, (tier, observation))| Competitor {
+            .into_values()
+            .map(|(tier, observation, value)| Competitor {
                 value: value.to_string(),
                 trust_tier: tier,
                 observation: observation.to_string(),
@@ -324,7 +335,8 @@ impl Engine {
             .sort_by(|a, b| b.trust_tier.cmp(&a.trust_tier).then_with(|| a.value.cmp(&b.value)));
         (
             Some((winner.value.clone(), winner.observation.clone())),
-            choice.contested,
+            // The policy's own flag, less the ties that are only spellings of the winner.
+            choice.contested && tied,
             competitors,
         )
     }
