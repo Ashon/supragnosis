@@ -342,21 +342,11 @@ async fn mcp_resource_graph_surface() {
         .expect("observation id")
         .to_string();
 
-    // --- 1) list_resources: expose the default workspace graph + workspace list resources ----
+    // --- 1) list_resources: the workspace list alone; a workspace is read through the templates,
+    // and the node's default one is not listed as if it held the knowledge -------------------------
     let resources = client.list_all_resources().await.expect("list resources");
     let uris: Vec<&str> = resources.iter().map(|r| r.uri.as_str()).collect();
-    assert!(
-        uris.contains(&"supragnosis://workspace/ws/graph"),
-        "must expose the default workspace graph resource: {uris:?}"
-    );
-    assert!(
-        uris.contains(&"supragnosis://workspaces"),
-        "must expose the workspace list resource (discovery entry point): {uris:?}"
-    );
-    assert!(
-        uris.contains(&"supragnosis://workspace/ws/hypergraph"),
-        "must also expose the default workspace hypergraph resource (discoverability): {uris:?}"
-    );
+    assert_eq!(uris, ["supragnosis://workspaces"], "the discovery entry point and nothing else");
 
     // --- 1b) read_resource(workspaces): array of workspace names that hold knowledge --------------
     let read = client
@@ -1083,6 +1073,20 @@ async fn a_remote_search_does_not_leave_for_an_unshared_workspace() {
     let remote = v["remote"].as_array().expect("remote results");
     assert!(remote.iter().all(|r| r.get("server").is_none()), "no host was asked: {v}");
     assert_eq!(remote[0]["skipped_workspace"], "private", "{v}");
+
+    // No workspace named: a remote search is about one, so it asks for the name and no host is
+    // asked - the node's default workspace is not what the caller meant.
+    let unnamed = CallToolRequestParams::new("search_knowledge")
+        .with_arguments(args(json!({"query": "plans", "scope": "remote"})));
+    let v = tool_json(&client.call_tool(unnamed).await.expect("search"));
+    let remote = v["remote"].as_array().expect("remote results");
+    assert!(remote.iter().all(|r| r.get("server").is_none()), "no host was asked: {v}");
+    assert!(
+        remote[0]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("name it") && e.ends_with("ws")),
+        "{v}"
+    );
 
     let v = tool_json(&client.call_tool(search("ws")).await.expect("search"));
     let asked = v["remote"].as_array().expect("remote results");
@@ -2009,6 +2013,35 @@ async fn get_entity_on_an_observation_id_answers_the_record() {
             "note": "unknown - not found is not a negation (open-world assumption)",
         })
     );
+    client.cancel().await.expect("client shutdown");
+    server.await.expect("server task");
+}
+
+/// A record's hit says where it lives and the day it was recorded, read from the record itself, as
+/// an entity's hit says its name, type and workspace.
+#[tokio::test]
+async fn a_record_hit_says_its_workspace_and_day() {
+    let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
+    let (client, server) = prompt_server(engine).await;
+    let observed = call(
+        &client,
+        "observe",
+        json!({ "content": "the ledger closes monthly", "workspace": "notes" }),
+    )
+    .await;
+    let id = observed["observation_id"].as_str().expect("an observation id").to_string();
+    let record = call(&client, "get_entity", json!({ "id": id })).await;
+    let at = record["observation"]["provenance"][0]["observed_at"].as_u64().expect("a time");
+
+    let found = call(&client, "search_knowledge", json!({ "query": "ledger closes" })).await;
+    let hit = found["hits"]
+        .as_array()
+        .and_then(|h| h.iter().find(|h| h["id"] == id.as_str()))
+        .unwrap_or_else(|| panic!("the record is a hit: {found}"));
+    assert_eq!(hit["kind"], "observation", "{hit}");
+    assert_eq!(hit["workspace"], "notes", "{hit}");
+    assert_eq!(hit["recorded"], supragnosis_mcp::utc_day(at / 1000), "{hit}");
+    assert_eq!(supragnosis_mcp::utc_day(1_792_845_186), "2026-10-24");
     client.cancel().await.expect("client shutdown");
     server.await.expect("server task");
 }

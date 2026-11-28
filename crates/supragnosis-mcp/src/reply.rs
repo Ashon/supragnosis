@@ -37,7 +37,7 @@ pub(crate) fn store_failure_json(e: &impl std::fmt::Display) -> String {
     serde_json::json!({
         "error": e.to_string(),
         "note": "storage backend failure - this is NOT an empty result. \
-                 Do not conclude that knowledge is absent. Retry, or ask the user to check the storage status"
+                 Do not conclude that knowledge is absent. Retry, or ask the person to run `supragnosis status`"
     })
     .to_string()
 }
@@ -149,4 +149,19 @@ pub(crate) fn unknown_observation(id: &str) -> ErrorData {
         ),
         None,
     )
+}
+
+/// The UTC day of a time in seconds since the epoch, as `YYYY-MM-DD` (the civil-from-days
+/// algorithm, so no date library is needed).
+pub fn utc_day(secs: u64) -> String {
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
 }

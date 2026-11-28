@@ -78,7 +78,7 @@ pub async fn pull_workspace(
         {
             Ok(Ok(vv)) => vv,
             Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
-            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("internal error - retry: {e}")}),
         };
         // Page after page (sync-correctness.md Section 11); each page is applied off the
         // async runtime, as one pull was.
@@ -151,8 +151,8 @@ pub async fn push_workspace(
     let ws = ws.to_string();
     if !ctx.share_workspaces.iter().any(|w| w == &ws) {
         return serde_json::json!({"error": format!(
-            "workspace {ws:?} is not on the share whitelist (P17: nothing leaves by default) - \
-             add it to [sync] share_workspaces in supragnosis.toml to share it"
+            "workspace {ws:?} is not one this node shares, and nothing leaves by default. The \
+             person shares a workspace when they join a hub (`supragnosis join`)"
         )});
     }
     // Ask each routed host first. Its copy of this node's own stream floors the seq counter
@@ -187,7 +187,7 @@ pub async fn push_workspace(
         match floored {
             Ok(Ok(())) => {}
             Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
-            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("internal error - retry: {e}")}),
         }
     }
     // Stamp before export (export-boundary stamping, Phase 2).
@@ -240,7 +240,7 @@ pub async fn push_workspace(
         {
             Ok(Ok(ev)) => ev,
             Ok(Err(e)) => return serde_json::json!({"error": format!("store failure: {e}")}),
-            Err(e) => return serde_json::json!({"error": format!("task join error: {e}")}),
+            Err(e) => return serde_json::json!({"error": format!("internal error - retry: {e}")}),
         };
         if surplus.is_empty() {
             results.push(serde_json::json!({"server": server, "pushed": 0}));
@@ -328,11 +328,34 @@ pub fn vouched_bounds(
     supragnosis_sync::bounds_in(&ctx.vouched, workspace)
 }
 
+/// The workspaces this node syncs: the shared ones, then what a join recorded it receives, as the
+/// daemon's round walks them (docs/pairing.md Section 4.5).
+pub(crate) fn synced_workspaces(ctx: &SyncContext) -> Vec<String> {
+    let received = ctx
+        .receive
+        .iter()
+        .flatten()
+        .filter(|w| !ctx.share_workspaces.contains(w))
+        .cloned();
+    ctx.share_workspaces.iter().cloned().chain(received).collect()
+}
+
+/// A list of names as a sentence says it, or that there is none.
+pub(crate) fn said_list(names: &[String]) -> String {
+    if names.is_empty() {
+        "no workspace".into()
+    } else {
+        names.join(", ")
+    }
+}
+
+/// What a node with no sync says: setting it up is the person's act, at a terminal.
+pub(crate) const SYNC_UNCONFIGURED: &str =
+    "sync is not configured on this node, so there is nothing to sync with. Setting it up is the \
+     person's act: `supragnosis invite` on the machine that will be the hub prints a one-time \
+     code, and `supragnosis join` on this machine takes it";
+
 /// Guidance answer for the `sync_*` tools on a node with no sync configuration (P5).
 pub(crate) fn sync_unconfigured() -> String {
-    err_json(
-        "federation sync is not configured on this node. Create supragnosis.toml (next to the data \
-         dir, or set SUPRAGNOSIS_CONFIG) with a [sync] section - servers, auth_token, \
-         share_workspaces - and restart. See docs/federation.md Section 9",
-    )
+    err_json(SYNC_UNCONFIGURED)
 }

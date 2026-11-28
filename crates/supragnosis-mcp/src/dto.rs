@@ -119,8 +119,8 @@ pub struct ProposeRequest {
     /// - `recall` - bulk retraction of everything derived from a contamination source, for when bad
     ///   input has already been built on. It has no commit effect yet either, so no surface merges
     ///   one until it has; then its verdict is a human's direct act, which `review` never casts from
-    ///   this surface. Open it, comment on it, and tell the person, who can reject it in the Review
-    ///   panel.
+    ///   this surface. Open it, comment on it, and tell the person, who can reject it on the Review
+    ///   page of the Supragnosis app.
     pub kind: String,
     /// Entity/observation ids the proposal acts on (get them from the Review/curation signals or a search hit).
     /// For entity_merge an entity may also be named by its name in the workspace; it is stored as its id.
@@ -146,8 +146,10 @@ pub struct ProposeRequest {
     /// both axes - the proposal is blocked rather than merely flagged.
     #[serde(default)]
     pub affected_types: Vec<AffectedTypeItem>,
+    /// Where the proposal's evidence came from (a file, a URL, a tool).
     #[serde(default)]
     pub source_ref: Option<String>,
+    /// The person or principal the proposal is opened for.
     #[serde(default)]
     pub on_behalf_of: Option<String>,
 }
@@ -176,6 +178,7 @@ pub struct ReviewRequest {
     /// Optional note/comment.
     #[serde(default)]
     pub note: Option<String>,
+    /// The person or principal the verdict is cast for.
     #[serde(default)]
     pub on_behalf_of: Option<String>,
 }
@@ -202,7 +205,7 @@ pub struct GetProposalRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SyncStatusRequest {
-    /// Workspace to report (node default when omitted).
+    /// Workspace whose version vector to report (every workspace this node shares when omitted).
     #[serde(default)]
     pub workspace: Option<String>,
 }
@@ -210,7 +213,7 @@ pub struct SyncStatusRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SyncPullRequest {
-    /// Workspace to pull (node default when omitted).
+    /// Workspace to pull (every workspace this node shares or receives when omitted).
     #[serde(default)]
     pub workspace: Option<String>,
 }
@@ -218,7 +221,7 @@ pub struct SyncPullRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SyncPushRequest {
-    /// Workspace to push (node default when omitted; must be on the share whitelist).
+    /// Workspace to push, one this node shares (every shared workspace when omitted).
     #[serde(default)]
     pub workspace: Option<String>,
 }
@@ -235,13 +238,14 @@ pub struct GetEntityRequest {
 pub struct SearchRequest {
     /// Search scope: "local" (this node only, default), "remote" (the configured sync servers'
     /// ontologies - federated retrieval), or "both". Local state can lag the remote store - use
-    /// remote/both when a local miss may just mean "not synced yet". Remote hits are the server's
-    /// retrieval surface: sync_pull the workspace to materialize them locally before traverse/get_entity.
+    /// remote/both when a local miss may just mean "not synced yet"; they ask about one workspace, so
+    /// name it. Remote hits are the server's retrieval surface: sync_pull the workspace to
+    /// materialize them locally before traverse/get_entity.
     #[serde(default)]
     pub scope: Option<String>,
     /// Two or three topic words.
     pub query: String,
-    /// Scope to a workspace (all workspaces when omitted).
+    /// The project's workspace. Omitting it, or '*', searches every workspace.
     #[serde(default)]
     pub workspace: Option<String>,
     /// Maximum number of results (defaults to 20 when omitted).

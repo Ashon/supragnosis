@@ -36,7 +36,7 @@
     },
     {
       "name": "curate",
-      "description": "Improve the canon: draft proposals for the tidy-ups the curation signals point at, for you to review in the console. Nothing is decided by the model.",
+      "description": "Improve the canon: draft proposals for the tidy-ups the curation signals point at, for you to review on the Review page of the Supragnosis app. Nothing is decided by the model.",
       "arguments": [
         {
           "name": "workspace",

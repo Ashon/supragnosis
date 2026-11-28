@@ -170,7 +170,7 @@ Four MCP prompts, which a client offers as commands (in Claude Code, `/mcp__supr
   recommendation.
 
 Your model writes the brief from current state and nothing is stored. A judgment worth keeping
-becomes a proposal, and you cast the verdict in the app's Review panel. The canon is what remains,
+becomes a proposal, and you cast the verdict on the app's Review page. The canon is what remains,
 and the next brief reads it. See [docs/prompts.md](docs/prompts.md).
 
 ## How it works
