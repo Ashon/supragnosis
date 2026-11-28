@@ -482,7 +482,8 @@ impl Engine {
                 ),
             },
             // kind: the projected kind is the winner; non-winning kinds are competitors (R7).
-            // contested is get_entity's own flag (the identical resolve_kind result).
+            // contested is get_entity's own flag (the identical resolve_kind result); the rows list
+            // every spelling, so a spelling of the winner is a row here and no competitor there.
             FieldExplain {
                 field: "kind",
                 winner: view.entity.kind.clone(),

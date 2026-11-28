@@ -153,8 +153,12 @@ so `Component` and `component`, or `CodeUnit` and `code_unit`, do not contest ea
 not listed as a conflict. Extractors write the same type in different cases, and a person asked to
 choose between two spellings is asked nothing about what is true: measured on 2026-11-28 on the
 author's node, 30 of 138 contested types differed only this way. The policy still picks the winner,
-and its spelling is the one shown; every spelling stays in the log and on the explain surface
-(Principle 3). Types that differ in meaning - `Component` and `Feature` - contest as before.
+and its spelling is the one shown; every spelling stays in the log and in the rows `/api/explain`
+answers (Principle 3). Types that differ in meaning - `Component` and `Feature` - contest as before.
+The engine applies the fold after the policy, to the policy's own flag: it clears a flag whose ties
+are all spellings of the winner and never sets one the policy did not (R1), so R6's "distinct
+values" reads by this fold for a `kind`. A type's definition is a sentence and is compared as
+written.
 
 ### 4.2 Surfacing
 
