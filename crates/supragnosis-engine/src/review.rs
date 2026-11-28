@@ -52,10 +52,10 @@ impl Engine {
             // and say where to decide - the same courtesy as the blocking checks below.
             if view.kind == "recall" && surface == VerdictSurface::Agent {
                 return Err(ObserveError::Invalid(
-                    "a recall verdict is a human's direct act (Principle 23, I17): this surface \
+                    "a recall verdict is a human's direct act: this surface \
                      cannot merge one, and the fold would not count it. Until recall has its \
                      commit effect no surface merges one; a `comment` is accepted here, and the \
-                     person can reject it in the Review panel of the Supragnosis app or viewer"
+                     person can reject it on the Review page of the Supragnosis app"
                         .into(),
                 ));
             }
@@ -63,8 +63,9 @@ impl Engine {
             if !has_commit_effect(&view.kind) {
                 return Err(ObserveError::Invalid(format!(
                     "{} has no commit effect yet, so it cannot be merged until it has one - a merge \
-                     without a diff is a merge without review (Principle 23). A comment or a \
-                     withdrawal is accepted, and the person can reject it in the Review panel",
+                     without a diff is a merge without review. A comment or a \
+                     withdrawal is accepted, and the person can reject it on the Review page \
+                     of the Supragnosis app",
                     view.kind
                 )));
             }
@@ -77,7 +78,7 @@ impl Engine {
             let failures = self.blocking_failures(view, &asserted, &decided, cx)?;
             if !failures.is_empty() {
                 return Err(ObserveError::Invalid(format!(
-                    "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it (proposal-workflow.md Section 6)",
+                    "blocking checks fail, so this merge would not reach canon: {}. Fix the proposal or reject it",
                     failures.join("; ")
                 )));
             }

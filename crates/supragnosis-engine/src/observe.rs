@@ -352,7 +352,7 @@ impl Engine {
                 CORE_META_TYPES.iter().find(|c| c.eq_ignore_ascii_case(d.name.trim()))
             {
                 return Err(ObserveError::Invalid(format!(
-                    "type '{}' is the core ontology's {core}, and the core is fixed (Principle 10) - \
+                    "type '{}' is the core ontology's {core}, and the core is fixed - \
                      name the domain concept you mean instead, such as 'MeetingNote' or 'Service'",
                     d.name.trim()
                 )));
@@ -360,8 +360,8 @@ impl Engine {
             // Principle 8 (Clarity): a type cannot be created without a natural-language definition.
             if d.description.trim().is_empty() {
                 return Err(ObserveError::Invalid(format!(
-                    "type '{}' has an empty description. Principle 8 (clarity): a type needs a \
-                     natural-language definition of what it means - describe it, or drop the item",
+                    "type '{}' has an empty description. A type needs a natural-language definition of \
+                     what it means - describe it, or drop the item",
                     d.name
                 )));
             }

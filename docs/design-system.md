@@ -5686,8 +5686,8 @@ No row needs a principle changed.
     compute".
   - `review_proposal` refuses a merge of either kind on every surface: "tbox_change has no commit
     effect yet, so it cannot be merged until it has one - a merge without a diff is a merge without
-    review (Principle 23). A comment or a withdrawal is accepted, and the person can reject it in the
-    Review panel". On the agent surface a recall merge keeps I17's refusal, which adds that no
+    review. A comment or a withdrawal is accepted, and the person can reject it on the Review page of
+    the Supragnosis app". On the agent surface a recall merge keeps I17's refusal, which adds that no
     surface merges a recall until it has its effect.
 - **Review offers no Accept.** Where the diff would be, under "What changes", the item reads "Nothing
   yet: a type change has no effect in this version, so it cannot be accepted until it has one." For a
