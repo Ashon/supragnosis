@@ -233,6 +233,43 @@ fn kind_obs(name: &str, kind: &str, observed_at: u64) -> Observation {
     )
 }
 
+/// guard (resolution.md Section 4.1): two spellings of one type are one value. `Component` and
+/// `component`, or `CodeUnit` and `code_unit`, contest nothing and are listed as no conflict; the
+/// policy's winner keeps its spelling. A third value that differs in meaning contests as before,
+/// and its competitors are one row per value, not per spelling.
+#[test]
+fn p6_spellings_of_one_type_do_not_contest() {
+    let (store, engine) = engine();
+    for (name, kind, at) in [
+        ("viewer", "Component", 100),
+        ("viewer", "component", 200),
+        ("parser", "CodeUnit", 100),
+        ("parser", "code_unit", 200),
+    ] {
+        store.add_observation(kind_obs(name, kind, at)).unwrap();
+    }
+    engine.reproject(Some(WS)).expect("reproject");
+    let g = engine.graph(Some(WS)).expect("graph");
+    for (name, shown) in [("viewer", "component"), ("parser", "code_unit")] {
+        let n = g.nodes.iter().find(|n| n.name == name).expect("node");
+        assert_eq!(n.kind, shown, "the later spelling is the one shown (R2)");
+        assert!(!n.contested, "{name}: two spellings contest");
+        assert!(n.competitors.is_empty(), "{name}: a spelling is a competitor");
+    }
+    assert_eq!(engine.curation(Some(WS)).expect("curation").stats.contradictions, 0);
+
+    // A value that differs in meaning still contests, against one row for both spellings.
+    store.add_observation(kind_obs("viewer", "Feature", 300)).unwrap();
+    engine.reproject(Some(WS)).expect("reproject");
+    let g = engine.graph(Some(WS)).expect("graph");
+    let n = g.nodes.iter().find(|n| n.name == "viewer").expect("node");
+    assert_eq!(n.kind, "Feature");
+    assert!(n.contested, "a different type at the same tier must contest (R6)");
+    let values: Vec<&str> = n.competitors.iter().map(|c| c.value.as_str()).collect();
+    assert_eq!(values.len(), 1, "one competitor per value, not per spelling: {values:?}");
+    assert!(values[0].eq_ignore_ascii_case("component"));
+}
+
 /// guard (resolution.md Sections 4-6, R5-R8; principles.md P6/P18): a tier-tied kind conflict
 /// surfaces as contested (recency alone picked the winner), and a console confirmation - a gated
 /// claim_promotion verdict, never an edit - settles it by trust. The losing value stays queryable

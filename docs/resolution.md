@@ -147,6 +147,15 @@ This split is the review-economics line (proposal-workflow.md Section 9, Appendi
 principles.md): tier-tied conflicts are exactly the points where the system has no ground to
 choose, so they invite mediation; tier-decided conflicts are informational.
 
+**Two spellings of one type are one value.** An entity's `kind` is compared by the fold a relation's
+type already takes (architecture.md Section 2.2: trim, separators and camelCase to `_`, lowercase),
+so `Component` and `component`, or `CodeUnit` and `code_unit`, do not contest each other and are
+not listed as a conflict. Extractors write the same type in different cases, and a person asked to
+choose between two spellings is asked nothing about what is true: measured on 2026-11-28 on the
+author's node, 30 of 138 contested types differed only this way. The policy still picks the winner,
+and its spelling is the one shown; every spelling stays in the log and on the explain surface
+(Principle 3). Types that differ in meaning - `Component` and `Feature` - contest as before.
+
 ### 4.2 Surfacing
 
 - `GraphNode` / `EntityView` gain `contested: bool` plus the competitor list (value, effective
