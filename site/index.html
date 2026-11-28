@@ -233,7 +233,7 @@
     <section class="section wrap" id="check" aria-labelledby="check-title">
       <h2 id="check-title">Check it yourself in a minute.</h2>
       <p class="lead">With supragnosis and <code>jq</code> installed, paste this into a terminal. It runs a server on a store held in memory, so none of the entries is stored, and sends it three entries: two that give <code>retry-policy</code> different types, and one that carries AWS's published example access key.</p>
-      <pre class="code" tabindex="0"><code id="check-cmd">{ printf '%s\n' \
+      <pre class="code" tabindex="0" role="region" aria-label="The command that checks it"><code id="check-cmd">{ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"observe","arguments":{"workspace":"check","content":"retry-policy is a pattern","entities":[{"name":"retry-policy","type":"Pattern"}]}}}' \
@@ -248,9 +248,9 @@
   else empty end'</code></pre>
       <p class="check-copy"><button type="button" class="copy quiet" data-copy="#check-cmd">Copy</button></p>
       <p>It prints:</p>
-      <pre class="code" tabindex="0"><code>refusing to store this: the content contains something shaped like a credential (aws-access-key-id, at byte 11)
+      <pre class="code" tabindex="0" role="region" aria-label="What the command prints"><code>refusing to store this: the content contains something shaped like a credential (aws-access-key-id, at byte 11)
 retry-policy: Config or Pattern, contested: true</code></pre>
-      <p class="note">Both types stay side by side until you pick one in Review, and the key never reaches the log, which is append-only and could not give it back.</p>
+      <p class="note">Both types stay side by side until you pick one in Review, and the key never reaches the log, which is append-only and could never remove it.</p>
     </section>
 
     <section class="section wrap" id="connect" aria-labelledby="connect-title">
@@ -258,7 +258,7 @@ retry-policy: Config or Pattern, contested: true</code></pre>
       <div class="split">
         <div>
           <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI and OpenCode connect with one command and no token to copy, or with Connect in the app's Settings.</p>
-          <pre class="code" tabindex="0"><code>supragnosis connect claude-code
+          <pre class="code" tabindex="0" role="region" aria-label="The command that connects an AI app"><code>supragnosis connect claude-code
 <span class="c"># or claude-desktop, cursor, vscode, codex, gemini, opencode</span></code></pre>
           <p class="note">With Claude Code, <code>connect</code> also adds a hook: after a commit the agent made, the agent is asked for the decision behind the change, and each session starts knowing what the project's workspace holds. The hook itself writes nothing.</p>
           <p class="note">Every search hit points back to the entry it came from, at <code>supragnosis://observation/{id}</code>.</p>
@@ -327,7 +327,7 @@ retry-policy: Config or Pattern, contested: true</code></pre>
       <dl class="faq">
         <div><dt>Does anything leave my machine?</dt><dd>Only what you share. Sync is off until this machine joins a hub, and then it carries only the workspaces you allow.</dd></div>
         <div><dt>Do I need an API key or a model?</dt><dd>No. Search uses a local embedding model fetched once (224 MB); until then, keyword search works and says so.</dd></div>
-        <div><dt>What if I stop using it?</dt><dd>Your knowledge is a directory, and its log replays into the same graph on any node.</dd></div>
+        <div><dt>What if I stop using it?</dt><dd>Your knowledge is a directory, and its log replays into the same graph on any machine.</dd></div>
         <div><dt>How is this different from a notes file?</dt><dd>A notes file keeps what someone wrote. This keeps which machine and person said each thing and whether it was confirmed in Review, and shares it with every agent and machine you use.</dd></div>
       </dl>
     </section>
