@@ -151,7 +151,7 @@ function draw() {
       if (reach !== it.g.r) { it.g.r = reach; it.shape = cloudShape(it.g); }
       // Legend-chip hover: does this context contain any highlighted member? Hulls without one fade,
       // so the highlighted type/relation stands out against the hull layer too (same inspection language).
-      it.lgHit = typeHl ? it.ms.some(m => m.type === typeHl)
+      it.lgHit = typeHl ? it.ms.some(m => typeLabel[m.type] === typeHl)
         : edgeTypeHl ? it.ms.some(m => lgEndpoints.has(m.id))
         : false;
       it.hot = hot;
@@ -343,7 +343,7 @@ function draw() {
     // Legend hover outranks the rest: node-type chip -> both-endpoint edges bright, one-endpoint dim
     // halo, others faded; edge-kind chip -> matching edges full, others faded.
     const alpha = Math.min(oa, ob) * (typeHl
-      ? (e.a.type === typeHl && e.b.type === typeHl ? 0.9 : (e.a.type === typeHl || e.b.type === typeHl) ? 0.45 : 0.05)
+      ? (typeLabel[e.a.type] === typeHl && typeLabel[e.b.type] === typeHl ? 0.9 : (typeLabel[e.a.type] === typeHl || typeLabel[e.b.type] === typeHl) ? 0.45 : 0.05)
       : edgeTypeHl
       ? (e.type === edgeTypeHl ? 1 : 0.05)
       : act ? (hot ? 1 : DIM_EDGE) : hot ? 1 : (clusterMode ? (cross ? 0.9 : 0.1) : EDGE_ALPHA))
@@ -388,7 +388,7 @@ function draw() {
   // Each node in the layer of its opacity: lit or dimmed, by its weight in a crossfade.
   const layersOf = new Map();
   for (const n of vis) {
-    const on = typeHl ? n.type === typeHl
+    const on = typeHl ? typeLabel[n.type] === typeHl
       : edgeTypeHl ? lgEndpoints.has(n.id)
       : act ? act.ns.has(n.id) : kept ? kept.has(n.id) : true;
     const base = stepped((on && !trustOff.has(n.trust_tier) && !saidOut(n) ? 1 : DIM_NODE) * n._o), r = rOf(n);

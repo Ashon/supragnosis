@@ -71,7 +71,7 @@ function drawnCounts() {
     }
   }
   const present = new Set(nodes.map(n => n.type));
-  const hiddenTypes = [...typeOff].filter(t => present.has(t)).length;
+  const hiddenTypes = new Set([...typeOff].filter(t => present.has(t)).map(t => typeLabel[t] || t)).size;
   const tiers = new Set(nodes.map(n => n.trust_tier));
   const dimmed = [...trustOff].filter(t => tiers.has(t));
   const hiddenKinds = [...edgeTypeOff].filter(t => edges.some(e => e.type === t)).length;

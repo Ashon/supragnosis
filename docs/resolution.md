@@ -158,7 +158,8 @@ answers (Principle 3). Types that differ in meaning - `Component` and `Feature` 
 The engine applies the fold after the policy, to the policy's own flag: it clears a flag whose ties
 are all spellings of the winner and never sets one the policy did not (R1), so R6's "distinct
 values" reads by this fold for a `kind`. A type's definition is a sentence and is compared as
-written.
+written. The viewer's Filters list a type's spellings as one row, under the spelling that sorts
+first, with one switch and one colour; an entity's own sheet shows its type as written.
 
 ### 4.2 Surfacing
 

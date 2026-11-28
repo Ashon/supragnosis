@@ -109,7 +109,7 @@ fn a_type_keeps_its_color_in_every_scope() {
         !assign.contains("stableColors(new Set(nodes"),
         "the scope's own types never decide the band"
     );
-    assert!(assign.contains("typeColorKept[t]") && assign.contains("TYPE_BAND[nameSlot(t)]"));
+    assert!(assign.contains("typeColorKept[l]") && assign.contains("TYPE_BAND[nameSlot(l)]"));
     let first = SCRIPT
         .find("await commonTypesRead;")
         .expect("the first graph waits for the census");

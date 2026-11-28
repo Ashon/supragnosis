@@ -476,7 +476,7 @@ fn a_frame_touches_what_the_window_holds() {
     }
     let draw = function("draw");
     for part in [
-        "for (const n of vis) {\n    const on = typeHl ? n.type === typeHl",
+        "for (const n of vis) {\n    const on = typeHl ? typeLabel[n.type] === typeHl",
         "for (const n of vis) {\n    if (!n.contested) continue;",
         "if (showPulses && !REDUCED_MOTION && onScreen(n)) {",
         "const inView = nodesIn(",

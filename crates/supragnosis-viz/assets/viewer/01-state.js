@@ -296,6 +296,8 @@ let footprintSession = null;     // the session the current footprint belongs to
 let footprintSince = 0;          // when this page first saw that session
 const footprint = new Set();     // ids of nodes this session touched - the conversation's knowledge footprint
 let nodes = [], edges = [], typeColor = {}, edgeKinds = [];
+// An entity type's spelling -> the spelling its group is listed under (resolution.md Section 4.1).
+let typeLabel = {};
 const posById = new Map();       // id -> {x,y,vx,vy} - layout stability across polls
 const typeOff = new Set();       // node types hidden from the legend
 const trustOff = new Set();      // trust tiers dimmed from the Trust legend (D5: dimmed, never hidden)
