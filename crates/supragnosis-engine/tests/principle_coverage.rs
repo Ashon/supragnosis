@@ -728,8 +728,8 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
         "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 under a coarse pointer, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
             "built by design-system.md Section 14 steps 12-19 and held in parts by source checks; \
-             nothing presses every control in a browser. Revisit when docs/e2e.md Section 11 step 4's \
-             browser scenarios press every control at 1440 and 390 pixels",
+             nothing presses every control in a browser. Revisit when a browser scenario presses \
+             every control at 1440 and 390 pixels",
         ),
     )]),
     (20, &[c(
@@ -1259,7 +1259,8 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "the browser reaches the viewer only through the harness's proxy, for a throwaway store, on a port the system chose, refusing a foreign Host or Origin; the product opens no viewer port and nothing outside the suite starts the proxy",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 4 lands",
+                "docs/e2e.md is partly built, and this part is not. Revisit when its Section 11 step \
+                 4 lands",
             ),
         )],
     ),
@@ -1268,7 +1269,8 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "the app's pages are tested with commands answered from examples the app's own tests produce from the CLI's example documents",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 5 lands",
+                "docs/e2e.md is partly built, and this part is not. Revisit when its Section 11 step \
+                 5 lands",
             ),
         )],
     ),
@@ -1277,10 +1279,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "every scenario in Section 5 is told by a test that names its id or counted as unbuilt, every test names a scenario, and the badge is that count",
             Evidence::Deferred(
-                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
-                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
-                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
-                 Revisit when its Section 11 steps 4 to 6 land",
+                "built (docs/e2e.md Section 11 step 3): scenarios/check.mjs counts the scenarios and \
+                 their tests and scenarios.yml runs it, but it is a script of that workflow, not a \
+                 test this registry can name. Revisit when the check is a test a plain `cargo test` \
+                 runs",
             ),
         )],
     ),
