@@ -13,9 +13,10 @@ work, and every claim keeps who asserted it, on whose behalf, on what basis, and
 node trusts it. Claims that contradict each other stay side by side for you to settle, instead
 of the later one overwriting the earlier.
 
-It is built for a small team that wants one project's memory on each of its machines and
-shared with teammates, without a vendor cloud: one binary, an embedded store, and no account.
-A workspace leaves your machine only when you list it.
+It is built for one person whose agents work on several machines and who wants each project's
+memory on all of them, without a vendor cloud: one binary, an embedded store, and no account.
+A workspace leaves your machine only when you list it. Several people deciding on one shared
+hub is not built yet.
 
 ```
 supragnosis = supra (above) + gnosis (knowing) - knowledge about knowledge.
@@ -26,12 +27,12 @@ supragnosis = supra (above) + gnosis (knowing) - knowledge about knowledge.
 Most agent memory answers *what was remembered*. It does not answer *who said so*.
 
 That is fine for a single assistant remembering one user's preferences. It stops being fine
-the moment two agents, two machines, or two people write into the same memory:
+the moment two agents or two machines write into the same memory:
 
 - Two agents assert opposite facts. Last write wins, and the disagreement is gone.
 - An agent summarizes a poisoned document into memory. Nothing records where it came from,
   so nothing can trace what else that summary contaminated.
-- You want to share project knowledge with a teammate but not your private notes. There is
+- You want a project's knowledge on your other machine but not your private notes. There is
   no boundary to draw, because the store has no concept of whose knowledge this is.
 - A credential ends up in the log. There is no way to find it and no way to get it out.
 
@@ -184,8 +185,8 @@ log. Changing the resolution policy is a re-projection, not a migration.
 **Topology-independent convergence.** Nodes holding the same set of observations materialize
 the same graph, no matter which path events took or in what order they arrived. Content
 addressing dedups, hybrid logical clocks order, and the projection is a deterministic fold.
-Local-only, hub-and-spoke, direct peer, or a mix: the topology is an operational choice, not
-a semantic one.
+Local-only or hub-and-spoke, the two that are built: the topology is an operational choice,
+not a semantic one.
 
 **Hexagonal ports.** The domain crate has zero IO dependencies. Store, embedder, and
 transport sit behind ports held to one conformance suite. This is not an aspiration: a third
