@@ -106,8 +106,8 @@ pub(crate) fn reproject_cmd(a: WorkspaceArgs) -> Result<()> {
 }
 
 /// `supragnosis sync` - one full sync round (push surplus, pull deficit, re-materialize) against
-/// every configured server. Requires supragnosis.toml with [sync] servers + auth_token. The store
-/// is single-process (RocksDB lock): with a running daemon, use the sync_* MCP tools instead.
+/// every configured server. A running daemon holds the store, so it is asked to run the round;
+/// with none running this process opens the store and syncs on its own.
 pub(crate) fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     init_tracing();
     // A running daemon holds the store, so it runs the round itself, over its shared workspaces
@@ -149,8 +149,8 @@ pub(crate) fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     let cfg = resolve(RunArgs::default(), false);
     let fc = fed::load()?.ok_or_else(|| {
         anyhow::anyhow!(
-            "no federation config at {} - create it with a [sync] section (servers, auth_token, \
-             share_workspaces). See docs/federation.md Section 9",
+            "sync is not configured on this machine (no {}). Run `supragnosis invite` on the \
+             machine that will be the hub, then `supragnosis join` here with the code it prints",
             fed::config_path().display()
         )
     })?;
@@ -160,8 +160,8 @@ pub(crate) fn sync_cmd(a: WorkspaceArgs) -> Result<()> {
     }
     anyhow::ensure!(
         !links.is_empty(),
-        "[sync] names no server - nothing to sync against. Add [[sync.server]] entries with a url \
-         and an auth_token each"
+        "[sync] names no server - nothing to sync against. Run `supragnosis invite` on the machine \
+         that will be the hub, then `supragnosis join` here with the code it prints"
     );
     let identity = fed::load_or_create_identity()?;
     let node = supragnosis_sync::SyncNode::new(identity)
