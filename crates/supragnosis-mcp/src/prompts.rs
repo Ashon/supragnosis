@@ -35,7 +35,7 @@ pub const PROMPTS: [(&str, &str, &[Arg]); 4] = [
     (
         "curate",
         "Improve the canon: draft proposals for the tidy-ups the curation signals point at, for you \
-         to review in the console. Nothing is decided by the model.",
+         to review on the Review page of the Supragnosis app. Nothing is decided by the model.",
         &[("workspace", "Workspace to curate. Omitted or '*': every workspace.", false)],
     ),
     (
@@ -380,8 +380,8 @@ every workspace, so check before concluding.
 get_entity, traverse, workspace_map, list_proposals, get_proposal) for the rest.
 - Do not store your answer: never observe a summary or restatement of it. If a judgment should \
 last, draft a proposal with `propose` for the person to review.
-- Never cast a merge verdict with `review`. The person decides in the Review panel of the \
-Supragnosis app or viewer. You may record a comment.
+- Never cast a merge verdict with `review`. The person decides on the Review page of the \
+Supragnosis app. You may record a comment.
 - A proposal marked no_effect_yet changes nothing and cannot be accepted until its kind has an \
 effect: say so, and never describe the effect it would have.
 - Answer in the language the person writes in.";
@@ -392,10 +392,10 @@ name and id (get_entity shows the observations behind it).
 2. What is contested - each conflict with its sides, left unresolved.
 3. What is weakly supported - well-connected claims resting on a single agent-tier source.
 4. What is waiting on a decision - each open proposal and what merging it would change. Point the \
-person to the Review panel to decide.
+person to the Review page to decide.
 5. What arrived most recently: the knowledge first (recent_observations), then what was proposed \
-or decided (recent_proposal_events) - say which verdicts came from the console and which from an \
-agent. A proposal event is a decision about knowledge, not knowledge; never report one as a claim.
+or decided (recent_proposal_events) - say which verdicts the person cast in the app and which an \
+agent cast. A proposal event is a decision about knowledge, not knowledge; never report one as a claim.
 Close by suggesting the `curate` prompt if you saw tidy-ups worth proposing.";
 
 const TOPIC: &str = "\n\nStart from the search hits in the digest; call get_entity and traverse for \
@@ -417,11 +417,11 @@ already answered - proposed, split apart or rejected by the person - not that no
 counted apart from the band's. \
 Never propose recall; that is the person's call alone. Skip ambiguous cases and list them as \
 questions for the person instead. Finish with the ids of the proposals you created, tell the person \
-to review them in the Review panel, and that the `brief` prompt shows the result once they decide.";
+to review them on the Review page, and that the `brief` prompt shows the result once they decide.";
 
 const REVIEW: &str = "\n\nThe digest holds the proposal, its belief diff (what changes in current \
 belief if it merges) and its check results. Explain in plain terms what merging would change, which \
 beliefs it overturns or creates, what the checks say, and the risks. Recommend merge, reject, or \
 \"needs more evidence\", with reasons that cite evidence. You may record your review as a comment \
-(`review` with decision comment). Do not merge: the verdict is the person's, in the Review panel - \
+(`review` with decision comment). Do not merge: the verdict is the person's, on the Review page - \
 and a merge through this surface would grant at most host_signed.";

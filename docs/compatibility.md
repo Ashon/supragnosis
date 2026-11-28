@@ -509,6 +509,30 @@ answers changed:
   answers it under. The schema lists each tool's own name alone, so a client that checks arguments
   against it sends that one.
 
+**What an agent reads says what it means** (the 2026-11-28 pass over the agent's and the terminal's
+texts). No tool or argument was removed or renamed; descriptions, the server's instructions and
+error sentences were reworded, and these answers changed:
+- A `search_knowledge` hit of kind observation from this node carries `workspace` and `recorded`,
+  the UTC day (`YYYY-MM-DD`) the record was first recorded, both read from the record. Additive: it
+  carried `kind`, `id`, `snippet` and `score` alone.
+- `sync_pull` and `sync_push` with no `workspace` act on what the daemon's own round does: a pull on
+  every workspace this node shares or receives, a push on every shared one, answered as
+  `{workspaces: [...]}` with one former answer a workspace. `sync_status` with none answers
+  `version_vectors`, a map by shared workspace, in place of `workspace` and `version_vector`. They
+  acted on the node's default workspace, which a node whose workspaces are named after projects
+  never wrote. A named workspace answers as before.
+- `search_knowledge` with `scope` `remote` or `both` and no `workspace` asks no host: its `remote`
+  entry is an error that asks for the workspace by name and lists the shared ones. It asked about
+  the node's default workspace.
+- `resources/list` lists `supragnosis://workspaces` alone. It also listed the default workspace's
+  graph, hypergraph and types, which the templates still read for any workspace by name.
+- A node with no sync answers the `sync_*` tools, and a remote search, that setting it up is the
+  person's act with `supragnosis invite` and `supragnosis join`. It said to write
+  `supragnosis.toml` by hand.
+- Error sentences no longer cite a principle or a design document, a store failure names
+  `supragnosis status`, and a failed internal task reads "internal error - retry". A caller that
+  matched the old sentences as text no longer matches.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

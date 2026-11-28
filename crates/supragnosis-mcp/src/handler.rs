@@ -41,28 +41,27 @@ impl ServerHandler for SupragnosisServer {
                 .with_website_url("https://supragnosis.dev"),
         )
         .with_instructions(
-            "supragnosis: an MCP server that turns knowledge across multiple hosts/workspaces \
-                 into an ontology. Ingest knowledge with observe and explore it with \
-                 search_knowledge/get_entity/traverse. Survey a workspace's main co-occurrence \
-                 contexts (clusters) with workspace_map (orientation before searching). \
+            "supragnosis keeps what agents and people recorded about your projects, with who \
+                 said it. Before you \
+                 change a design or settle a question the project may already have settled, \
+                 search its records: two or three English topic words and the project's \
+                 workspace; get_entity opens a hit in full by its id, a record as well as \
+                 an entity. Record what was decided or learned with observe; explore with \
+                 search_knowledge, get_entity and traverse, and survey what a workspace holds \
+                 with workspace_map. \
                  Workspaces: knowledge is organized into named workspaces, one per project. A write \
                  (observe, define_type, propose) names its workspace: name it after the project you \
                  work in - the repository's name, also from a git worktree, never the worktree's \
                  directory - and keep using that name, so one project's knowledge is not split \
-                 across two. A read that names no workspace reads every workspace. Before you \
-                 change a design or settle a question the project may already have settled, \
-                 search its records: two or three English topic words and the project's \
-                 workspace; get_entity opens a hit in full by its id, a record as well as \
-                 an entity. Confirming \
+                 across two. A read that names no workspace reads every workspace. Confirming \
                  knowledge as human_confirmed is the person's act in the Supragnosis app: never \
                  do it yourself, by any tool or other way. \
-                 Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
-                 (node-link), supragnosis://workspace/{ws}/hypergraph is the co-occurrence \
-                 second-order structure (hyperedges), supragnosis://observation/{id} is the \
-                 observation back-reference (raw content + provenance + lineage - use it to \
-                 confirm the basis of a search hit), supragnosis://entity/{id} is an entity as \
-                 get_entity answers it, and supragnosis://proposal/{id} is a proposal as \
-                 get_proposal answers it.",
+                 Resources: supragnosis://workspaces lists the workspaces; \
+                 supragnosis://workspace/{ws}/graph, supragnosis://workspace/{ws}/hypergraph and \
+                 supragnosis://workspace/{ws}/types are a workspace's graph, its co-occurrence \
+                 sets and its type glossary; supragnosis://observation/{id}, \
+                 supragnosis://entity/{id} and supragnosis://proposal/{id} open one record, \
+                 entity or proposal.",
         )
     }
 
@@ -226,64 +225,33 @@ impl ServerHandler for SupragnosisServer {
                 Err(ErrorData::invalid_params(why, None))
             }
             Ok(Err(prompts::PromptError::Store(e))) => Err(ErrorData::internal_error(
-                format!("store failure - NOT an empty store (Principle 5): {e}"),
+                format!("store failure - NOT an empty store: {e}"),
                 None,
             )),
-            Err(e) => Err(ErrorData::internal_error(format!("task join error: {e}"), None)),
+            Err(e) => Err(ErrorData::internal_error(format!("internal error - retry: {e}"), None)),
         }
     }
 
-    /// Concrete resource listing: exposes the node's default workspace graph (other workspaces via templates).
+    /// Concrete resource listing: the workspace list alone. A workspace's graph, co-occurrence sets
+    /// and types are reached through the templates, by a name the list gives; the node's default
+    /// workspace is empty on a node whose workspaces are named after projects, so it is not listed.
     fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
-        // Workspace discovery entry point - let the client see which workspaces exist first.
         let ws_list = Resource::new("supragnosis://workspaces", "Workspace list")
             .with_description(
-                "Sorted list of workspace names that hold knowledge. Entry point for discovering which workspaces exist.",
+                "Sorted list of workspace names that hold knowledge. Entry point for discovering which workspaces exist; read one through the supragnosis://workspace/{workspace}/... templates.",
             )
             .with_mime_type("application/json");
-
-        let ws = self.engine.default_workspace();
-        let res = Resource::new(
-            format!("supragnosis://workspace/{ws}/graph"),
-            format!("{ws} ontology graph"),
-        )
-        .with_description(
-            "Node-link graph of entities (nodes) + relations (edges). Includes provenance/trust tier/valid interval; a read-only derived view.",
-        )
-        .with_mime_type("application/json");
-
-        // Co-occurrence second-order structure (Principle 11) - also expose the default workspace's hypergraph as a concrete resource.
-        let hyper = Resource::new(
-            format!("supragnosis://workspace/{ws}/hypergraph"),
-            format!("{ws} hypergraph (co-occurrence)"),
-        )
-        .with_description(
-            "Derived view of the entity sets (hyperedges) a single observation asserted together - recovery of the context that binary relations discard (Principle 11).",
-        )
-        .with_mime_type("application/json");
-
-        // T-Box glossary (Principle 8/11) - the default workspace's type definitions.
-        let types = Resource::new(
-            format!("supragnosis://workspace/{ws}/types"),
-            format!("{ws} type glossary"),
-        )
-        .with_description(
-            "Type vocabulary (T-Box) of the workspace: entity types and relation types with their natural-language definitions (via define_type).",
-        )
-        .with_mime_type("application/json");
         // Same cache hints as list_tools, and here `ttl_ms = 0` is not merely harmless but
         // required: this list grows when a workspace does, so any freshness window is a window in
         // which a client is told a workspace does not exist. Principle 5 draws that line for the
         // read path and a cache would move it back.
-        std::future::ready(Ok(ListResourcesResult::with_all_items(vec![
-            ws_list, res, hyper, types,
-        ])
-        .with_ttl_ms(0)
-        .with_cache_scope(CacheScope::Private)))
+        std::future::ready(Ok(ListResourcesResult::with_all_items(vec![ws_list])
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private)))
     }
 
     /// Resource templates: let clients query any workspace's graph and observation back-references via URI patterns.

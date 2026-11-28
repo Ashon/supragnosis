@@ -34,6 +34,7 @@ mod tools;
 mod usage;
 
 pub use dto::*;
+pub use reply::utc_day;
 use reply::*;
 use resources::*;
 pub use sync::*;
@@ -145,7 +146,8 @@ impl SupragnosisServer {
 
     /// Search hits as an agent reads them (design-system.md Section 29.20): an entity hit from this node
     /// carries its name, type and workspace, read from its projected row, so two hits named alike
-    /// can be told apart. A hit whose row cannot be read keeps what it had.
+    /// can be told apart; a record's hit carries its workspace and the UTC day it was first
+    /// recorded, read from the record. A hit whose row cannot be read keeps what it had.
     fn named_hits(&self, hits: &[supragnosis_core::SearchHit]) -> serde_json::Value {
         let store = self.engine.store();
         serde_json::Value::Array(
@@ -159,6 +161,11 @@ impl SupragnosisServer {
                             if let Some(p) = e.provenance.first() {
                                 v["workspace"] = p.workspace.clone().into();
                             }
+                        }
+                    } else if let Ok(Some(o)) = store.get_observation(&h.id) {
+                        if let Some(p) = o.provenance.iter().min_by_key(|p| p.observed_at) {
+                            v["workspace"] = p.workspace.clone().into();
+                            v["recorded"] = utc_day(p.observed_at / 1000).into();
                         }
                     }
                     v

@@ -75,7 +75,7 @@ impl SupragnosisServer {
                 answer.to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -123,7 +123,7 @@ impl SupragnosisServer {
             .to_string(),
             // A backend failure differs from absence (Principle 5) - surfaced as an explicit error so it is not misread as "nothing there".
             Ok(Err(e)) => store_failure_json(&e),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -147,23 +147,27 @@ impl SupragnosisServer {
         let mut remote_results: Vec<serde_json::Value> = Vec::new();
         if scope == "remote" || scope == "both" {
             match &self.sync {
-                None => remote_results.push(serde_json::json!({
-                    "error": "no sync servers configured on this node (supragnosis.toml [sync])"
-                })),
+                None => remote_results.push(serde_json::json!({ "error": SYNC_UNCONFIGURED })),
                 Some(ctx) => {
-                    let ws_name = req
-                        .workspace
-                        .clone()
-                        .unwrap_or_else(|| self.engine.default_workspace().to_string());
+                    // A remote search asks hosts about one workspace, so an omitted one is asked
+                    // for by name: the node's default workspace is not what the caller meant.
+                    let ws_name = req.workspace.clone().filter(|w| !is_all(w)).unwrap_or_default();
                     // A query names what it is about, so it leaves only for a workspace this node
                     // shares, as a push does (sync-correctness.md Section 9). The local half below
                     // still answers.
-                    if !ctx.share_workspaces.iter().any(|w| w == &ws_name) {
+                    if ws_name.is_empty() {
+                        remote_results.push(serde_json::json!({
+                            "error": format!(
+                                "a remote search asks about one workspace - name it. This node shares: {}",
+                                said_list(&ctx.share_workspaces)
+                            ),
+                        }));
+                    } else if !ctx.share_workspaces.iter().any(|w| w == &ws_name) {
                         remote_results.push(serde_json::json!({
                             "skipped_workspace": ws_name,
-                            "why": "not in [sync] share_workspaces - a query does not leave for a \
-                                    workspace this node does not share. Add it there to search \
-                                    hosts for it",
+                            "why": "this node does not share this workspace, so a query about it \
+                                    does not leave. The person shares a workspace when they \
+                                    join a hub (`supragnosis join`)",
                         }));
                     } else {
                         // Ask only hosts that admit this workspace, and name the ones left out. Without
@@ -224,7 +228,7 @@ impl SupragnosisServer {
             tokio::task::spawn_blocking(move || engine.search(&query, ws.as_deref(), limit)).await;
         let searched = match searched {
             Ok(r) => r,
-            Err(e) => return err_json(&format!("task join error: {e}")),
+            Err(e) => return err_json(&format!("internal error - retry: {e}")),
         };
         match searched {
             Ok(out) => {
@@ -274,7 +278,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Traverse the graph from an entity, following relation direction (from->to). Returns the entities reachable within the maximum hops (max_depth), along with their shortest distance. Reachability runs THROUGH a relation endpoint that no entity row describes yet (partial ingest), but such an endpoint is not listed - so a hit can sit deeper than any listed neighbor. That gap is unknown, not a missing edge."
+        description = "Follow the outgoing relations (from->to) of an entity, given its id. Returns the entities reachable within max_depth hops, each with its shortest distance. An endpoint no entity describes yet is passed through but not listed, so a hit can sit deeper than any listed neighbor."
     )]
     async fn traverse(&self, Parameters(req): Parameters<TraverseRequest>) -> String {
         let id = req.id.clone();
@@ -286,7 +290,7 @@ impl SupragnosisServer {
         let hits = match traversed {
             Ok(Ok(h)) => h,
             Ok(Err(e)) => return store_failure_json(&e),
-            Err(e) => return err_json(&format!("task join error: {e}")),
+            Err(e) => return err_json(&format!("internal error - retry: {e}")),
         };
         // UI observability: publish the traverse activity (highlight the start + reached nodes).
         self.engine.emit_from(
@@ -321,7 +325,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity. To solidify a recurring context into first-class structure, observe a group entity (e.g. type Context) with member_of relations from each member and derived_from listing the co-asserting observation ids - the assertion then carries provenance and trust like any other edge."
+        description = "Survey a workspace's main co-occurrence contexts (hyperedges - the set of entities asserted together in a single observation). For cold-start orientation: before searching, grasp by name 'what is here and in what clusters'. Clusters are sorted by size (number of co-occurring entities) and sources is the number of supporting observations. This is a directional signal, not an asserted relation - confirm actual relations/details with search_knowledge/get_entity."
     )]
     async fn workspace_map(&self, Parameters(req): Parameters<WorkspaceMapRequest>) -> String {
         // Omitted, '*', 'all' or '' reads every workspace (None), as search_knowledge does.
@@ -336,7 +340,7 @@ impl SupragnosisServer {
         let hg = match mapped {
             Ok(Ok(hg)) => hg,
             Ok(Err(e)) => return store_failure_json(&e),
-            Err(e) => return err_json(&format!("task join error: {e}")),
+            Err(e) => return err_json(&format!("internal error - retry: {e}")),
         };
         // A name-centric, readable summary (Principle 21). Hyperedges are already sorted (size desc, id asc).
         let qualifying = hg.hyperedges.iter().filter(|h| h.size >= min_size).count();
@@ -464,7 +468,7 @@ impl SupragnosisServer {
                     .to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -531,12 +535,12 @@ impl SupragnosisServer {
                 answer.to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
     #[tool(
-        description = "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. In a single-user workspace the verdict is self-attested. The state is a deterministic fold of the events; a merge is the absorbing outcome. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is the person's own act in the Supragnosis app: never cast it yourself, by this tool or any other way. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
+        description = "Cast a verdict on a proposal. decision is merge (accept), reject, comment, or withdraw. Use comment to add evidence or a recommendation and reject to set a proposal aside; withdraw takes back one you opened. Leave merges to the person, who decides them on the Review page of the Supragnosis app. A claim_promotion merged through this agent surface grants at most host_signed - promotion to human_confirmed is the person's own act in the Supragnosis app: never cast it yourself, by this tool or any other way. A merge on a recall is refused here for the same reason, and a merge on a tbox_change or a recall is refused on every surface while the kind has no commit effect; comment, reject and withdraw are accepted. Returns the recorded observation id and the workspace it was filed in, the proposal's own."
     )]
     async fn review(&self, Parameters(req): Parameters<ReviewRequest>) -> String {
         let engine = self.engine.clone();
@@ -578,7 +582,7 @@ impl SupragnosisServer {
                 serde_json::json!({ "observation_id": id, "workspace": written }).to_string()
             }
             Ok(Err(e)) => err_json(&e.to_string()),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -591,7 +595,7 @@ impl SupragnosisServer {
         match tokio::task::spawn_blocking(move || engine.list_proposals(ws.as_deref())).await {
             Ok(Ok(list)) => to_json(&list),
             Ok(Err(e)) => store_failure_json(&e),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -615,7 +619,7 @@ impl SupragnosisServer {
             })
             .to_string(),
             Ok(Err(e)) => store_failure_json(&e),
-            Err(e) => err_json(&format!("task join error: {e}")),
+            Err(e) => err_json(&format!("internal error - retry: {e}")),
         }
     }
 
@@ -625,7 +629,7 @@ impl SupragnosisServer {
     // with setup guidance (P5: an unconfigured capability is explained, never a silent failure).
 
     #[tool(
-        description = "Federation sync status of this node: node id, public key, share whitelist, configured sync servers, the workspace's version vector (what this node holds per origin), `config_notes` (federation configuration this build worked around rather than obeyed - read these, they are the reason something is not syncing), and `negotiated` - what each host last said this node may reach, as a three-way difference against the share whitelist (`both` / `local_only` = listed here but not admitted there, a setup error / `peer_only` = admitted there but not shared here). A host with state `unknown` has not answered yet; that is not an empty grant set. Read-only."
+        description = "Whether and how this node syncs with other machines: the workspaces it shares, its sync servers, what the last round moved (`last_round`), why something is not syncing (`config_notes`), and per server what it admits against what this node shares (`negotiated`; state `unknown` means the server has not answered yet, not that it admits nothing). With no workspace named, the version vectors of every shared workspace. Read-only."
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
         let Some(ctx) = &self.sync else {
@@ -645,19 +649,24 @@ impl SupragnosisServer {
                 None => sync_unconfigured(),
             };
         };
-        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
+        // With no workspace named the status is of what this node syncs, as its round is: the
+        // node's default workspace is one it may never have written.
+        let named = req.workspace.filter(|w| !is_all(w));
+        let workspaces = named.clone().map_or_else(|| synced_workspaces(ctx), |w| vec![w]);
         let store = self.engine.store();
-        let vv = match tokio::task::spawn_blocking({
-            let ws = ws.clone();
-            move || supragnosis_sync::version_vector(store.as_ref(), &ws)
+        let vvs = match tokio::task::spawn_blocking(move || {
+            workspaces
+                .into_iter()
+                .map(|w| supragnosis_sync::version_vector(store.as_ref(), &w).map(|vv| (w, vv)))
+                .collect::<Result<Vec<_>, _>>()
         })
         .await
         {
-            Ok(Ok(vv)) => vv,
+            Ok(Ok(vvs)) => vvs,
             Ok(Err(e)) => {
                 return err_json(&format!("store failure while reading the version vector: {e}"))
             }
-            Err(e) => return err_json(&format!("task join error: {e}")),
+            Err(e) => return err_json(&format!("internal error - retry: {e}")),
         };
         // What each host admits for this node, against what this node shares - reported as the
         // three-way difference rather than the intersection, because the disagreement is the part
@@ -696,11 +705,24 @@ impl SupragnosisServer {
             "negotiated": negotiated,
             "node_id": ctx.node.node_id(),
             "public_key": ctx.node.public_key_hex(),
-            "workspace": ws,
             "share_workspaces": ctx.share_workspaces,
             "servers": ctx.servers.iter().map(|l| &l.url).collect::<Vec<_>>(),
-            "version_vector": vv,
         });
+        match named {
+            Some(ws) => {
+                status["workspace"] = ws.into();
+                status["version_vector"] =
+                    serde_json::to_value(vvs.into_iter().next().map(|(_, vv)| vv))
+                        .unwrap_or_default();
+            }
+            None => {
+                status["version_vectors"] = vvs
+                    .into_iter()
+                    .map(|(w, vv)| (w, serde_json::to_value(vv).unwrap_or_default()))
+                    .collect::<serde_json::Map<_, _>>()
+                    .into();
+            }
+        }
         // Hub role: the runtime known-peer registry (who checked in, when, how much - resets with
         // the process; the allowlist stays the admission authority).
         if let Some(reg) = &ctx.peer_registry {
@@ -714,13 +736,25 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Pull the workspace's missing knowledge from the configured sync servers and apply it (verify signatures -> dedup/absorb -> re-materialize the projection). Returns per-server accepted/rejected counts."
+        description = "Pull the workspace's missing knowledge from the configured sync servers and apply it (verify signatures -> dedup/absorb -> re-materialize the projection). Returns per-server accepted/rejected counts. With no workspace named, pulls every workspace this node shares or receives."
     )]
     async fn sync_pull(&self, Parameters(req): Parameters<SyncPullRequest>) -> String {
         let Some(ctx) = &self.sync else {
             return sync_unconfigured();
         };
-        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let Some(ws) = req.workspace.filter(|w| !is_all(w)) else {
+            // No workspace named: what the daemon's own round pulls (docs/pairing.md Section 4.5).
+            let all = synced_workspaces(ctx);
+            if all.is_empty() {
+                return err_json("this node shares no workspace - name the workspace to pull");
+            }
+            let _round = ctx.round.lock().await;
+            let mut pulled = Vec::new();
+            for ws in &all {
+                pulled.push(pull_workspace(&self.engine, ctx, ws).await);
+            }
+            return serde_json::json!({ "workspaces": pulled }).to_string();
+        };
         // A node a join set up pulls what it shares and what the join recorded, whatever a hub
         // would admit (docs/pairing.md Section 4.5, PA12).
         if let Some(receive) = &ctx.receive {
@@ -743,13 +777,24 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Push the workspace's local knowledge to the configured sync servers (backfill-stamp unstamped attestations, then send what each server lacks per its advertised version vector). Only share-whitelisted workspaces leave this node."
+        description = "Push the workspace's local knowledge to the configured sync servers (backfill-stamp unstamped attestations, then send what each server lacks per its advertised version vector). Only share-whitelisted workspaces leave this node. With no workspace named, pushes every workspace this node shares."
     )]
     async fn sync_push(&self, Parameters(req): Parameters<SyncPushRequest>) -> String {
         let Some(ctx) = &self.sync else {
             return sync_unconfigured();
         };
-        let ws = req.workspace.unwrap_or_else(|| self.engine.default_workspace().to_string());
+        let Some(ws) = req.workspace.filter(|w| !is_all(w)) else {
+            // No workspace named: what the daemon's own round pushes (docs/pairing.md Section 4.5).
+            if ctx.share_workspaces.is_empty() {
+                return err_json("this node shares no workspace, so nothing leaves it");
+            }
+            let _round = ctx.round.lock().await;
+            let mut pushed = Vec::new();
+            for ws in &ctx.share_workspaces {
+                pushed.push(push_workspace(&self.engine, ctx, ws).await);
+            }
+            return serde_json::json!({ "workspaces": pushed }).to_string();
+        };
         let _round = ctx.round.lock().await;
         to_json(&push_workspace(&self.engine, ctx, &ws).await)
     }
@@ -1031,6 +1076,53 @@ mod agent_answers {
         assert!(!docs.to_string().contains("its join recorded"), "{docs}");
         let round = sync_round(&engine, &ctx).await;
         assert_eq!(round["workspaces"], serde_json::json!(["acme", "docs"]), "{round}");
+    }
+
+    /// With no workspace named the sync tools act on what this node syncs, as its round does, and
+    /// never on the node's default workspace.
+    #[tokio::test]
+    async fn an_unnamed_sync_is_of_the_shared_workspaces() {
+        let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "h", "default"));
+        let ctx = Arc::new(SyncContext {
+            node: Arc::new(supragnosis_sync::SyncNode::new(
+                supragnosis_core::NodeIdentity::from_secret_bytes([3; 32]),
+            )),
+            share_workspaces: vec!["acme".into()],
+            receive: Some(vec!["acme".into(), "docs".into()]),
+            vouched: Default::default(),
+            servers: Vec::new(),
+            config_notes: Vec::new(),
+            surfaces: Default::default(),
+            origin_keys: Default::default(),
+            peer_registry: None,
+            round: Default::default(),
+            last_round: Default::default(),
+            listener: Default::default(),
+        });
+        let s = SupragnosisServer::new(engine).with_sync(ctx);
+        let names = |v: &serde_json::Value| -> Vec<String> {
+            v["workspaces"]
+                .as_array()
+                .expect("one answer a workspace")
+                .iter()
+                .map(|w| w["workspace"].as_str().expect("its name").to_string())
+                .collect()
+        };
+        let pulled = json(&s.sync_pull(req(serde_json::json!({}))).await);
+        assert_eq!(names(&pulled), ["acme", "docs"], "{pulled}");
+        let pushed = json(&s.sync_push(req(serde_json::json!({}))).await);
+        assert_eq!(names(&pushed), ["acme"], "{pushed}");
+        let status = json(&s.sync_status(req(serde_json::json!({}))).await);
+        let held: Vec<&String> = status["version_vectors"]
+            .as_object()
+            .expect("a vector a workspace")
+            .keys()
+            .collect();
+        assert_eq!(held, ["acme", "docs"], "{status}");
+        assert!(status.get("workspace").is_none(), "{status}");
+        let one = json(&s.sync_status(req(serde_json::json!({ "workspace": "docs" }))).await);
+        assert_eq!(one["workspace"], "docs", "{one}");
+        assert!(one.get("version_vector").is_some() && one.get("version_vectors").is_none());
     }
 
     /// docs/pairing.md Section 4.1: a node with no sync that an invitation made a hub says what its
