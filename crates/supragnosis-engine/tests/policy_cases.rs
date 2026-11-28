@@ -587,7 +587,7 @@ fn p23_no_merge_without_an_effect() {
             .expect_err("no surface merges a kind without its effect");
         assert!(
             refused.to_string().contains("no commit effect yet")
-                && refused.to_string().contains("reject it in the Review panel"),
+                && refused.to_string().contains("reject it on the Review page"),
             "the refusal says why and what is left: {refused}"
         );
     }

@@ -2614,8 +2614,8 @@ fn p8_a_type_definition_without_a_description_is_refused_on_both_paths() {
     for (label, defs, hint) in [
         ("no definitions at all", vec![], "at least one"),
         ("empty name", vec![def("", "a deployable part")], "name the type"),
-        ("empty description", vec![def("Component", "")], "Principle 8"),
-        ("whitespace description", vec![def("Component", "   ")], "Principle 8"),
+        ("empty description", vec![def("Component", "")], "describe it"),
+        ("whitespace description", vec![def("Component", "   ")], "describe it"),
     ] {
         let err = define(defs).err().unwrap_or_else(|| panic!("{label} must be refused"));
         assert!(
@@ -2693,7 +2693,7 @@ fn p10_define_type_refuses_a_core_meta_type_name() {
     for name in ["Observation", "provenance", " Workspace "] {
         for target in [TypeTarget::Entity, TypeTarget::Relation] {
             let err = define(target, name).expect_err("a core meta-type name is refused");
-            assert!(err.to_string().contains("Principle 10"), "{name}: {err}");
+            assert!(err.to_string().contains("the core is fixed"), "{name}: {err}");
         }
     }
     assert!(engine.types(Some(WS)).unwrap().is_empty(), "nothing reached the glossary");

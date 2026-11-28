@@ -165,7 +165,7 @@ impl Engine {
                         return Err(ObserveError::Invalid(format!(
                             "entity_merge joins entities of one workspace: {} is in {home}, and \
                              this proposal is filed in {ws}. The same name in two workspaces is \
-                             two entities (Principle 15)",
+                             two entities",
                             e.canonical_name
                         )));
                     }
