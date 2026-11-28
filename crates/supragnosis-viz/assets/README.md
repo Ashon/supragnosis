@@ -12,17 +12,11 @@ The ontology viewer's frontend, split out of the Rust source into real files:
 `build.rs` writes them into `OUT_DIR`, the script's parts joined into one, and `crates/supragnosis-viz/src/lib.rs` embeds them from
 there via `include_str!`, serving them at `/`, `/viewer.css`, `/viewer.js`. So the crate is still a
 single self-contained binary that works offline (no CDN, no external fetch), and **the build stays
-pure cargo - Node is not required to build or release** (the minifiers are Rust build-dependencies).
+pure cargo - Node is not required to build or release**, and the crate has no build-dependency.
 
-Minification happens at build time, **release builds only** (debug serves the files verbatim, so they
-stay debuggable). `viewer.html` is served as written in both:
-
-- CSS - `lightningcss`
-- JS - `oxc` code generator in minify mode: whitespace + comments removed, but **no identifier
-  mangling and no dead-code elimination** (semantics-preserving printing). Parsing also fails the
-  build on malformed JS, a free correctness check.
-
-Edit the readable sources here; the minified output is derived and never committed.
+The files are served as written, in debug and in release. The daemon serves them to a browser on
+the same machine over a unix socket, so nothing is minified. The build does not parse them either:
+a script that does not parse fails `npm run lint` below, which CI runs on every change here.
 
 ## Dev tooling (optional, Node only)
 

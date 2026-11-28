@@ -600,8 +600,8 @@ async fn a_poll_that_finds_nothing_new_costs_nothing() {
 }
 
 /// XSS regression (Principle 18): entity/type names come from untrusted observe calls and are
-/// interpolated into the console's innerHTML/attributes. Assert against the viewer SOURCE (not the
-/// served bytes, which are minified in release); ESLint no-unsanitized guards the same source in CI.
+/// interpolated into the console's innerHTML/attributes. Assert against the viewer source; ESLint
+/// no-unsanitized guards the same source in CI.
 #[test]
 fn viz_source_escapes_untrusted_names() {
     let js = include_str!(concat!(env!("OUT_DIR"), "/viewer.src.js"));

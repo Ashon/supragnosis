@@ -3049,7 +3049,7 @@ Guarded by `region_forces_grow_with_the_members`.
 ### 27.5 The layout on its own thread
 
 - **`viewer-sim.js`.** The simulation leaves `viewer.js` for a file of its own, served beside it and
-  minified the same way. The policy's `script-src 'self'` admits a worker from a served file; a
+  embedded the same way. The policy's `script-src 'self'` admits a worker from a served file; a
   worker from a `blob:` address it refuses, so the file is the worker.
 - **Typed arrays.** The worker holds positions, velocities, radii, degrees, workspaces, types,
   relations and contexts as typed arrays. The page sends the graph when it changes and each change of

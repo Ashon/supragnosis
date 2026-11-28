@@ -33,7 +33,3 @@ supragnosis-embed.workspace = true
 # the health surface's owed count is exercised.
 supragnosis-core.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "sync", "rt-multi-thread", "macros", "time"] }
-
-[build-dependencies]
-lightningcss = "1.0.0-alpha.72"
-oxc = { version = "0.152.0", features = ["codegen"] }

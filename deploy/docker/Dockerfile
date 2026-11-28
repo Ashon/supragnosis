@@ -12,7 +12,7 @@
 # rust.yml tests that number and never reads this file, so this line drifted: Cargo.toml moved to
 # 1.96 and the v0.4.3 image failed to build at release, the one place this Dockerfile runs.
 # manifest_consistency.rs (supragnosis-cli) now holds the two equal on every push.
-FROM rust:1.96-trixie AS build
+FROM rust:1.90-trixie AS build
 WORKDIR /src
 
 # Manifests first, so the dependency build is cached against everything but a dependency change.
