@@ -105,7 +105,8 @@ pub fn first_view(default_count: usize, total: usize) -> &'static str {
 /// onward instead of cycling). alpha cooling + radius-based collision separation prevent overlap.
 /// It polls `/api/graph` periodically for live refresh, and keeps node positions across polls by id
 /// so the view does not jump.
-// Embedded by build.rs from assets/ - verbatim in debug, minified in release (see build.rs).
+// Embedded by build.rs from assets/ - verbatim in debug, the styles and scripts minified in release
+// (see build.rs).
 const VIEWER_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.html"));
 const VIEWER_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.css"));
 const VIEWER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/viewer.js"));
