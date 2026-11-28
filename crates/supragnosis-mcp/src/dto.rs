@@ -168,7 +168,7 @@ pub struct ReviewRequest {
     /// out, or '*', and the proposal's own is used.
     #[serde(default)]
     pub workspace: Option<String>,
-    /// The proposal id (from propose / list_proposals).
+    /// The proposal id: what propose answered as `proposal_id`, or an `id` of list_proposals.
     #[serde(alias = "id", alias = "proposal_id")]
     pub proposal: String,
     /// Verdict/action: merge | reject | comment | withdraw.
@@ -194,7 +194,7 @@ pub struct GetProposalRequest {
     /// Scope to a workspace (when omitted or '*', the proposal is read in the workspace it lives in).
     #[serde(default)]
     pub workspace: Option<String>,
-    /// The proposal id (from propose / list_proposals).
+    /// The proposal id: what propose answered as `proposal_id`, or an `id` of list_proposals.
     #[serde(alias = "proposal", alias = "proposal_id")]
     pub id: String,
 }

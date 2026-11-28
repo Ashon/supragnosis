@@ -95,7 +95,7 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "The proposal id (from propose / list_proposals).",
+            "description": "The proposal id: what propose answered as `proposal_id`, or an `id` of list_proposals.",
             "type": "string"
           },
           "workspace": {
@@ -409,7 +409,7 @@
             ]
           },
           "proposal": {
-            "description": "The proposal id (from propose / list_proposals).",
+            "description": "The proposal id: what propose answered as `proposal_id`, or an `id` of list_proposals.",
             "type": "string"
           },
           "workspace": {

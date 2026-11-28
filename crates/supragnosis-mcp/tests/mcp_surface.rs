@@ -1937,6 +1937,10 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
         instructions.contains("two or three English topic words and the project's workspace"),
         "the instructions do not say how to search"
     );
+    assert!(
+        instructions.contains("get_entity opens a hit in full by its id, a record as well as"),
+        "the instructions do not say how to open a record"
+    );
     let failed = client
         .call_tool(
             CallToolRequestParams::new("review".to_string())

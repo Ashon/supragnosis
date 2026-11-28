@@ -204,9 +204,7 @@ impl SupragnosisServer {
         is_all(ws).then(|| format!("{tool} writes to one workspace - name it"))
     }
 
-    /// The answer to an entity id that is unknown. `observation` says the id names an observation
-    /// instead: the answer stays not found, and its note points at the read that takes the id
-    /// (Principle 21).
+    /// The answer to an id that names neither an entity nor a record.
     fn unknown_entity(&self, id: &str) -> String {
         self.engine
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });

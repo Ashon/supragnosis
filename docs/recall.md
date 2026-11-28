@@ -168,8 +168,8 @@ The guidance that follows the index, with the workspace filled in:
 
 The server instructions are one text for every project and every client, so they gain the same
 advice without a name in it: search before deciding, with two or three English topic words and
-the project's workspace, and a hit that is an observation opens with
-`supragnosis://observation/{id}`.
+the project's workspace, and `get_entity` opens a hit in full by its id, a record as well as an
+entity.
 
 - **Nothing found is not absent** (Principle 5): a miss in the named workspace sends the agent to
   every workspace before it concludes the knowledge is not recorded, because a project's records

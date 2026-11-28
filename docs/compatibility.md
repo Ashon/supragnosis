@@ -496,6 +496,19 @@ the person's own act in the Supragnosis app, not to be cast by this tool or any 
 only the human console could grant it, which the console's socket does not enforce against a program
 of the same user.
 
+**A record opens through `get_entity`, and an unknown scope is refused** (recall.md Section 4, the
+2026-11-28 survey of the agent surface). No tool or argument was removed or renamed, and these
+answers changed:
+- `get_entity` given an observation's id, or an index line's link to it, answers
+  `{found: true, kind: "observation", id, observation}`, the record as its resource answers it. It
+  answered `found: false` with a note naming the resource.
+- `search_knowledge` refuses a `scope` other than `local`, `remote` or `both`. It read any other
+  word as `local`, so a call that passed one searched this node and now gets an error that names
+  the three. The release note names this change.
+- `get_proposal` and `review` read the proposal's id under `proposal_id` too, the name `propose`
+  answers it under. The schema lists each tool's own name alone, so a client that checks arguments
+  against it sends that one.
+
 ## 8. The app and the daemon
 
 The app and the formula ship together, but nothing makes them run together. The cask depends on

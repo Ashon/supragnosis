@@ -112,7 +112,8 @@ fn after_commit(input: &Value, cwd: &Path, w: &World) -> Option<String> {
          option ruled out and why, a number that was measured, a constraint or a dependency. Use \
          supragnosis observe: workspace {workspace:?}, on_behalf_of {author:?}, source_ref \
          \"git:{id}\". Write it in English, one subject per record, naming the entities it is \
-         about, and open with the finding itself: the index shows only a record's first sentence. If a record you read shaped it, put its id in derived_from. If the commit settled \
+         about, and open with the finding itself: the index shows only a record's first \
+         sentence. If a record you read shaped it, put its id in derived_from. If the commit settled \
          nothing beyond its diff, record nothing."
     ))
 }
@@ -491,6 +492,7 @@ mod tests {
             .expect("answered");
         let text = context_of(&out);
         assert!(text.contains(&id[..7]) && text.contains(&format!("git:{id}")), "{text}");
+        assert!(text.contains("open with the finding itself"), "{text}");
         assert!(text.contains("\"the bridge opens a new connection per request\""), "{text}");
         assert!(text.contains("on_behalf_of \"Ada\""), "{text}");
         // recall.md Section 6 (D8): what counts is named, and how to write it.
@@ -717,6 +719,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("supragnosis://observation/{id}"), "{text}");
+        assert!(text.contains("A record opens in full with get_entity given its id"), "{text}");
         assert!(!text.contains("compacted"), "{text}");
 
         // A log shorter than the index is shown whole, and says nothing is left out.
@@ -957,6 +960,7 @@ mod tests {
         let text = context_of(&out);
         assert!(text.contains("the newest 10 of its 30 records"), "{text}");
         assert_eq!(fenced(text).len(), 10);
+        assert!(text.contains("a record opens in full with get_entity"), "{text}");
         assert!(
             text.contains(
                 "20 older records are not shown. Before you change a design or \
