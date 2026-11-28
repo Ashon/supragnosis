@@ -468,7 +468,8 @@ impl Engine {
         Ok(descs
             .into_iter()
             .map(|((workspace, _, name), (target, cands, sources, trust))| {
-                let (winner, contested, competitors) = self.resolve_kind(Some(&cands));
+                let (winner, contested, competitors) =
+                    self.resolve_value(Some(&cands), str::to_string);
                 let (description, def_source) = match winner {
                     Some((d, obs)) => (d, Some(obs)),
                     None => (String::new(), None),

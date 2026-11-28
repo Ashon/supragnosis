@@ -299,6 +299,16 @@ impl Engine {
         &self,
         candidates: Option<&Vec<BeliefCandidate>>,
     ) -> (Option<(String, String)>, bool, Vec<Competitor>) {
+        self.resolve_value(candidates, supragnosis_core::normalize_relation_kind)
+    }
+
+    /// [`Engine::resolve_kind`] for a field whose values are compared as `fold` gives them: a type
+    /// name by its spelling's fold, a definition's sentence as written.
+    pub(crate) fn resolve_value(
+        &self,
+        candidates: Option<&Vec<BeliefCandidate>>,
+        fold: fn(&str) -> String,
+    ) -> (Option<(String, String)>, bool, Vec<Competitor>) {
         let Some(cands) = candidates else {
             return (None, false, Vec::new());
         };
@@ -306,7 +316,6 @@ impl Engine {
             return (None, false, Vec::new());
         };
         let winner = &cands[choice.index];
-        let fold = |v: &str| supragnosis_core::normalize_relation_kind(v);
         let won = fold(&winner.value);
         // Per value: its highest tier, tie-broken by the smallest observation id (stable, P16),
         // shown in that observation's spelling.
@@ -335,7 +344,8 @@ impl Engine {
             .sort_by(|a, b| b.trust_tier.cmp(&a.trust_tier).then_with(|| a.value.cmp(&b.value)));
         (
             Some((winner.value.clone(), winner.observation.clone())),
-            // The policy's own flag, less the ties that are only spellings of the winner.
+            // The policy's own flag, less the ties that are only spellings of the winner: the
+            // engine never flags what the policy did not (R1).
             choice.contested && tied,
             competitors,
         )
@@ -349,7 +359,9 @@ impl Engine {
 /// Collapses belief candidates to one row per distinct value for the explain surface: each value at
 /// its highest effective tier, tie-broken to the smallest observation id (the same representative
 /// choice as [`Engine::resolve_kind`]'s competitors - P16). The row equal to `winner` is tagged
-/// "winner"; every other value gets `loser_role` ("alias" for names, "competitor" for kinds).
+/// "winner"; every other value gets `loser_role` ("alias" for names, "competitor" for kinds). Rows
+/// are per spelling, so a kind's other spelling is listed here though it contests nothing
+/// (resolution.md Section 4.1).
 /// Ordered winner-first, then (tier desc, value asc) - a stable, arrival-order-free ranking.
 pub(crate) fn candidate_rows(
     cands: &[BeliefCandidate],
