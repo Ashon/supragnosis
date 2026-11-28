@@ -37,7 +37,7 @@ pub(crate) fn store_failure_json(e: &impl std::fmt::Display) -> String {
     serde_json::json!({
         "error": e.to_string(),
         "note": "storage backend failure - this is NOT an empty result. \
-                 Do not conclude that knowledge is absent. Retry, or ask the person to run `supragnosis status`"
+                 Do not conclude that knowledge is absent. Retry, or ask the person to check the daemon with `supragnosis status`"
     })
     .to_string()
 }

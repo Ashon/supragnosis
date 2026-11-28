@@ -48,6 +48,15 @@ fn is_all(ws: &str) -> bool {
     matches!(ws.trim(), "" | "*" | "all")
 }
 
+/// One workspace's answer in a sync over several, naming its workspace when the answer does not: a
+/// failure's early answer carries only its error.
+fn named(mut answer: serde_json::Value, ws: &str) -> serde_json::Value {
+    if let Some(o) = answer.as_object_mut() {
+        o.entry("workspace").or_insert_with(|| ws.into());
+    }
+    answer
+}
+
 pub struct SupragnosisServer {
     engine: Arc<Engine>,
     /// First contact, recorded on the local daemon's surface only (docs/onboarding.md Section 5).

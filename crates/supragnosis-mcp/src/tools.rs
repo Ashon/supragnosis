@@ -629,7 +629,7 @@ impl SupragnosisServer {
     // with setup guidance (P5: an unconfigured capability is explained, never a silent failure).
 
     #[tool(
-        description = "Whether and how this node syncs with other machines: the workspaces it shares, its sync servers, what the last round moved (`last_round`), why something is not syncing (`config_notes`), and per server what it admits against what this node shares (`negotiated`; state `unknown` means the server has not answered yet, not that it admits nothing). With no workspace named, the version vectors of every shared workspace. Read-only."
+        description = "Whether and how this node syncs with other machines: the workspaces it shares, its sync servers, what the last round moved (`last_round`), why something is not syncing (`config_notes`), and per server what it admits against what this node shares (`negotiated`; state `unknown` means the server has not answered yet, not that it admits nothing). With no workspace named, the version vectors of every workspace this node shares or receives. Read-only."
     )]
     async fn sync_status(&self, Parameters(req): Parameters<SyncStatusRequest>) -> String {
         let Some(ctx) = &self.sync else {
@@ -746,12 +746,14 @@ impl SupragnosisServer {
             // No workspace named: what the daemon's own round pulls (docs/pairing.md Section 4.5).
             let all = synced_workspaces(ctx);
             if all.is_empty() {
-                return err_json("this node shares no workspace - name the workspace to pull");
+                return err_json(
+                    "this node shares and receives no workspace, so there is nothing to pull",
+                );
             }
             let _round = ctx.round.lock().await;
             let mut pulled = Vec::new();
             for ws in &all {
-                pulled.push(pull_workspace(&self.engine, ctx, ws).await);
+                pulled.push(named(pull_workspace(&self.engine, ctx, ws).await, ws));
             }
             return serde_json::json!({ "workspaces": pulled }).to_string();
         };
@@ -791,7 +793,7 @@ impl SupragnosisServer {
             let _round = ctx.round.lock().await;
             let mut pushed = Vec::new();
             for ws in &ctx.share_workspaces {
-                pushed.push(push_workspace(&self.engine, ctx, ws).await);
+                pushed.push(named(push_workspace(&self.engine, ctx, ws).await, ws));
             }
             return serde_json::json!({ "workspaces": pushed }).to_string();
         };
