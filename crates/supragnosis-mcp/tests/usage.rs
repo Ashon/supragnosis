@@ -95,6 +95,12 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
         )))
         .await
         .expect("an index line's link reads the same record");
+    call(
+        "get_entity",
+        json!({ "id": format!("supragnosis://observation/{obs_id}?via=index") }),
+    )
+    .await
+    .expect("get_entity opens the record");
     client
         .read_resource(ReadResourceRequestParams::new("supragnosis://workspace/alpha/graph"))
         .await
@@ -142,6 +148,7 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
             line("tool", "review", None, "error"),
             line("resource", "observation", None, "ok"),
             line("resource", "observation", None, "ok"),
+            line("tool", "get_entity", None, "ok"),
             line("resource", "graph", Some("alpha"), "ok"),
             line("resource", "entity", None, "not_found"),
             line("prompt", "brief", Some("alpha"), "ok"),
@@ -154,6 +161,12 @@ async fn every_call_is_recorded_with_its_workspace_and_no_text() {
     assert!(lines[0].get("cites").is_none(), "an observe that names none says nothing");
     assert!(lines[8].get("via").is_none(), "a read from a search has no mark");
     assert_eq!(lines[9]["via"], "index", "a read from an index line says so");
+    assert_eq!(
+        (&lines[10]["opened"], &lines[10]["via"]),
+        (&json!("observation"), &json!("index")),
+        "a record opened by get_entity says so, and where its id came from"
+    );
+    assert!(lines[3].get("opened").is_none(), "an id that opened nothing says nothing");
     assert!(lines[1]["n"].as_u64() > Some(0) && lines[1]["mode"] == "hybrid", "{}", lines[1]);
     assert!(lines.iter().all(|l| l["t"].is_u64() && l["ms"].is_u64()), "{file}");
     for asked in [

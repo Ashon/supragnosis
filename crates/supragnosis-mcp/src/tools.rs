@@ -79,16 +79,21 @@ impl SupragnosisServer {
         }
     }
 
-    #[tool(description = "Look up an entity and its relations/provenance by entity id.")]
+    #[tool(
+        description = "Open a search_knowledge hit by its id (64 hex characters, not a name). An entity hit's id answers the entity with its relations and provenance; an observation hit's id answers that record in full - its content, provenance and lineage."
+    )]
     async fn get_entity(&self, Parameters(req): Parameters<GetEntityRequest>) -> String {
-        let id = req.id.clone();
+        // A record's link copied from an index line or a hit names the record (docs/recall.md
+        // Section 5).
+        let id = crate::resources::lineage_id(&req.id);
+        let asked = id.clone();
         let engine = self.engine.clone();
         let looked_up = tokio::task::spawn_blocking(move || {
             let view = engine.get_entity(&id)?;
             // An id that names no entity may name an observation: a search_knowledge hit of kind
             // observation, passed here. The point read says which, and its failure is the store's,
             // answered as one (Principle 5).
-            let observation = view.is_none() && engine.get_observation(&id)?.is_some();
+            let observation = if view.is_none() { engine.get_observation(&id)? } else { None };
             Ok::<_, supragnosis_core::StoreError>((view, observation))
         })
         .await;
@@ -97,7 +102,7 @@ impl SupragnosisServer {
                 self.engine.emit_from(
                     writing_app().as_deref(),
                     Event::GetEntity {
-                        id: req.id.clone(),
+                        id: asked,
                         name: Some(view.entity.canonical_name.clone()),
                         found: true,
                     },
@@ -106,7 +111,16 @@ impl SupragnosisServer {
             }
             // Open-world assumption (Principle 5): absence is not falsehood but unknown.
             // We do not return "not found" as an error, so the LLM does not misread absence as negation.
-            Ok(Ok((None, observation))) => self.unknown_entity(&req.id, observation),
+            Ok(Ok((None, None))) => self.unknown_entity(&asked),
+            // The id of an observation hit: the record itself, as its resource answers it, since a
+            // client may give its agent no way to read a resource (docs/recall.md Section 5).
+            Ok(Ok((None, Some(observation)))) => serde_json::json!({
+                "found": true,
+                "kind": "observation",
+                "id": asked,
+                "observation": observation,
+            })
+            .to_string(),
             // A backend failure differs from absence (Principle 5) - surfaced as an explicit error so it is not misread as "nothing there".
             Ok(Err(e)) => store_failure_json(&e),
             Err(e) => err_json(&format!("task join error: {e}")),
@@ -114,7 +128,7 @@ impl SupragnosisServer {
     }
 
     #[tool(
-        description = "Search knowledge (entities/observations). The response mode reports the surface actually used: hybrid (semantic+keyword) or keyword (keyword-only degrade - an empty result in this mode may be a recall failure). score is for rank comparison only - its scale differs per mode, so the absolute value is not a confidence."
+        description = "Search the recorded knowledge with two or three topic words, in English when the records are. Name the project's workspace; if that finds nothing, search again without one before concluding it is not recorded. A hit is an entity or an observation (a record's first 160 characters): pass a hit's id to get_entity to open it in full. An entity's neighbours are listed after it, so a hit may hold none of the words. mode says how it searched: hybrid (meaning and keywords) or keyword (every word must be in the text, so an empty answer may be a miss). score only ranks hits within one answer."
     )]
     async fn search_knowledge(&self, Parameters(req): Parameters<SearchRequest>) -> String {
         // The keyword rule takes an empty query for a phrase every text contains, so a blank one
@@ -125,6 +139,9 @@ impl SupragnosisServer {
             );
         }
         let scope = req.scope.as_deref().unwrap_or("local");
+        if !matches!(scope, "local" | "remote" | "both") {
+            return err_json(&format!("unknown scope {scope:?} - use local, remote or both"));
+        }
         // Federated retrieval (scope remote/both): query the configured sync servers' ontologies -
         // local state can lag the remote store, so a local miss may just mean "not synced yet".
         let mut remote_results: Vec<serde_json::Value> = Vec::new();

@@ -207,19 +207,14 @@ impl SupragnosisServer {
     /// The answer to an entity id that is unknown. `observation` says the id names an observation
     /// instead: the answer stays not found, and its note points at the read that takes the id
     /// (Principle 21).
-    fn unknown_entity(&self, id: &str, observation: bool) -> String {
+    fn unknown_entity(&self, id: &str) -> String {
         self.engine
             .emit(Event::GetEntity { id: id.to_string(), name: None, found: false });
         let note = "unknown - not found is not a negation (open-world assumption)";
         // A name passed as an id is said to be one, from the id's shape alone, so it reads the same
         // whatever the caller (design-system.md Section 29.20).
         let looks_like_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
-        let note = if observation {
-            format!(
-                "{note}. This id is an observation's, not an entity's: read it as the resource \
-                 supragnosis://observation/{id}, or pass get_entity the id of an entity hit"
-            )
-        } else if looks_like_id {
+        let note = if looks_like_id {
             note.to_string()
         } else {
             format!(

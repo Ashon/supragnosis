@@ -35,7 +35,8 @@ default; `SUPRAGNOSIS_VIZ_SOCK` moves both). Each line is one JSON object:
 | `mode` | A search's mode, `hybrid` or `keyword` |
 | `commit` | On `observe` whose source is `git:` and 7 to 64 hex digits, and on a commit question, the commit id; any other source text is not kept |
 | `cites` | On `observe`, how many records its `derived_from` names, when it names any (recall.md Section 7.1) |
-| `via` | On an observation read, `index` when the URI came from an index line (recall.md Section 3) |
+| `opened` | On `get_entity`, `observation` when the id named a record and the answer was that record |
+| `via` | On an observation read, by its resource or by `get_entity`, `index` when the URI came from an index line (recall.md Section 3) |
 | `reach_h` | On a hook index, how many hours before it was given its oldest line was recorded |
 | `ms` | How long the daemon took to answer |
 

@@ -643,6 +643,19 @@ async fn reads_span_every_workspace_and_writes_name_theirs() {
         got["workspace"], "supragnosis",
         "the proposal is not read where it lives: {got}"
     );
+    // propose answers `proposal_id`, so a read or a verdict takes the id under that name too; and
+    // a scope the search does not know is refused, not read as local.
+    let named = tool_json(&call("get_proposal", json!({ "proposal_id": id })).await);
+    assert_eq!(named["id"], got["id"], "the id under propose's name is not read: {named}");
+    let said =
+        tool_json(&call("review", json!({ "proposal_id": id, "decision": "comment" })).await);
+    assert!(said.get("error").is_none(), "a verdict by proposal_id is refused: {said}");
+    let odd =
+        tool_json(&call("search_knowledge", json!({ "query": "canon", "scope": "all" })).await);
+    assert!(
+        odd["error"].as_str().is_some_and(|e| e.contains("local, remote or both")),
+        "an unknown scope is not refused: {odd}"
+    );
 
     // An empty named workspace names where knowledge does live, for a machine reader and in prose.
     let map = tool_json(&call("workspace_map", json!({ "workspace": "default" })).await);
@@ -1958,11 +1971,12 @@ async fn a_failure_is_flagged_and_a_not_found_is_a_result() {
     server.await.expect("server task");
 }
 
-/// An observation's id passed to get_entity - taken from a search hit of kind observation - is
-/// still not found as an entity (P5), and the note says where the id is read (P21). An id that names
-/// nothing answers as before.
+/// An observation's id passed to get_entity - taken from a search hit of kind observation, or its
+/// link from an index line - answers the record itself, as its resource does (docs/recall.md
+/// Section 5): a client may give its agent no way to read a resource. An id that names nothing
+/// answers as before.
 #[tokio::test]
-async fn get_entity_on_an_observation_id_names_its_resource() {
+async fn get_entity_on_an_observation_id_answers_the_record() {
     let engine = Arc::new(Engine::new(Arc::new(InMemoryStore::new()), "test-host", "ws"));
     let (client, server) = prompt_server(engine).await;
     let observed = call(
@@ -1973,14 +1987,14 @@ async fn get_entity_on_an_observation_id_names_its_resource() {
     .await;
     let id = observed["observation_id"].as_str().expect("an observation id").to_string();
 
-    let answer = call(&client, "get_entity", json!({ "id": id })).await;
-    assert_eq!(answer["found"], false, "{answer}");
-    assert!(
-        answer["note"]
-            .as_str()
-            .is_some_and(|n| n.contains(&format!("supragnosis://observation/{id}"))),
-        "the note does not name the observation's resource: {answer}"
-    );
+    for given in [id.clone(), format!("supragnosis://observation/{id}?via=index")] {
+        let answer = call(&client, "get_entity", json!({ "id": given })).await;
+        assert_eq!(answer["found"], true, "{answer}");
+        assert_eq!(answer["kind"], "observation", "{answer}");
+        assert_eq!(answer["id"], id, "{answer}");
+        assert_eq!(answer["observation"]["content"], "free text, no entities", "{answer}");
+        assert_eq!(answer["observation"]["provenance"][0]["workspace"], "notes", "{answer}");
+    }
 
     let unknown = call(&client, "get_entity", json!({ "id": "ab".repeat(32) })).await;
     assert_eq!(

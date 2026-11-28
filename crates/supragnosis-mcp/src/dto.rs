@@ -7,7 +7,8 @@ use super::*;
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ObserveRequest {
-    /// Knowledge fragment to ingest (natural language or structured text).
+    /// The knowledge to record, in natural language or structured text. Open with one sentence
+    /// that states the finding itself: the session index and a search hit show only the start.
     pub content: String,
     /// The workspace this fragment belongs to. Name it after the project you work in - the
     /// repository's name, also from a git worktree, never the worktree's directory - and keep using
@@ -168,6 +169,7 @@ pub struct ReviewRequest {
     #[serde(default)]
     pub workspace: Option<String>,
     /// The proposal id (from propose / list_proposals).
+    #[serde(alias = "id", alias = "proposal_id")]
     pub proposal: String,
     /// Verdict/action: merge | reject | comment | withdraw.
     pub decision: String,
@@ -192,7 +194,8 @@ pub struct GetProposalRequest {
     /// Scope to a workspace (when omitted or '*', the proposal is read in the workspace it lives in).
     #[serde(default)]
     pub workspace: Option<String>,
-    /// The proposal id.
+    /// The proposal id (from propose / list_proposals).
+    #[serde(alias = "proposal", alias = "proposal_id")]
     pub id: String,
 }
 
@@ -223,7 +226,7 @@ pub struct SyncPushRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetEntityRequest {
-    /// Entity id.
+    /// The id of a search_knowledge hit: an entity's, or an observation's.
     pub id: String,
 }
 
@@ -236,7 +239,7 @@ pub struct SearchRequest {
     /// retrieval surface: sync_pull the workspace to materialize them locally before traverse/get_entity.
     #[serde(default)]
     pub scope: Option<String>,
-    /// Search query.
+    /// Two or three topic words.
     pub query: String,
     /// Scope to a workspace (all workspaces when omitted).
     #[serde(default)]

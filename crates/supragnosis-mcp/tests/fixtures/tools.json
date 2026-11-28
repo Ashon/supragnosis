@@ -71,13 +71,13 @@
     },
     {
       "name": "get_entity",
-      "description": "Look up an entity and its relations/provenance by entity id.",
+      "description": "Open a search_knowledge hit by its id (64 hex characters, not a name). An entity hit's id answers the entity with its relations and provenance; an observation hit's id answers that record in full - its content, provenance and lineage.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "Entity id.",
+            "description": "The id of a search_knowledge hit: an entity's, or an observation's.",
             "type": "string"
           }
         },
@@ -95,7 +95,7 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "The proposal id.",
+            "description": "The proposal id (from propose / list_proposals).",
             "type": "string"
           },
           "workspace": {
@@ -233,7 +233,7 @@
             ]
           },
           "content": {
-            "description": "Knowledge fragment to ingest (natural language or structured text).",
+            "description": "The knowledge to record, in natural language or structured text. Open with one sentence\nthat states the finding itself: the session index and a search hit show only the start.",
             "type": "string"
           },
           "derived_from": {
@@ -430,7 +430,7 @@
     },
     {
       "name": "search_knowledge",
-      "description": "Search knowledge (entities/observations). The response mode reports the surface actually used: hybrid (semantic+keyword) or keyword (keyword-only degrade - an empty result in this mode may be a recall failure). score is for rank comparison only - its scale differs per mode, so the absolute value is not a confidence.",
+      "description": "Search the recorded knowledge with two or three topic words, in English when the records are. Name the project's workspace; if that finds nothing, search again without one before concluding it is not recorded. A hit is an entity or an observation (a record's first 160 characters): pass a hit's id to get_entity to open it in full. An entity's neighbours are listed after it, so a hit may hold none of the words. mode says how it searched: hybrid (meaning and keywords) or keyword (every word must be in the text, so an empty answer may be a miss). score only ranks hits within one answer.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -446,7 +446,7 @@
             ]
           },
           "query": {
-            "description": "Search query.",
+            "description": "Two or three topic words.",
             "type": "string"
           },
           "scope": {

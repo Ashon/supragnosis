@@ -52,8 +52,8 @@ impl ServerHandler for SupragnosisServer {
                  across two. A read that names no workspace reads every workspace. Before you \
                  change a design or settle a question the project may already have settled, \
                  search its records: two or three English topic words and the project's \
-                 workspace; a hit that is an observation opens with \
-                 supragnosis://observation/{id}. Confirming \
+                 workspace; get_entity opens a hit in full by its id, a record as well as \
+                 an entity. Confirming \
                  knowledge as human_confirmed is the person's act in the Supragnosis app: never \
                  do it yourself, by any tool or other way. \
                  Resources: supragnosis://workspace/{ws}/graph is the full ontology graph \
@@ -85,7 +85,7 @@ impl ServerHandler for SupragnosisServer {
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
         };
-        let (workspace, source) = (arg("workspace"), arg("source_ref"));
+        let (workspace, source, arg_id) = (arg("workspace"), arg("source_ref"), arg("id"));
         // How many records an observe names as what it built on (docs/recall.md Section 7.1).
         let cites = request
             .arguments
@@ -105,6 +105,20 @@ impl ServerHandler for SupragnosisServer {
                 Ok(_) => ("ok", None, None),
                 Err(_) => ("error", None, None),
             };
+            // A record opened through get_entity is an open as a resource read of it is, with the
+            // index's mark when the id came as an index line's link (docs/recall.md D12).
+            let opened = (name == "get_entity" && said.0 == "ok")
+                .then(|| match &resp {
+                    Ok(CallToolResponse::Complete(r)) => {
+                        r.content.first().and_then(|c| c.as_text()).map(|t| t.text.as_str())
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+                .is_some_and(|v| v["kind"] == "observation")
+                .then_some("observation");
+            let via = opened.and(arg_id.as_deref()).and_then(|id| resource_use(id).2);
             let observe = name == "observe";
             let commit = observe.then(|| commit_of(source.as_deref())).flatten();
             let cites = (observe && cites > 0).then_some(cites);
@@ -117,7 +131,7 @@ impl ServerHandler for SupragnosisServer {
                 workspace.as_deref(),
                 app.as_deref(),
                 said,
-                serde_json::json!({ "commit": commit, "cites": cites }),
+                serde_json::json!({ "commit": commit, "cites": cites, "opened": opened, "via": via }),
                 started,
             );
         }

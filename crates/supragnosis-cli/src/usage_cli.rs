@@ -205,7 +205,9 @@ pub(crate) fn summarize<'a>(lines: impl Iterator<Item = &'a str>, since: u64) ->
         // Recall counts what happened: a read that found nothing opened nothing, and a failed
         // observe recorded nothing.
         let done = v["outcome"].as_str() == Some("ok");
-        if done && kind == "resource" && name == "observation" {
+        // A record is opened by reading its resource or by get_entity given its id.
+        let by_tool = kind == "tool" && name == "get_entity" && v["opened"] == "observation";
+        if done && ((kind == "resource" && name == "observation") || by_tool) {
             let from_index = u64::from(v["via"].as_str() == Some("index"));
             sum.recall.opens += 1;
             sum.recall.index_opens += from_index;
@@ -491,6 +493,8 @@ mod tests {
             r#"{"t":1001,"kind":"resource","name":"observation","outcome":"not_found","via":"index"}"#,
             r#"{"t":1003,"kind":"tool","name":"observe","workspace":"a","outcome":"error","cites":1}"#,
             r#"{"t":1002,"kind":"resource","name":"entity","outcome":"ok"}"#,
+            r#"{"t":1002,"kind":"tool","name":"get_entity","outcome":"ok"}"#,
+            r#"{"t":1002,"kind":"tool","name":"get_entity","outcome":"ok","opened":"observation","via":"index"}"#,
             r#"{"t":1003,"kind":"tool","name":"observe","workspace":"a","outcome":"ok","cites":2}"#,
             r#"{"t":1004,"kind":"tool","name":"observe","workspace":"a","outcome":"ok"}"#,
             r#"{"t":1005,"kind":"hook","name":"session_start","workspace":"a","n":25,"of":90,"reach_h":40}"#,
@@ -501,17 +505,17 @@ mod tests {
         assert_eq!(
             sum.recall,
             RecallUse {
-                opens: 2,
-                index_opens: 1,
+                opens: 3,
+                index_opens: 2,
                 observes: 2,
                 cited: 1,
                 reach: vec![("a".to_string(), 7)],
             }
         );
         let hour = &sum.by_hour[0];
-        assert_eq!((hour.opens, hour.index_opens, hour.observes, hour.cited), (2, 1, 2, 1));
+        assert_eq!((hour.opens, hour.index_opens, hour.observes, hour.cited), (3, 2, 2, 1));
         let text = render(&sum);
-        assert!(text.contains("records opened: 2, from an index line: 1"), "{text}");
+        assert!(text.contains("records opened: 3, from an index line: 2"), "{text}");
         assert!(text.contains("a: its latest index reached back 7 h"), "{text}");
     }
 

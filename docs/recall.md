@@ -140,9 +140,13 @@ session that started it has had the line.
 
 The same check opened a record from the index both ways: the main session and a `general-purpose`
 subagent each read `supragnosis://observation/{id}` through Claude Code's `ReadMcpResourceTool`,
-which is deferred and loads through `ToolSearch`. The hook's guidance names that tool, because an
-agent that does not know a resource tool exists reaches for `get_entity`, which opens entities only
-(Section 1 saw it).
+which is deferred and loads through `ToolSearch`. An agent that does not know a resource tool
+exists reaches for `get_entity` (Section 1 saw it), and a client may give its agent no resource tool
+at all: on 2026-11-28 a subagent's tool list held none, so it could read no more of a record than a
+hit's 160 characters. `get_entity` therefore answers an observation's id, or its link from an index
+line, with the record itself as the resource answers it, and the guidance names `get_entity` first
+*(revised 2026-11-28: the guidance named the resource tool, and `get_entity` only said where the id
+is read, D11)*.
 
 `supragnosis connect claude-code` registers a third group, `SubagentStart`, with the same single
 command and under the same rules (client-connect.md Section 12.4, C3). Capture reads as on only
@@ -158,9 +162,9 @@ The guidance that follows the index, with the workspace filled in:
 > Before you change a design or settle a question this project may already have settled, search
 > its records: `search_knowledge` with two or three English topic words (the records are in
 > English) and workspace "supragnosis". If that finds nothing, search without a workspace before
-> you conclude it is not recorded. A hit that is an observation opens as the resource
-> `supragnosis://observation/{id}` (ReadMcpResourceTool, server supragnosis). When a record you
-> read shapes what you record, name its id in observe's `derived_from`.
+> you conclude it is not recorded. A record opens in full with get_entity given its id or its
+> link, or as the resource `supragnosis://observation/{id}`. When a record you read shapes what
+> you record, name its id in observe's `derived_from`.
 
 The server instructions are one text for every project and every client, so they gain the same
 advice without a name in it: search before deciding, with two or three English topic words and
@@ -260,7 +264,8 @@ fourth step, use, was not visible at all. The usage log (usage.md) gains three c
 and fourth steps can be followed day by day, without a new tool:
 
 - **D12, an opened record says where it was found.** An index line's URI ends in `?via=index`, and
-  the daemon notes `via: "index"` on that read. A read without it came from a search or elsewhere.
+  the daemon notes `via: "index"` on that read, whether the resource or `get_entity` opened it. A
+  read without it came from a search or elsewhere.
   The hook marks the lines only when the daemon's `/api/about` names the hook's own release: an
   older daemon, as between an upgrade and its restart, reads the mark as part of the id and answers
   not found, so its sessions get the plain links.
@@ -339,7 +344,7 @@ session, or at the start of a subagent.
 
 Apart from this order, on the patch branch of the last release: `/api/workspaces` lists a workspace
 whose records carry no entities, and `get_entity` given an observation's id says how to open it
-(D11). Both are defects of shipped behaviour, not part of this feature.
+(D11; since 2026-11-28 it answers the record, Section 4). Both are defects of shipped behaviour, not part of this feature.
 
 After the hook has been in use for a week, the measurement of Section 1 is taken again from the
 transcripts and the two are compared here.
