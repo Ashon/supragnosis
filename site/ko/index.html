@@ -69,7 +69,7 @@
           <button type="button" class="copy" data-copy="#cmd-script" data-method="script">복사</button>
         </div>
       </div>
-      <p class="next">앱의 시작하기(Setup)가 열립니다. supragnosis를 계속 실행해 두고, 찾은 AI 앱마다 연결을 제안하고, 검색 모델을 내려받습니다. 스크립트로 설치했다면 <code>supragnosis setup</code>을 실행합니다. <a href="#get-started">모든 단계 -&gt;</a></p>
+      <p class="next">앱의 시작하기가 열립니다. supragnosis를 계속 실행해 두고, 찾은 AI 앱마다 연결을 제안하고, 검색 모델을 내려받습니다. 스크립트로 설치했다면 <code>supragnosis setup</code>을 실행합니다. <a href="#get-started">모든 단계 -&gt;</a></p>
       <p class="links">
         <a href="https://github.com/Ashon/supragnosis/blob/main/scripts/install.sh">설치 스크립트 보기</a>
         <a href="https://github.com/Ashon/supragnosis">GitHub</a>
@@ -134,7 +134,7 @@
           <article class="step" data-scene="3" id="step-3">
             <p class="num"><b>3</b> / 5 판정</p>
             <h3>이견은 직접 판정할 때까지 기다립니다.</h3>
-            <p>에이전트들이 한 대상에 서로 다른 타입을 주면 둘 다 남고, 그 충돌은 판정을 기다립니다. 로그의 어떤 것도 덮어쓰지 않습니다. 한 대상의 두 이름을 병합하거나 주장을 확인하는 것처럼 무엇을 참으로 칠지 바꾸는 일은 제안으로 도착하고, 검토(Review) 화면에서 수락하거나 거절합니다. 판정은 다른 항목처럼 로그에 들어가고, 검토에서 되돌릴 수 있습니다. 병합한 뒤에는 에이전트가 어느 이름으로 묻든 하나의 대상을 읽습니다.</p>
+            <p>에이전트들이 한 대상에 서로 다른 타입을 주면 둘 다 남고, 그 충돌은 판정을 기다립니다. 로그의 어떤 것도 덮어쓰지 않습니다. 한 대상의 두 이름을 병합하거나 주장을 확인하는 것처럼 무엇을 참으로 칠지 바꾸는 일은 제안으로 도착하고, 검토 화면에서 수락하거나 거절합니다. 판정은 다른 항목처럼 로그에 들어가고, 검토에서 되돌릴 수 있습니다. 병합한 뒤에는 에이전트가 어느 이름으로 묻든 하나의 대상을 읽습니다.</p>
             <canvas class="frame" aria-hidden="true"></canvas>
             <button type="button" class="replay">다시 보기</button>
             <div class="snip review">
@@ -240,7 +240,7 @@ retry-policy: Config or Pattern, contested: true</code></pre>
       <h2 id="connect-title">이미 쓰는 도구와 함께 작동합니다.</h2>
       <div class="split">
         <div>
-          <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, OpenCode는 복사할 토큰 없이 명령 하나로, 또는 앱 설정(Settings)의 연결(Connect)로 이어집니다.</p>
+          <p class="lead">Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, OpenCode는 복사할 토큰 없이 명령 하나로, 또는 앱 설정의 연결(Connect)로 이어집니다.</p>
           <pre class="code" tabindex="0" role="region" aria-label="AI 앱을 연결하는 명령"><code>supragnosis connect claude-code
 <span class="c"># 또는 claude-desktop, cursor, vscode, codex, gemini, opencode</span></code></pre>
           <p class="note">Claude Code에서는 <code>connect</code>가 훅도 추가합니다. 에이전트가 만든 커밋 뒤에 그 변경의 바탕이 된 결정을 에이전트에게 묻고, 각 세션은 프로젝트의 워크스페이스에 무엇이 있는지 알고 시작합니다. 훅 자체는 아무것도 쓰지 않습니다.</p>
@@ -345,14 +345,14 @@ cargo build -p supragnosis-cli --features fastembed</code></pre>
         </li>
         <li>
           <h3>시작하기</h3>
-          <p>앱의 시작하기(Setup)는 로그인할 때 서버가 실행되게 하고, 찾은 AI 앱마다 연결을 제안하며, 검색 모델을 백그라운드에서 내려받습니다. Linux나 서버에서는 <code>supragnosis setup</code>이 같은 일을 합니다.</p>
+          <p>앱의 시작하기는 로그인할 때 서버가 실행되게 하고, 찾은 AI 앱마다 연결을 제안하며, 검색 모델을 백그라운드에서 내려받습니다. Linux나 서버에서는 <code>supragnosis setup</code>이 같은 일을 합니다.</p>
         </li>
         <li>
           <h3>써 보기</h3>
-          <p>에이전트에게 결정 하나와 그 이유를 기억해 달라고 해 보십시오. 들어오면 시작하기(Setup)가 알려 주고, 그래프(Graph)에 나타납니다.</p>
+          <p>에이전트에게 결정 하나와 그 이유를 기억해 달라고 해 보십시오. 들어오면 시작하기가 알려 주고, 그래프에 나타납니다.</p>
         </li>
       </ol>
-      <p class="note">데몬은 <code>127.0.0.1:7373</code>에서 MCP를, 유닉스 소켓에서 뷰어를 제공합니다. 임베딩 모델(224 MB)은 앱의 시작하기(Setup), <code>service install</code> 또는 <code>supragnosis embed fetch</code>가 한 번 내려받습니다. 그 전까지 검색은 키워드로만 이뤄지고, <code>supragnosis status</code>가 그렇다고 알려 줍니다.</p>
+      <p class="note">데몬은 <code>127.0.0.1:7373</code>에서 MCP를, 유닉스 소켓에서 뷰어를 제공합니다. 임베딩 모델(224 MB)은 앱의 시작하기, <code>service install</code> 또는 <code>supragnosis embed fetch</code>가 한 번 내려받습니다. 그 전까지 검색은 키워드로만 이뤄지고, <code>supragnosis status</code>가 그렇다고 알려 줍니다.</p>
     </section>
 
   </main>

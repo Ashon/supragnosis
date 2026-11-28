@@ -9,6 +9,7 @@ diff is already public.
 
 | Version | Date | |
 |---|---|---|
+| [v0.12.0](docs/releases/v0.12.0.md) | 2026-11-28 | Upgrade, then restart once; the app and the viewer speak Korean, and an agent opens a record. |
 | [v0.11.0](docs/releases/v0.11.0.md) | 2026-10-28 | Upgrade, reconnect Claude Code, restart; a session starts with what its project recorded. |
 | [v0.10.3](docs/releases/v0.10.3.md) | 2026-10-24 | Upgrade the server and the app, then restart once; `start` says started only once it is. |
 | [v0.10.2](docs/releases/v0.10.2.md) | 2026-10-24 | Upgrade the server and the app, then restart once; an agent's reads follow a merge. |

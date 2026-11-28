@@ -33,7 +33,7 @@ Tools, and fails without them, even though nothing is compiled. That is how inst
 app, whose cask depends on the formula, came to ask for Xcode. A bottle is poured instead, with no
 such check.
 
-- **The release builds them.** The release.yml bottle job runs `bottle.sh` on macos-14 and
+- **The release builds them.** The release.yml bottle job runs `bottle.sh` on macos-15 and
   ubuntu-24.04 (the Linux binary needs glibc 2.39, and the job runs it):
   - it installs the rendered formula from a local tap with `--build-bottle`;
   - `brew bottle` makes the bottle;
@@ -42,8 +42,10 @@ such check.
   `update-tap.sh` writes the `bottle do` block. A bottle that fails to build is left out, and that
   platform keeps the source-build path it has without one.
 - **Which machines pour one:**
-  - Apple silicon on macOS 14 or later (`arm64_sonoma`). Homebrew pours a bottle built for an older
-    macOS on every newer one, which is why it is built on the oldest arm64 runner.
+  - Apple silicon on macOS 15 or later (`arm64_sequoia`). Homebrew pours a bottle built for an older
+    macOS on every newer one, which is why it is built on the oldest arm64 runner GitHub still
+    runs: the macos-14 image stopped on 2026-11-06, and releases through 0.11.0 poured on macOS 14
+    (`arm64_sonoma`). On macOS 14 the formula now installs without a bottle, with the check above.
   - x86_64 Linux (`x86_64_linux`). On a distribution whose glibc is older than Homebrew's own
     minimum, Homebrew installs its glibc and gcc beside any formula it installs - on ubuntu-22.04
     that was twelve formulae before this bottle poured. The binary itself needs the host's glibc
