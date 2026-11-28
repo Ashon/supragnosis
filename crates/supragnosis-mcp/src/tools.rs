@@ -5,7 +5,7 @@ use super::*;
 #[tool_router(vis = "pub(crate)")]
 impl SupragnosisServer {
     #[tool(
-        description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id, the linked entity/relation ids and the workspace written to; a write that makes a new workspace adds a note naming the ones that hold knowledge."
+        description = "Ingest a knowledge fragment - how anything new enters the graph. Stores it as an immutable observation (the source of truth: superseded later, never edited or deleted) and links the entities and relations you extracted alongside it into the ontology. Use it as facts, decisions and the reasons behind them come up, and name what the fragment is about in `entities` (and how those relate in `relations`): a record with none is found by its words alone and does not appear on the map; to reshape knowledge that is already stored - merging duplicates, changing trust, retracting - use `propose` instead. Returns the observation id, the linked entity/relation ids and the workspace written to; a write that makes a new workspace adds a note naming the ones that hold knowledge."
     )]
     async fn observe(&self, Parameters(req): Parameters<ObserveRequest>) -> String {
         if let Some(why) = self.all_is_no_place("observe", &req.workspace) {
