@@ -518,9 +518,10 @@ error sentences were reworded, and these answers changed:
 - `sync_pull` and `sync_push` with no `workspace` act on what the daemon's own round does: a pull on
   every workspace this node shares or receives, a push on every shared one, answered as
   `{workspaces: [...]}` with one former answer a workspace. `sync_status` with none answers
-  `version_vectors`, a map by shared workspace, in place of `workspace` and `version_vector`. They
+  `version_vectors`, a map by workspace shared or received, in place of `workspace` and `version_vector`. They
   acted on the node's default workspace, which a node whose workspaces are named after projects
-  never wrote. A named workspace answers as before.
+  never wrote. A named workspace answers as before. On these three tools `*`, `all` and an empty
+  name read as no name; `*` was taken as a workspace's name and refused.
 - `search_knowledge` with `scope` `remote` or `both` and no `workspace` asks no host: its `remote`
   entry is an error that asks for the workspace by name and lists the shared ones. It asked about
   the node's default workspace.

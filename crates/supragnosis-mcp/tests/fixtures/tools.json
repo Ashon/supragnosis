@@ -515,14 +515,14 @@
     },
     {
       "name": "sync_status",
-      "description": "Whether and how this node syncs with other machines: the workspaces it shares, its sync servers, what the last round moved (`last_round`), why something is not syncing (`config_notes`), and per server what it admits against what this node shares (`negotiated`; state `unknown` means the server has not answered yet, not that it admits nothing). With no workspace named, the version vectors of every shared workspace. Read-only.",
+      "description": "Whether and how this node syncs with other machines: the workspaces it shares, its sync servers, what the last round moved (`last_round`), why something is not syncing (`config_notes`), and per server what it admits against what this node shares (`negotiated`; state `unknown` means the server has not answered yet, not that it admits nothing). With no workspace named, the version vectors of every workspace this node shares or receives. Read-only.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
           "workspace": {
             "default": null,
-            "description": "Workspace whose version vector to report (every workspace this node shares when omitted).",
+            "description": "Workspace whose version vector to report (every workspace this node shares or receives when\nomitted).",
             "type": [
               "string",
               "null"

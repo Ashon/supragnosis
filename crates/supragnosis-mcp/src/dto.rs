@@ -205,7 +205,8 @@ pub struct GetProposalRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SyncStatusRequest {
-    /// Workspace whose version vector to report (every workspace this node shares when omitted).
+    /// Workspace whose version vector to report (every workspace this node shares or receives when
+    /// omitted).
     #[serde(default)]
     pub workspace: Option<String>,
 }

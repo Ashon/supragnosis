@@ -5096,7 +5096,7 @@ No other row needs a principle changed.
 - **A proposal acts within its own workspace.** `propose` refuses an `entity_merge` naming an
   entity of another workspace than the one it is filed in, and on the local surfaces says which:
   "entity_merge joins entities of one workspace: Payment service is in atlas-web, and this proposal
-  is filed in infra. The same name in two workspaces is two entities (Principle 15)." A merge's
+  is filed in infra. The same name in two workspaces is two entities." A merge's
   target the log does not hold yet is still taken, and blocks until it arrives, as now. A gate act
   naming another workspace's observation is refused the same way, and so is a split filed away
   from its merge. On the remote surface every target must be in the principal's workspace, said in
