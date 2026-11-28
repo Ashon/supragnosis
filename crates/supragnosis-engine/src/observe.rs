@@ -101,8 +101,8 @@ impl Engine {
         self.emit_from(None, event);
     }
 
-    /// [`Engine::emit`], naming the app of the session the activity came from - a local MCP
-    /// session's, never a remote principal's (design-system.md Section 29.8).
+    /// [`Engine::emit`], naming the app of the local MCP session the activity came from
+    /// (design-system.md Section 29.8).
     pub fn emit_from(&self, app: Option<&str>, event: Event) {
         if let Some(sink) = &self.events {
             sink.emit(&EventEnvelope {

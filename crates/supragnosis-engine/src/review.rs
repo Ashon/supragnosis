@@ -33,9 +33,8 @@ impl Engine {
         let workspace = workspace.unwrap_or_else(|| self.default_workspace.clone());
         // A verdict is filed in its proposal's workspace, the only place it counts (I2): one filed
         // anywhere else would decide nothing and stay in the log for good. So a verdict that names no
-        // proposal of this workspace is refused here, with nothing said about any other workspace -
-        // on the remote surface this one is the principal's (remote-viewer.md Section 3.4). A
-        // replicated verdict never passes through here, so arrival order is still the fold's to
+        // proposal of this workspace is refused here, with nothing said about any other workspace.
+        // A replicated verdict never passes through here, so arrival order is still the fold's to
         // tolerate.
         let views = self.fold_proposals(Some(&workspace), cx)?;
         let Some(view) = views.get(&proposal) else {

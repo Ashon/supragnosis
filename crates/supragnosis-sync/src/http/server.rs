@@ -116,11 +116,6 @@ impl PeerRegistry {
         (e.protocol, e.release) = speaks;
     }
 
-    /// The release a peer last said it runs, if it has said.
-    pub fn release_of(&self, node_id: &str) -> Option<String> {
-        self.peers.lock().unwrap().get(node_id).and_then(|p| p.release.clone())
-    }
-
     pub fn snapshot(&self) -> Vec<PeerStatus> {
         self.peers.lock().unwrap().values().cloned().collect()
     }

@@ -13,7 +13,6 @@ use std::path::PathBuf;
 #[serde(deny_unknown_fields)]
 pub struct FileConfig {
     /// Display-only label. node_id derives from the keypair and is never configured (F14).
-    #[allow(dead_code)]
     pub host_label: Option<String>,
     #[serde(default)]
     pub sync: SyncSection,

@@ -181,7 +181,7 @@ fn route(engine: &Engine, method: &str, path: &str, query: &str) -> Response {
         // (evidence + decision) + the supporting log for one entity. Read-only, consistent with graph.
         "/api/explain" => explain_response(engine, query),
         // The viewer's search (design-system.md Section 8): the engine's own ranking and mode label,
-        // entity hits forwarded through accepted merges. A read, with a read-tier policy (V2).
+        // entity hits forwarded through accepted merges.
         "/api/search" => search_response(engine, query),
         _ => Response {
             status: "404 Not Found",

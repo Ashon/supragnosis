@@ -149,17 +149,6 @@ impl Engine {
         Ok(self.observation_rows(workspace, None, None, Some(id), true)?.into_iter().next())
     }
 
-    /// The workspace an observation was written to, or `None` for an id no workspace holds - what
-    /// the read tier checks against a principal's grants before it answers by id.
-    pub fn observation_workspace(&self, id: &str) -> Result<Option<String>, StoreError> {
-        let cx = &ReadCtx::default();
-        Ok(self
-            .log(None, cx)?
-            .iter()
-            .find(|o| o.id == id)
-            .map(|o| o.workspace().to_string()))
-    }
-
     fn observation_rows(
         &self,
         workspace: Option<&str>,

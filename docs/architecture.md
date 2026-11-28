@@ -6,7 +6,7 @@
 
 - Name: `supragnosis` = *supra* (above/beyond) + *gnosis* (knowledge). Knowledge above knowledge = meta-knowledge.
 - Namespace URI: `supragnosis://...`
-- Status: **implemented through v0.4.11.** M0-M2, **M3a (belief resolution) and M3b (identity
+- Status: **implemented through v0.11.0.** M0-M2, **M3a (belief resolution) and M3b (identity
   resolution, except IR6)**, and **M3.5 (the proposal gate, both slices)** are complete; M4 Phases
   0-4 and 7 are complete (Phase 3.5's read tier was built as remote-viewer.md and removed in
   0.11.0; Phases 5 and 6 pending). Still open: M3c (bitemporal queries, blocked on negation semantics),
@@ -22,7 +22,7 @@
   [`consolidation.md`](consolidation.md) (M6, specified - Section 8 step 1 landed),
   [`negotiated-surface.md`](negotiated-surface.md) (M4 Phase 7, built),
   [`inspector.md`](inspector.md) (the viewer's detail surfaces, specified - Section 8 steps 1-2 built),
-  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-4 and
+  [`daemon-lifecycle.md`](daemon-lifecycle.md) (who starts and restarts the daemon, specified - Section 8 steps 1-5 and
   Section 11 built),
   [`crash-recovery.md`](crash-recovery.md) (the projection catching up with the log after a crash, built),
   [`client-connect.md`](client-connect.md) (the stdio bridge and `supragnosis connect`, built),
@@ -238,7 +238,7 @@ sequenceDiagram
 2. **Hub-and-spoke (client-server)** - hosts sync to a central server. The server is the canonical set/relay/always-available.
    Even when hosts are not online simultaneously, they catch up via the server.
 3. **Peer-to-peer (mesh)** - hosts sync directly. No center needed, ad-hoc/offline-first.
-4. **Hybrid** - some peer directly + also sync to a hub at the same time. (**the default direction**)
+4. **Hybrid** - some peer directly + also sync to a hub at the same time.
 
 ```mermaid
 flowchart LR
@@ -337,7 +337,7 @@ last release wrote is read back by every build ([compatibility.md](compatibility
 |------|------|
 | `observe` | ingest a knowledge fragment (free text + optional entities/relations/descriptions/`valid_from`/`valid_to`/`on_behalf_of`/`derived_from`/`confidence`) -> creates an observation, links entities |
 | `search_knowledge` | semantic + keyword hybrid search; `scope` = `local` \| `remote` \| `both` (federated retrieval), response labels the `mode` actually used (Principle 16 4th) |
-| `get_entity` | look up an entity + relations + provenance |
+| `get_entity` | open a search hit by its id: an entity + relations + provenance, or an observation in full |
 | `traverse` | n-hop graph traversal from an entity |
 | `workspace_map` | co-occurrence contexts (hyperedges) for cold-start orientation (Principle 11 second-order structure) |
 | `define_type` | extend the T-Box (entity/relation type + mandatory description, workspace-scoped) |

@@ -349,10 +349,7 @@ pub(crate) async fn reveal(webview: tauri::Webview<Rt>, what: String) -> Result<
     if !path.exists() {
         return Err(word_with("page.notYet", &[("path", &tilde(&path))]));
     }
-    #[cfg(target_os = "macos")]
     let shown = Command::new("open").arg("-R").arg(&path).status();
-    #[cfg(not(target_os = "macos"))]
-    let shown = Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).status();
     match shown {
         Ok(s) if s.success() => Ok(()),
         Ok(s) => Err(word_with("page.finderNotOpen", &[("status", &s.to_string())])),

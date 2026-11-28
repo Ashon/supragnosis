@@ -1036,8 +1036,8 @@ mod welcome_tests {
         let newer = setup_events(&output("{\"schema\": 2}\n{\"step\":\"server\"}\n", "", 0));
         assert!(newer.is_err_and(|e| e.contains("newer than the app")));
         assert_eq!(
-            setup_events(&output("", "Error: the server profile could not be read: x", 1)),
-            Err("the server profile could not be read: x".to_string())
+            setup_events(&output("", "Error: the config could not be read: x", 1)),
+            Err("the config could not be read: x".to_string())
         );
     }
 

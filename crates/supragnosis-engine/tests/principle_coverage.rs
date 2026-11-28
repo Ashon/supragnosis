@@ -727,8 +727,9 @@ const DESIGN_SYSTEM_REGISTRY: &[(u8, &[Clause])] = &[
     ), c(
         "every control on every surface names itself, is the kind its act is and exposes its state; deciding keys act only in their region and the view's single keys can be turned off; targets are 28 pixels on the tools and 44 under a coarse pointer, 24 and 28 on the site; nothing but a focusable code block scrolls sideways at 320 pixels",
         Evidence::Deferred(
-            "designed in design-system.md Sections 4, 10 and 14 steps 12-19, not built. Revisit when \
-             step 19 sets the targets and browser scenarios press every control at 1440 and 390 pixels",
+            "built by design-system.md Section 14 steps 12-19 and held in parts by source checks; \
+             nothing presses every control in a browser. Revisit when docs/e2e.md Section 11 step 4's \
+             browser scenarios press every control at 1440 and 390 pixels",
         ),
     )]),
     (20, &[c(
@@ -1198,7 +1199,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "a scenario runs the product's binary built from the tree, through its users' entry points - serve, MCP over HTTP with the bearer, the stdio bridge, the viewer's socket and the page the daemon serves, the browser on a release build - never an engine built inside the test",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),
@@ -1207,7 +1211,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "a scenario is hermetic: its processes start from an environment built for them, with their own home, socket, address and embedder, nothing of the person's read or written, no network beyond loopback",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),
@@ -1216,7 +1223,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "a scenario waits on observable state with a deadline and, when it passes, fails with what it last observed; it never sleeps to synchronise",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),
@@ -1225,7 +1235,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "a scenario asserts what a person or an agent sees - a tool's answer, an API field, the page's text; screenshots are evidence on failure, never compared",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),
@@ -1234,7 +1247,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "every process a scenario starts is stopped when it ends, passed, failed or panicked",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),
@@ -1261,7 +1277,10 @@ const E2E_REGISTRY: &[(u8, &[Clause])] = &[
         &[c(
             "every scenario in Section 5 is told by a test that names its id or counted as unbuilt, every test names a scenario, and the badge is that count",
             Evidence::Deferred(
-                "docs/e2e.md is specified, not built. Revisit when its Section 11 step 3 lands",
+                "the Rust harness tells A1-A4 and A8 this way (docs/e2e.md Section 11 step 3, \
+                 scenario_ontology.rs behind the `scenarios` feature, which a plain `cargo test` does \
+                 not run); the browser's and the app's scenarios and A5-A7 and A9 are not built. \
+                 Revisit when its Section 11 steps 4 to 6 land",
             ),
         )],
     ),

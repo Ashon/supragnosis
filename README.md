@@ -146,7 +146,8 @@ Watching it while an agent works is the part that is hard to convey in text:
 - `observe` - free text plus optional structured assertions. No schema required up front.
 - `search_knowledge` - keyword retrieval (every term, any order) plus semantic, labelled with the
   mode it used.
-- `get_entity`, `traverse` - exact lookup and bounded graph walks.
+- `get_entity`, `traverse` - open a search hit by its id, an entity or a record in full, and
+  bounded graph walks.
 - `workspace_map` - co-occurrence hyperedges: what tends to get said together.
 - `define_type` - promote a pattern into the workspace glossary.
 - `propose`, `review`, `list_proposals`, `get_proposal` - the gate to the canon.
@@ -154,7 +155,8 @@ Watching it while an agent works is the part that is hard to convey in text:
 
 Plus dereferenceable resources: `supragnosis://workspaces`,
 `supragnosis://workspace/{ws}/graph`, `supragnosis://workspace/{ws}/hypergraph`,
-`supragnosis://workspace/{ws}/types`, `supragnosis://observation/{id}`.
+`supragnosis://workspace/{ws}/types`, `supragnosis://observation/{id}`,
+`supragnosis://entity/{id}`, `supragnosis://proposal/{id}`.
 
 ## What you get
 

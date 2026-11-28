@@ -1573,7 +1573,6 @@ fn a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier() {
         Some(obs.clone())
     );
     assert!(engine.observation("no such observation", None).expect("read").is_none());
-    assert_eq!(engine.observation_workspace(&obs).expect("read").as_deref(), Some(WS));
 
     let checks = engine.get_proposal(None, &confirm).expect("get").expect("proposal").checks;
     let profile = checks.iter().find(|c| c.name == "trust profile").expect("a trust profile");
@@ -1582,7 +1581,7 @@ fn a_confirmed_source_says_who_confirmed_it_and_its_relations_take_its_tier() {
 }
 
 /// design-system.md Section 29.8: what a local MCP session writes names its app on the local
-/// viewer's reads only - never on the reads the read tier and MCP use - by the name a person reads,
+/// viewer's reads only - never on the reads MCP uses - by the name a person reads,
 /// a name the table does not know as sent and cut to 64 characters; an activity event names it too;
 /// re-keying a workspace keeps it, and a dry run writes nothing.
 #[test]
@@ -1635,7 +1634,7 @@ fn an_attestation_names_its_app_on_local_reads_only() {
     assert_eq!(named(&ids[2]).as_deref(), Some("some-agent"));
     assert_eq!(named(&ids[3]).map(|n| n.chars().count()), Some(64));
     assert_eq!(named(&ids[4]), None);
-    // The reads the read tier and MCP use never ask.
+    // The reads MCP uses never ask.
     for o in engine.observation_log(None, None, None).expect("read") {
         assert!(o.attestations.iter().all(|a| a.app.is_none()), "{} names its app", o.id);
     }
