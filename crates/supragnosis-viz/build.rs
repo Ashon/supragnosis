@@ -1,19 +1,16 @@
-//! Embed the viewer assets, minifying the styles and scripts in release builds only.
+//! Embed the viewer assets as they are written.
 //!
-//! The source of truth stays the readable, lintable files in `assets/` (ESLint runs on those). At
-//! build time each is copied to `OUT_DIR` - verbatim in debug (fast, debuggable), and in release the
-//! styles and scripts minified. `viewer.html` is copied as written in both.
-//! `lib.rs` embeds from `OUT_DIR` via `include_str!`, so the crate is still a single self-contained
-//! binary and the build is still pure cargo (these are Rust build-dependencies - no Node).
+//! The source of truth is the readable, lintable files in `assets/` (ESLint runs on those). At build
+//! time each is copied to `OUT_DIR` unchanged, in debug and in release, and `lib.rs` embeds from
+//! `OUT_DIR` via `include_str!`, so the crate is still a single self-contained binary and the build
+//! is still pure cargo, with no build-dependency and no Node.
 //!
 //! `viewer.js` is the one asset kept in parts: `join_viewer` joins `assets/viewer/*.js` into it,
-//! and the joined source is also written unminified to `OUT_DIR/viewer.src.js`, the text the
-//! tests read.
+//! and the joined source is also written to `OUT_DIR/viewer.src.js`, the text the tests read.
 //!
-//! Minification is conservative on JS: oxc's code generator re-prints the parsed AST with whitespace
-//! and comments removed, but performs NO identifier mangling or dead-code elimination (that is
-//! `oxc_minifier`, which is deliberately not used) - so it is semantics-preserving printing. Parsing
-//! also fails the build on malformed JS, a free correctness check. CSS uses lightningcss.
+//! Nothing here parses the assets. The daemon serves them to a browser on the same machine over a
+//! unix socket, so their size buys nothing, and a script that does not parse fails ESLint, which CI
+//! runs on every change under `assets/` (.github/workflows/frontend-lint.yml).
 
 use std::env;
 use std::fs;
@@ -22,7 +19,6 @@ use std::path::Path;
 fn main() {
     let manifest = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR");
-    let release = env::var("PROFILE").as_deref() == Ok("release");
 
     let assets = Path::new(&manifest).join("assets");
     let out = Path::new(&out_dir);
@@ -38,16 +34,7 @@ fn main() {
             println!("cargo:rerun-if-changed={}", src.display());
             fs::read_to_string(&src).unwrap_or_else(|e| panic!("read {}: {e}", src.display()))
         };
-        let processed = if release {
-            match name {
-                "viewer.css" => minify_css(&content),
-                "viewer.js" | "viewer-sim.js" | "viewer-gl.js" => minify_js(&content),
-                _ => content,
-            }
-        } else {
-            content
-        };
-        fs::write(out.join(name), processed)
+        fs::write(out.join(name), content)
             .unwrap_or_else(|e| panic!("write {name} to OUT_DIR: {e}"));
     }
 
@@ -172,44 +159,4 @@ fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
             out.push(path);
         }
     }
-}
-
-fn minify_css(src: &str) -> String {
-    use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
-    let mut sheet = StyleSheet::parse(src, ParserOptions::default())
-        .unwrap_or_else(|e| panic!("viewer.css parse: {e:?}"));
-    sheet
-        .minify(MinifyOptions::default())
-        .unwrap_or_else(|e| panic!("viewer.css minify: {e:?}"));
-    sheet
-        .to_css(PrinterOptions { minify: true, ..Default::default() })
-        .unwrap_or_else(|e| panic!("viewer.css print: {e:?}"))
-        .code
-}
-
-fn minify_js(src: &str) -> String {
-    use oxc::allocator::Allocator;
-    use oxc::codegen::{Codegen, CodegenOptions, CommentOptions};
-    use oxc::parser::Parser;
-    use oxc::span::SourceType;
-
-    let allocator = Allocator::default();
-    // A classic browser script ("use strict";), not an ES module - parse in script mode.
-    let source_type = SourceType::cjs();
-    let ret = Parser::new(&allocator, src, source_type).parse();
-    assert!(
-        ret.diagnostics.is_empty(),
-        "viewer.js failed to parse during minify (fix the source): {:?}",
-        ret.diagnostics
-    );
-    // minify: compact printing; comments:false drops the (heavy) comments. No mangling, no
-    // compression - this is semantics-preserving printing, not oxc_minifier.
-    Codegen::new()
-        .with_options(CodegenOptions {
-            minify: true,
-            comments: CommentOptions::disabled(),
-            ..Default::default()
-        })
-        .build(&ret.program)
-        .code
 }

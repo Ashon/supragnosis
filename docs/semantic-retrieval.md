@@ -93,7 +93,7 @@ Other facts the design rests on:
   `install.sh` refuses an older host naming the floor, the source build and the container
   image, and the release checks the binary it built against the floor the installer states. The
   v0.4.12 binaries, built on 22.04, were the last to run on glibc 2.35.
-- The container image builds with the feature on `rust:1.96-trixie` (GCC 14) and runs
+- The container image builds with the feature on `rust:1.90-trixie` (GCC 14) and runs
   `supragnosis embed fetch` in the build stage into `/usr/share/supragnosis/models`, which
   `SUPRAGNOSIS_MODEL_DIR` names in the image. The state volume holds the knowledge and the node
   key as before; the model is part of the image, so a container never downloads.

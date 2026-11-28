@@ -4,9 +4,8 @@
 # Runs against both workspaces - the desktop shell has its own manifest and its own tree.
 
 [advisories]
-# A vulnerability fails the build. The single exception below is a build-dependency that reads only
-# files already in this tree and ships in nothing - which is the condition the advisory itself names
-# as the risk. A vulnerability in anything that ships has no ignore and should not get one.
+# A vulnerability fails the build, and none is ignored: the one entry below is an unmaintained crate,
+# not a hole. A vulnerability in anything that ships has no ignore and should not get one.
 yanked = "deny"
 # Unmaintained is a different claim from vulnerable: it says the author stopped, not that there is a
 # hole. Scoped to what this project actually chose - a crate in a workspace manifest is a decision
@@ -21,14 +20,6 @@ ignore = [
     # `serve` in the foreground already, which is the direction that removes this dependency
     # entirely).
     "RUSTSEC-2025-0069",
-    # `rkyv` 0.7.46, reached only as lightningcss -> parcel_sourcemap -> rkyv. lightningcss is a
-    # build-dependency of supragnosis-viz: it minifies this repository's own CSS at compile time,
-    # so neither it nor rkyv appears in a shipped binary. The advisory is
-    # a validation bypass when reading an archive and names the affected users as those who process
-    # untrusted archives; the only archives here are the ones the build makes from assets sitting
-    # beside it. Upstream fixed this in rkyv 0.8.17 and no longer supports the 0.7 series, so it
-    # closes when lightningcss moves to 0.8 - not a version this project gets to pick.
-    "RUSTSEC-2026-0235",
 ]
 
 [licenses]
@@ -55,11 +46,11 @@ allow = [
     # below the optional `fastembed` feature (fastembed -> image -> ravif -> rav1e). It ships in
     # nothing. Listed rather than worked around, because the licence itself is not the problem.
     "NCSA",
-    # Weak, file-level copyleft, and it arrives only through `lightningcss` - a BUILD-dependency of
-    # supragnosis-viz that minifies the viewer's CSS. What ships is the minified output, not the
-    # minifier, and MPL-2.0's obligations attach to modifications of the MPL files themselves. An
-    # MPL crate appearing anywhere else in the tree is a decision to make again, not one this line
-    # has already made.
+    # Weak, file-level copyleft. It arrives as `option-ext`, unmodified, through `dirs`: under the
+    # optional `fastembed` feature (fastembed -> hf-hub -> dirs) and in the desktop shell's tree.
+    # MPL-2.0's obligations attach to modifications of the MPL files themselves, and none is
+    # modified here. An MPL crate appearing anywhere else in the tree is a decision to make again,
+    # not one this line has already made.
     "MPL-2.0",
     "Unicode-3.0",
     "Unlicense",

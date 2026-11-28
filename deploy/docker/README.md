@@ -163,11 +163,10 @@ The image builds from source rather than from a release tarball, so it can be cu
 which is what running a hub ahead of a release requires - and so it cannot drift if a published
 asset is ever replaced.
 
-The builder is pinned to the workspace's declared floor, `rust:1.96`. That floor is set by
-dependencies rather than by this code: `supragnosis-viz` takes `oxc` as a build-dependency to minify
-the viewer assets in release builds, and `rmcp-macros` brings `darling`. The `msrv` job in rust.yml
-builds at the declared version, and `manifest_consistency.rs` holds the Dockerfile's pin equal to
-it. The second check exists because the first never read this file: the floor moved to 1.96 and
+The builder is pinned to the workspace's declared floor, `rust:1.90`. That floor is set by
+dependencies rather than by this code: `redb` asks for 1.90, and `rmcp-macros` brings `darling`
+(1.88). The `msrv` job in rust.yml builds at the declared version, and `manifest_consistency.rs`
+holds the Dockerfile's pin equal to it. The second check exists because the first never read this file: the floor moved to 1.96 and
 the v0.4.3 image was the first thing to notice.
 
 Runtime is `debian:trixie-slim`, not Alpine: the binary is dynamically linked against glibc and

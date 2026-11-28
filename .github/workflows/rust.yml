@@ -145,13 +145,6 @@ jobs:
       - name: tests
         run: cargo test --locked
 
-      # The viewer's assets are embedded verbatim in a debug build and minified by oxc in a release
-      # one (supragnosis-viz/build.rs), so a minifier upgrade - or a script it mangles - used to
-      # surface first in the release workflow. The viz tests in release mode run against the
-      # minified assets.
-      - name: tests (viewer, release build)
-        run: cargo test --locked --release -p supragnosis-viz
-
   # macOS, where the desktop app and every user of it live. The jobs above are all ubuntu, so code
   # behind cfg(target_os = "macos") - launchd, the app-support paths `connect` writes, the bridge's
   # client paths - compiled for the first time when a release was tagged, and the desktop shell's
@@ -203,8 +196,8 @@ jobs:
 
   # The declared floor, tested instead of asserted. `rust-version` read 1.87 for a day and was wrong
   # when it was written: clippy's incompatible_msrv lints this workspace's own code and never the
-  # dependency graph, and the gate above only ever ran stable. What actually sets the floor is `oxc`
-  # (1.96 since 0.152), a build-dependency of supragnosis-viz, and `darling` (1.88) through rmcp-macros.
+  # dependency graph, and the gate above only ever ran stable. What actually sets the floor is `redb`
+  # (1.90 since 4.3), and below it `darling` (1.88) through rmcp-macros.
   #
   # The toolchain comes from the manifest rather than a literal here, so there is one number to
   # change and this job fails when it is optimistic.

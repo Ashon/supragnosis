@@ -162,7 +162,6 @@ tasks:
       - task: lint:web
       - task: lint:actions
       - task: test
-      - task: test:viewer-release
       - task: test:app
       - task: msrv
       - task: deny
@@ -258,10 +257,6 @@ tasks:
   test:
     desc: 'cargo test (the real-model suite is #[ignore]d - see test:e2e)'
     cmds: [cargo test --locked]
-
-  test:viewer-release:
-    desc: The viewer tests against its minified assets (oxc runs only in release builds)
-    cmds: [cargo test --locked --release -p supragnosis-viz]
 
   test:app:
     desc: The desktop shell's tests, a separate workspace (matches the rust.yml macos job)
