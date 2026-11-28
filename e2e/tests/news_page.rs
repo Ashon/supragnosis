@@ -148,9 +148,19 @@ fn items() -> Vec<Item> {
         b.date
             .cmp(&a.date)
             .then_with(|| (a.kind == Kind::Release).cmp(&(b.kind == Kind::Release)))
+            // Releases of one day by version, the newest first: v0.10.3 above v0.10.2, v0.10 above v0.9.
+            .then_with(|| numbers(b).cmp(&numbers(a)))
             .then_with(|| a.slug.cmp(&b.slug))
     });
     all
+}
+
+/// A release's version as numbers, so that 0.10 sorts after 0.9; a note has none.
+fn numbers(item: &Item) -> Vec<u64> {
+    match (item.kind, &item.version) {
+        (Kind::Release, Some(v)) => v.split('.').map(|n| n.parse().unwrap_or(0)).collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn esc(s: &str) -> String {
@@ -274,8 +284,10 @@ fn meta(item: &Item) -> String {
 }
 
 /// A whole page: the site's head, header and footer around `main`, `depth` folders below the root.
+/// The list is a `website` to a link preview, an item's page an `article`.
 fn page(depth: usize, title: &str, description: &str, path: &str, main: &str) -> String {
     let up = "../".repeat(depth);
+    let og_type = if depth == 1 { "website" } else { "article" };
     let (title, description) = (esc(title), esc(description));
     format!(
         r##"<!doctype html>
@@ -289,7 +301,7 @@ fn page(depth: usize, title: &str, description: &str, path: &str, main: &str) ->
   <meta name="theme-color" content="#08090d">
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="{og_type}">
   <meta property="og:url" content="{ORIGIN}{path}">
   <meta property="og:site_name" content="supragnosis">
   <meta property="og:image" content="{ORIGIN}assets/og.png">
@@ -409,9 +421,14 @@ fn item_page(items: &[Item], at: usize) -> String {
             )
         }
     );
+    // A release's title already says "supragnosis"; its tab reads "v0.11.0 - supragnosis news".
+    let title = match (item.kind, &item.version) {
+        (Kind::Release, Some(v)) => format!("v{v} - supragnosis news"),
+        _ => format!("{} - supragnosis", item.title),
+    };
     page(
         2,
-        &format!("{} - supragnosis", item.title),
+        &title,
         &item.summary.replace('`', ""),
         &format!("news/{}/", item.slug),
         &main,
