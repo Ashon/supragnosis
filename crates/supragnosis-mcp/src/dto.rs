@@ -28,10 +28,11 @@ pub struct ObserveRequest {
     /// (Optional) Ids of the observations this knowledge was derived from: the records you read that shaped it. Lineage, for contamination tracking.
     #[serde(default)]
     pub derived_from: Vec<String>,
-    /// (Optional) Entities extracted by the client.
+    /// The things this fragment is about, each with its name and type. Optional, but a record with
+    /// none does not appear on the map.
     #[serde(default)]
     pub entities: Vec<EntityInput>,
-    /// (Optional) Relations extracted by the client.
+    /// (Optional) How those entities relate.
     #[serde(default)]
     pub relations: Vec<RelationInput>,
 }
