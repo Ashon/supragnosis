@@ -41,7 +41,7 @@ use supragnosis_store::{InMemoryStore, RedbStore};
 #[command(
     name = "supragnosis",
     version,
-    about = "MCP server that turns knowledge from many hosts/workspaces into an ontology"
+    about = "Memory for AI agents that keeps who said what: an MCP server and its daemon"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -50,67 +50,106 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Foreground run (stdio by default; --http for a streamable-http daemon)
+    /// Run in the foreground
+    ///
+    /// Speaks MCP over stdio by default; --http runs a streamable-http daemon.
     Serve(RunArgs),
-    /// Start the background daemon (default MCP :7373 + viewer socket ~/.supragnosis/viz.sock)
+    /// Start the background daemon
+    ///
+    /// By default MCP listens on :7373 and the viewer on the socket ~/.supragnosis/viz.sock.
     Start(RunArgs),
     /// Stop the background daemon
     Stop,
     /// Restart the daemon (stop then start)
     Restart(RunArgs),
-    /// Query daemon status: who manages it, whether it answers, and which version it runs
+    /// Show whether the daemon runs
+    ///
+    /// Says who manages it, whether it answers, and which version it runs.
     Status(StatusArgs),
-    /// Stdio MCP server that relays to the running daemon - what an AI app launches. Opens no store
-    /// and holds no token in the app's config (docs/client-connect.md)
+    /// Relay MCP over stdio to the running daemon - what an AI app launches
+    ///
+    /// Opens no store and holds no token in the app's config (docs/client-connect.md).
     Bridge,
-    /// Connect an AI app (Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini, OpenCode) to
-    /// this node through the bridge; with no app, list them and how each is connected
+    /// Connect an AI app to this node
+    ///
+    /// Claude Desktop, Claude Code, Cursor, VS Code, Codex, Gemini or OpenCode, through the
+    /// bridge. With no app, lists them and how each is connected.
     Connect(ConnectArgs),
-    /// From install to the first entry: keep the daemon running, connect your AI apps, download the
-    /// search model, and try it. Shows the plan and asks first (docs/onboarding.md)
+    /// Set up from install to the first entry
+    ///
+    /// Keeps the daemon running, connects your AI apps, downloads the search model, and tries it.
+    /// Shows the plan and asks first (docs/onboarding.md).
     Setup(SetupArgs),
-    /// The embedding model behind semantic retrieval (docs/semantic-retrieval.md)
+    /// Manage the search model
+    ///
+    /// The embedding model behind semantic retrieval (docs/semantic-retrieval.md).
     Embed {
         #[command(subcommand)]
         cmd: EmbedCmd,
     },
-    /// Answer a Claude Code hook event from stdin: after a commit the agent made, ask it for the
-    /// decision behind the change; at a session's start, say what the workspace holds here.
-    /// Registered by `connect claude-code` (docs/client-connect.md Section 12)
+    /// Answer a Claude Code hook event from stdin
+    ///
+    /// After a commit the agent made, asks it for the decision behind the change; at the start of
+    /// a session or of a subagent, says what the workspace holds here. Registered by
+    /// `connect claude-code` (docs/client-connect.md Section 12).
     Hook(HookArgs),
-    /// How this node is used: calls by MCP function and workspace, by app, and what the Claude
-    /// Code hook gave and asked, from the local usage log (docs/usage.md)
+    /// Show how this node is used
+    ///
+    /// Calls by MCP function and workspace, by app, and what the Claude Code hook gave and asked,
+    /// from the local usage log (docs/usage.md).
     Usage(usage_cli::UsageArgs),
-    /// Let another machine join this one: prints a one-time code, then each request's words and
-    /// asks to allow it (docs/pairing.md Section 3a)
+    /// Let another machine join this one
+    ///
+    /// Prints a one-time code, then each request's words, and asks to allow it (docs/pairing.md
+    /// Section 3a).
     Invite(InviteArgs),
-    /// Join another machine's hub with the code it gave: reads the code on stdin, shows the words
-    /// to compare, and on the hub's Allow starts syncing (docs/pairing.md Section 4.3)
+    /// Join another machine's hub with the code it gave
+    ///
+    /// Reads the code on stdin, shows the words to compare, and on the hub's Allow starts syncing
+    /// (docs/pairing.md Section 4.3).
     Join(JoinArgs),
-    /// The hub this machine joined: leave it (docs/pairing.md Section 4.6)
+    /// Leave the hub this machine joined
+    ///
+    /// docs/pairing.md Section 4.6.
     Hub {
         #[command(subcommand)]
         cmd: HubCmd,
     },
-    /// The machines that joined this hub: list them, or remove one (docs/pairing.md Section 4.6)
+    /// List or remove the machines that joined this hub
+    ///
+    /// docs/pairing.md Section 4.6.
     Peer {
         #[command(subcommand)]
         cmd: PeerCmd,
     },
-    /// The always-on daemon as a login item (the LaunchAgent com.supragnosis.daemon on macOS, the systemd user unit supragnosis.service on Linux)
+    /// Keep the daemon running as a login item
+    ///
+    /// The LaunchAgent com.supragnosis.daemon on macOS, the systemd user unit supragnosis.service
+    /// on Linux.
     Service {
         #[command(subcommand)]
         cmd: ServiceCmd,
     },
-    /// Show this node's federation identity (node id + public key); --hash-token hashes a bearer token for an allowlist entry
+    /// Show this node's sync identity
+    ///
+    /// The node id and public key; --hash-token hashes a bearer token for an allowlist entry.
     Identity(IdentityArgs),
-    /// One-shot federation sync round against the configured servers (requires supragnosis.toml; stop the daemon first - the store is single-process)
+    /// Sync once with the hub this machine joined
+    ///
+    /// A running daemon runs the round itself, over the workspaces it shares; with none running
+    /// this command opens the store and syncs on its own. Needs a hub: `supragnosis join`.
     Sync(WorkspaceArgs),
-    /// Re-materialize a workspace's entity/relation projection from the observation log (HLC-ordered replay; stop the daemon first)
+    /// Rebuild a workspace's entities and relations from its records
+    ///
+    /// Replays the observation log in HLC order. Stop the daemon first.
     Reproject(WorkspaceArgs),
-    /// Migrate legacy-id observations (pre-0.1.x content-address eras) to the current formula so they can sync (stop the daemon first)
+    /// Migrate records with ids from before 0.1.x so they can sync
+    ///
+    /// Re-addresses legacy-id observations under the current formula. Stop the daemon first.
     Migrate(WorkspaceArgs),
-    /// Re-create a workspace's knowledge under another name, provenance intact (stop the daemon first)
+    /// Re-create a workspace's knowledge under another name
+    ///
+    /// Provenance stays intact. Stop the daemon first.
     RekeyWorkspace(RekeyArgs),
 }
 
@@ -329,7 +368,8 @@ struct RunArgs {
     /// Default workspace (default default).
     #[arg(long)]
     workspace: Option<String>,
-    /// Embedder: fastembed | hashing | none.
+    /// Embedder: fastembed | hashing | none (default: fastembed where this build has it, as
+    /// released builds do, else none).
     #[arg(long)]
     embed: Option<String>,
     /// Session id (footprint grouping key).

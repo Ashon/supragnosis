@@ -52,7 +52,7 @@ pub(crate) fn connect_cmd(a: ConnectArgs) -> Result<()> {
             return Ok(());
         }
         Err(Entry::Unknown) => anyhow::bail!(
-            "{} could not be read - not touching a file this cannot parse (client-connect.md C3)",
+            "{} could not be read - not touching a file this cannot parse",
             files_named(client, &env)
         ),
         Err(other) => anyhow::bail!(
@@ -140,7 +140,7 @@ pub(crate) fn capture_add(env: &connect::Env, program: &str) -> Result<()> {
             return Ok(());
         }
         connect::Capture::Unknown => anyhow::bail!(
-            "{} could not be parsed - not touching a file this cannot parse (client-connect.md C3); \
+            "{} could not be parsed - not touching a file this cannot parse; \
              re-run with --no-capture to connect without the hook",
             path.display()
         ),
@@ -176,7 +176,7 @@ pub(crate) fn capture_remove(env: &connect::Env) -> Result<bool> {
     let (path, text) = claude_code_settings_text(env)?;
     if connect::capture_state(&text) == connect::Capture::Unknown {
         anyhow::bail!(
-            "{} could not be parsed - not touching a file this cannot parse (client-connect.md C3)",
+            "{} could not be parsed - not touching a file this cannot parse",
             path.display()
         );
     }
